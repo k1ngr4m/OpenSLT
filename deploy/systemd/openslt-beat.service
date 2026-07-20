@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenSLT Celery beat
+After=network.target redis.service
+[Service]
+Type=simple
+User=openslt
+Group=openslt
+WorkingDirectory=/opt/openslt
+EnvironmentFile=/etc/openslt/openslt.env
+Environment=PYTHONPATH=/opt/openslt/backend
+ExecStart=/opt/openslt/.venv/bin/celery -A app.tasks.celery_app:celery_app beat --loglevel=INFO
+Restart=on-failure
+PrivateTmp=true
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target

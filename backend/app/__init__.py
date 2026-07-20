@@ -1,0 +1,2 @@
+"""OpenSLT backend application."""
+

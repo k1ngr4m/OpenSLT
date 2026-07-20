@@ -1,0 +1,15 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { api, errorMessage } from '@/api/client'
+const rows = ref<any[]>([])
+const dialog = ref(false)
+const editing = ref<number | null>(null)
+const form = reactive<any>({ username: '', display_name: '', password: '', role: 'visitor', is_active: true })
+const roleText: Record<string, string> = { admin: '管理员', tester: '测试人员', visitor: '访客' }
+async function load() { rows.value = (await api.get('/users')).data }
+function open(row?: any) { Object.assign(form, { username: '', display_name: '', password: '', role: 'visitor', is_active: true }, row || {}); form.password = ''; editing.value = row?.id || null; dialog.value = true }
+async function save() { try { if (editing.value) { const data = { display_name: form.display_name, role: form.role, is_active: form.is_active, ...(form.password ? { password: form.password } : {}) }; await api.patch(`/users/${editing.value}`, data) } else await api.post('/users', form); ElMessage.success('用户已保存'); dialog.value = false; load() } catch (e) { ElMessage.error(errorMessage(e)) } }
+onMounted(load)
+</script>
+<template><div class="page"><div class="page-header"><div><h1 class="page-title">用户管理</h1><p class="muted">管理员创建账号并分配最小必要权限</p></div><el-button type="primary" @click="open()">新增用户</el-button></div><div class="card"><el-table :data="rows"><el-table-column prop="username" label="用户名"/><el-table-column prop="display_name" label="显示名称"/><el-table-column label="角色"><template #default="s"><el-tag>{{roleText[s.row.role]}}</el-tag></template></el-table-column><el-table-column label="状态"><template #default="s"><el-tag :type="s.row.is_active?'success':'info'">{{s.row.is_active?'启用':'禁用'}}</el-tag></template></el-table-column><el-table-column label="最后登录"><template #default="s">{{s.row.last_login_at?new Date(s.row.last_login_at).toLocaleString():'-'}}</template></el-table-column><el-table-column width="100"><template #default="s"><el-button link type="primary" @click="open(s.row)">编辑</el-button></template></el-table-column></el-table></div><el-dialog v-model="dialog" :title="editing?'编辑用户':'新增用户'" width="520px"><el-form label-width="90px"><el-form-item label="用户名"><el-input v-model="form.username" :disabled="!!editing"/></el-form-item><el-form-item label="显示名称"><el-input v-model="form.display_name"/></el-form-item><el-form-item label="密码"><el-input v-model="form.password" type="password" show-password :placeholder="editing?'留空表示不修改':'至少 8 个字符'"/></el-form-item><el-form-item label="角色"><el-select v-model="form.role"><el-option label="管理员" value="admin"/><el-option label="测试人员" value="tester"/><el-option label="访客" value="visitor"/></el-select></el-form-item><el-form-item v-if="editing" label="启用"><el-switch v-model="form.is_active"/></el-form-item></el-form><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template></el-dialog></div></template>

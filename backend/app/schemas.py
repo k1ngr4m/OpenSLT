@@ -1,0 +1,249 @@
+from datetime import datetime
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ORMModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenPair(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    display_name: str = Field(default="", max_length=128)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["admin", "tester", "visitor"] = "visitor"
+
+
+class UserUpdate(BaseModel):
+    display_name: str | None = None
+    role: Literal["admin", "tester", "visitor"] | None = None
+    is_active: bool | None = None
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class UserOut(ORMModel):
+    id: int
+    username: str
+    display_name: str
+    role: str
+    is_active: bool
+    last_login_at: datetime | None
+    created_at: datetime
+
+
+class ResourceWrite(BaseModel):
+    name: str
+    resource_type: Literal["rem", "market", "order", "capture", "coco"]
+    business_code: Literal["fut_mm", "rem_two", "rem_two_mm"]
+    host: str
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    username: str
+    auth_type: Literal["password", "private_key"] = "password"
+    password: str | None = None
+    private_key: str | None = None
+    remote_path: str = ""
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    version_info: str = ""
+    notes: str = ""
+    is_enabled: bool = True
+
+
+class ResourceOut(ORMModel):
+    id: int
+    name: str
+    resource_type: str
+    business_code: str
+    host: str
+    ssh_port: int
+    username: str
+    auth_type: str
+    remote_path: str
+    capabilities: dict[str, Any]
+    version_info: str
+    notes: str
+    is_enabled: bool
+    health_status: str
+    health_checked_at: datetime | None
+    created_at: datetime
+
+
+class PlanWrite(BaseModel):
+    name: str
+    business_code: Literal["fut_mm", "rem_two", "rem_two_mm"]
+    description: str = ""
+    default_resource_ids: list[int] = Field(default_factory=list)
+    config_version: str = "1.0"
+    is_enabled: bool = True
+
+
+class PlanOut(ORMModel):
+    id: int
+    name: str
+    business_code: str
+    description: str
+    default_resource_ids: list[int]
+    config_version: str
+    is_enabled: bool
+    created_by: int
+    created_at: datetime
+
+
+class ScenarioWrite(BaseModel):
+    plan_id: int
+    name: str
+    scenario_type: str
+    config_version: str = "1.0"
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    expected_artifacts: list[str] = Field(default_factory=list)
+    statistics_rules: dict[str, Any] = Field(default_factory=dict)
+    required_resource_types: list[str] = Field(default_factory=list)
+    is_enabled: bool = True
+
+
+class ScenarioOut(ORMModel):
+    id: int
+    plan_id: int
+    name: str
+    scenario_type: str
+    config_version: str
+    parameters: dict[str, Any]
+    actions: list[dict[str, Any]]
+    expected_artifacts: list[str]
+    statistics_rules: dict[str, Any]
+    required_resource_types: list[str]
+    is_enabled: bool
+    created_at: datetime
+
+
+class RunCreate(BaseModel):
+    plan_id: int
+    scenario_id: int
+    resource_ids: list[int] = Field(min_length=1)
+    timeout_minutes: int = Field(default=120, ge=5, le=1440)
+
+
+class StepOut(ORMModel):
+    id: int
+    code: str
+    name: str
+    position: int
+    status: str
+    progress: int
+    retry_count: int
+    max_retries: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    duration_ms: int | None
+    error_message: str | None
+
+
+class MetricOut(ORMModel):
+    id: int
+    name: str
+    value: float
+    unit: str
+    sample_count: int | None
+    rule_result: str | None
+    detail: dict[str, Any]
+
+
+class VerdictOut(ORMModel):
+    id: int
+    automatic_result: str
+    final_result: str | None
+    issue_description: str
+    notes: str
+    reviewed_by: int | None
+    reviewed_at: datetime | None
+
+
+class ArtifactOut(ORMModel):
+    id: int
+    step_id: int | None
+    artifact_type: str
+    name: str
+    content_type: str
+    size: int
+    checksum: str
+    is_immutable: bool
+    created_at: datetime
+
+
+class RunOut(ORMModel):
+    id: int
+    run_number: str
+    plan_id: int
+    scenario_id: int
+    business_code: str
+    status: str
+    progress: int
+    resource_ids: list[int]
+    config_snapshot: dict[str, Any]
+    trace_id: str
+    created_by: int
+    started_at: datetime | None
+    finished_at: datetime | None
+    timeout_at: datetime | None
+    error_code: str | None
+    error_message: str | None
+    queue_reason: str | None
+    paused_from: str | None
+    logs_complete: bool
+    created_at: datetime
+    steps: list[StepOut] = Field(default_factory=list)
+    artifacts: list[ArtifactOut] = Field(default_factory=list)
+    metrics: list[MetricOut] = Field(default_factory=list)
+    verdict: VerdictOut | None = None
+
+
+class VerdictWrite(BaseModel):
+    final_result: Literal["passed", "failed", "conditional"]
+    issue_description: str = ""
+    notes: str = ""
+
+
+class LogOut(ORMModel):
+    id: int
+    log_type: str
+    level: str
+    event: str
+    message: str
+    trace_id: str
+    user_id: int | None
+    run_id: int | None
+    step_id: int | None
+    source: str
+    detail: dict[str, Any]
+    is_redacted: bool
+    created_at: datetime
+
+
+class AuditOut(ORMModel):
+    id: int
+    actor_id: int | None
+    action: str
+    object_type: str
+    object_id: str | None
+    result: str
+    source_ip: str | None
+    trace_id: str
+    detail: dict[str, Any]
+    created_at: datetime
