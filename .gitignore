@@ -16,3 +16,9 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 .vite/
 *.sqlite3
+.venv-portable/
+.venv-desktop/
+build/
+release/OpenSLT-Portable/
+release/OpenSLT-Desktop-windows-x64/
+release/*.zip

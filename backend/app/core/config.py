@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+import sys
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,11 +25,32 @@ class Settings(BaseSettings):
     app_log_retention_days: int = 90
     audit_log_retention_days: int = 365
     execution_mode: str = Field(default="simulated", pattern="^(simulated|remote)$")
+    portable_mode: bool = False
+    enable_internal_scheduler: bool = False
+    frontend_dist: Path | None = None
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    open_browser: bool = False
+    openslt_data_root: Path | None = None
+    openslt_log_dir: Path | None = None
+    openslt_api_port: int | None = Field(default=None, ge=1, le=65535)
     initial_admin_username: str = "admin"
     initial_admin_password: str = "shengli123"
 
     @model_validator(mode="after")
     def ensure_directories(self) -> "Settings":
+        if self.openslt_data_root:
+            data_root = self.openslt_data_root
+            self.database_url = f"sqlite:///{(data_root / 'openslt.sqlite3').as_posix()}"
+            self.artifact_root = data_root / "artifacts"
+        if self.openslt_log_dir:
+            self.log_dir = self.openslt_log_dir
+        if self.openslt_api_port:
+            self.port = self.openslt_api_port
+        if self.frontend_dist is None:
+            bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+            candidate = bundle_root / "frontend" / "dist"
+            self.frontend_dist = candidate if candidate.is_dir() else None
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         if self.database_url.startswith("sqlite:///"):
@@ -42,4 +64,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
