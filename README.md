@@ -17,6 +17,14 @@ alembic upgrade head
 python -m desktop.main
 ```
 
+Web 开发端可以在 Windows 下双击仓库根目录的 `start-web.cmd` 一键启动。脚本首次运行会自动创建 Python 虚拟环境、安装前后端依赖并执行数据库迁移；启动完成后会打开 `http://127.0.0.1:5173`。关闭启动窗口或按 `Ctrl+C` 即可停止由脚本启动的服务。
+
+也可以从 PowerShell 启动并禁止自动打开浏览器：
+
+```powershell
+.\start-web.ps1 -NoBrowser
+```
+
 客户端会自动启动本地 API 并打开 Qt 窗口。初始账号 `admin`，初始密码 `shengli123`。首次部署后必须立即修改密码和 `.env` 中的 JWT/凭据加密密钥。
 
 ## Windows 原生客户端
