@@ -176,7 +176,7 @@ class DashboardPage(BasePage):
 class ResourcesPage(BasePage):
     def __init__(self, api: ApiClient, user: dict[str, Any]) -> None:
         super().__init__(api, user)
-        root, header = self.heading("资源管理", "统一管理 REM、模拟市场、数据库、发单、抓包和 Coco 节点")
+        root, header = self.heading("资源管理", "统一管理 REM、模拟市场、数据库、发单和 SLNIC 节点")
         if self.is_admin:
             header.addWidget(button("新增资源", self.add_resource, primary=True))
             header.addWidget(button("删除选中", self.delete_selected))
@@ -208,8 +208,8 @@ class ResourcesPage(BasePage):
 
     def edit_selected(self, *_: Any) -> None:
         resource = self.selected()
-        if resource and resource.get("resource_type") == "database":
-            info(self, "数据库资源", "请在 Web 端配置和操作数据库资源")
+        if resource and resource.get("resource_type") in {"database", "slnic"}:
+            info(self, "Web 端资源", "请在 Web 端配置该资源")
             return
         if resource and self.is_admin:
             self.open_resource(resource)
@@ -221,7 +221,7 @@ class ResourcesPage(BasePage):
         values = resource or {}
         dialog = FormDialog("编辑资源" if resource else "新增资源", self)
         dialog.add_line("name", "名称", values.get("name", ""))
-        dialog.add_combo("resource_type", "类型", [(v, k) for k, v in RESOURCE_TEXT.items() if k != "database"], values.get("resource_type", "rem"))
+        dialog.add_combo("resource_type", "类型", [(v, k) for k, v in RESOURCE_TEXT.items() if k not in {"database", "slnic"}], values.get("resource_type", "rem"))
         dialog.add_combo("business_code", "所属业务", [(v, k) for k, v in BUSINESS_TEXT.items()], values.get("business_code", "fut_mm"))
         dialog.add_line("host", "Linux 地址", values.get("host", ""))
         dialog.add_spin("ssh_port", "SSH 端口", values.get("ssh_port", 22), 1, 65535)

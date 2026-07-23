@@ -50,7 +50,7 @@ class UserOut(ORMModel):
 
 class ResourceWrite(BaseModel):
     name: str
-    resource_type: Literal["rem", "market", "order", "capture", "coco", "database"]
+    resource_type: Literal["rem", "market", "order", "slnic", "capture", "coco", "database"]
     business_code: Literal["fut_mm", "rem_two", "rem_two_mm"]
     host: str = ""
     ssh_port: int = Field(default=22, ge=1, le=65535)

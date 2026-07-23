@@ -50,8 +50,7 @@ RESOURCE_TEXT = {
     "market": "模拟市场",
     "database": "MySQL 数据库",
     "order": "发单客户端",
-    "capture": "抓包节点",
-    "coco": "Coco 节点",
+    "slnic": "SLNIC 节点",
 }
 
 ROLE_TEXT = {"admin": "管理员", "tester": "测试人员", "visitor": "访客"}

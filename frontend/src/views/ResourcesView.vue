@@ -33,8 +33,13 @@ const orderTools = [
   { value: 'ees_zf_trader_binary_api_test', path: '/home/user0/ees_zf_trader_binary_api_test' },
 ]
 
+const slnicModels = [
+  { value: 'SLNIC_NF11_10g_10g', path: '/home/user0/slnic/SLNIC_NF11_10g_10g_911.hw_7881.driver_12671.sw_20240528' },
+  { value: 'SLNIC_NF11_1g_10g', path: '/home/user0/slnic/SLNIC_NF11_1g_10g_911.hw_7881.driver_12671.sw_20240528' },
+]
+
 const empty = () => ({
-  name: '', resource_type: 'rem', market_environment: '', order_tool: '', business_code: 'fut_mm',
+  name: '', resource_type: 'rem', market_environment: '', order_tool: '', slnic_model: '', business_code: 'fut_mm',
   host: '', ssh_port: 22, username: '', auth_type: 'password', password: '', private_key: '',
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
@@ -59,6 +64,11 @@ function setOrderToolDefaultPath(value: string) {
   if (selected) form.remote_path = selected.path
 }
 
+function setSlnicDefaultPath(value: string) {
+  const selected = slnicModels.find(item => item.value === value)
+  if (selected) form.remote_path = selected.path
+}
+
 function handleResourceTypeChange(value: string) {
   if (value === 'rem') setRemDefaultPath(form.business_code)
   else if (value === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
@@ -66,16 +76,22 @@ function handleResourceTypeChange(value: string) {
     form.order_tool = form.order_tool || orderTools[0].value
     setOrderToolDefaultPath(form.order_tool)
   }
+  else if (value === 'slnic') {
+    form.slnic_model = form.slnic_model || slnicModels[0].value
+    setSlnicDefaultPath(form.slnic_model)
+  }
 }
 
 function open(row?: any) {
   Object.assign(form, empty(), row || {})
   form.market_environment = row?.capabilities?.market_environment || ''
   form.order_tool = row?.capabilities?.order_tool || orderTools.find(item => item.path === row?.remote_path)?.value || ''
+  form.slnic_model = row?.capabilities?.slnic_model || slnicModels.find(item => item.path === row?.remote_path)?.value || ''
   form.database_names = [...(row?.database_names || [])]
   if (!form.remote_path) {
     if (form.resource_type === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
     else if (form.resource_type === 'order' && form.order_tool) setOrderToolDefaultPath(form.order_tool)
+    else if (form.resource_type === 'slnic' && form.slnic_model) setSlnicDefaultPath(form.slnic_model)
     else setRemDefaultPath(form.business_code)
   }
   form.password = ''
@@ -98,9 +114,13 @@ async function save() {
     ElMessage.warning('请选择发单工具')
     return
   }
+  if (form.resource_type === 'slnic' && !slnicModels.some(item => item.value === form.slnic_model)) {
+    ElMessage.warning('请选择 SLNIC 型号')
+    return
+  }
   loading.value = true
   try {
-    const { market_environment, order_tool, ...payload } = form
+    const { market_environment, order_tool, slnic_model, ...payload } = form
     const capabilities = { ...(form.capabilities || {}) }
     if (form.resource_type === 'market') {
       const selected = marketEnvironments.find(item => item.value === market_environment)!
@@ -122,6 +142,16 @@ async function save() {
       })
     } else {
       for (const key of ['order_tool', 'order_tool_name', 'order_tool_default_path']) delete capabilities[key]
+    }
+    if (form.resource_type === 'slnic') {
+      const selected = slnicModels.find(item => item.value === slnic_model)!
+      Object.assign(capabilities, {
+        slnic_model,
+        slnic_model_name: selected.value,
+        slnic_default_path: selected.path,
+      })
+    } else {
+      for (const key of ['slnic_model', 'slnic_model_name', 'slnic_default_path']) delete capabilities[key]
     }
     payload.capabilities = capabilities
     if (form.resource_type !== 'database') {
@@ -196,7 +226,7 @@ onMounted(load)
       <el-table :data="rows">
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column label="类型" width="120">
-          <template #default="scope">{{ resourceText[scope.row.resource_type] }}</template>
+          <template #default="scope">{{ resourceText[scope.row.resource_type] || scope.row.resource_type }}</template>
         </el-table-column>
         <el-table-column label="业务" min-width="130">
           <template #default="scope">{{ businessText[scope.row.business_code] }}</template>
@@ -249,6 +279,13 @@ onMounted(load)
             <el-form-item label="发单工具" required>
               <el-select v-model="form.order_tool" placeholder="请选择发单工具" style="width:100%" @change="setOrderToolDefaultPath">
                 <el-option v-for="item in orderTools" :key="item.value" :label="item.value" :value="item.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.resource_type === 'slnic'" :span="24">
+            <el-form-item label="SLNIC 型号" required>
+              <el-select v-model="form.slnic_model" placeholder="请选择 SLNIC 型号" style="width:100%" @change="setSlnicDefaultPath">
+                <el-option v-for="item in slnicModels" :key="item.value" :label="item.value" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>
