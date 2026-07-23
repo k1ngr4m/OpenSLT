@@ -28,8 +28,13 @@ const remDefaultPaths: Record<string, string> = {
   rem_two_mm: '/home/user0/rem_two_mm',
 }
 
+const orderTools = [
+  { value: 'ees_ef_vi_trader_binary_api_test', path: '/home/user0/ees_ef_vi_trader_binary_api_test' },
+  { value: 'ees_zf_trader_binary_api_test', path: '/home/user0/ees_zf_trader_binary_api_test' },
+]
+
 const empty = () => ({
-  name: '', resource_type: 'rem', market_environment: '', business_code: 'fut_mm',
+  name: '', resource_type: 'rem', market_environment: '', order_tool: '', business_code: 'fut_mm',
   host: '', ssh_port: 22, username: '', auth_type: 'password', password: '', private_key: '',
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
@@ -49,17 +54,28 @@ function setRemDefaultPath(value: string) {
   if (form.resource_type === 'rem' && remDefaultPaths[value]) form.remote_path = remDefaultPaths[value]
 }
 
+function setOrderToolDefaultPath(value: string) {
+  const selected = orderTools.find(item => item.value === value)
+  if (selected) form.remote_path = selected.path
+}
+
 function handleResourceTypeChange(value: string) {
   if (value === 'rem') setRemDefaultPath(form.business_code)
   else if (value === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
+  else if (value === 'order') {
+    form.order_tool = form.order_tool || orderTools[0].value
+    setOrderToolDefaultPath(form.order_tool)
+  }
 }
 
 function open(row?: any) {
   Object.assign(form, empty(), row || {})
   form.market_environment = row?.capabilities?.market_environment || ''
+  form.order_tool = row?.capabilities?.order_tool || orderTools.find(item => item.path === row?.remote_path)?.value || ''
   form.database_names = [...(row?.database_names || [])]
   if (!form.remote_path) {
     if (form.resource_type === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
+    else if (form.resource_type === 'order' && form.order_tool) setOrderToolDefaultPath(form.order_tool)
     else setRemDefaultPath(form.business_code)
   }
   form.password = ''
@@ -78,9 +94,13 @@ async function save() {
     ElMessage.warning('请至少填写一个数据库名称')
     return
   }
+  if (form.resource_type === 'order' && !orderTools.some(item => item.value === form.order_tool)) {
+    ElMessage.warning('请选择发单工具')
+    return
+  }
   loading.value = true
   try {
-    const { market_environment, ...payload } = form
+    const { market_environment, order_tool, ...payload } = form
     const capabilities = { ...(form.capabilities || {}) }
     if (form.resource_type === 'market') {
       const selected = marketEnvironments.find(item => item.value === market_environment)!
@@ -92,6 +112,16 @@ async function save() {
       })
     } else {
       for (const key of ['market_environment', 'market_environment_name', 'frontend_ports', 'fens_ports']) delete capabilities[key]
+    }
+    if (form.resource_type === 'order') {
+      const selected = orderTools.find(item => item.value === order_tool)!
+      Object.assign(capabilities, {
+        order_tool,
+        order_tool_name: selected.value,
+        order_tool_default_path: selected.path,
+      })
+    } else {
+      for (const key of ['order_tool', 'order_tool_name', 'order_tool_default_path']) delete capabilities[key]
     }
     payload.capabilities = capabilities
     if (form.resource_type !== 'database') {
@@ -157,7 +187,7 @@ onMounted(load)
     <div class="page-header">
       <div>
         <h1 class="page-title">资源管理</h1>
-        <p class="muted">统一管理 REM、模拟市场、数据库、发单、抓包和 Coco 节点</p>
+        <p class="muted"></p>
       </div>
       <el-button v-if="auth.isAdmin" type="primary" @click="open()">新增资源</el-button>
     </div>
@@ -212,6 +242,13 @@ onMounted(load)
             <el-form-item label="市场环境" required>
               <el-select v-model="form.market_environment" placeholder="请选择模拟市场环境" style="width:100%" @change="setMarketDefaultPath">
                 <el-option v-for="item in marketEnvironments" :key="item.value" :label="`${item.label} - 前置端口${item.frontendPorts}${item.fensPorts ? `，FENS端口${item.fensPorts}` : '，无FENS'}`" :value="item.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.resource_type === 'order'" :span="24">
+            <el-form-item label="发单工具" required>
+              <el-select v-model="form.order_tool" placeholder="请选择发单工具" style="width:100%" @change="setOrderToolDefaultPath">
+                <el-option v-for="item in orderTools" :key="item.value" :label="item.value" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>
