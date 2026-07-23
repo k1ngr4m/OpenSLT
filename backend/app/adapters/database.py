@@ -30,6 +30,7 @@ CSV_EXPORT_LIMIT = 1_000_000
 XLSX_EXPORT_LIMIT = 100_000
 UPDATE_LIMIT = 1_000
 OPERATION_TIMEOUT_SECONDS = 300
+SYSTEM_DATABASES = {"information_schema", "mysql", "performance_schema", "sys"}
 
 
 class DatabaseOperationError(Exception):
@@ -48,6 +49,37 @@ class SqlPlan:
     statement: exp.Expression
     table_name: str | None = None
     count_sql: str | None = None
+
+
+@dataclass(slots=True)
+class DatabaseDiscoveryConfig:
+    database_host: str
+    database_port: int
+    database_username: str
+    database_password: str | None
+    database_tls_enabled: bool
+    connection_mode: str
+    ssh_host: str = ""
+    ssh_port: int = 22
+    ssh_username: str = ""
+    ssh_password: str | None = None
+    ssh_private_key: str | None = None
+
+
+def filter_database_names(rows: list[Any]) -> tuple[list[str], int]:
+    names: dict[str, str] = {}
+    filtered_system_count = 0
+    for row in rows:
+        value = row[0] if isinstance(row, (tuple, list)) else row
+        name = str(value).strip()
+        if not name:
+            continue
+        key = name.casefold()
+        if key in SYSTEM_DATABASES:
+            filtered_system_count += 1
+            continue
+        names.setdefault(key, name)
+    return sorted(names.values(), key=str.casefold), filtered_system_count
 
 
 def _single_statement(sql: str) -> exp.Expression:
@@ -183,6 +215,75 @@ def simulated_update_rows(plan: SqlPlan) -> int:
 
 
 class MySQLAdapter:
+    async def discover_databases(self, config: DatabaseDiscoveryConfig) -> tuple[list[str], int]:
+        ssh_connection = None
+        tunnel = None
+        connection = None
+        host = config.database_host
+        port = config.database_port
+        try:
+            if config.connection_mode == "ssh_tunnel":
+                options: dict[str, Any] = {
+                    "host": config.ssh_host,
+                    "port": config.ssh_port,
+                    "username": config.ssh_username,
+                    "known_hosts": None,
+                    "connect_timeout": 15,
+                }
+                if config.ssh_password:
+                    options["password"] = config.ssh_password
+                if config.ssh_private_key:
+                    options["client_keys"] = [asyncssh.import_private_key(config.ssh_private_key)]
+                ssh_connection = await asyncssh.connect(**options)
+                tunnel = await ssh_connection.forward_local_port("127.0.0.1", 0, host, port)
+                host = "127.0.0.1"
+                port = tunnel.get_port()
+
+            ssl_context = None
+            if config.database_tls_enabled:
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+            connection = await asyncio.to_thread(
+                pymysql.connect,
+                host=host,
+                port=port,
+                user=config.database_username,
+                password=config.database_password or "",
+                database=None,
+                charset="utf8mb4",
+                connect_timeout=10,
+                read_timeout=30,
+                write_timeout=30,
+                autocommit=True,
+                ssl=ssl_context,
+            )
+
+            def discover() -> list[Any]:
+                with connection.cursor() as cursor:
+                    cursor.execute("SHOW DATABASES")
+                    return list(cursor.fetchall())
+
+            rows = await asyncio.to_thread(discover)
+            return filter_database_names(rows)
+        except DatabaseOperationError:
+            raise
+        except Exception as exc:
+            raise DatabaseOperationError(
+                "DATABASE_DISCOVERY_FAILED",
+                f"读取数据库名称失败: {exc}",
+                502,
+            ) from exc
+        finally:
+            if connection:
+                await asyncio.to_thread(connection.close)
+            if tunnel:
+                tunnel.close()
+                await tunnel.wait_closed()
+            if ssh_connection:
+                ssh_connection.close()
+                await ssh_connection.wait_closed()
+
     @asynccontextmanager
     async def connection(self, resource: Resource, database_name: str):
         ssh_connection = None

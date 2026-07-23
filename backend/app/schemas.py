@@ -121,9 +121,93 @@ class ResourceOut(ORMModel):
     created_at: datetime
 
 
+class DatabaseDiscoveryRequest(BaseModel):
+    resource_id: int | None = Field(default=None, ge=1)
+    database_connection_mode: Literal["direct", "ssh_tunnel"] = "direct"
+    database_host: str
+    database_port: int = Field(default=3306, ge=1, le=65535)
+    database_username: str
+    database_password: str | None = None
+    database_tls_enabled: bool = False
+    host: str = ""
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    username: str = ""
+    auth_type: Literal["password", "private_key"] = "password"
+    password: str | None = None
+    private_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_discovery_connection(self) -> "DatabaseDiscoveryRequest":
+        self.database_host = self.database_host.strip()
+        self.database_username = self.database_username.strip()
+        self.host = self.host.strip()
+        self.username = self.username.strip()
+        if not self.database_host or not self.database_username:
+            raise ValueError("数据库地址和用户名不能为空")
+        if self.database_connection_mode == "ssh_tunnel" and (not self.host or not self.username):
+            raise ValueError("SSH 跳板机地址和用户名不能为空")
+        return self
+
+
+class DatabaseDiscoveryOut(BaseModel):
+    databases: list[str]
+    simulated: bool
+    filtered_system_count: int
+
+
 class DatabaseSqlRequest(BaseModel):
     database_name: str
     sql: str = Field(min_length=1, max_length=100_000)
+
+
+class OrderConfigCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    source_name: str = Field(min_length=1, max_length=255)
+
+
+class OrderConfigUpdate(BaseModel):
+    content: str = Field(min_length=1)
+    expected_checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class OrderConfigRename(BaseModel):
+    new_name: str = Field(min_length=1, max_length=255)
+    expected_checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class XmlAttributeOut(BaseModel):
+    name: str
+    value: str
+
+
+class XmlNodeOut(BaseModel):
+    type: Literal["element", "text", "comment", "cdata", "processing_instruction"]
+    name: str | None = None
+    attributes: list[XmlAttributeOut] = Field(default_factory=list)
+    text: str | None = None
+    children: list["XmlNodeOut"] = Field(default_factory=list)
+
+
+class OrderConfigFileOut(BaseModel):
+    name: str
+    size: int
+    modified_at: datetime
+
+
+class OrderConfigListOut(BaseModel):
+    tool: str
+    directory: str
+    simulated: bool
+    files: list[OrderConfigFileOut]
+
+
+class OrderConfigDetailOut(OrderConfigFileOut):
+    checksum: str
+    content: str
+    declaration: str
+    document: XmlNodeOut
+    tool: str
+    simulated: bool
 
 
 class DatabaseExportRequest(DatabaseSqlRequest):

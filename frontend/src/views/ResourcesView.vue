@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { RefreshRight } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
@@ -12,6 +13,11 @@ const rows = ref<any[]>([])
 const dialog = ref(false)
 const editing = ref<number | null>(null)
 const loading = ref(false)
+const databaseStep = ref(1)
+const databaseOptions = ref<{ name: string; missing: boolean }[]>([])
+const discoveringDatabases = ref(false)
+const discoveryError = ref('')
+const discoverySimulated = ref(false)
 
 const marketEnvironments = [
   { value: 'cffex_2_0', label: '中金所2.0标准模拟市场', frontendPorts: '5110-5141', fensPorts: '5142-5145', defaultPath: '/home/user0/rem_mkt/cffex_2.0' },
@@ -47,6 +53,9 @@ const empty = () => ({
   remote_path: '', capabilities: {}, version_info: '', notes: '', is_enabled: true,
 })
 const form = reactive<any>(empty())
+const selectedDatabaseSummary = computed(() => form.database_names.length
+  ? `已选择 ${form.database_names.length} 个数据库`
+  : '尚未选择数据库')
 
 async function load() { rows.value = (await api.get('/resources')).data }
 
@@ -70,6 +79,10 @@ function setSlnicDefaultPath(value: string) {
 }
 
 function handleResourceTypeChange(value: string) {
+  databaseStep.value = 1
+  databaseOptions.value = []
+  discoveryError.value = ''
+  discoverySimulated.value = false
   if (value === 'rem') setRemDefaultPath(form.business_code)
   else if (value === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
   else if (value === 'order') {
@@ -98,7 +111,76 @@ function open(row?: any) {
   form.private_key = ''
   form.database_password = ''
   editing.value = row?.id || null
+  databaseStep.value = 1
+  databaseOptions.value = []
+  discoveryError.value = ''
+  discoverySimulated.value = false
   dialog.value = true
+}
+
+function validateDatabaseConnection() {
+  if (!form.name.trim()) return '请填写资源名称'
+  if (!form.business_code) return '请选择所属业务'
+  if (!form.database_host.trim()) return '请填写数据库地址'
+  if (!form.database_username.trim()) return '请填写数据库用户'
+  if (form.database_connection_mode === 'ssh_tunnel') {
+    if (!form.host.trim()) return '请填写 SSH 跳板机地址'
+    if (!form.username.trim()) return '请填写 SSH 用户名'
+  }
+  return ''
+}
+
+function databaseDiscoveryPayload() {
+  return {
+    resource_id: editing.value,
+    database_connection_mode: form.database_connection_mode,
+    database_host: form.database_host,
+    database_port: form.database_port,
+    database_username: form.database_username,
+    database_password: form.database_password,
+    database_tls_enabled: form.database_tls_enabled,
+    host: form.host,
+    ssh_port: form.ssh_port,
+    username: form.username,
+    auth_type: form.auth_type,
+    password: form.password,
+    private_key: form.private_key,
+  }
+}
+
+async function discoverDatabases() {
+  const validationError = validateDatabaseConnection()
+  if (validationError) {
+    ElMessage.warning(validationError)
+    return
+  }
+  discoveringDatabases.value = true
+  discoveryError.value = ''
+  try {
+    const { data } = await api.post('/resources/database/discover', databaseDiscoveryPayload())
+    const systemDatabases = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
+    form.database_names = form.database_names.filter((name: string) => !systemDatabases.has(name.toLowerCase()))
+    const discovered = new Set<string>(data.databases)
+    databaseOptions.value = [
+      ...data.databases.map((name: string) => ({ name, missing: false })),
+      ...form.database_names
+        .filter((name: string) => !discovered.has(name))
+        .map((name: string) => ({ name, missing: true })),
+    ]
+    discoverySimulated.value = data.simulated
+    databaseStep.value = 2
+    if (!databaseOptions.value.length) discoveryError.value = '当前账号没有可选择的业务数据库'
+  } catch (error) {
+    discoveryError.value = errorMessage(error)
+    ElMessage.error(discoveryError.value)
+  } finally {
+    discoveringDatabases.value = false
+  }
+}
+
+function backToDatabaseConnection() {
+  databaseStep.value = 1
+  discoveryError.value = ''
 }
 
 async function save() {
@@ -258,9 +340,13 @@ onMounted(load)
       </el-table>
     </div>
 
-    <el-dialog v-model="dialog" :title="editing ? '编辑资源' : '新增资源'" width="780px">
+    <el-dialog v-model="dialog" :title="editing ? '编辑资源' : '新增资源'" width="820px">
+      <el-steps v-if="form.resource_type === 'database'" :active="databaseStep - 1" align-center finish-status="success" class="database-steps">
+        <el-step title="连接配置" description="填写 MySQL 与可选跳板机信息" />
+        <el-step title="选择数据库" description="读取当前账号可见的业务数据库" />
+      </el-steps>
       <el-form :model="form" label-width="110px">
-        <el-row :gutter="16">
+        <el-row v-show="form.resource_type !== 'database' || databaseStep === 1" :gutter="16">
           <el-col :span="12"><el-form-item label="名称" required><el-input v-model="form.name" /></el-form-item></el-col>
           <el-col :span="12">
             <el-form-item label="类型" required>
@@ -312,11 +398,6 @@ onMounted(load)
             <el-col :span="12"><el-form-item label="启用 TLS"><el-switch v-model="form.database_tls_enabled" /></el-form-item></el-col>
             <el-col :span="16"><el-form-item label="数据库地址" required><el-input v-model="form.database_host" /></el-form-item></el-col>
             <el-col :span="8"><el-form-item label="端口" required><el-input-number v-model="form.database_port" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="24">
-              <el-form-item label="数据库名称" required>
-                <el-select v-model="form.database_names" multiple filterable allow-create default-first-option placeholder="输入名称后按回车，可添加多个" style="width:100%" />
-              </el-form-item>
-            </el-col>
             <el-col :span="12"><el-form-item label="数据库用户" required><el-input v-model="form.database_username" /></el-form-item></el-col>
             <el-col :span="12"><el-form-item label="数据库密码"><el-input v-model="form.database_password" type="password" show-password :placeholder="editing && form.has_database_password ? '留空保持原密码' : ''" /></el-form-item></el-col>
           </template>
@@ -345,11 +426,41 @@ onMounted(load)
           <el-col v-if="form.resource_type !== 'database'" :span="24"><el-form-item label="远端路径"><el-input v-model="form.remote_path" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="备注"><el-input v-model="form.notes" type="textarea" /></el-form-item></el-col>
         </el-row>
+
+        <section v-if="form.resource_type === 'database' && databaseStep === 2" class="database-selection-step">
+          <div class="database-connection-summary">
+            <div><small>连接方式</small><strong>{{ form.database_connection_mode === 'ssh_tunnel' ? 'SSH 隧道' : '直接连接' }}</strong></div>
+            <div><small>MySQL 地址</small><strong class="mono">{{ form.database_username }}@{{ form.database_host }}:{{ form.database_port }}</strong></div>
+            <div v-if="form.database_connection_mode === 'ssh_tunnel'"><small>跳板机</small><strong class="mono">{{ form.username }}@{{ form.host }}:{{ form.ssh_port }}</strong></div>
+            <el-tag :type="discoverySimulated ? 'warning' : 'success'" effect="plain">{{ discoverySimulated ? '模拟发现' : '连接成功' }}</el-tag>
+          </div>
+          <div v-if="discoveryError" class="database-discovery-error">{{ discoveryError }}</div>
+          <el-form-item label="数据库名称" required class="database-picker">
+            <el-select v-model="form.database_names" multiple filterable collapse-tags :max-collapse-tags="4" placeholder="请选择需要管理的数据库" style="width:100%">
+              <el-option v-for="option in databaseOptions" :key="option.name" :label="option.missing ? `${option.name}（当前未发现）` : option.name" :value="option.name">
+                <div class="database-option"><span class="mono">{{ option.name }}</span><el-tag v-if="option.missing" type="warning" effect="plain" size="small">当前未发现</el-tag></div>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <div class="database-selection-meta">
+            <span>{{ selectedDatabaseSummary }}</span>
+            <el-button :icon="RefreshRight" text :loading="discoveringDatabases" @click="discoverDatabases">重新读取</el-button>
+          </div>
+        </section>
       </el-form>
       <template #footer>
         <el-button @click="dialog = false">取消</el-button>
-        <el-button type="primary" :loading="loading" @click="save">保存</el-button>
+        <template v-if="form.resource_type === 'database'">
+          <el-button v-if="databaseStep === 2" @click="backToDatabaseConnection">上一步</el-button>
+          <el-button v-if="databaseStep === 1" type="primary" :loading="discoveringDatabases" @click="discoverDatabases">下一步</el-button>
+          <el-button v-else type="primary" :loading="loading" :disabled="!form.database_names.length" @click="save">保存</el-button>
+        </template>
+        <el-button v-else type="primary" :loading="loading" @click="save">保存</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.database-steps{margin:-4px 0 22px;padding:0 80px}.database-selection-step{min-height:330px;padding:6px 18px 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;background:#f5f8fa;border:1px solid #e3e9ef;border-radius:6px}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:#83909b;font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:#334250;font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:#7f8b96;font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:#a33a4c;font-size:12px}.mono{font-family:Cascadia Code,Consolas,monospace}
+</style>

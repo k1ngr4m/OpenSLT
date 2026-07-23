@@ -4,8 +4,10 @@ import importlib
 
 from fastapi.testclient import TestClient
 
-from app.adapters.database import parse_select, parse_update
+from app.adapters.database import DatabaseDiscoveryConfig, mysql_adapter, parse_select, parse_update
 from app.core.config import settings
+from app.core.database import SessionLocal
+from app.models import AuditLog
 
 
 def database_payload(**overrides):
@@ -220,3 +222,293 @@ def test_real_mode_dispatches_to_database_adapter(client: TestClient, admin_head
     )
     assert selected.status_code == 200
     assert selected.json()["simulated"] is False
+
+
+def discovery_payload(**overrides):
+    payload = {
+        "database_connection_mode": "direct",
+        "database_host": "10.0.0.8",
+        "database_port": 3306,
+        "database_username": "rem_reader",
+        "database_password": "db-secret",
+        "database_tls_enabled": False,
+        "host": "",
+        "ssh_port": 22,
+        "username": "",
+        "auth_type": "password",
+        "password": "",
+        "private_key": "",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_simulated_database_discovery_filters_system_databases(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch,
+):
+    async def unexpected_discovery(_):
+        raise AssertionError("simulated discovery must not connect to MySQL")
+
+    router_module = importlib.import_module("app.api.router")
+    monkeypatch.setattr(router_module.mysql_adapter, "discover_databases", unexpected_discovery)
+    response = client.post(
+        "/api/v1/resources/database/discover",
+        headers=admin_headers,
+        json=discovery_payload(),
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "databases": ["fut_mm_config", "fut_mm_log_data", "fut_mm_risk_data"],
+        "simulated": True,
+        "filtered_system_count": 4,
+    }
+    db = SessionLocal()
+    try:
+        audit = db.query(AuditLog).filter(AuditLog.action == "database.discover").one()
+        serialized = str(audit.detail)
+        assert audit.detail["count"] == 3
+        assert "fut_mm_config" not in serialized
+        assert "mysql" not in serialized
+    finally:
+        db.close()
+
+    missing = client.post(
+        "/api/v1/resources/database/discover",
+        headers=admin_headers,
+        json=discovery_payload(resource_id=999_999),
+    )
+    assert missing.status_code == 404
+
+
+def test_database_discovery_reuses_secrets_only_for_unchanged_identity(
+    client: TestClient,
+    admin_headers: dict[str, str],
+    monkeypatch,
+):
+    resource = create_database(
+        client,
+        admin_headers,
+        database_connection_mode="ssh_tunnel",
+        host="jump.example.test",
+        ssh_port=2222,
+        username="jump-user",
+        auth_type="private_key",
+        private_key="private-key-secret",
+    )
+
+    class FakeAdapter:
+        async def discover_databases(self, config):
+            assert config.database_password == "db-secret"
+            assert config.ssh_private_key == "private-key-secret"
+            assert config.ssh_password is None
+            return ["rem_core", "rem_report"], 4
+
+    router_module = importlib.import_module("app.api.router")
+    monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
+    monkeypatch.setattr(settings, "execution_mode", "remote")
+    payload = discovery_payload(
+        resource_id=resource["id"],
+        database_connection_mode="ssh_tunnel",
+        database_password="",
+        host="jump.example.test",
+        ssh_port=2222,
+        username="jump-user",
+        auth_type="private_key",
+        private_key="",
+    )
+    discovered = client.post("/api/v1/resources/database/discover", headers=admin_headers, json=payload)
+    assert discovered.status_code == 200
+    assert discovered.json()["databases"] == ["rem_core", "rem_report"]
+
+    changed_database = client.post(
+        "/api/v1/resources/database/discover",
+        headers=admin_headers,
+        json={**payload, "database_host": "10.0.0.9"},
+    )
+    assert changed_database.status_code == 400
+    assert changed_database.json()["code"] == "DATABASE_PASSWORD_REQUIRED"
+
+    changed_jump_host = client.post(
+        "/api/v1/resources/database/discover",
+        headers=admin_headers,
+        json={**payload, "host": "new-jump.example.test", "database_password": "new-secret"},
+    )
+    assert changed_jump_host.status_code == 400
+    assert changed_jump_host.json()["code"] == "SSH_PRIVATE_KEY_REQUIRED"
+
+
+def test_database_discovery_is_admin_only(client: TestClient, admin_headers: dict[str, str]):
+    created = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "username": "discovery-viewer",
+            "display_name": "发现访客",
+            "password": "viewer-password",
+            "role": "visitor",
+        },
+    )
+    assert created.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "discovery-viewer", "password": "viewer-password"},
+    )
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    response = client.post(
+        "/api/v1/resources/database/discover",
+        headers=headers,
+        json=discovery_payload(),
+    )
+    assert response.status_code == 403
+
+
+async def test_database_adapter_discovers_direct_connection(monkeypatch):
+    captured = {}
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, sql):
+            assert sql == "SHOW DATABASES"
+
+        def fetchall(self):
+            return [
+                ("mysql",),
+                ("rem_report",),
+                ("REM_CORE",),
+                ("rem_core",),
+                ("information_schema",),
+            ]
+
+    class FakeConnection:
+        closed = False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            self.closed = True
+
+    connection = FakeConnection()
+
+    def fake_connect(**kwargs):
+        captured.update(kwargs)
+        return connection
+
+    database_module = importlib.import_module("app.adapters.database")
+    monkeypatch.setattr(database_module.pymysql, "connect", fake_connect)
+    databases, filtered = await mysql_adapter.discover_databases(
+        DatabaseDiscoveryConfig(
+            database_host="10.0.0.8",
+            database_port=3306,
+            database_username="reader",
+            database_password="secret",
+            database_tls_enabled=False,
+            connection_mode="direct",
+        )
+    )
+    assert databases == ["REM_CORE", "rem_report"]
+    assert filtered == 2
+    assert captured["database"] is None
+    assert captured["password"] == "secret"
+    assert connection.closed is True
+
+
+async def test_database_adapter_discovers_through_ssh_tunnel(monkeypatch):
+    captured_database = {}
+    captured_ssh = {}
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, sql):
+            assert sql == "SHOW DATABASES"
+
+        def fetchall(self):
+            return [("rem_core",), ("sys",)]
+
+    class FakeDatabaseConnection:
+        closed = False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            self.closed = True
+
+    class FakeTunnel:
+        closed = False
+        waited = False
+
+        def get_port(self):
+            return 43127
+
+        def close(self):
+            self.closed = True
+
+        async def wait_closed(self):
+            self.waited = True
+
+    class FakeSSHConnection:
+        closed = False
+        waited = False
+
+        async def forward_local_port(self, local_host, local_port, remote_host, remote_port):
+            assert (local_host, local_port) == ("127.0.0.1", 0)
+            assert (remote_host, remote_port) == ("10.0.0.8", 3306)
+            return tunnel
+
+        def close(self):
+            self.closed = True
+
+        async def wait_closed(self):
+            self.waited = True
+
+    database_connection = FakeDatabaseConnection()
+    tunnel = FakeTunnel()
+    ssh_connection = FakeSSHConnection()
+
+    def fake_database_connect(**kwargs):
+        captured_database.update(kwargs)
+        return database_connection
+
+    async def fake_ssh_connect(**kwargs):
+        captured_ssh.update(kwargs)
+        return ssh_connection
+
+    database_module = importlib.import_module("app.adapters.database")
+    monkeypatch.setattr(database_module.pymysql, "connect", fake_database_connect)
+    monkeypatch.setattr(database_module.asyncssh, "connect", fake_ssh_connect)
+    databases, filtered = await mysql_adapter.discover_databases(
+        DatabaseDiscoveryConfig(
+            database_host="10.0.0.8",
+            database_port=3306,
+            database_username="reader",
+            database_password="db-secret",
+            database_tls_enabled=False,
+            connection_mode="ssh_tunnel",
+            ssh_host="jump.example.test",
+            ssh_port=2222,
+            ssh_username="jump-user",
+            ssh_password="jump-secret",
+        )
+    )
+    assert databases == ["rem_core"]
+    assert filtered == 1
+    assert captured_ssh["host"] == "jump.example.test"
+    assert captured_ssh["password"] == "jump-secret"
+    assert captured_database["host"] == "127.0.0.1"
+    assert captured_database["port"] == 43127
+    assert database_connection.closed
+    assert tunnel.closed and tunnel.waited
+    assert ssh_connection.closed and ssh_connection.waited

@@ -12,7 +12,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 from starlette.background import BackgroundTask
 
-from app.adapters.database import DatabaseOperationError, mysql_adapter, parse_select, parse_update, simulated_select, simulated_update_rows, validate_database
+from app.adapters.database import DatabaseDiscoveryConfig, DatabaseOperationError, filter_database_names, mysql_adapter, parse_select, parse_update, simulated_select, simulated_update_rows, validate_database
 from app.adapters.ssh import ssh_adapter
 from app.api.deps import admin_only, get_current_user, operators
 from app.core.config import settings
@@ -20,10 +20,11 @@ from app.core.database import SessionLocal, get_db
 from app.core.logging import trace_id_ctx
 from app.core.security import create_access_token, create_refresh_token, decode_token, decrypt_secret, encrypt_secret, hash_password, token_fingerprint, verify_password
 from app.models import Artifact, AuditLog, BusinessType, DatabaseUpdateConfirmation, LogRecord, RefreshToken, Resource, ResourceLock, TestPlan, TestRun, TestScenario, User, Verdict
-from app.schemas import ArtifactOut, AuditOut, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite
+from app.schemas import ArtifactOut, AuditOut, DatabaseDiscoveryOut, DatabaseDiscoveryRequest, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
 from app.services.events import broker
 from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, cancel_run, continue_after_wiring, create_steps, release_locks, start_run
+from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.reports import generate_reports
 from app.services.terminal import handle_resource_terminal
 
@@ -74,6 +75,20 @@ def database_resource(db: Session, resource_id: int, database_name: str) -> tupl
         return resource, validate_database(resource, database_name)
     except DatabaseOperationError as exc:
         raise database_http_error(exc) from exc
+
+
+def order_config_resource(db: Session, resource_id: int) -> Resource:
+    resource = db.get(Resource, resource_id)
+    if not resource or resource.is_deleted:
+        raise not_found("资源")
+    return resource
+
+
+def order_config_http_error(exc: OrderConfigError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={"code": exc.code, "message": exc.message},
+    )
 
 
 @router.post("/auth/login", response_model=TokenPair)
@@ -165,6 +180,143 @@ def list_resources(business_code: str | None = None, resource_type: str | None =
     return list(db.scalars(query.order_by(Resource.id.desc())).all())
 
 
+def _same_identity(value: str | None, other: str | None) -> bool:
+    return (value or "").strip().casefold() == (other or "").strip().casefold()
+
+
+def database_discovery_config(
+    payload: DatabaseDiscoveryRequest,
+    stored: Resource | None,
+) -> DatabaseDiscoveryConfig:
+    database_password = payload.database_password or None
+    if stored and not database_password:
+        database_identity_matches = (
+            stored.database_connection_mode == payload.database_connection_mode
+            and _same_identity(stored.database_host, payload.database_host)
+            and (stored.database_port or 3306) == payload.database_port
+            and _same_identity(stored.database_username, payload.database_username)
+        )
+        if not database_identity_matches:
+            raise DatabaseOperationError(
+                "DATABASE_PASSWORD_REQUIRED",
+                "数据库连接信息已修改，请重新输入数据库密码",
+            )
+        database_password = decrypt_secret(stored.encrypted_database_password)
+
+    ssh_password = payload.password or None
+    ssh_private_key = payload.private_key or None
+    if payload.database_connection_mode == "ssh_tunnel" and stored:
+        ssh_identity_matches = (
+            stored.database_connection_mode == "ssh_tunnel"
+            and _same_identity(stored.host, payload.host)
+            and stored.ssh_port == payload.ssh_port
+            and _same_identity(stored.username, payload.username)
+            and stored.auth_type == payload.auth_type
+        )
+        if payload.auth_type == "password" and not ssh_password:
+            if not ssh_identity_matches:
+                raise DatabaseOperationError(
+                    "SSH_PASSWORD_REQUIRED",
+                    "SSH 跳板机连接信息已修改，请重新输入 SSH 密码",
+                )
+            ssh_password = decrypt_secret(stored.encrypted_password)
+        if payload.auth_type == "private_key" and not ssh_private_key:
+            if not ssh_identity_matches:
+                raise DatabaseOperationError(
+                    "SSH_PRIVATE_KEY_REQUIRED",
+                    "SSH 跳板机连接信息已修改，请重新输入 SSH 私钥",
+                )
+            ssh_private_key = decrypt_secret(stored.encrypted_private_key)
+
+    return DatabaseDiscoveryConfig(
+        database_host=payload.database_host,
+        database_port=payload.database_port,
+        database_username=payload.database_username,
+        database_password=database_password,
+        database_tls_enabled=payload.database_tls_enabled,
+        connection_mode=payload.database_connection_mode,
+        ssh_host=payload.host,
+        ssh_port=payload.ssh_port,
+        ssh_username=payload.username,
+        ssh_password=ssh_password,
+        ssh_private_key=ssh_private_key,
+    )
+
+
+@router.post("/resources/database/discover", response_model=DatabaseDiscoveryOut)
+async def discover_resource_databases(
+    payload: DatabaseDiscoveryRequest,
+    request: Request,
+    actor: User = Depends(admin_only),
+    db: Session = Depends(get_db),
+) -> dict:
+    stored = None
+    if payload.resource_id is not None:
+        stored = db.get(Resource, payload.resource_id)
+        if not stored or stored.is_deleted:
+            raise not_found("数据库资源")
+        if stored.resource_type != "database":
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "DATABASE_RESOURCE_REQUIRED", "message": "所选资源不是数据库资源"},
+            )
+    try:
+        config = database_discovery_config(payload, stored)
+        if settings.execution_mode == "simulated":
+            candidates = [
+                ("information_schema",),
+                ("mysql",),
+                ("performance_schema",),
+                ("sys",),
+                ("fut_mm_config",),
+                ("fut_mm_log_data",),
+                ("fut_mm_risk_data",),
+                ("fut_mm_config",),
+            ]
+            databases, filtered_system_count = filter_database_names(candidates)
+            simulated = True
+        else:
+            databases, filtered_system_count = await mysql_adapter.discover_databases(config)
+            simulated = False
+    except DatabaseOperationError as exc:
+        write_audit(
+            db,
+            "database.discover",
+            "resource",
+            payload.resource_id,
+            actor,
+            request,
+            result="failed",
+            detail={
+                "connection_mode": payload.database_connection_mode,
+                "mode": settings.execution_mode,
+                "code": exc.code,
+            },
+        )
+        db.commit()
+        raise database_http_error(exc) from exc
+    write_audit(
+        db,
+        "database.discover",
+        "resource",
+        payload.resource_id,
+        actor,
+        request,
+        detail={
+            "connection_mode": payload.database_connection_mode,
+            "mode": settings.execution_mode,
+            "count": len(databases),
+            "filtered_system_count": filtered_system_count,
+        },
+    )
+    db.commit()
+    return {
+        "databases": databases,
+        "simulated": simulated,
+        "filtered_system_count": filtered_system_count,
+    }
+
+
 @router.post("/resources", response_model=ResourceOut, status_code=201)
 def create_resource(payload: ResourceWrite, request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> Resource:
     data = payload.model_dump(exclude={"password", "private_key", "database_password"})
@@ -228,6 +380,180 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
     except Exception as exc:
         result = {"ok": False, "message": str(exc)}; resource.health_status = "unhealthy"
     resource.health_checked_at = datetime.now(UTC); write_audit(db, "resource.health_check", "resource", resource.id, actor, request, result="success" if result["ok"] else "failed"); db.commit(); return result
+
+
+def write_order_config_audit(
+    db: Session,
+    request: Request,
+    actor: User,
+    resource_id: int,
+    action: str,
+    result: str = "success",
+    detail: dict | None = None,
+) -> None:
+    write_audit(
+        db,
+        action,
+        "resource",
+        resource_id,
+        actor,
+        request,
+        result=result,
+        detail=detail,
+    )
+    db.commit()
+
+
+@router.get("/resources/{resource_id}/order-configs", response_model=OrderConfigListOut)
+async def list_order_configs(
+    resource_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = order_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.list(resource)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "order_config.list", "failed", {"code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "order_config.list",
+        detail={"mode": "simulated" if result["simulated"] else "remote", "count": len(result["files"])},
+    )
+    return result
+
+
+@router.get("/resources/{resource_id}/order-configs/{filename}", response_model=OrderConfigDetailOut)
+async def read_order_config(
+    resource_id: int,
+    filename: str,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = order_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.read(resource, filename)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "order_config.read", "failed", {"filename": filename, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "order_config.read",
+        detail={"filename": filename, "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+    )
+    return result
+
+
+@router.post("/resources/{resource_id}/order-configs", response_model=OrderConfigDetailOut, status_code=201)
+async def create_order_config(
+    resource_id: int,
+    payload: OrderConfigCreate,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = order_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.create(resource, payload.name, payload.source_name)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "order_config.create", "failed", {"filename": payload.name, "source_filename": payload.source_name, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "order_config.create",
+        detail={"filename": result["name"], "source_filename": payload.source_name, "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+    )
+    return result
+
+
+@router.put("/resources/{resource_id}/order-configs/{filename}", response_model=OrderConfigDetailOut)
+async def update_order_config(
+    resource_id: int,
+    filename: str,
+    payload: OrderConfigUpdate,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = order_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.update(resource, filename, payload.content, payload.expected_checksum)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "order_config.update", "failed", {"filename": filename, "expected_checksum": payload.expected_checksum, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "order_config.update",
+        detail={"filename": filename, "previous_checksum": payload.expected_checksum, "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+    )
+    return result
+
+
+@router.patch("/resources/{resource_id}/order-configs/{filename}", response_model=OrderConfigDetailOut)
+async def rename_order_config(
+    resource_id: int,
+    filename: str,
+    payload: OrderConfigRename,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = order_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.rename(resource, filename, payload.new_name, payload.expected_checksum)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "order_config.rename", "failed", {"filename": filename, "new_filename": payload.new_name, "expected_checksum": payload.expected_checksum, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "order_config.rename",
+        detail={"filename": filename, "new_filename": result["name"], "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+    )
+    return result
+
+
+@router.delete("/resources/{resource_id}/order-configs/{filename}", status_code=204)
+async def delete_order_config(
+    resource_id: int,
+    filename: str,
+    request: Request,
+    expected_checksum: str = Query(..., pattern=r"^[0-9a-f]{64}$"),
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> Response:
+    resource = order_config_resource(db, resource_id)
+    try:
+        trash_name = await order_config_service.delete(resource, filename, expected_checksum)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "order_config.delete", "failed", {"filename": filename, "expected_checksum": expected_checksum, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "order_config.delete",
+        detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum, "mode": settings.execution_mode},
+    )
+    return Response(status_code=204)
 
 
 @router.post("/resources/{resource_id}/database/select")

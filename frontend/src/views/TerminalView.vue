@@ -7,6 +7,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { api, errorMessage } from '@/api/client'
+import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
 import { resourceText } from '@/utils/status'
 
 const route = useRoute()
@@ -21,6 +22,9 @@ const mode = ref<'remote' | 'simulated'>('simulated')
 const statusMessage = ref('准备连接')
 const lastError = ref('')
 const manualClose = ref(false)
+const activeWorkspace = ref<'terminal' | 'configs'>('terminal')
+let terminalResizeObserver: ResizeObserver | null = null
+let resizeFrame = 0
 const connecting = computed(() => state.value === 'loading' || state.value === 'connecting')
 const connected = computed(() => state.value === 'connected')
 const resourceId = computed(() => Number(route.params.id))
@@ -55,6 +59,11 @@ function syncSize() {
   send({ type: 'resize', cols: terminal.value.cols, rows: terminal.value.rows })
 }
 
+function scheduleSyncSize() {
+  cancelAnimationFrame(resizeFrame)
+  resizeFrame = requestAnimationFrame(syncSize)
+}
+
 function setupTerminal() {
   if (!terminalHost.value || terminal.value) return
   const instance = new Terminal({
@@ -72,6 +81,8 @@ function setupTerminal() {
   terminal.value = instance
   fitAddon.value = addon
   instance.onData(data => send({ type: 'input', data }))
+  terminalResizeObserver = new ResizeObserver(scheduleSyncSize)
+  terminalResizeObserver.observe(terminalHost.value)
   nextTick(() => { syncSize(); instance.focus() })
 }
 
@@ -137,7 +148,12 @@ function disconnect() {
   statusMessage.value = '终端已断开'
 }
 
-function handleResize() { syncSize() }
+function handleResize() { scheduleSyncSize() }
+
+function switchWorkspace(value: 'terminal' | 'configs') {
+  activeWorkspace.value = value
+  if (value === 'terminal') nextTick(() => { syncSize(); terminal.value?.focus() })
+}
 
 onMounted(async () => {
   try {
@@ -156,6 +172,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  terminalResizeObserver?.disconnect()
+  cancelAnimationFrame(resizeFrame)
   disconnect()
   terminal.value?.dispose()
 })
@@ -171,24 +189,34 @@ onBeforeUnmount(() => {
           <p v-if="resource" class="muted mono">{{ resourceText[resource.resource_type] }} · {{ resource.username }}@{{ resource.host }}:{{ resource.ssh_port }}</p>
         </div>
       </div>
-      <div class="terminal-actions">
+      <div v-if="activeWorkspace === 'terminal'" class="terminal-actions">
         <el-tag :type="mode === 'remote' ? 'success' : 'warning'" effect="plain">{{ mode === 'remote' ? '真实 SSH' : '模拟会话' }}</el-tag>
         <el-button v-if="connected" :icon="VideoPause" plain @click="disconnect">断开</el-button>
         <el-button v-else :icon="RefreshRight" type="primary" :loading="connecting" @click="connect">重新连接</el-button>
       </div>
     </div>
-    <section class="terminal-shell">
-      <div class="terminal-shell-bar">
-        <div class="terminal-shell-info"><span class="terminal-dot" :class="{ live: connected }" /> <span>{{ statusMessage }}</span></div>
-        <span class="terminal-meta">xterm-256color · {{ terminal?.cols || 0 }}×{{ terminal?.rows || 0 }}</span>
-      </div>
-      <div ref="terminalHost" class="terminal-host" tabindex="0" aria-label="SSH 终端" />
-      <div v-if="lastError" class="terminal-error">{{ lastError }}</div>
-    </section>
-    <div class="terminal-footnote"><Connection /> <span>{{ mode === 'remote' ? '输入会直接发送到远端 Shell，请确认目标资源和权限。' : '模拟模式只提供内置命令，不会连接远程服务器或执行本机命令。' }}</span></div>
+    <div v-if="resource?.resource_type === 'order'" class="workspace-switch">
+      <el-radio-group :model-value="activeWorkspace" @change="value => switchWorkspace(value as 'terminal' | 'configs')">
+        <el-radio-button value="terminal">SSH 终端</el-radio-button>
+        <el-radio-button value="configs">配置文件</el-radio-button>
+      </el-radio-group>
+      <span v-if="activeWorkspace === 'configs'" class="workspace-note">管理远端根目录中的发单场景 XML</span>
+    </div>
+    <div v-show="activeWorkspace === 'terminal'" class="terminal-workspace">
+      <section class="terminal-shell">
+        <div class="terminal-shell-bar">
+          <div class="terminal-shell-info"><span class="terminal-dot" :class="{ live: connected }" /> <span>{{ statusMessage }}</span></div>
+          <span class="terminal-meta">xterm-256color · {{ terminal?.cols || 0 }}×{{ terminal?.rows || 0 }}</span>
+        </div>
+        <div ref="terminalHost" class="terminal-host" tabindex="0" aria-label="SSH 终端" />
+        <div v-if="lastError" class="terminal-error">{{ lastError }}</div>
+      </section>
+      <div class="terminal-footnote"><Connection /> <span>{{ mode === 'remote' ? '输入会直接发送到远端 Shell，请确认目标资源和权限。' : '模拟模式只提供内置命令，不会连接远程服务器或执行本机命令。' }}</span></div>
+    </div>
+    <OrderConfigPanel v-if="resource?.resource_type === 'order'" v-show="activeWorkspace === 'configs'" :resource-id="resourceId" :active="activeWorkspace === 'configs'" />
   </div>
 </template>
 
 <style scoped>
-.terminal-header{align-items:flex-start}.terminal-title{display:flex;align-items:center;gap:14px}.terminal-actions{display:flex;align-items:center;gap:10px}.terminal-shell{overflow:hidden;background:#111827;border:1px solid #263548;border-radius:10px;box-shadow:0 12px 30px rgba(15,32,48,.16)}.terminal-shell-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #263548;background:#172234;color:#aebdcb;font-size:12px}.terminal-shell-info{display:flex;align-items:center;gap:8px}.terminal-dot{width:8px;height:8px;border-radius:50%;background:#e0a34c}.terminal-dot.live{background:#58c894;box-shadow:0 0 0 3px rgba(88,200,148,.14)}.terminal-meta{color:#71859a;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.terminal-host{height:min(68vh,720px);min-height:420px;padding:18px 20px}.terminal-host :deep(.xterm){height:100%}.terminal-host :deep(.xterm-viewport){background:#111827!important}.terminal-error{padding:10px 14px;background:#3a1e26;color:#f2a7b5;border-top:1px solid #713845;font-size:13px}.terminal-footnote{display:flex;align-items:center;gap:7px;margin-top:12px;color:#7b8794;font-size:12px}.terminal-footnote :deep(svg){width:14px}.mono{font-family:Cascadia Code,Consolas,monospace}
+.terminal-header{align-items:flex-start}.terminal-title{display:flex;align-items:center;gap:14px}.terminal-actions{display:flex;align-items:center;gap:10px}.workspace-switch{display:flex;align-items:center;gap:12px;margin:-4px 0 14px}.workspace-note{color:#7f8c97;font-size:12px}.terminal-shell{overflow:hidden;background:#111827;border:1px solid #263548;border-radius:10px;box-shadow:0 12px 30px rgba(15,32,48,.16)}.terminal-shell-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #263548;background:#172234;color:#aebdcb;font-size:12px}.terminal-shell-info{display:flex;align-items:center;gap:8px}.terminal-dot{width:8px;height:8px;border-radius:50%;background:#e0a34c}.terminal-dot.live{background:#58c894;box-shadow:0 0 0 3px rgba(88,200,148,.14)}.terminal-meta{color:#71859a;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.terminal-host{height:min(68vh,720px);min-height:420px}.terminal-host :deep(.xterm){height:100%;padding:18px 20px}.terminal-host :deep(.xterm-viewport){background:#111827!important}.terminal-error{padding:10px 14px;background:#3a1e26;color:#f2a7b5;border-top:1px solid #713845;font-size:13px}.terminal-footnote{display:flex;align-items:center;gap:7px;margin-top:12px;color:#7b8794;font-size:12px}.terminal-footnote :deep(svg){width:14px}.mono{font-family:Cascadia Code,Consolas,monospace}
 </style>
