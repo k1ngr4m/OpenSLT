@@ -318,15 +318,12 @@ class PlansPage(BasePage):
         dialog.add_line("scenario_type", "场景类型", values.get("scenario_type", "order"))
         dialog.add_line("config_version", "配置版本", values.get("config_version", "1.0"))
         dialog.add_line("required_resource_types", "所需资源", ",".join(values.get("required_resource_types", [])))
-        dialog.add_text("parameters", "参数 JSON", json.dumps(values.get("parameters", {}), ensure_ascii=False, indent=2), json=True)
-        dialog.add_text("actions", "动作 JSON", json.dumps(values.get("actions", []), ensure_ascii=False, indent=2), json=True)
-        dialog.add_text("statistics_rules", "统计规则 JSON", json.dumps(values.get("statistics_rules", {}), ensure_ascii=False, indent=2), json=True)
         dialog.add_check("is_enabled", "启用", values.get("is_enabled", True))
         if dialog.exec() != QDialog.DialogCode.Accepted: return
         try:
-            payload = {"plan_id": int(dialog.value("plan_id")), "name": dialog.value("name"), "scenario_type": dialog.value("scenario_type"), "config_version": dialog.value("config_version"), "required_resource_types": [v.strip() for v in dialog.value("required_resource_types").split(",") if v.strip()], "parameters": json.loads(dialog.value("parameters")), "actions": json.loads(dialog.value("actions")), "statistics_rules": json.loads(dialog.value("statistics_rules")), "expected_artifacts": values.get("expected_artifacts", []), "is_enabled": dialog.value("is_enabled")}
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
-            self.show_error(ValueError(f"场景 JSON 或字段无效：{exc}")); return
+            payload = {"plan_id": int(dialog.value("plan_id")), "name": dialog.value("name"), "scenario_type": dialog.value("scenario_type"), "config_version": dialog.value("config_version"), "required_resource_types": [v.strip() for v in dialog.value("required_resource_types").split(",") if v.strip()], "expected_artifacts": values.get("expected_artifacts", []), "is_enabled": dialog.value("is_enabled")}
+        except (TypeError, ValueError) as exc:
+            self.show_error(ValueError(f"场景字段无效：{exc}")); return
         path = f"/scenarios/{scenario['id']}" if scenario else "/scenarios"
         self.run(lambda: self.api.put(path, json=payload) if scenario else self.api.post(path, json=payload), lambda _: self.load())
 
@@ -418,7 +415,7 @@ class RunDetailPage(BasePage):
         self.tabs = QTabWidget(); self.root.addWidget(self.tabs)
         self.timeline = table(["步骤", "状态", "进度", "耗时", "错误"])
         self.logs = table(["时间", "级别", "来源", "消息", "Trace ID"])
-        self.metrics = table(["指标", "值", "单位", "样本数", "规则"])
+        self.metrics = table(["指标", "值", "单位", "样本数"])
         self.artifacts = table(["文件", "类型", "大小", "SHA-256"])
         self.artifacts.cellDoubleClicked.connect(self.download_artifact)
         self.tabs.addTab(self.timeline, "步骤时间线"); self.tabs.addTab(self.logs, "实时日志"); self.tabs.addTab(self.metrics, "指标与结论"); self.tabs.addTab(self.artifacts, "产物与报告")
@@ -466,7 +463,7 @@ class RunDetailPage(BasePage):
             if status not in TERMINAL_STATUSES: self.actions.addWidget(button("取消运行", lambda: self.action("cancel")))
         set_table(self.timeline, [[f"{s.get('position')}. {s.get('name')}", STATUS_TEXT.get(s.get("status"), s.get("status")), f"{s.get('progress', 0)}%", f"{s.get('duration_ms')} ms" if s.get("duration_ms") is not None else "-", s.get("error_message", "")] for s in self.run_data.get("steps", [])])
         set_table(self.logs, [[fmt_time(l.get("created_at")), l.get("level"), l.get("source"), l.get("message"), l.get("trace_id")] for l in logs])
-        set_table(self.metrics, [[m.get("name"), m.get("value"), m.get("unit"), m.get("sample_count"), m.get("rule_result") or "-"] for m in self.run_data.get("metrics", [])])
+        set_table(self.metrics, [[m.get("name"), m.get("value"), m.get("unit"), m.get("sample_count")] for m in self.run_data.get("metrics", [])])
         set_table(self.artifacts, [[a.get("name"), a.get("artifact_type"), f"{a.get('size', 0) / 1024:.1f} KB", a.get("checksum")] for a in self.run_data.get("artifacts", [])])
         for i, artifact in enumerate(self.run_data.get("artifacts", [])):
             self.artifacts.item(i, 0).setData(Qt.ItemDataRole.UserRole, artifact["id"])

@@ -33,6 +33,24 @@ def not_found(name: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"{name}不存在"})
 
 
+def validate_scenario_resources(db: Session, plan: TestPlan, resource_ids: list[int]) -> tuple[list[int], list[str]]:
+    if not resource_ids:
+        raise HTTPException(status_code=400, detail={"code": "SCENARIO_RESOURCES_REQUIRED", "message": "场景至少需要选择一个资源"})
+    if len(resource_ids) != len(set(resource_ids)):
+        raise HTTPException(status_code=400, detail={"code": "DUPLICATE_RESOURCES", "message": "场景资源不能重复"})
+    resources = list(db.scalars(select(Resource).where(Resource.id.in_(resource_ids), Resource.is_deleted.is_(False), Resource.is_enabled.is_(True))).all())
+    if len(resources) != len(resource_ids):
+        raise HTTPException(status_code=400, detail={"code": "INVALID_RESOURCES", "message": "资源不存在或已停用"})
+    resources_by_id = {resource.id: resource for resource in resources}
+    ordered = [resources_by_id[resource_id] for resource_id in resource_ids]
+    if any(resource.business_code != plan.business_code for resource in ordered):
+        raise HTTPException(status_code=400, detail={"code": "BUSINESS_MISMATCH", "message": "资源与方案业务不一致"})
+    resource_types = [resource.resource_type for resource in ordered]
+    if len(resource_types) != len(set(resource_types)):
+        raise HTTPException(status_code=400, detail={"code": "DUPLICATE_RESOURCE_TYPES", "message": "每种资源类型最多选择一个资源"})
+    return resource_ids, resource_types
+
+
 def load_run(db: Session, run_id: int) -> TestRun:
     run = db.scalar(select(TestRun).where(TestRun.id == run_id).options(selectinload(TestRun.steps), selectinload(TestRun.metrics), selectinload(TestRun.artifacts), selectinload(TestRun.verdict)))
     if not run:
@@ -410,7 +428,7 @@ def copy_plan(plan_id: int, request: Request, actor: User = Depends(operators), 
     if not original: raise not_found("方案")
     copied = TestPlan(name=f"{original.name} - 副本", business_code=original.business_code, description=original.description, default_resource_ids=list(original.default_resource_ids), config_version=original.config_version, created_by=actor.id)
     db.add(copied); db.flush()
-    for scenario in original.scenarios: db.add(TestScenario(plan_id=copied.id, name=scenario.name, scenario_type=scenario.scenario_type, config_version=scenario.config_version, parameters=scenario.parameters, actions=scenario.actions, expected_artifacts=scenario.expected_artifacts, statistics_rules=scenario.statistics_rules, required_resource_types=scenario.required_resource_types, is_enabled=scenario.is_enabled))
+    for scenario in original.scenarios: db.add(TestScenario(plan_id=copied.id, name=scenario.name, scenario_type=scenario.scenario_type, config_version=scenario.config_version, expected_artifacts=scenario.expected_artifacts, default_resource_ids=list(scenario.default_resource_ids), required_resource_types=list(scenario.required_resource_types), is_enabled=scenario.is_enabled))
     write_audit(db, "plan.copy", "test_plan", copied.id, actor, request, detail={"source_id": plan_id}); db.commit(); return copied
 
 
@@ -431,15 +449,34 @@ def list_scenarios(plan_id: int | None = None, _: User = Depends(get_current_use
 
 @router.post("/scenarios", response_model=ScenarioOut, status_code=201)
 def create_scenario(payload: ScenarioWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestScenario:
-    if not db.get(TestPlan, payload.plan_id): raise not_found("方案")
-    scenario = TestScenario(**payload.model_dump()); db.add(scenario); db.flush(); write_audit(db, "scenario.create", "test_scenario", scenario.id, actor, request); db.commit(); return scenario
+    plan = db.get(TestPlan, payload.plan_id)
+    if not plan: raise not_found("方案")
+    values = payload.model_dump(exclude={"default_resource_ids"})
+    if payload.default_resource_ids is not None:
+        resource_ids, resource_types = validate_scenario_resources(db, plan, payload.default_resource_ids)
+        values["default_resource_ids"] = resource_ids
+        values["required_resource_types"] = resource_types
+    else:
+        values["default_resource_ids"] = []
+    scenario = TestScenario(**values); db.add(scenario); db.flush(); write_audit(db, "scenario.create", "test_scenario", scenario.id, actor, request); db.commit(); return scenario
 
 
 @router.put("/scenarios/{scenario_id}", response_model=ScenarioOut)
 def update_scenario(scenario_id: int, payload: ScenarioWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestScenario:
     scenario = db.get(TestScenario, scenario_id)
     if not scenario: raise not_found("场景")
-    for key, value in payload.model_dump().items(): setattr(scenario, key, value)
+    plan = db.get(TestPlan, payload.plan_id)
+    if not plan: raise not_found("方案")
+    values = payload.model_dump(exclude={"default_resource_ids"})
+    if payload.default_resource_ids is not None:
+        resource_ids, resource_types = validate_scenario_resources(db, plan, payload.default_resource_ids)
+        values["default_resource_ids"] = resource_ids
+        values["required_resource_types"] = resource_types
+    elif scenario.default_resource_ids:
+        resource_ids, resource_types = validate_scenario_resources(db, plan, scenario.default_resource_ids)
+        values["default_resource_ids"] = resource_ids
+        values["required_resource_types"] = resource_types
+    for key, value in values.items(): setattr(scenario, key, value)
     write_audit(db, "scenario.update", "test_scenario", scenario.id, actor, request); db.commit(); return scenario
 
 
@@ -447,8 +484,17 @@ def update_scenario(scenario_id: int, payload: ScenarioWrite, request: Request, 
 def copy_scenario(scenario_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestScenario:
     source = db.get(TestScenario, scenario_id)
     if not source: raise not_found("场景")
-    copied = TestScenario(plan_id=source.plan_id, name=f"{source.name} - 副本", scenario_type=source.scenario_type, config_version=source.config_version, parameters=source.parameters, actions=source.actions, expected_artifacts=source.expected_artifacts, statistics_rules=source.statistics_rules, required_resource_types=source.required_resource_types)
+    copied = TestScenario(plan_id=source.plan_id, name=f"{source.name} - 副本", scenario_type=source.scenario_type, config_version=source.config_version, expected_artifacts=source.expected_artifacts, default_resource_ids=list(source.default_resource_ids), required_resource_types=list(source.required_resource_types))
     db.add(copied); db.flush(); write_audit(db, "scenario.copy", "test_scenario", copied.id, actor, request, detail={"source_id": scenario_id}); db.commit(); return copied
+
+
+@router.delete("/scenarios/{scenario_id}", status_code=204)
+def delete_scenario(scenario_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> Response:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario: raise not_found("场景")
+    if db.scalar(select(TestRun.id).where(TestRun.scenario_id == scenario_id).limit(1)):
+        raise HTTPException(status_code=409, detail={"code": "SCENARIO_REFERENCED", "message": "场景已有运行历史，只能停用"})
+    db.delete(scenario); write_audit(db, "scenario.delete", "test_scenario", scenario_id, actor, request); db.commit(); return Response(status_code=204)
 
 
 @router.post("/runs", response_model=RunOut, status_code=201)
@@ -458,11 +504,18 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
     if not scenario or not scenario.is_enabled or scenario.plan_id != plan.id: raise not_found("可用场景")
     resources = list(db.scalars(select(Resource).where(Resource.id.in_(payload.resource_ids), Resource.is_deleted.is_(False), Resource.is_enabled.is_(True))).all())
     if len(resources) != len(set(payload.resource_ids)): raise HTTPException(status_code=400, detail={"code": "INVALID_RESOURCES", "message": "资源不存在或已停用"})
+    resources_by_id = {resource.id: resource for resource in resources}
+    resources = [resources_by_id[resource_id] for resource_id in payload.resource_ids]
     if any(resource.business_code != plan.business_code for resource in resources): raise HTTPException(status_code=400, detail={"code": "BUSINESS_MISMATCH", "message": "资源与方案业务不一致"})
-    provided_types = {resource.resource_type for resource in resources}
-    missing = set(scenario.required_resource_types) - provided_types
-    if missing: raise HTTPException(status_code=400, detail={"code": "RESOURCE_CAPABILITY_MISSING", "message": f"缺少资源类型: {sorted(missing)}"})
-    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version, "parameters": scenario.parameters, "actions": scenario.actions, "statistics_rules": scenario.statistics_rules}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
+    provided_types = [resource.resource_type for resource in resources]
+    if len(provided_types) != len(set(provided_types)):
+        raise HTTPException(status_code=400, detail={"code": "DUPLICATE_RESOURCE_TYPES", "message": "每种资源类型只能选择一个资源"})
+    required_types = set(scenario.required_resource_types)
+    if set(provided_types) != required_types:
+        missing = sorted(required_types - set(provided_types))
+        extra = sorted(set(provided_types) - required_types)
+        raise HTTPException(status_code=400, detail={"code": "RESOURCE_SET_MISMATCH", "message": f"运行资源类型与场景不一致，缺少: {missing}，多余: {extra}"})
+    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
     run = TestRun(run_number=f"R{datetime.now(UTC):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=datetime.now(UTC) + timedelta(minutes=payload.timeout_minutes))
     create_steps(run); db.add(run); db.flush(); write_audit(db, "run.create", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 

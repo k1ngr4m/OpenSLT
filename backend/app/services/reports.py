@@ -15,7 +15,7 @@ REPORT_TEMPLATE = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-
 <table><tr><th>业务</th><td>{{ run.business_code }}</td><th>状态</th><td>{{ run.status }}</td></tr>
 <tr><th>开始时间</th><td>{{ run.started_at or '-' }}</td><th>结束时间</th><td>{{ run.finished_at or '-' }}</td></tr></table>
 <h2>步骤时间线</h2><table><tr><th>步骤</th><th>状态</th><th>耗时(ms)</th></tr>{% for step in run.steps %}<tr><td>{{ step.name }}</td><td>{{ step.status }}</td><td>{{ step.duration_ms or '-' }}</td></tr>{% endfor %}</table>
-<h2>统计指标</h2><table><tr><th>指标</th><th>值</th><th>单位</th><th>规则</th></tr>{% for metric in run.metrics %}<tr><td>{{ metric.name }}</td><td>{{ '%.3f'|format(metric.value) }}</td><td>{{ metric.unit }}</td><td>{{ metric.rule_result or '-' }}</td></tr>{% endfor %}</table>
+<h2>统计指标</h2><table><tr><th>指标</th><th>值</th><th>单位</th></tr>{% for metric in run.metrics %}<tr><td>{{ metric.name }}</td><td>{{ '%.3f'|format(metric.value) }}</td><td>{{ metric.unit }}</td></tr>{% endfor %}</table>
 <h2>最终结论</h2><p>{{ run.verdict.final_result if run.verdict and run.verdict.final_result else '待复核' }}</p><p>{{ run.verdict.issue_description if run.verdict else '' }}</p><p>{{ run.verdict.notes if run.verdict else '' }}</p>
 </body></html>"""
 
@@ -49,9 +49,9 @@ def generate_reports(db: Session, run: TestRun) -> list[Artifact]:
     summary.append(["业务", run.business_code])
     summary.append(["状态", run.status])
     metrics = workbook.create_sheet("指标")
-    metrics.append(["指标", "值", "单位", "规则结果", "样本数"])
+    metrics.append(["指标", "值", "单位", "样本数"])
     for metric in run.metrics:
-        metrics.append([metric.name, metric.value, metric.unit, metric.rule_result, metric.sample_count])
+        metrics.append([metric.name, metric.value, metric.unit, metric.sample_count])
     steps = workbook.create_sheet("步骤")
     steps.append(["顺序", "步骤", "状态", "耗时(ms)", "错误"])
     for step in run.steps:
@@ -89,4 +89,3 @@ def generate_reports(db: Session, run: TestRun) -> list[Artifact]:
     ]
     db.commit()
     return artifacts
-

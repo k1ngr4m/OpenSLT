@@ -18,8 +18,12 @@ def test_complete_run_and_reports(client, admin_headers):
     ready = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
     assert ready["status"] == "awaiting_review"
     assert len(ready["metrics"]) == 7
+    assert ready["verdict"] is None
+    assert all("rule_result" not in metric for metric in ready["metrics"])
+    assert not ({"parameters", "actions", "statistics_rules"} & ready["config_snapshot"]["scenario"].keys())
     verdict = client.post(f"/api/v1/runs/{run_id}/verdict", headers=admin_headers, json={"final_result": "passed", "issue_description": "", "notes": "验收通过"})
     assert verdict.status_code == 200
+    assert "automatic_result" not in verdict.json()
     completed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
     assert completed["status"] == "completed"
     assert {item["artifact_type"] for item in completed["artifacts"]} >= {"web_report", "excel_report", "pdf_report", "parsed_data"}
@@ -51,4 +55,3 @@ def test_sensitive_data_redaction():
     assert "ey.secret.value" not in redacted
     assert "PRIVATE KEY-----raw" not in redacted
     assert redacted.count("[REDACTED]") >= 4
-

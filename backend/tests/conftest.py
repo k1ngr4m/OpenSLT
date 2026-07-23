@@ -39,7 +39,6 @@ def create_plan_scenario(client: TestClient, headers: dict[str, str], required_t
     plan_response = client.post("/api/v1/plans", headers=headers, json={"name": "基础测速方案", "business_code": "fut_mm", "description": "test", "default_resource_ids": [], "config_version": "1.0", "is_enabled": True})
     assert plan_response.status_code == 201
     plan = plan_response.json()
-    scenario_response = client.post("/api/v1/scenarios", headers=headers, json={"plan_id": plan["id"], "name": "发单延迟", "scenario_type": "order", "config_version": "1.0", "parameters": {}, "actions": [{"type": "send"}], "expected_artifacts": ["pcapng"], "statistics_rules": {"max_mean_us": 100}, "required_resource_types": required_types or ["rem"], "is_enabled": True})
+    scenario_response = client.post("/api/v1/scenarios", headers=headers, json={"plan_id": plan["id"], "name": "发单延迟", "scenario_type": "order", "config_version": "1.0", "expected_artifacts": ["pcapng"], "required_resource_types": required_types or ["rem"], "is_enabled": True})
     assert scenario_response.status_code == 201
     return plan, scenario_response.json()
-

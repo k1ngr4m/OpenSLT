@@ -119,10 +119,8 @@ class TestScenario(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128))
     scenario_type: Mapped[str] = mapped_column(String(64), index=True)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
-    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     expected_artifacts: Mapped[list[str]] = mapped_column(JSON, default=list)
-    statistics_rules: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    default_resource_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     required_resource_types: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     plan: Mapped[TestPlan] = relationship(back_populates="scenarios")
@@ -222,7 +220,6 @@ class Metric(Base):
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32), default="us")
     sample_count: Mapped[int | None] = mapped_column(Integer)
-    rule_result: Mapped[str | None] = mapped_column(String(32))
     detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     run: Mapped[TestRun] = relationship(back_populates="metrics")
 
@@ -231,7 +228,6 @@ class Verdict(TimestampMixin, Base):
     __tablename__ = "verdicts"
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), unique=True)
-    automatic_result: Mapped[str] = mapped_column(String(32), default="pending")
     final_result: Mapped[str | None] = mapped_column(String(32))
     issue_description: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")

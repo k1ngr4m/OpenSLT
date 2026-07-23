@@ -157,14 +157,14 @@ class PlanOut(ORMModel):
 
 
 class ScenarioWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     plan_id: int
     name: str
     scenario_type: str
     config_version: str = "1.0"
-    parameters: dict[str, Any] = Field(default_factory=dict)
-    actions: list[dict[str, Any]] = Field(default_factory=list)
     expected_artifacts: list[str] = Field(default_factory=list)
-    statistics_rules: dict[str, Any] = Field(default_factory=dict)
+    default_resource_ids: list[int] | None = None
     required_resource_types: list[str] = Field(default_factory=list)
     is_enabled: bool = True
 
@@ -175,10 +175,8 @@ class ScenarioOut(ORMModel):
     name: str
     scenario_type: str
     config_version: str
-    parameters: dict[str, Any]
-    actions: list[dict[str, Any]]
     expected_artifacts: list[str]
-    statistics_rules: dict[str, Any]
+    default_resource_ids: list[int]
     required_resource_types: list[str]
     is_enabled: bool
     created_at: datetime
@@ -212,13 +210,11 @@ class MetricOut(ORMModel):
     value: float
     unit: str
     sample_count: int | None
-    rule_result: str | None
     detail: dict[str, Any]
 
 
 class VerdictOut(ORMModel):
     id: int
-    automatic_result: str
     final_result: str | None
     issue_description: str
     notes: str

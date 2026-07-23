@@ -1,0 +1,2 @@
+发单工具
+在发单工具的根目录下会有一个ees_ef_vi_trader_api_test_conf.xml或者ees_zf_trader_api_test_conf.xml（根据发单工具的不同）

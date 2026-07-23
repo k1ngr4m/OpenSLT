@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import logger, redact
-from app.models import Artifact, AuditLog, LogRecord, Metric, ResourceLock, RunStep, TestRun, Verdict
+from app.models import Artifact, AuditLog, LogRecord, Metric, ResourceLock, RunStep, TestRun
 from app.services.events import broker
 
 STEPS = [
@@ -127,12 +127,9 @@ def _calculate_metrics(db: Session, run: TestRun) -> None:
     sorted_values = sorted(values)
     median = (sorted_values[4] + sorted_values[5]) / 2
     variance = sum((value - mean) ** 2 for value in values) / len(values)
-    threshold = float(run.config_snapshot.get("scenario", {}).get("statistics_rules", {}).get("max_mean_us", 100))
     entries = {"average": mean, "maximum": max(values), "minimum": min(values), "median": median, "stddev": variance ** 0.5, "sample_count": float(len(values)), "high_frequency_ratio": 0.8}
     for name, value in entries.items():
-        db.add(Metric(run_id=run.id, name=name, value=value, unit="count" if name == "sample_count" else ("ratio" if name.endswith("ratio") else "us"), sample_count=len(values), rule_result="passed" if name != "average" or value <= threshold else "failed", detail={"threshold": threshold} if name == "average" else {}))
-    result = "passed" if mean <= threshold else "failed"
-    run.verdict = Verdict(automatic_result=result)
+        db.add(Metric(run_id=run.id, name=name, value=value, unit="count" if name == "sample_count" else ("ratio" if name.endswith("ratio") else "us"), sample_count=len(values), detail={}))
 
 
 async def start_run(run_id: int) -> None:
