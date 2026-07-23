@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ORMModel(BaseModel):
@@ -50,19 +50,48 @@ class UserOut(ORMModel):
 
 class ResourceWrite(BaseModel):
     name: str
-    resource_type: Literal["rem", "market", "order", "capture", "coco"]
+    resource_type: Literal["rem", "market", "order", "capture", "coco", "database"]
     business_code: Literal["fut_mm", "rem_two", "rem_two_mm"]
-    host: str
+    host: str = ""
     ssh_port: int = Field(default=22, ge=1, le=65535)
-    username: str
+    username: str = ""
     auth_type: Literal["password", "private_key"] = "password"
     password: str | None = None
     private_key: str | None = None
+    database_engine: Literal["mysql"] | None = None
+    database_connection_mode: Literal["direct", "ssh_tunnel"] | None = None
+    database_host: str | None = None
+    database_port: int | None = Field(default=None, ge=1, le=65535)
+    database_names: list[str] | None = None
+    database_username: str | None = None
+    database_password: str | None = None
+    database_tls_enabled: bool = False
     remote_path: str = ""
     capabilities: dict[str, Any] = Field(default_factory=dict)
     version_info: str = ""
     notes: str = ""
     is_enabled: bool = True
+
+    @model_validator(mode="after")
+    def validate_connection(self) -> "ResourceWrite":
+        if self.resource_type != "database":
+            if not self.host.strip() or not self.username.strip():
+                raise ValueError("SSH 地址和用户名不能为空")
+            return self
+        self.database_engine = self.database_engine or "mysql"
+        self.database_connection_mode = self.database_connection_mode or "direct"
+        self.database_port = self.database_port or 3306
+        self.database_host = (self.database_host or "").strip()
+        self.database_username = (self.database_username or "").strip()
+        names = [name.strip() for name in (self.database_names or []) if name.strip()]
+        self.database_names = list(dict.fromkeys(names))
+        if not self.database_host or not self.database_username or not self.database_names:
+            raise ValueError("数据库地址、用户名和至少一个数据库名称不能为空")
+        if self.database_connection_mode == "ssh_tunnel" and (
+            not self.host.strip() or not self.username.strip()
+        ):
+            raise ValueError("SSH 隧道地址和用户名不能为空")
+        return self
 
 
 class ResourceOut(ORMModel):
@@ -74,6 +103,14 @@ class ResourceOut(ORMModel):
     ssh_port: int
     username: str
     auth_type: str
+    database_engine: str | None
+    database_connection_mode: str | None
+    database_host: str | None
+    database_port: int | None
+    database_names: list[str] | None
+    database_username: str | None
+    database_tls_enabled: bool
+    has_database_password: bool
     remote_path: str
     capabilities: dict[str, Any]
     version_info: str
@@ -82,6 +119,20 @@ class ResourceOut(ORMModel):
     health_status: str
     health_checked_at: datetime | None
     created_at: datetime
+
+
+class DatabaseSqlRequest(BaseModel):
+    database_name: str
+    sql: str = Field(min_length=1, max_length=100_000)
+
+
+class DatabaseExportRequest(DatabaseSqlRequest):
+    format: Literal["csv", "xlsx"]
+
+
+class DatabaseUpdateExecuteRequest(DatabaseSqlRequest):
+    confirmation_id: str
+    confirmation_text: str
 
 
 class PlanWrite(BaseModel):

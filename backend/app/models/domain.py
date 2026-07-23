@@ -59,6 +59,14 @@ class Resource(TimestampMixin, Base):
     auth_type: Mapped[str] = mapped_column(String(16), default="password")
     encrypted_password: Mapped[str | None] = mapped_column(Text)
     encrypted_private_key: Mapped[str | None] = mapped_column(Text)
+    database_engine: Mapped[str | None] = mapped_column(String(32))
+    database_connection_mode: Mapped[str | None] = mapped_column(String(32))
+    database_host: Mapped[str | None] = mapped_column(String(255))
+    database_port: Mapped[int | None] = mapped_column(Integer)
+    database_names: Mapped[list[str] | None] = mapped_column(JSON)
+    database_username: Mapped[str | None] = mapped_column(String(128))
+    encrypted_database_password: Mapped[str | None] = mapped_column(Text)
+    database_tls_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     remote_path: Mapped[str] = mapped_column(String(512), default="")
     capabilities: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     version_info: Mapped[str] = mapped_column(String(255), default="")
@@ -68,6 +76,27 @@ class Resource(TimestampMixin, Base):
     health_status: Mapped[str] = mapped_column(String(32), default="unknown")
     health_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     locks: Mapped[list["ResourceLock"]] = relationship(back_populates="resource")
+
+    @property
+    def has_database_password(self) -> bool:
+        return bool(self.encrypted_database_password)
+
+
+class DatabaseUpdateConfirmation(Base):
+    __tablename__ = "database_update_confirmations"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id", ondelete="CASCADE"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    database_name: Mapped[str] = mapped_column(String(128))
+    table_name: Mapped[str] = mapped_column(String(255))
+    sql_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    estimated_rows: Mapped[int] = mapped_column(Integer)
+    actual_rows: Mapped[int | None] = mapped_column(Integer)
+    simulated: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TestPlan(TimestampMixin, Base):

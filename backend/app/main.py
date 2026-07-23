@@ -112,7 +112,12 @@ async def http_error(request: Request, exc: HTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
-    return JSONResponse(status_code=422, content={"code": "VALIDATION_ERROR", "message": "请求参数校验失败", "details": exc.errors(), "trace_id": trace_id_ctx.get()})
+    details = []
+    for item in exc.errors():
+        serialized = dict(item)
+        serialized.pop("ctx", None)
+        details.append(serialized)
+    return JSONResponse(status_code=422, content={"code": "VALIDATION_ERROR", "message": "请求参数校验失败", "details": details, "trace_id": trace_id_ctx.get()})
 
 
 @app.get("/health")

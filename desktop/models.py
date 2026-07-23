@@ -48,6 +48,7 @@ BUSINESS_TEXT = {
 RESOURCE_TEXT = {
     "rem": "REM",
     "market": "模拟市场",
+    "database": "MySQL 数据库",
     "order": "发单客户端",
     "capture": "抓包节点",
     "coco": "Coco 节点",

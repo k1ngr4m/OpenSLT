@@ -7,17 +7,20 @@ from uuid import uuid4
 import jwt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import and_, or_, select
+from openpyxl import Workbook
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session, selectinload
+from starlette.background import BackgroundTask
 
+from app.adapters.database import DatabaseOperationError, mysql_adapter, parse_select, parse_update, simulated_select, simulated_update_rows, validate_database
 from app.adapters.ssh import ssh_adapter
 from app.api.deps import admin_only, get_current_user, operators
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.logging import trace_id_ctx
 from app.core.security import create_access_token, create_refresh_token, decode_token, decrypt_secret, encrypt_secret, hash_password, token_fingerprint, verify_password
-from app.models import Artifact, AuditLog, BusinessType, LogRecord, RefreshToken, Resource, ResourceLock, TestPlan, TestRun, TestScenario, User, Verdict
-from app.schemas import ArtifactOut, AuditOut, LoginRequest, LogOut, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite
+from app.models import Artifact, AuditLog, BusinessType, DatabaseUpdateConfirmation, LogRecord, RefreshToken, Resource, ResourceLock, TestPlan, TestRun, TestScenario, User, Verdict
+from app.schemas import ArtifactOut, AuditOut, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
 from app.services.events import broker
 from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, cancel_run, continue_after_wiring, create_steps, release_locks, start_run
@@ -35,6 +38,23 @@ def load_run(db: Session, run_id: int) -> TestRun:
     if not run:
         raise not_found("运行")
     return run
+
+
+def database_http_error(exc: DatabaseOperationError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={"code": exc.code, "message": exc.message},
+    )
+
+
+def database_resource(db: Session, resource_id: int, database_name: str) -> tuple[Resource, str]:
+    resource = db.get(Resource, resource_id)
+    if not resource or resource.is_deleted:
+        raise not_found("资源")
+    try:
+        return resource, validate_database(resource, database_name)
+    except DatabaseOperationError as exc:
+        raise database_http_error(exc) from exc
 
 
 @router.post("/auth/login", response_model=TokenPair)
@@ -128,8 +148,13 @@ def list_resources(business_code: str | None = None, resource_type: str | None =
 
 @router.post("/resources", response_model=ResourceOut, status_code=201)
 def create_resource(payload: ResourceWrite, request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> Resource:
-    data = payload.model_dump(exclude={"password", "private_key"})
-    resource = Resource(**data, encrypted_password=encrypt_secret(payload.password), encrypted_private_key=encrypt_secret(payload.private_key))
+    data = payload.model_dump(exclude={"password", "private_key", "database_password"})
+    resource = Resource(
+        **data,
+        encrypted_password=encrypt_secret(payload.password),
+        encrypted_private_key=encrypt_secret(payload.private_key),
+        encrypted_database_password=encrypt_secret(payload.database_password),
+    )
     db.add(resource); db.flush(); write_audit(db, "resource.create", "resource", resource.id, actor, request, detail={"name": resource.name}); db.commit(); return resource
 
 
@@ -137,10 +162,14 @@ def create_resource(payload: ResourceWrite, request: Request, actor: User = Depe
 def update_resource(resource_id: int, payload: ResourceWrite, request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> Resource:
     resource = db.get(Resource, resource_id)
     if not resource or resource.is_deleted: raise not_found("资源")
-    data = payload.model_dump(exclude={"password", "private_key"})
+    data = payload.model_dump(exclude={"password", "private_key", "database_password"})
     for key, value in data.items(): setattr(resource, key, value)
     if payload.password: resource.encrypted_password = encrypt_secret(payload.password)
     if payload.private_key: resource.encrypted_private_key = encrypt_secret(payload.private_key)
+    if payload.database_password:
+        resource.encrypted_database_password = encrypt_secret(payload.database_password)
+    if payload.resource_type != "database":
+        resource.encrypted_database_password = None
     write_audit(db, "resource.update", "resource", resource.id, actor, request); db.commit(); return resource
 
 
@@ -161,12 +190,198 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
     resource = db.get(Resource, resource_id)
     if not resource or resource.is_deleted: raise not_found("资源")
     try:
-        if settings.execution_mode == "simulated": result = {"ok": True, "message": "模拟模式连通"}
+        if resource.resource_type == "database" and settings.execution_mode == "simulated":
+            result = {
+                "ok": True,
+                "message": "模拟模式连通",
+                "details": [
+                    {"database": name, "ok": True, "version": "MySQL simulated"}
+                    for name in resource.database_names or []
+                ],
+                "version": "MySQL simulated",
+                "simulated": True,
+            }
+        elif resource.resource_type == "database":
+            result = await mysql_adapter.health(resource)
+        elif settings.execution_mode == "simulated": result = {"ok": True, "message": "模拟模式连通", "simulated": True}
         else: result = await ssh_adapter.check(host=resource.host, port=resource.ssh_port, username=resource.username, password=decrypt_secret(resource.encrypted_password), private_key=decrypt_secret(resource.encrypted_private_key))
         resource.health_status = "healthy" if result["ok"] else "unhealthy"
     except Exception as exc:
         result = {"ok": False, "message": str(exc)}; resource.health_status = "unhealthy"
     resource.health_checked_at = datetime.now(UTC); write_audit(db, "resource.health_check", "resource", resource.id, actor, request, result="success" if result["ok"] else "failed"); db.commit(); return result
+
+
+@router.post("/resources/{resource_id}/database/select")
+async def database_select(
+    resource_id: int,
+    payload: DatabaseSqlRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource, database_name = database_resource(db, resource_id, payload.database_name)
+    try:
+        plan = parse_select(payload.sql, database_name)
+        result = (
+            simulated_select(plan)
+            if settings.execution_mode == "simulated"
+            else await mysql_adapter.select(resource, database_name, plan)
+        )
+    except DatabaseOperationError as exc:
+        write_audit(db, "database.select", "resource", resource.id, actor, request, "failed", {"database": database_name, "code": exc.code}); db.commit()
+        raise database_http_error(exc) from exc
+    except Exception as exc:
+        write_audit(db, "database.select", "resource", resource.id, actor, request, "failed", {"database": database_name, "code": "DATABASE_OPERATION_FAILED"}); db.commit()
+        raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
+    write_audit(db, "database.select", "resource", resource.id, actor, request, detail={"database": database_name, "sql_fingerprint": plan.fingerprint, "row_count": result["row_count"], "simulated": result["simulated"]}); db.commit()
+    return result
+
+
+@router.post("/resources/{resource_id}/database/update-preview")
+async def database_update_preview(
+    resource_id: int,
+    payload: DatabaseSqlRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource, database_name = database_resource(db, resource_id, payload.database_name)
+    try:
+        plan = parse_update(payload.sql, database_name)
+        simulated = settings.execution_mode == "simulated"
+        estimated_rows = simulated_update_rows(plan) if simulated else await mysql_adapter.preview_update(resource, database_name, plan)
+        if estimated_rows > 1_000:
+            raise DatabaseOperationError("UPDATE_LIMIT_EXCEEDED", "UPDATE 预计影响超过 1000 行", 409)
+    except DatabaseOperationError as exc:
+        write_audit(db, "database.update_preview", "resource", resource.id, actor, request, "failed", {"database": database_name, "code": exc.code}); db.commit()
+        raise database_http_error(exc) from exc
+    except Exception as exc:
+        write_audit(db, "database.update_preview", "resource", resource.id, actor, request, "failed", {"database": database_name, "code": "DATABASE_OPERATION_FAILED"}); db.commit()
+        raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
+
+    confirmation = DatabaseUpdateConfirmation(
+        id=str(uuid4()),
+        resource_id=resource.id,
+        actor_id=actor.id,
+        database_name=database_name,
+        table_name=plan.table_name or "",
+        sql_fingerprint=plan.fingerprint,
+        estimated_rows=estimated_rows,
+        simulated=simulated,
+        status="pending",
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+    )
+    db.add(confirmation)
+    write_audit(db, "database.update_preview", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "estimated_rows": estimated_rows, "simulated": simulated})
+    db.commit()
+    return {
+        "confirmation_id": confirmation.id,
+        "database_name": database_name,
+        "table_name": plan.table_name,
+        "estimated_rows": estimated_rows,
+        "expires_at": confirmation.expires_at,
+        "simulated": simulated,
+    }
+
+
+@router.post("/resources/{resource_id}/database/update-execute")
+async def database_update_execute(
+    resource_id: int,
+    payload: DatabaseUpdateExecuteRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource, database_name = database_resource(db, resource_id, payload.database_name)
+    try:
+        plan = parse_update(payload.sql, database_name)
+    except DatabaseOperationError as exc:
+        raise database_http_error(exc) from exc
+    confirmation = db.get(DatabaseUpdateConfirmation, payload.confirmation_id)
+    now = datetime.now(UTC)
+    expires_at = confirmation.expires_at if confirmation else None
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if (
+        not confirmation
+        or confirmation.resource_id != resource.id
+        or confirmation.actor_id != actor.id
+        or confirmation.database_name != database_name
+        or confirmation.sql_fingerprint != plan.fingerprint
+    ):
+        raise HTTPException(status_code=409, detail={"code": "INVALID_CONFIRMATION", "message": "更新确认已失效或与 SQL 不匹配"})
+    if confirmation.status != "pending":
+        raise HTTPException(status_code=409, detail={"code": "CONFIRMATION_ALREADY_USED", "message": "更新确认已使用"})
+    if not expires_at or expires_at <= now:
+        confirmation.status = "expired"; db.commit()
+        raise HTTPException(status_code=409, detail={"code": "CONFIRMATION_EXPIRED", "message": "更新确认已过期，请重新预览"})
+    if payload.confirmation_text != resource.name:
+        raise HTTPException(status_code=400, detail={"code": "CONFIRMATION_TEXT_MISMATCH", "message": "请输入完整资源名称确认"})
+
+    claimed = db.execute(
+        update(DatabaseUpdateConfirmation)
+        .where(DatabaseUpdateConfirmation.id == confirmation.id, DatabaseUpdateConfirmation.status == "pending")
+        .values(status="executing")
+    )
+    if claimed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail={"code": "CONFIRMATION_ALREADY_USED", "message": "更新确认已使用"})
+    db.commit()
+    try:
+        affected_rows = (
+            confirmation.estimated_rows
+            if confirmation.simulated
+            else await mysql_adapter.execute_update(resource, database_name, plan, confirmation.estimated_rows)
+        )
+    except DatabaseOperationError as exc:
+        confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
+        confirmation.status = "failed"; confirmation.completed_at = datetime.now(UTC)
+        write_audit(db, "database.update_execute", "resource", resource.id, actor, request, "failed", {"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "code": exc.code}); db.commit()
+        raise database_http_error(exc) from exc
+    except Exception as exc:
+        confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
+        confirmation.status = "failed"; confirmation.completed_at = datetime.now(UTC)
+        write_audit(db, "database.update_execute", "resource", resource.id, actor, request, "failed", {"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "code": "DATABASE_OPERATION_FAILED"}); db.commit()
+        raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
+    confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
+    confirmation.status = "executed"; confirmation.actual_rows = affected_rows; confirmation.completed_at = datetime.now(UTC)
+    write_audit(db, "database.update_execute", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "affected_rows": affected_rows, "simulated": confirmation.simulated}); db.commit()
+    return {"affected_rows": affected_rows, "simulated": confirmation.simulated, "status": "executed"}
+
+
+@router.post("/resources/{resource_id}/database/export")
+async def database_export(
+    resource_id: int,
+    payload: DatabaseExportRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> Response:
+    resource, database_name = database_resource(db, resource_id, payload.database_name)
+    try:
+        plan = parse_select(payload.sql, database_name)
+    except DatabaseOperationError as exc:
+        raise database_http_error(exc) from exc
+    simulated = settings.execution_mode == "simulated"
+    filename = f"database-{resource.id}-{database_name}.{payload.format}"
+    write_audit(db, "database.export", "resource", resource.id, actor, request, detail={"database": database_name, "format": payload.format, "sql_fingerprint": plan.fingerprint, "simulated": simulated}); db.commit()
+    if simulated:
+        result = simulated_select(plan)
+        if payload.format == "csv":
+            output = io.StringIO(); writer = csv.writer(output); writer.writerow(result["columns"])
+            for row in result["rows"]: writer.writerow([row[column] for column in result["columns"]])
+            return StreamingResponse(iter([output.getvalue().encode("utf-8-sig")]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{filename}"', "X-OpenSLT-Simulated": "true"})
+        output = io.BytesIO(); workbook = Workbook(); worksheet = workbook.active; worksheet.title = "Query"; worksheet.append(result["columns"])
+        for row in result["rows"]: worksheet.append([row[column] for column in result["columns"]])
+        workbook.save(output); output.seek(0)
+        return StreamingResponse(iter([output.getvalue()]), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename}"', "X-OpenSLT-Simulated": "true"})
+    if payload.format == "csv":
+        return StreamingResponse(mysql_adapter.iter_csv(resource, database_name, plan), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    try:
+        path = await mysql_adapter.write_xlsx(resource, database_name, plan)
+    except DatabaseOperationError as exc:
+        raise database_http_error(exc) from exc
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=filename, background=BackgroundTask(path.unlink, missing_ok=True))
 
 
 @router.get("/plans", response_model=list[PlanOut])

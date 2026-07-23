@@ -176,7 +176,7 @@ class DashboardPage(BasePage):
 class ResourcesPage(BasePage):
     def __init__(self, api: ApiClient, user: dict[str, Any]) -> None:
         super().__init__(api, user)
-        root, header = self.heading("资源管理", "统一管理 REM、模拟市场、发单、抓包和 Coco 节点")
+        root, header = self.heading("资源管理", "统一管理 REM、模拟市场、数据库、发单、抓包和 Coco 节点")
         if self.is_admin:
             header.addWidget(button("新增资源", self.add_resource, primary=True))
             header.addWidget(button("删除选中", self.delete_selected))
@@ -190,7 +190,15 @@ class ResourcesPage(BasePage):
         self.run(lambda: self.api.get("/resources"), self.populate)
 
     def populate(self, resources: list[dict[str, Any]]) -> None:
-        set_table(self.rows, [[r["name"], RESOURCE_TEXT.get(r["resource_type"], r["resource_type"]), BUSINESS_TEXT.get(r["business_code"], r["business_code"]), f"{r['username']}@{r['host']}:{r['ssh_port']}", r.get("health_status", "unknown"), "是" if r.get("is_enabled") else "否", "双击编辑"] for r in resources])
+        def connection_text(resource: dict[str, Any]) -> str:
+            if resource["resource_type"] == "database":
+                target = f"{resource.get('database_username', '')}@{resource.get('database_host', '')}:{resource.get('database_port', 3306)}"
+                if resource.get("database_connection_mode") == "ssh_tunnel":
+                    return f"{target} 经 {resource['username']}@{resource['host']}:{resource['ssh_port']}"
+                return target
+            return f"{resource['username']}@{resource['host']}:{resource['ssh_port']}"
+
+        set_table(self.rows, [[r["name"], RESOURCE_TEXT.get(r["resource_type"], r["resource_type"]), BUSINESS_TEXT.get(r["business_code"], r["business_code"]), connection_text(r), r.get("health_status", "unknown"), "是" if r.get("is_enabled") else "否", "Web 端管理" if r["resource_type"] == "database" else "双击编辑"] for r in resources])
         for index, resource in enumerate(resources):
             self.rows.item(index, 0).setData(Qt.ItemDataRole.UserRole, resource)
 
@@ -200,6 +208,9 @@ class ResourcesPage(BasePage):
 
     def edit_selected(self, *_: Any) -> None:
         resource = self.selected()
+        if resource and resource.get("resource_type") == "database":
+            info(self, "数据库资源", "请在 Web 端配置和操作数据库资源")
+            return
         if resource and self.is_admin:
             self.open_resource(resource)
 
@@ -210,7 +221,7 @@ class ResourcesPage(BasePage):
         values = resource or {}
         dialog = FormDialog("编辑资源" if resource else "新增资源", self)
         dialog.add_line("name", "名称", values.get("name", ""))
-        dialog.add_combo("resource_type", "类型", [(v, k) for k, v in RESOURCE_TEXT.items()], values.get("resource_type", "rem"))
+        dialog.add_combo("resource_type", "类型", [(v, k) for k, v in RESOURCE_TEXT.items() if k != "database"], values.get("resource_type", "rem"))
         dialog.add_combo("business_code", "所属业务", [(v, k) for k, v in BUSINESS_TEXT.items()], values.get("business_code", "fut_mm"))
         dialog.add_line("host", "Linux 地址", values.get("host", ""))
         dialog.add_spin("ssh_port", "SSH 端口", values.get("ssh_port", 22), 1, 65535)
