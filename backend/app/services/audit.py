@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import Request
+from fastapi import Request, WebSocket
 from sqlalchemy.orm import Session
 
 from app.core.logging import trace_id_ctx
@@ -13,7 +13,7 @@ def write_audit(
     object_type: str,
     object_id: int | str | None,
     actor: User | None = None,
-    request: Request | None = None,
+    request: Request | WebSocket | None = None,
     result: str = "success",
     detail: dict[str, Any] | None = None,
 ) -> AuditLog:
@@ -31,4 +31,3 @@ def write_audit(
     db.add(record)
     db.flush()
     return record
-

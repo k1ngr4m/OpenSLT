@@ -244,10 +244,11 @@ onMounted(load)
         <el-table-column label="启用" width="90">
           <template #default="scope"><el-tag :type="scope.row.is_enabled ? 'success' : 'info'">{{ scope.row.is_enabled ? '是' : '否' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="scope">
             <el-button link type="primary" @click="health(scope.row)">连通测试</el-button>
             <el-button v-if="scope.row.resource_type === 'database' && auth.canOperate" link type="primary" @click="router.push(`/resources/${scope.row.id}/database`)">操作台</el-button>
+            <el-button v-if="['rem', 'market', 'order', 'slnic'].includes(scope.row.resource_type) && auth.canOperate" link type="primary" :disabled="!scope.row.is_enabled" @click="router.push(`/resources/${scope.row.id}/terminal`)">操作台</el-button>
             <template v-if="auth.isAdmin">
               <el-button link @click="open(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="remove(scope.row)">删除</el-button>

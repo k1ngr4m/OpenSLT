@@ -25,6 +25,7 @@ from app.services.audit import write_audit
 from app.services.events import broker
 from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, cancel_run, continue_after_wiring, create_steps, release_locks, start_run
 from app.services.reports import generate_reports
+from app.services.terminal import handle_resource_terminal
 
 router = APIRouter()
 
@@ -668,3 +669,8 @@ async def run_events(websocket: WebSocket, run_id: int, token: str = Query(...))
         except WebSocketDisconnect: pass
         finally: broker.unsubscribe(run_id, queue)
     finally: db.close()
+
+
+@router.websocket("/ws/resources/{resource_id}/terminal")
+async def resource_terminal(websocket: WebSocket, resource_id: int, token: str = Query(...)) -> None:
+    await handle_resource_terminal(websocket, resource_id, token)
