@@ -21,7 +21,7 @@ class TimestampMixin:
 
 
 class User(TimestampMixin, Base):
-    __tablename__ = "users"
+    __tablename__ = "t_users"
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(128), default="")
@@ -33,9 +33,9 @@ class User(TimestampMixin, Base):
 
 
 class RefreshToken(Base):
-    __tablename__ = "refresh_tokens"
+    __tablename__ = "t_refresh_tokens"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
@@ -44,7 +44,7 @@ class RefreshToken(Base):
 
 
 class BusinessType(TimestampMixin, Base):
-    __tablename__ = "business_types"
+    __tablename__ = "t_business_types"
     id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String(32), unique=True)
     name: Mapped[str] = mapped_column(String(128))
@@ -52,7 +52,7 @@ class BusinessType(TimestampMixin, Base):
 
 
 class Resource(TimestampMixin, Base):
-    __tablename__ = "resources"
+    __tablename__ = "t_resources"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
     resource_type: Mapped[str] = mapped_column(String(32), index=True)
@@ -87,10 +87,10 @@ class Resource(TimestampMixin, Base):
 
 
 class DatabaseUpdateConfirmation(Base):
-    __tablename__ = "database_update_confirmations"
+    __tablename__ = "t_database_update_confirmations"
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id", ondelete="CASCADE"), index=True)
-    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id", ondelete="CASCADE"), index=True)
+    actor_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
     database_name: Mapped[str] = mapped_column(String(128))
     table_name: Mapped[str] = mapped_column(String(255))
     sql_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
@@ -104,7 +104,7 @@ class DatabaseUpdateConfirmation(Base):
 
 
 class TestPlan(TimestampMixin, Base):
-    __tablename__ = "test_plans"
+    __tablename__ = "t_test_plans"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
@@ -112,14 +112,14 @@ class TestPlan(TimestampMixin, Base):
     default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"))
     scenarios: Mapped[typing.List['TestScenario']] = relationship(back_populates="plan", cascade="all, delete-orphan")
 
 
 class TestScenario(TimestampMixin, Base):
-    __tablename__ = "test_scenarios"
+    __tablename__ = "t_test_scenarios"
     id: Mapped[int] = mapped_column(primary_key=True)
-    plan_id: Mapped[int] = mapped_column(ForeignKey("test_plans.id", ondelete="CASCADE"), index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("t_test_plans.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
     scenario_type: Mapped[str] = mapped_column(String(64), index=True)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
@@ -130,7 +130,7 @@ class TestScenario(TimestampMixin, Base):
     workflow_status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     draft_workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(
         ForeignKey(
-            "scenario_workflow_versions.id",
+            "t_scenario_workflow_versions.id",
             name="fk_test_scenarios_draft_workflow_version_id",
             ondelete="SET NULL",
             use_alter=True,
@@ -138,7 +138,7 @@ class TestScenario(TimestampMixin, Base):
     )
     published_workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(
         ForeignKey(
-            "scenario_workflow_versions.id",
+            "t_scenario_workflow_versions.id",
             name="fk_test_scenarios_published_workflow_version_id",
             ondelete="SET NULL",
             use_alter=True,
@@ -154,16 +154,16 @@ class TestScenario(TimestampMixin, Base):
 
 
 class ScenarioWorkflowVersion(TimestampMixin, Base):
-    __tablename__ = "scenario_workflow_versions"
+    __tablename__ = "t_scenario_workflow_versions"
     __table_args__ = (UniqueConstraint("scenario_id", "version_no", name="uq_scenario_workflow_version"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    scenario_id: Mapped[int] = mapped_column(ForeignKey("test_scenarios.id", ondelete="CASCADE"), index=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("t_test_scenarios.id", ondelete="CASCADE"), index=True)
     version_no: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    published_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
+    published_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"))
     published_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     scenario: Mapped[TestScenario] = relationship(
         back_populates="workflow_versions", foreign_keys=[scenario_id]
@@ -174,13 +174,13 @@ class ScenarioWorkflowVersion(TimestampMixin, Base):
 
 
 class ScenarioWorkflowNode(TimestampMixin, Base):
-    __tablename__ = "scenario_workflow_nodes"
+    __tablename__ = "t_scenario_workflow_nodes"
     __table_args__ = (
         UniqueConstraint("workflow_version_id", "node_key", name="uq_workflow_node_key"),
         UniqueConstraint("workflow_version_id", "position", name="uq_workflow_node_position"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
-    workflow_version_id: Mapped[int] = mapped_column(ForeignKey("scenario_workflow_versions.id", ondelete="CASCADE"), index=True)
+    workflow_version_id: Mapped[int] = mapped_column(ForeignKey("t_scenario_workflow_versions.id", ondelete="CASCADE"), index=True)
     node_key: Mapped[str] = mapped_column(String(36))
     position: Mapped[int] = mapped_column(Integer)
     node_type: Mapped[str] = mapped_column(String(40), index=True)
@@ -190,19 +190,19 @@ class ScenarioWorkflowNode(TimestampMixin, Base):
 
 
 class TestRun(TimestampMixin, Base):
-    __tablename__ = "test_runs"
+    __tablename__ = "t_test_runs"
     id: Mapped[int] = mapped_column(primary_key=True)
     run_number: Mapped[str] = mapped_column(String(40), unique=True, index=True)
-    plan_id: Mapped[int] = mapped_column(ForeignKey("test_plans.id"), index=True)
-    scenario_id: Mapped[int] = mapped_column(ForeignKey("test_scenarios.id"), index=True)
-    workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("scenario_workflow_versions.id"), index=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("t_test_plans.id"), index=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("t_test_scenarios.id"), index=True)
+    workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_scenario_workflow_versions.id"), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
     config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
     started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     timeout_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
@@ -219,11 +219,11 @@ class TestRun(TimestampMixin, Base):
 
 
 class RunStep(Base):
-    __tablename__ = "run_steps"
+    __tablename__ = "t_run_steps"
     __table_args__ = (UniqueConstraint("run_id", "code", name="uq_run_step_code"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
-    workflow_node_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("scenario_workflow_nodes.id", ondelete="SET NULL"), index=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
+    workflow_node_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_scenario_workflow_nodes.id", ondelete="SET NULL"), index=True)
     code: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
     node_type: Mapped[str] = mapped_column(String(40), default="legacy")
@@ -242,21 +242,21 @@ class RunStep(Base):
 
 
 class ConfigurationCaptureSnapshot(Base):
-    __tablename__ = "configuration_capture_snapshots"
+    __tablename__ = "t_configuration_capture_snapshots"
     id: Mapped[int] = mapped_column(primary_key=True)
-    scenario_id: Mapped[int] = mapped_column(ForeignKey("test_scenarios.id", ondelete="CASCADE"), index=True)
-    workflow_version_id: Mapped[int] = mapped_column(ForeignKey("scenario_workflow_versions.id", ondelete="CASCADE"), index=True)
-    workflow_node_id: Mapped[int] = mapped_column(ForeignKey("scenario_workflow_nodes.id", ondelete="CASCADE"), index=True)
-    run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
-    run_step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="CASCADE"), index=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("t_test_scenarios.id", ondelete="CASCADE"), index=True)
+    workflow_version_id: Mapped[int] = mapped_column(ForeignKey("t_scenario_workflow_versions.id", ondelete="CASCADE"), index=True)
+    workflow_node_id: Mapped[int] = mapped_column(ForeignKey("t_scenario_workflow_nodes.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
+    run_step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_run_steps.id", ondelete="CASCADE"), index=True)
     scope: Mapped[str] = mapped_column(String(16), index=True)
     source_type: Mapped[str] = mapped_column(String(24), index=True)
-    resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), index=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
     database_name: Mapped[typing.Union[str, None]] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(24), default="running", index=True)
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
-    created_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"))
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     items: Mapped[typing.List['ConfigurationCaptureItem']] = relationship(
@@ -265,9 +265,9 @@ class ConfigurationCaptureSnapshot(Base):
 
 
 class ConfigurationCaptureItem(Base):
-    __tablename__ = "configuration_capture_items"
+    __tablename__ = "t_configuration_capture_items"
     id: Mapped[int] = mapped_column(primary_key=True)
-    snapshot_id: Mapped[int] = mapped_column(ForeignKey("configuration_capture_snapshots.id", ondelete="CASCADE"), index=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("t_configuration_capture_snapshots.id", ondelete="CASCADE"), index=True)
     item_key: Mapped[str] = mapped_column(String(128), index=True)
     item_label: Mapped[str] = mapped_column(String(128))
     value_text: Mapped[typing.Union[str, None]] = mapped_column(Text)
@@ -279,21 +279,26 @@ class ConfigurationCaptureItem(Base):
 
 
 class ContractDataFile(Base):
-    __tablename__ = "contract_data_files"
+    __tablename__ = "t_contract_data_files"
     __table_args__ = (
-        UniqueConstraint(
-            "workflow_node_id", "filename", "checksum", name="uq_contract_file_node_name_checksum"
+        Index(
+            "uq_t_contract_data_files_node_name_checksum",
+            "workflow_node_id",
+            "filename",
+            "checksum",
+            unique=True,
+            mysql_length={"filename": 120, "checksum": 64},
         ),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     scenario_id: Mapped[typing.Union[int, None]] = mapped_column(
-        ForeignKey("test_scenarios.id", ondelete="SET NULL"), index=True
+        ForeignKey("t_test_scenarios.id", ondelete="SET NULL"), index=True
     )
     workflow_node_id: Mapped[typing.Union[int, None]] = mapped_column(
-        ForeignKey("scenario_workflow_nodes.id", ondelete="SET NULL"), index=True
+        ForeignKey("t_scenario_workflow_nodes.id", ondelete="SET NULL"), index=True
     )
-    order_resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), index=True)
-    database_resource_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("resources.id"), index=True)
+    order_resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
+    database_resource_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_resources.id"), index=True)
     database_name: Mapped[typing.Union[str, None]] = mapped_column(String(128))
     contract_type: Mapped[str] = mapped_column(String(16), index=True)
     source_table: Mapped[str] = mapped_column(String(128), default="")
@@ -305,15 +310,15 @@ class ContractDataFile(Base):
     size: Mapped[int] = mapped_column(Integer, default=0)
     checksum: Mapped[str] = mapped_column(String(64), index=True)
     preview_rows: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
-    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class LogRecord(Base):
-    __tablename__ = "log_records"
+    __tablename__ = "t_log_records"
     __table_args__ = (
-        Index("ix_logs_run_created", "run_id", "created_at"),
-        Index("ix_logs_trace_created", "trace_id", "created_at"),
+        Index("ix_t_log_records_run_created", "run_id", "created_at"),
+        Index("ix_t_log_records_trace_created", "trace_id", "created_at"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     log_type: Mapped[str] = mapped_column(String(32), index=True)
@@ -321,9 +326,9 @@ class LogRecord(Base):
     event: Mapped[str] = mapped_column(String(128), index=True)
     message: Mapped[str] = mapped_column(Text)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
-    user_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"), index=True)
-    run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
-    step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"), index=True)
+    user_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"), index=True)
+    run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
+    step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_run_steps.id", ondelete="SET NULL"), index=True)
     source: Mapped[str] = mapped_column(String(64), default="api", index=True)
     detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     artifact_path: Mapped[typing.Union[str, None]] = mapped_column(String(1024))
@@ -332,10 +337,10 @@ class LogRecord(Base):
 
 
 class Artifact(Base):
-    __tablename__ = "artifacts"
+    __tablename__ = "t_artifacts"
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
-    step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"))
+    run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
+    step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_run_steps.id", ondelete="SET NULL"))
     artifact_type: Mapped[str] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(255))
     path: Mapped[str] = mapped_column(String(1024))
@@ -348,10 +353,10 @@ class Artifact(Base):
 
 
 class Metric(Base):
-    __tablename__ = "metrics"
+    __tablename__ = "t_metrics"
     __table_args__ = (UniqueConstraint("run_id", "name", name="uq_run_metric_name"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32), default="us")
@@ -361,22 +366,22 @@ class Metric(Base):
 
 
 class Verdict(TimestampMixin, Base):
-    __tablename__ = "verdicts"
+    __tablename__ = "t_verdicts"
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), unique=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), unique=True)
     final_result: Mapped[typing.Union[str, None]] = mapped_column(String(32))
     issue_description: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
-    reviewed_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
+    reviewed_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"))
     reviewed_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     run: Mapped[TestRun] = relationship(back_populates="verdict")
 
 
 class ResourceLock(Base):
-    __tablename__ = "resource_locks"
+    __tablename__ = "t_resource_locks"
     id: Mapped[int] = mapped_column(primary_key=True)
-    resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), index=True)
-    run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
     acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     released_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True), index=True)
@@ -386,9 +391,9 @@ class ResourceLock(Base):
 
 
 class AuditLog(Base):
-    __tablename__ = "audit_logs"
+    __tablename__ = "t_audit_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
-    actor_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"), index=True)
     action: Mapped[str] = mapped_column(String(128), index=True)
     object_type: Mapped[str] = mapped_column(String(64), index=True)
     object_id: Mapped[typing.Union[str, None]] = mapped_column(String(64), index=True)

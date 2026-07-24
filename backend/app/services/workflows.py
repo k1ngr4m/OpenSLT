@@ -6,6 +6,7 @@ import os
 import posixpath
 import re
 import shlex
+import struct
 import tempfile
 import typing
 from contextlib import asynccontextmanager, suppress
@@ -23,17 +24,27 @@ from app.core.compat import to_thread
 from app.core.config import settings
 from app.core.security import decrypt_secret
 from app.models import (
+    Artifact,
     ConfigurationCaptureItem,
     ConfigurationCaptureSnapshot,
     ContractDataFile,
     Resource,
+    RunStep,
     ScenarioWorkflowNode,
     ScenarioWorkflowVersion,
+    TestRun,
     TestScenario,
 )
 from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
 
-NODE_TYPES = {"server_config", "database_config", "wiring_confirmation", "order_preparation"}
+SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
+NODE_TYPES = {
+    "server_config",
+    "database_config",
+    "wiring_confirmation",
+    "order_preparation",
+    *SLNIC_NODE_TYPES,
+}
 SERVER_FIELDS = {
     "rem": {"ip", "nic_model", "machine_model", "os_version", "cpu_model"},
     "market": {"ip", "os_version", "cpu_model"},
@@ -143,6 +154,7 @@ def resource_map(db: Session, version: ScenarioWorkflowVersion) -> dict[str, Res
 def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWorkflowVersion) -> list[dict]:
     errors: list[dict] = []
     resources = resource_map(db, version)
+    slnic_state = "idle"
     if not version.nodes:
         errors.append({"field": "nodes", "message": "主流程至少需要一个节点"})
     for node in version.nodes:
@@ -197,6 +209,28 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 preceding = [item for item in version.nodes if item.position < node.position and item.node_type == "database_config"]
                 if not preceding:
                     errors.append({**prefix, "field": "database_node_key", "message": "发单节点前需要数据库配置节点"})
+        elif node.node_type in SLNIC_NODE_TYPES:
+            resource = resources.get("slnic")
+            if not resource or resource.is_deleted or not resource.is_enabled:
+                errors.append({**prefix, "field": "resource", "message": "场景资源池缺少已启用的 SLNIC 资源"})
+            elif not resource.remote_path.strip():
+                errors.append({**prefix, "field": "resource", "message": "SLNIC 资源未配置远端路径"})
+            if node.node_type == "slnic_start_capture":
+                if slnic_state == "capturing":
+                    errors.append({**prefix, "field": "position", "message": "当前已有未停止的 SLNIC 抓包"})
+                elif slnic_state == "stopped":
+                    errors.append({**prefix, "field": "position", "message": "开始下一轮 SLNIC 抓包前需要先合并上一轮文件"})
+                else:
+                    slnic_state = "capturing"
+            elif node.node_type == "slnic_stop_capture":
+                if slnic_state != "capturing":
+                    errors.append({**prefix, "field": "position", "message": "关闭 SLNIC 节点前需要先启动抓包"})
+                else:
+                    slnic_state = "stopped"
+            elif slnic_state != "stopped":
+                errors.append({**prefix, "field": "position", "message": "合并 pcapng 前需要先关闭 SLNIC 抓包"})
+            else:
+                slnic_state = "merged"
     return errors
 
 
@@ -793,3 +827,152 @@ async def prepare_order_node(
         "generated_command": " && ".join(command_parts),
         "process_started": False,
     }
+
+
+def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
+    return (
+        settings.artifact_root
+        / run.business_code
+        / str(run.plan_id)
+        / str(run.scenario_id)
+        / run.run_number
+        / "slnic"
+        / str(step.id)
+        / "merge_pcap.pcapng"
+    )
+
+
+def _write_simulated_pcapng(target: Path) -> None:
+    """Write a minimal valid little-endian pcapng section header block."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_bytes(
+            struct.pack("<IIIHHqI", 0x0A0D0D0A, 28, 0x1A2B3C4D, 1, 0, -1, 28)
+        )
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+async def _run_slnic_command(connection: typing.Any, command: str, label: str) -> None:
+    result = await connection.run(command, check=False)
+    if result.exit_status == 0:
+        return
+    detail = str(result.stderr or result.stdout or "远端命令没有返回错误信息").strip()[:1000]
+    raise WorkflowError(
+        "SLNIC_COMMAND_FAILED",
+        f"{label}失败（退出码 {result.exit_status}）：{detail}",
+        409,
+    )
+
+
+async def execute_slnic_node(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    node: ScenarioWorkflowNode,
+    run_resources: dict[str, Resource],
+) -> dict:
+    resource = run_resources.get("slnic")
+    if not resource or resource.is_deleted or not resource.is_enabled:
+        raise WorkflowError("SLNIC_RESOURCE_REQUIRED", "运行资源缺少已启用的 SLNIC 节点", 409)
+    if node.node_type not in SLNIC_NODE_TYPES:
+        raise WorkflowError("SLNIC_NODE_REQUIRED", "当前节点不是 SLNIC 节点", 400)
+    if not resource.remote_path.strip():
+        raise WorkflowError("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径", 409)
+
+    mode = settings.execution_mode
+    summary = {"resource_id": resource.id, "mode": mode, "exit_code": 0}
+    target = _slnic_artifact_path(run, step)
+    if mode == "simulated":
+        if node.node_type != "slnic_merge_capture":
+            return summary
+        _write_simulated_pcapng(target)
+    else:
+        workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
+        prefix = f"cd {shlex.quote(workdir)} && "
+        connection = None
+        sftp = None
+        temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
+        try:
+            connection = await asyncssh.connect(**_ssh_options(resource))
+            if node.node_type == "slnic_start_capture":
+                await _run_slnic_command(
+                    connection, prefix + "./start_slnic_dump.sh", "启动 SLNIC 抓包"
+                )
+                return summary
+            if node.node_type == "slnic_stop_capture":
+                await _run_slnic_command(
+                    connection, prefix + "./stop_slnic_dump.sh", "关闭 SLNIC 抓包"
+                )
+                return summary
+
+            await _run_slnic_command(
+                connection, prefix + "./pcap_mergetoo slnic*", "合并 SLNIC 抓包"
+            )
+            await _run_slnic_command(
+                connection,
+                prefix
+                + "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; "
+                + "then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
+                + "test -f merge_pcap.pcap",
+                "检查合并后的 pcap 文件",
+            )
+            await _run_slnic_command(
+                connection,
+                prefix + "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
+                "转换 pcapng 文件",
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            sftp = await connection.start_sftp_client()
+            remote_file = posixpath.join(workdir, "merge_pcap.pcapng")
+            await sftp.get(remote_file, str(temporary))
+            temporary.replace(target)
+        except WorkflowError:
+            raise
+        except Exception as exc:
+            raise WorkflowError("SLNIC_EXECUTION_FAILED", f"SLNIC 节点执行失败：{exc}", 409) from exc
+        finally:
+            temporary.unlink(missing_ok=True)
+            if sftp:
+                sftp.exit()
+            if connection:
+                connection.close()
+                with suppress(Exception):
+                    await connection.wait_closed()
+
+    data = target.read_bytes()
+    checksum = hashlib.sha256(data).hexdigest()
+    artifact = db.scalar(
+        select(Artifact).where(
+            Artifact.run_id == run.id,
+            Artifact.step_id == step.id,
+            Artifact.name == target.name,
+        )
+    )
+    if artifact is None:
+        artifact = Artifact(
+            run_id=run.id,
+            step_id=step.id,
+            artifact_type="packet_capture",
+            name=target.name,
+            path=str(target),
+        )
+        db.add(artifact)
+    artifact.artifact_type = "packet_capture"
+    artifact.path = str(target)
+    artifact.content_type = "application/vnd.tcpdump.pcap"
+    artifact.size = len(data)
+    artifact.checksum = checksum
+    artifact.is_immutable = True
+    db.flush()
+    summary.update(
+        {
+            "artifact_id": artifact.id,
+            "filename": artifact.name,
+            "checksum": artifact.checksum,
+            "size": artifact.size,
+        }
+    )
+    return summary

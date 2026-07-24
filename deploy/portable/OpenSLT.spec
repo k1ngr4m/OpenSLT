@@ -9,6 +9,7 @@ if not (frontend_dist / "index.html").is_file():
 
 hiddenimports = (
     collect_submodules("uvicorn")
+    + collect_submodules("alembic")
     + collect_submodules("sqlalchemy.dialects.sqlite")
     + collect_submodules("asyncssh")
     + [
@@ -23,6 +24,7 @@ hiddenimports = (
 
 datas = [
     (str(frontend_dist), "frontend/dist"),
+    (str(root / "backend" / "migrations"), "backend/migrations"),
     *collect_data_files("openpyxl"),
 ]
 

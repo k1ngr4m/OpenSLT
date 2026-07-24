@@ -277,7 +277,15 @@ class WorkflowNodeWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     node_key: str = Field(min_length=1, max_length=36)
-    node_type: Literal["server_config", "database_config", "wiring_confirmation", "order_preparation"]
+    node_type: Literal[
+        "server_config",
+        "database_config",
+        "wiring_confirmation",
+        "order_preparation",
+        "slnic_start_capture",
+        "slnic_stop_capture",
+        "slnic_merge_capture",
+    ]
     name: str = Field(min_length=1, max_length=128)
     config: typing.Dict[str, Any] = Field(default_factory=dict)
 

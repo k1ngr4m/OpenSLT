@@ -19,7 +19,14 @@ from app.core.database import SessionLocal
 from app.core.logging import logger, redact
 from app.models import Artifact, AuditLog, LogRecord, Metric, Resource, ResourceLock, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, TestScenario
 from app.services.events import broker
-from app.services.workflows import WorkflowError, capture_database, capture_server, prepare_order_node
+from app.services.workflows import (
+    SLNIC_NODE_TYPES,
+    WorkflowError,
+    capture_database,
+    capture_server,
+    execute_slnic_node,
+    prepare_order_node,
+)
 
 STEPS = [
     ("precheck", "环境预检"),
@@ -261,6 +268,8 @@ async def start_workflow_run(run_id: int) -> None:
                     raise WorkflowError("CONFIG_CAPTURE_FAILED", "数据库配置采集不完整", 409)
             elif node.node_type == "order_preparation":
                 step.result_summary = await prepare_order_node(db, workflow, node, run_resources)
+            elif node.node_type in SLNIC_NODE_TYPES:
+                step.result_summary = await execute_slnic_node(db, run, step, node, run_resources)
             else:
                 raise WorkflowError("WORKFLOW_NODE_UNSUPPORTED", f"不支持节点类型 {node.node_type}", 409)
             step.status = "succeeded"

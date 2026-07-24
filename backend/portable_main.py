@@ -75,6 +75,22 @@ def open_when_ready(url: str) -> None:
             time.sleep(0.25)
 
 
+def upgrade_portable_database() -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    if getattr(sys, "frozen", False):
+        bundle_root = Path(getattr(sys, "_MEIPASS")).resolve()
+    else:
+        bundle_root = Path(__file__).resolve().parents[1]
+    migration_config = Config()
+    migration_config.set_main_option(
+        "script_location",
+        str(bundle_root / "backend" / "migrations"),
+    )
+    command.upgrade(migration_config, "head")
+
+
 def main() -> None:
     root = portable_root()
     ensure_portable_environment(root)
@@ -91,6 +107,8 @@ def main() -> None:
         except Exception:
             pass
         raise SystemExit(f"端口 {settings.port} 已被其他程序占用，请修改 .env 中的 PORT。")
+
+    upgrade_portable_database()
 
     if settings.open_browser:
         threading.Thread(target=open_when_ready, args=(url,), daemon=True).start()

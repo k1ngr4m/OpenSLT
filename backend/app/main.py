@@ -15,7 +15,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.api.router import router
 from app.core.config import settings
-from app.core.database import Base, SessionLocal, engine, ensure_database_exists
+from app.core.database import SessionLocal
 from app.core.logging import configure_logging, logger, trace_id_ctx
 from app.core.security import hash_password
 from app.models import BusinessType, User
@@ -78,8 +78,6 @@ async def internal_scheduler() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
-    ensure_database_exists(settings.database_url)
-    Base.metadata.create_all(bind=engine)
     seed_database()
     scheduler_task = None
     if settings.portable_mode or settings.enable_internal_scheduler:

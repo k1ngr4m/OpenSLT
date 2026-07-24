@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 from pathlib import Path
 
+import sqlalchemy as sa
+
+import app.models  # noqa: F401
+from app.core.database import Base
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+VERSION_TABLE = "t_alembic_version"
 
 
-def _alembic(database_path: Path, *arguments: str) -> None:
+def _database_url(database_path: Path) -> str:
+    return f"sqlite:///{database_path.as_posix()}"
+
+
+def _alembic(database_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = dict(os.environ)
-    environment["DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
+    environment["DATABASE_URL"] = _database_url(database_path)
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", *arguments],
         cwd=REPOSITORY_ROOT,
@@ -21,69 +32,156 @@ def _alembic(database_path: Path, *arguments: str) -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    return completed
 
 
-def test_workflow_migration_handles_legacy_data_and_fresh_schema(tmp_path: Path):
-    legacy_database = tmp_path / "legacy.sqlite3"
-    with sqlite3.connect(legacy_database) as connection:
-        connection.executescript(
-            """
-            CREATE TABLE users (id INTEGER PRIMARY KEY);
-            CREATE TABLE resources (id INTEGER PRIMARY KEY);
-            CREATE TABLE test_scenarios (
-                id INTEGER PRIMARY KEY,
-                is_enabled BOOLEAN NOT NULL
-            );
-            CREATE TABLE test_runs (
-                id INTEGER PRIMARY KEY,
-                scenario_id INTEGER NOT NULL
-            );
-            CREATE TABLE run_steps (id INTEGER PRIMARY KEY);
-            CREATE TABLE artifacts (
-                id INTEGER PRIMARY KEY,
-                run_id INTEGER NOT NULL,
-                name TEXT NOT NULL
-            );
-            INSERT INTO test_scenarios (id, is_enabled) VALUES (1, 1), (2, 1);
-            INSERT INTO test_runs (id, scenario_id) VALUES (10, 2);
-            INSERT INTO artifacts (id, run_id, name) VALUES (20, 10, 'historical-report.pdf');
-            """
+def _model_foreign_keys(table: sa.Table):
+    return {
+        (
+            tuple(constraint.column_keys),
+            constraint.elements[0].column.table.name,
+            tuple(element.column.name for element in constraint.elements),
+            constraint.ondelete,
         )
-    _alembic(legacy_database, "stamp", "0003")
-    _alembic(legacy_database, "upgrade", "head")
+        for constraint in table.foreign_key_constraints
+    }
 
-    with sqlite3.connect(legacy_database) as connection:
-        scenarios = connection.execute(
-            "SELECT id, is_enabled, workflow_status, is_archived FROM test_scenarios ORDER BY id"
-        ).fetchall()
-        assert scenarios == [(2, 0, "archived", 1)]
-        assert connection.execute("SELECT id, scenario_id FROM test_runs").fetchall() == [(10, 2)]
-        assert connection.execute("SELECT id, run_id, name FROM artifacts").fetchall() == [
-            (20, 10, "historical-report.pdf")
-        ]
+
+def _database_foreign_keys(inspector: sa.Inspector, table_name: str):
+    return {
+        (
+            tuple(item["constrained_columns"]),
+            item["referred_table"],
+            tuple(item["referred_columns"]),
+            item.get("options", {}).get("ondelete"),
+        )
+        for item in inspector.get_foreign_keys(table_name)
+    }
+
+
+def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path) -> None:
+    database_path = tmp_path / "fresh.sqlite3"
+    _alembic(database_path, "upgrade", "head")
+
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    model_table_names = set(Base.metadata.tables)
+    assert len(model_table_names) == 20
+    assert all(name.startswith("t_") for name in model_table_names)
+    assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
+
+    for table_name in sorted(model_table_names):
+        model_table = Base.metadata.tables[table_name]
+        database_columns = {column["name"]: column for column in inspector.get_columns(table_name)}
+        assert set(database_columns) == set(model_table.columns.keys())
+        for model_column in model_table.columns:
+            database_column = database_columns[model_column.name]
+            if not model_column.primary_key:
+                assert database_column["nullable"] == model_column.nullable
+            assert database_column["type"]._type_affinity == model_column.type._type_affinity
+            if isinstance(model_column.type, sa.String):
+                assert database_column["type"].length == model_column.type.length
+        assert set(inspector.get_pk_constraint(table_name)["constrained_columns"]) == {
+            column.name for column in model_table.primary_key.columns
+        }
+
+        model_indexes = {
+            (index.name, tuple(column.name for column in index.columns), bool(index.unique))
+            for index in model_table.indexes
+        }
+        database_indexes = {
+            (index["name"], tuple(index["column_names"]), bool(index["unique"]))
+            for index in inspector.get_indexes(table_name)
+        }
+        assert database_indexes == model_indexes
+
+        model_uniques = {
+            tuple(column.name for column in constraint.columns)
+            for constraint in model_table.constraints
+            if isinstance(constraint, sa.UniqueConstraint)
+        }
+        database_uniques = {
+            tuple(constraint["column_names"])
+            for constraint in inspector.get_unique_constraints(table_name)
+        }
+        assert database_uniques == model_uniques
+        assert _database_foreign_keys(inspector, table_name) == _model_foreign_keys(model_table)
+
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            f"SELECT version_num FROM {VERSION_TABLE}"
+        ).scalar_one() == "0001"
+    engine.dispose()
+
+    _alembic(database_path, "downgrade", "base")
+    with sqlite3.connect(database_path) as connection:
+        remaining = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert remaining == {VERSION_TABLE}
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() is None
+
+
+def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
+    environment = dict(os.environ)
+    environment["DATABASE_URL"] = (
+        "mysql+pymysql://openslt:secret@127.0.0.1:3306/openslt?charset=utf8mb4"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    sql = completed.stdout
+
+    created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
+    assert len(created_tables) == 21
+    assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
+    assert " LONGTEXT" in sql
+    assert not re.search(r"\sJSON(?:\s|,)", sql)
+    assert "filename(120), checksum(64)" in sql
+    assert (
+        "ALTER TABLE t_test_scenarios ADD CONSTRAINT "
+        "fk_test_scenarios_draft_workflow_version_id"
+    ) in sql
+
+
+def test_only_single_baseline_revision_remains() -> None:
+    revision_files = {
+        path.name
+        for path in (REPOSITORY_ROOT / "backend" / "migrations" / "versions").glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert revision_files == {"0001_initial.py"}
+
+
+def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
+    database_path = tmp_path / "portable.sqlite3"
+    environment = dict(os.environ)
+    environment["DATABASE_URL"] = _database_url(database_path)
+    environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "backend")
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from portable_main import upgrade_portable_database; upgrade_portable_database()",
+        ],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    with sqlite3.connect(database_path) as connection:
         tables = {
-            row[0] for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
         }
-        assert {
-            "scenario_workflow_versions",
-            "scenario_workflow_nodes",
-            "configuration_capture_snapshots",
-            "configuration_capture_items",
-            "contract_data_files",
-        }.issubset(tables)
-        contract_foreign_keys = {
-            (row[3], row[6]) for row in connection.execute(
-                "PRAGMA foreign_key_list('contract_data_files')"
-            )
-        }
-        assert ("scenario_id", "SET NULL") in contract_foreign_keys
-        assert ("workflow_node_id", "SET NULL") in contract_foreign_keys
-        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
-
-    fresh_database = tmp_path / "fresh.sqlite3"
-    _alembic(fresh_database, "upgrade", "0003")
-    _alembic(fresh_database, "upgrade", "head")
-    with sqlite3.connect(fresh_database) as connection:
-        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == ("0004",)
+        assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
+            "0001",
+        )
