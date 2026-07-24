@@ -265,7 +265,7 @@ async def _receive_simulated(websocket: WebSocket, terminal: SimulatedTerminal) 
     while True:
         try:
             message = await websocket.receive_json()
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, RuntimeError):
             return "client_disconnected"
         if message.get("type") == "resize":
             continue
@@ -299,7 +299,7 @@ async def _receive_remote(websocket: WebSocket, process: asyncssh.SSHClientProce
     while True:
         try:
             message = await websocket.receive_json()
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, RuntimeError):
             return "client_disconnected"
         message_type = message.get("type")
         if message_type == "input":

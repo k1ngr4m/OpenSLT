@@ -126,11 +126,13 @@ class FakeStdin:
 
 class FakeStdout:
     def __init__(self) -> None:
-        self.queue: asyncio.Queue[str] = asyncio.Queue()
-        self.queue.put_nowait("remote-ready\r\n")
+        self.first_read = True
 
     async def read(self, _: int) -> str:
-        return await self.queue.get()
+        if self.first_read:
+            self.first_read = False
+            return "remote-ready\r\n"
+        await asyncio.get_running_loop().create_future()
 
 
 class FakeProcess:
