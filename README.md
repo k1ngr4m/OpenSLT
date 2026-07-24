@@ -82,6 +82,8 @@ PORT=8000
 
 `EXECUTION_MODE=simulated` 不连接真实 SSH 或 MySQL；只有改为 `remote` 并重启服务后才会访问远端资源。生产环境建议使用 MySQL 8、Redis 7、独立非 root 用户和随机生成的 `JWT_SECRET`、`CREDENTIAL_ENCRYPTION_KEY`。
 
+当 `DATABASE_URL` 指向 MySQL 时，启动和在线迁移会自动创建尚不存在的目标数据库，再执行 Alembic 建表。首次启动使用的 MySQL 账号需要具备 `CREATE` 权限；数据库创建完成后可按生产安全策略收紧权限。
+
 ## 生产构建
 
 构建 Web 前端：

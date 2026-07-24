@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
-from app.core.database import Base
+from app.core.database import Base, ensure_database_exists
 from app.models import *  # noqa: F403
 
 config = context.config
@@ -21,6 +21,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    ensure_database_exists(settings.database_url)
     connectable = engine_from_config(config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
@@ -29,4 +30,3 @@ def run_migrations_online() -> None:
 
 if context.is_offline_mode(): run_migrations_offline()
 else: run_migrations_online()
-
