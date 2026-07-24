@@ -146,5 +146,5 @@ class SPAStaticFiles(StaticFiles):
         return await super().get_response("index.html", scope)
 
 
-if settings.frontend_dist and settings.frontend_dist.is_dir() and settings.environment != "desktop":
+if settings.frontend_dist and settings.frontend_dist.is_dir():
     app.mount("/", SPAStaticFiles(directory=settings.frontend_dist, html=True), name="frontend")

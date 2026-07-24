@@ -31,22 +31,11 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     open_browser: bool = False
-    openslt_data_root: Path | None = None
-    openslt_log_dir: Path | None = None
-    openslt_api_port: int | None = Field(default=None, ge=1, le=65535)
     initial_admin_username: str = "admin"
     initial_admin_password: str = "shengli123"
 
     @model_validator(mode="after")
     def ensure_directories(self) -> "Settings":
-        if self.openslt_data_root:
-            data_root = self.openslt_data_root
-            self.database_url = f"sqlite:///{(data_root / 'openslt.sqlite3').as_posix()}"
-            self.artifact_root = data_root / "artifacts"
-        if self.openslt_log_dir:
-            self.log_dir = self.openslt_log_dir
-        if self.openslt_api_port:
-            self.port = self.openslt_api_port
         if self.frontend_dist is None:
             bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
             candidate = bundle_root / "frontend" / "dist"
