@@ -119,11 +119,11 @@ PY
 }
 
 session_exists() {
-    tmux has-session -t "=$SESSION_NAME" 2>/dev/null
+    tmux has-session -t "$SESSION_NAME" 2>/dev/null
 }
 
 window_exists() {
-    tmux list-windows -t "=$SESSION_NAME" -F '#{window_name}' 2>/dev/null \
+    tmux list-windows -t "$SESSION_NAME" -F '#{window_name}' 2>/dev/null \
         | grep -Fxq -- "$1"
 }
 
@@ -301,25 +301,23 @@ start_services() {
         && die "Port $WEB_PORT is already in use by a process outside the '$SESSION_NAME' session."
 
     printf -v backend_command \
-        'exec %q -m uvicorn app.main:app --app-dir backend --host %q --port %q' \
-        "$PYTHON" "$API_HOST" "$API_PORT"
+        'cd %q && exec %q -m uvicorn app.main:app --app-dir backend --host %q --port %q' \
+        "$PROJECT_ROOT" "$PYTHON" "$API_HOST" "$API_PORT"
     printf -v frontend_command \
-        'exec npm run dev -- --host %q --port %q --strictPort' \
-        "$WEB_BIND_HOST" "$WEB_PORT"
+        'cd %q && exec npm run dev -- --host %q --port %q --strictPort' \
+        "$FRONTEND_ROOT" "$WEB_BIND_HOST" "$WEB_PORT"
 
     info "Starting the backend in tmux session '$SESSION_NAME'..."
-    tmux new-session -d -s "$SESSION_NAME" -n backend -c "$PROJECT_ROOT"
-    if ! tmux new-window -d -t "=$SESSION_NAME" -n frontend -c "$FRONTEND_ROOT"; then
-        tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
+    tmux new-session -d -s "$SESSION_NAME" -n backend
+    if ! tmux new-window -d -t "$SESSION_NAME" -n frontend; then
+        tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
         die "Failed to create the frontend tmux window."
     fi
     if ! tmux set-option -w -t "$SESSION_NAME:backend" remain-on-exit on >/dev/null \
         || ! tmux set-option -w -t "$SESSION_NAME:frontend" remain-on-exit on >/dev/null \
-        || ! tmux respawn-pane -k -c "$PROJECT_ROOT" -t "$SESSION_NAME:backend.0" \
-            "$backend_command" \
-        || ! tmux respawn-pane -k -c "$FRONTEND_ROOT" -t "$SESSION_NAME:frontend.0" \
-            "$frontend_command"; then
-        tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
+        || ! tmux respawn-pane -k -t "$SESSION_NAME:backend.0" "$backend_command" \
+        || ! tmux respawn-pane -k -t "$SESSION_NAME:frontend.0" "$frontend_command"; then
+        tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
         die "Failed to start one of the tmux service windows."
     fi
     tmux select-window -t "$SESSION_NAME:backend"
@@ -338,7 +336,7 @@ stop_services() {
         return 0
     fi
     info "Stopping tmux session '$SESSION_NAME'..."
-    tmux kill-session -t "=$SESSION_NAME"
+    tmux kill-session -t "$SESSION_NAME"
     success "OpenSLT has stopped."
 }
 
@@ -387,9 +385,9 @@ attach_session() {
     require_command tmux "Install tmux with your Linux package manager."
     session_exists || die "The OpenSLT tmux session is not running."
     if [[ -n "${TMUX:-}" ]]; then
-        exec tmux switch-client -t "=$SESSION_NAME"
+        exec tmux switch-client -t "$SESSION_NAME"
     fi
-    exec tmux attach-session -t "=$SESSION_NAME"
+    exec tmux attach-session -t "$SESSION_NAME"
 }
 
 show_logs() {
