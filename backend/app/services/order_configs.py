@@ -25,6 +25,17 @@ ORDER_TOOLS = {
     "ees_ef_vi_trader_binary_api_test": "ees_ef_vi_trader_api_test_conf",
     "ees_zf_trader_binary_api_test": "ees_zf_trader_api_test_conf",
 }
+PARSER_TOOLS = {
+    "soft_cffex_speed_analysis",
+    "soft_cffex_speed_analysis_v2",
+    "soft_shfe_speed_analysis_v2",
+    "soft_czce_speed_analysis",
+    "soft_dce_speed_analysis_v7",
+    "soft_gfex_speed_analysis",
+    "hwcffex_1414_2.0",
+    "hwshfe_1414_2.0",
+    "mg11",
+}
 FORBIDDEN_XML = re.compile(r"<!\s*(DOCTYPE|ENTITY)\b", re.IGNORECASE)
 SYMBOL_CSV_ELEMENTS = {
     "futures": "fut_symbol_csv",
@@ -43,8 +54,10 @@ class OrderConfigError(Exception):
 @dataclass
 class OrderConfigContext:
     resource_id: int
+    resource_type: str
     tool: str
     prefix: str
+    config_filename: str
     directory: str
     host: str
     port: int
@@ -64,6 +77,12 @@ def checksum(content: str) -> str:
 
 
 def _tool_from_resource(resource: Resource) -> typing.Union[str, None]:
+    if resource.resource_type == "parser":
+        configured = (resource.capabilities or {}).get("parser_tool")
+        if configured in PARSER_TOOLS:
+            return configured
+        directory_name = posixpath.basename(resource.remote_path.rstrip("/"))
+        return directory_name if directory_name in PARSER_TOOLS else None
     configured = (resource.capabilities or {}).get("order_tool")
     if configured in ORDER_TOOLS:
         return configured
@@ -74,7 +93,7 @@ def _tool_from_resource(resource: Resource) -> typing.Union[str, None]:
 def resource_context(resource: Resource) -> OrderConfigContext:
     if resource.is_deleted:
         raise OrderConfigError("ORDER_RESOURCE_NOT_FOUND", "发单工具资源不存在", 404)
-    if resource.resource_type != "order":
+    if resource.resource_type not in {"order", "parser"}:
         raise OrderConfigError("ORDER_RESOURCE_REQUIRED", "该资源不是发单工具", 400)
     if not resource.is_enabled:
         raise OrderConfigError("ORDER_RESOURCE_DISABLED", "发单工具资源已停用", 409)
@@ -86,8 +105,10 @@ def resource_context(resource: Resource) -> OrderConfigContext:
         raise OrderConfigError("ORDER_CONFIG_PATH_REQUIRED", "发单工具远端路径不能为空", 400)
     return OrderConfigContext(
         resource_id=resource.id,
+        resource_type=resource.resource_type,
         tool=tool,
-        prefix=ORDER_TOOLS[tool],
+        prefix=ORDER_TOOLS[tool] if resource.resource_type == "order" else "",
+        config_filename=parser_main_config_filename(resource) if resource.resource_type == "parser" else f"{ORDER_TOOLS[tool]}.xml",
         directory=directory,
         host=resource.host,
         port=resource.ssh_port,
@@ -100,6 +121,10 @@ def resource_context(resource: Resource) -> OrderConfigContext:
 def validate_filename(context: OrderConfigContext, filename: str) -> str:
     if not filename or len(filename) > 255 or filename != posixpath.basename(filename):
         raise OrderConfigError("INVALID_ORDER_CONFIG_NAME", "配置文件名不合法")
+    if context.resource_type == "parser":
+        if not re.fullmatch(r"[A-Za-z0-9._-]+\.xml", filename):
+            raise OrderConfigError("INVALID_ORDER_CONFIG_NAME", "解析配置文件名必须以 .xml 结尾")
+        return filename
     pattern = rf"^{re.escape(context.prefix)}[A-Za-z0-9._-]*\.xml$"
     if not re.fullmatch(pattern, filename):
         raise OrderConfigError(
@@ -256,17 +281,61 @@ def _sample_xml(tool: str) -> str:
 '''
 
 
+def parser_main_config_filename(resource: Resource) -> str:
+    capabilities = resource.capabilities or {}
+    configured = str(capabilities.get("parser_config_filename") or "").strip()
+    if configured:
+        return configured
+    tool = str(capabilities.get("parser_binary") or capabilities.get("parser_tool") or "")
+    if tool.endswith("_v2"):
+        tool = tool[:-3]
+    return f"{tool or 'parser'}.xml"
+
+
+def _parser_default_files(main_filename: str) -> typing.Dict[str, str]:
+    return {
+        "config.xml": '''<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <accounts>
+    <account name="100001" idx="1"/>
+  </accounts>
+</root>
+''',
+        "instance.xml": '''<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <instance>
+    <instance user_id="222201" idx="141"/>
+  </instance>
+</root>
+''',
+        main_filename: '''<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <quoto_file_name value="merge_pcap.pcapng"/>
+  <rem_client_ip value=""/>
+  <market_ip value=""/>
+</root>
+''',
+    }
+
+
 class SimulatedOrderConfigStore:
     def __init__(self) -> None:
-        self._files: typing.Dict[int, typing.Dict[str, SimulatedFile]] = {}
+        self._files: typing.Dict[typing.Tuple[str, int, str, str], typing.Dict[str, SimulatedFile]] = {}
 
     def files(self, context: OrderConfigContext) -> typing.Dict[str, SimulatedFile]:
-        if context.resource_id not in self._files:
-            filename = f"{context.prefix}.xml"
-            self._files[context.resource_id] = {
-                filename: SimulatedFile(_sample_xml(context.tool), datetime.now(timezone.utc))
-            }
-        return self._files[context.resource_id]
+        key = (context.resource_type, context.resource_id, context.tool, context.config_filename)
+        if key not in self._files:
+            if context.resource_type == "parser":
+                self._files[key] = {
+                    name: SimulatedFile(content, datetime.now(timezone.utc))
+                    for name, content in _parser_default_files(context.config_filename).items()
+                }
+            else:
+                filename = f"{context.prefix}.xml"
+                self._files[key] = {
+                    filename: SimulatedFile(_sample_xml(context.tool), datetime.now(timezone.utc))
+                }
+        return self._files[key]
 
     def clear(self) -> None:
         self._files.clear()
@@ -360,6 +429,18 @@ def _modified_at(value: typing.Union[int, None]) -> datetime:
 
 
 class OrderConfigService:
+    async def _ensure_parser_defaults(
+        self, resource: Resource, context: OrderConfigContext, sftp: asyncssh.SFTPClient
+    ) -> None:
+        if context.resource_type != "parser":
+            return
+        await sftp.makedirs(context.directory, exist_ok=True)
+        for filename, content in _parser_default_files(parser_main_config_filename(resource)).items():
+            validate_filename(context, filename)
+            if not await sftp.exists(_path(context, filename)):
+                parse_xml(content)
+                await _write_remote_file(sftp, context, filename, content, None, replace=False)
+
     async def list(self, resource: Resource) -> dict:
         context = resource_context(resource)
         if settings.execution_mode == "simulated":
@@ -375,6 +456,7 @@ class OrderConfigService:
             rows = []
             try:
                 async with _sftp_client(context) as sftp:
+                    await self._ensure_parser_defaults(resource, context, sftp)
                     async for entry in sftp.scandir(context.directory):
                         try:
                             validate_filename(context, entry.filename)
@@ -411,6 +493,7 @@ class OrderConfigService:
             return config_detail(context, filename, item.content, item.modified_at)
         try:
             async with _sftp_client(context) as sftp:
+                await self._ensure_parser_defaults(resource, context, sftp)
                 content, attrs = await _read_remote_file(sftp, context, filename)
             return config_detail(context, filename, content, _modified_at(attrs.mtime))
         except OrderConfigError:

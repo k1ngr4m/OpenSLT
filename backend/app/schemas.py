@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -51,9 +52,22 @@ class UserOut(ORMModel):
     created_at: datetime
 
 
+PARSER_TOOLS = {
+    "soft_cffex_speed_analysis",
+    "soft_cffex_speed_analysis_v2",
+    "soft_shfe_speed_analysis_v2",
+    "soft_czce_speed_analysis",
+    "soft_dce_speed_analysis_v7",
+    "soft_gfex_speed_analysis",
+    "hwcffex_1414_2.0",
+    "hwshfe_1414_2.0",
+    "mg11",
+}
+
+
 class ResourceWrite(BaseModel):
     name: str
-    resource_type: Literal["rem", "market", "order", "slnic", "capture", "coco", "database"]
+    resource_type: Literal["rem", "market", "order", "slnic", "capture", "coco", "parser", "database"]
     business_code: Literal["fut_mm", "rem_two", "rem_two_mm"]
     host: str = ""
     ssh_port: int = Field(default=22, ge=1, le=65535)
@@ -80,6 +94,24 @@ class ResourceWrite(BaseModel):
         if self.resource_type != "database":
             if not self.host.strip() or not self.username.strip():
                 raise ValueError("SSH 地址和用户名不能为空")
+            if self.resource_type == "parser":
+                tool = str(self.capabilities.get("parser_tool") or "").strip()
+                if tool not in PARSER_TOOLS:
+                    raise ValueError("请选择受支持的解析工具")
+                binary = tool
+                config_filename = str(self.capabilities.get("parser_config_filename") or "").strip()
+                if not config_filename:
+                    config_filename = f"{binary[:-3] if binary.endswith('_v2') else binary}.xml"
+                if not re.fullmatch(r"[A-Za-z0-9._-]+\.xml", config_filename):
+                    raise ValueError("解析工具主配置文件必须以 .xml 结尾")
+                self.capabilities = {
+                    **self.capabilities,
+                    "parser_tool": tool,
+                    "parser_binary": binary,
+                    "parser_config_filename": config_filename,
+                }
+                if not self.remote_path.strip():
+                    self.remote_path = f"/home/user0/{binary}"
             return self
         self.database_engine = self.database_engine or "mysql"
         self.database_connection_mode = self.database_connection_mode or "direct"
@@ -285,6 +317,7 @@ class WorkflowNodeWrite(BaseModel):
         "slnic_start_capture",
         "slnic_stop_capture",
         "slnic_merge_capture",
+        "parser_parse",
     ]
     name: str = Field(min_length=1, max_length=128)
     config: typing.Dict[str, Any] = Field(default_factory=dict)

@@ -22,7 +22,7 @@ from app.models import Resource, User
 from app.services.audit import write_audit
 
 
-TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic"}
+TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
 MAX_INPUT_SIZE = 64 * 1024
 MIN_COLUMNS = 20
 MAX_COLUMNS = 300

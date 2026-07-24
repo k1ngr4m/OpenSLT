@@ -25,6 +25,7 @@ from app.services.workflows import (
     capture_database,
     capture_server,
     execute_slnic_node,
+    execute_parser_node,
     prepare_order_node,
 )
 
@@ -270,6 +271,23 @@ async def start_workflow_run(run_id: int) -> None:
                 step.result_summary = await prepare_order_node(db, workflow, node, run_resources)
             elif node.node_type in SLNIC_NODE_TYPES:
                 step.result_summary = await execute_slnic_node(db, run, step, node, run_resources)
+            elif node.node_type == "parser_parse":
+                step.result_summary = await execute_parser_node(db, run, step, node, run_resources)
+                append_log(
+                    db,
+                    run,
+                    "parser.completed",
+                    "数据解析完成",
+                    step=step,
+                    source="parser",
+                    detail={
+                        "command": step.result_summary.get("command"),
+                        "exit_code": step.result_summary.get("exit_code"),
+                        "duration_ms": step.result_summary.get("duration_ms"),
+                        "output_files": step.result_summary.get("output_files"),
+                    },
+                    log_type="remote_command",
+                )
             else:
                 raise WorkflowError("WORKFLOW_NODE_UNSUPPORTED", f"不支持节点类型 {node.node_type}", 409)
             step.status = "succeeded"

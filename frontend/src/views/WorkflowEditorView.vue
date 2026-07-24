@@ -39,6 +39,7 @@ const nodeCategories = [
   { title: '流程准备', types: ['wiring_confirmation'] },
   { title: '发单', types: ['order_preparation'] },
   { title: 'SLNIC', types: ['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'] },
+  { title: '数据解析', types: ['parser_parse'] },
 ]
 
 const GLOBAL_KEYS = [
@@ -142,6 +143,7 @@ function nodeMeta(type: string) {
     slnic_start_capture: { label: '启动 SLNIC 节点', icon: VideoPlay, tone: 'violet' },
     slnic_stop_capture: { label: '关闭 SLNIC 节点', icon: VideoPause, tone: 'violet' },
     slnic_merge_capture: { label: '合并 pcapng', icon: Files, tone: 'violet' },
+    parser_parse: { label: '数据解析', icon: Document, tone: 'blue' },
   }[type] || { label: type, icon: Document, tone: 'teal' }
 }
 
@@ -154,6 +156,7 @@ function nodeDescription(type: string) {
     slnic_start_capture: '调用脚本开始四路抓包',
     slnic_stop_capture: '调用脚本结束抓包',
     slnic_merge_capture: '合并并转换为单一 pcapng 产物',
+    parser_parse: '导出订单数据、上传抓包并执行解析工具',
   }[type] || ''
 }
 
@@ -174,6 +177,7 @@ function defaultNode(type: string): WorkflowNode {
   if (type === 'database_config') return { node_key: key, position: 0, node_type: type, name: '获取数据库配置', config: { database_name: '', keys: [] } }
   if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'placeholder' } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单准备', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [] } }
+  if (type === 'parser_parse') return { node_key: key, position: 0, node_type: type, name: '数据解析', config: { database_name: '' } }
   return { node_key: key, position: 0, node_type: type, name: nodeMeta(type).label, config: {} }
 }
 
@@ -393,7 +397,7 @@ onMounted(load)
           <template v-for="(node, index) in nodes" :key="node.node_key">
             <article :data-node-key="node.node_key" class="flow-node" :class="[{ selected: selectedKey === node.node_key }, nodeMeta(node.node_type).tone]" :draggable="editable" @dragstart="draggingKey = node.node_key" @dragover.prevent @drop="dropNode(index)" @click="selectedKey = node.node_key">
               <div class="node-icon"><el-icon><component :is="nodeMeta(node.node_type).icon" /></el-icon></div>
-              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
+              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
               <div v-if="editable" class="node-actions"><el-button text circle :icon="Top" :disabled="index === 0" aria-label="上移节点" @click.stop="moveNode(index, -1)" /><el-button text circle :icon="Bottom" :disabled="index === nodes.length - 1" aria-label="下移节点" @click.stop="moveNode(index, 1)" /><el-button text circle type="danger" :icon="Delete" aria-label="删除节点" @click.stop="removeNode(index)" /></div>
             </article>
             <div class="flow-link"><span></span><button v-if="editable" class="add-point" type="button" aria-label="在此处添加节点" @click="openPicker(index + 1)"><el-icon><Plus /></el-icon></button></div>
@@ -458,6 +462,17 @@ onMounted(load)
             <div class="section-label">执行命令</div>
             <div class="slnic-commands"><code v-for="command in slnicCommands(selectedNode.node_type)" :key="command">{{ command }}</code></div>
             <p class="slnic-note">命令由系统固定生成，工作流节点不能修改脚本路径或追加 Shell 参数。</p>
+          </template>
+          <template v-else-if="selectedNode.node_type === 'parser_parse'">
+            <label class="field required"><span>运行数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable || !selectedResourceMap.database" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>从该数据库导出 t_fut_orders、t_fut_quotes、t_fut_arbi_orders。</small></label>
+            <div class="section-label">解析资源</div>
+            <div class="slnic-summary">
+              <div><span>解析工具</span><strong>{{ selectedResourceMap.parser?.capabilities?.parser_binary || '未绑定解析资源' }}</strong></div>
+              <div><span>远端路径</span><strong class="mono">{{ selectedResourceMap.parser?.remote_path || '-' }}</strong></div>
+              <div><span>主配置 XML</span><strong class="mono">{{ selectedResourceMap.parser?.capabilities?.parser_config_filename || '-' }}</strong></div>
+            </div>
+            <el-alert v-if="!selectedResourceMap.parser || !selectedResourceMap.database" title="请先在左侧资源池绑定解析工具和数据库资源" type="warning" :closable="false" show-icon />
+            <el-alert title="该节点必须位于合并 pcapng 节点之后；运行时会上传三份订单 CSV 和 merge_pcap.pcapng。" type="info" :closable="false" show-icon />
           </template>
 
           <div v-if="previewSnapshots.length" class="preview-results"><div class="section-label">最近预采集结果</div><div v-for="snapshot in previewSnapshots" :key="snapshot.id" class="snapshot"><div><strong>{{ snapshot.source_type === 'server' ? `资源 #${snapshot.resource_id}` : snapshot.database_name }}</strong><el-tag size="small" :type="snapshot.status === 'succeeded' ? 'success' : 'danger'">{{ snapshot.status === 'succeeded' ? '成功' : '失败' }}</el-tag></div><dl><template v-for="item in snapshot.items" :key="item.id"><dt>{{ item.item_label }}</dt><dd :class="{ failed: item.status === 'failed' }">{{ item.value_text || item.error_message || '-' }}</dd></template></dl></div></div>

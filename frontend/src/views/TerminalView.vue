@@ -32,7 +32,7 @@ const resourceId = computed(() => Number(route.params.id))
 async function loadResource() {
   const { data } = await api.get('/resources')
   resource.value = data.find((item: any) => item.id === resourceId.value)
-  if (!resource.value || !['rem', 'market', 'order', 'slnic'].includes(resource.value.resource_type)) {
+  if (!resource.value || !['rem', 'market', 'order', 'slnic', 'parser'].includes(resource.value.resource_type)) {
     ElMessage.error('资源不存在或不支持操作台')
     await router.replace('/resources')
     return false
@@ -195,12 +195,12 @@ onBeforeUnmount(() => {
         <el-button v-else :icon="RefreshRight" type="primary" :loading="connecting" @click="connect">重新连接</el-button>
       </div>
     </div>
-    <div v-if="resource?.resource_type === 'order'" class="workspace-switch">
+    <div v-if="['order', 'parser'].includes(resource?.resource_type)" class="workspace-switch">
       <el-radio-group :model-value="activeWorkspace" @change="value => switchWorkspace(value as 'terminal' | 'configs')">
         <el-radio-button value="terminal">SSH 终端</el-radio-button>
         <el-radio-button value="configs">配置文件</el-radio-button>
       </el-radio-group>
-      <span v-if="activeWorkspace === 'configs'" class="workspace-note">管理远端根目录中的发单场景 XML</span>
+      <span v-if="activeWorkspace === 'configs'" class="workspace-note">管理远端根目录中的 {{ resource?.resource_type === 'parser' ? '解析工具' : '发单场景' }} XML</span>
     </div>
     <div v-show="activeWorkspace === 'terminal'" class="terminal-workspace">
       <section class="terminal-shell">
@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
       </section>
       <div class="terminal-footnote"><Connection /> <span>{{ mode === 'remote' ? '输入会直接发送到远端 Shell，请确认目标资源和权限。' : '模拟模式只提供内置命令，不会连接远程服务器或执行本机命令。' }}</span></div>
     </div>
-    <OrderConfigPanel v-if="resource?.resource_type === 'order'" v-show="activeWorkspace === 'configs'" :resource-id="resourceId" :active="activeWorkspace === 'configs'" />
+    <OrderConfigPanel v-if="['order', 'parser'].includes(resource?.resource_type)" v-show="activeWorkspace === 'configs'" :resource-id="resourceId" :active="activeWorkspace === 'configs'" :resource-type="resource.resource_type" />
   </div>
 </template>
 

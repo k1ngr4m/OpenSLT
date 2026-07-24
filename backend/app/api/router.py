@@ -121,11 +121,25 @@ def database_resource(db: Session, resource_id: int, database_name: str) -> typi
         raise database_http_error(exc) from exc
 
 
-def order_config_resource(db: Session, resource_id: int) -> Resource:
+def config_resource(db: Session, resource_id: int, resource_type: str) -> Resource:
     resource = db.get(Resource, resource_id)
     if not resource or resource.is_deleted:
         raise not_found("资源")
+    if resource.resource_type != resource_type:
+        code = "ORDER_RESOURCE_REQUIRED" if resource_type == "order" else "PARSER_RESOURCE_REQUIRED"
+        raise HTTPException(
+            status_code=400,
+            detail={"code": code, "message": f"该资源不是 {resource_type} 类型"},
+        )
     return resource
+
+
+def order_config_resource(db: Session, resource_id: int) -> Resource:
+    return config_resource(db, resource_id, "order")
+
+
+def parser_config_resource(db: Session, resource_id: int) -> Resource:
+    return config_resource(db, resource_id, "parser")
 
 
 def order_config_http_error(exc: OrderConfigError) -> HTTPException:
@@ -597,6 +611,116 @@ async def delete_order_config(
         "order_config.delete",
         detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum, "mode": settings.execution_mode},
     )
+    return Response(status_code=204)
+
+
+@router.get("/resources/{resource_id}/parser-configs", response_model=OrderConfigListOut)
+async def list_parser_configs(
+    resource_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.list(resource)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "parser_config.list", "failed", {"code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.list", detail={"mode": settings.execution_mode, "count": len(result["files"])})
+    return result
+
+
+@router.get("/resources/{resource_id}/parser-configs/{filename}", response_model=OrderConfigDetailOut)
+async def read_parser_config(
+    resource_id: int,
+    filename: str,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.read(resource, filename)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "parser_config.read", "failed", {"filename": filename, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.read", detail={"filename": filename, "checksum": result["checksum"], "mode": settings.execution_mode})
+    return result
+
+
+@router.post("/resources/{resource_id}/parser-configs", response_model=OrderConfigDetailOut, status_code=201)
+async def create_parser_config(
+    resource_id: int,
+    payload: OrderConfigCreate,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.create(resource, payload.name, payload.source_name)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "parser_config.create", "failed", {"filename": payload.name, "source_filename": payload.source_name, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.create", detail={"filename": result["name"], "source_filename": payload.source_name, "checksum": result["checksum"], "mode": settings.execution_mode})
+    return result
+
+
+@router.put("/resources/{resource_id}/parser-configs/{filename}", response_model=OrderConfigDetailOut)
+async def update_parser_config(
+    resource_id: int,
+    filename: str,
+    payload: OrderConfigUpdate,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.update(resource, filename, payload.content, payload.expected_checksum)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "parser_config.update", "failed", {"filename": filename, "expected_checksum": payload.expected_checksum, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.update", detail={"filename": filename, "previous_checksum": payload.expected_checksum, "checksum": result["checksum"], "mode": settings.execution_mode})
+    return result
+
+
+@router.patch("/resources/{resource_id}/parser-configs/{filename}", response_model=OrderConfigDetailOut)
+async def rename_parser_config(
+    resource_id: int,
+    filename: str,
+    payload: OrderConfigRename,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        result = await order_config_service.rename(resource, filename, payload.new_name, payload.expected_checksum)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "parser_config.rename", "failed", {"filename": filename, "new_filename": payload.new_name, "expected_checksum": payload.expected_checksum, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.rename", detail={"filename": filename, "new_filename": result["name"], "checksum": result["checksum"], "mode": settings.execution_mode})
+    return result
+
+
+@router.delete("/resources/{resource_id}/parser-configs/{filename}", status_code=204)
+async def delete_parser_config(
+    resource_id: int,
+    filename: str,
+    request: Request,
+    expected_checksum: str = Query(..., pattern=r"^[0-9a-f]{64}$"),
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> Response:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        trash_name = await order_config_service.delete(resource, filename, expected_checksum)
+    except OrderConfigError as exc:
+        write_order_config_audit(db, request, actor, resource_id, "parser_config.delete", "failed", {"filename": filename, "expected_checksum": expected_checksum, "code": exc.code})
+        raise order_config_http_error(exc) from exc
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.delete", detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum, "mode": settings.execution_mode})
     return Response(status_code=204)
 
 

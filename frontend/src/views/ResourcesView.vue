@@ -44,8 +44,24 @@ const slnicModels = [
   { value: 'SLNIC_NF11_1g_10g', path: '/home/user0/slnic/SLNIC_NF11_1g_10g_911.hw_7881.driver_12671.sw_20240528' },
 ]
 
+const parserTools = [
+  'soft_cffex_speed_analysis',
+  'soft_cffex_speed_analysis_v2',
+  'soft_shfe_speed_analysis_v2',
+  'soft_czce_speed_analysis',
+  'soft_dce_speed_analysis_v7',
+  'soft_gfex_speed_analysis',
+  'hwcffex_1414_2.0',
+  'hwshfe_1414_2.0',
+  'mg11',
+]
+
+function parserConfigFilename(tool: string) {
+  return `${tool.endsWith('_v2') ? tool.slice(0, -3) : tool}.xml`
+}
+
 const empty = () => ({
-  name: '', resource_type: 'rem', market_environment: '', order_tool: '', slnic_model: '', business_code: 'fut_mm',
+  name: '', resource_type: 'rem', market_environment: '', order_tool: '', slnic_model: '', parser_tool: '', parser_config_filename: '', business_code: 'fut_mm',
   host: '', ssh_port: 22, username: '', auth_type: 'password', password: '', private_key: '',
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
@@ -78,6 +94,12 @@ function setSlnicDefaultPath(value: string) {
   if (selected) form.remote_path = selected.path
 }
 
+function setParserToolDefaults(value: string) {
+  if (!parserTools.includes(value)) return
+  form.remote_path = `/home/user0/${value}`
+  form.parser_config_filename = parserConfigFilename(value)
+}
+
 function handleResourceTypeChange(value: string) {
   databaseStep.value = 1
   databaseOptions.value = []
@@ -93,6 +115,10 @@ function handleResourceTypeChange(value: string) {
     form.slnic_model = form.slnic_model || slnicModels[0].value
     setSlnicDefaultPath(form.slnic_model)
   }
+  else if (value === 'parser') {
+    form.parser_tool = form.parser_tool || parserTools[0]
+    setParserToolDefaults(form.parser_tool)
+  }
 }
 
 function open(row?: any) {
@@ -100,11 +126,14 @@ function open(row?: any) {
   form.market_environment = row?.capabilities?.market_environment || ''
   form.order_tool = row?.capabilities?.order_tool || orderTools.find(item => item.path === row?.remote_path)?.value || ''
   form.slnic_model = row?.capabilities?.slnic_model || slnicModels.find(item => item.path === row?.remote_path)?.value || ''
+  form.parser_tool = row?.capabilities?.parser_tool || parserTools.find(item => `/home/user0/${item}` === row?.remote_path) || ''
+  form.parser_config_filename = row?.capabilities?.parser_config_filename || (form.parser_tool ? parserConfigFilename(form.parser_tool) : '')
   form.database_names = [...(row?.database_names || [])]
   if (!form.remote_path) {
     if (form.resource_type === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
     else if (form.resource_type === 'order' && form.order_tool) setOrderToolDefaultPath(form.order_tool)
     else if (form.resource_type === 'slnic' && form.slnic_model) setSlnicDefaultPath(form.slnic_model)
+    else if (form.resource_type === 'parser' && form.parser_tool) setParserToolDefaults(form.parser_tool)
     else setRemDefaultPath(form.business_code)
   }
   form.password = ''
@@ -200,9 +229,17 @@ async function save() {
     ElMessage.warning('请选择 SLNIC 型号')
     return
   }
+  if (form.resource_type === 'parser' && !parserTools.includes(form.parser_tool)) {
+    ElMessage.warning('请选择解析工具')
+    return
+  }
+  if (form.resource_type === 'parser' && !form.parser_config_filename.trim().endsWith('.xml')) {
+    ElMessage.warning('解析主配置文件必须以 .xml 结尾')
+    return
+  }
   loading.value = true
   try {
-    const { market_environment, order_tool, slnic_model, ...payload } = form
+    const { market_environment, order_tool, slnic_model, parser_tool, parser_config_filename, ...payload } = form
     const capabilities = { ...(form.capabilities || {}) }
     if (form.resource_type === 'market') {
       const selected = marketEnvironments.find(item => item.value === market_environment)!
@@ -234,6 +271,15 @@ async function save() {
       })
     } else {
       for (const key of ['slnic_model', 'slnic_model_name', 'slnic_default_path']) delete capabilities[key]
+    }
+    if (form.resource_type === 'parser') {
+      Object.assign(capabilities, {
+        parser_tool,
+        parser_binary: parser_tool,
+        parser_config_filename: parser_config_filename.trim(),
+      })
+    } else {
+      for (const key of ['parser_tool', 'parser_binary', 'parser_config_filename']) delete capabilities[key]
     }
     payload.capabilities = capabilities
     if (form.resource_type !== 'database') {
@@ -330,7 +376,7 @@ onMounted(load)
           <template #default="scope">
             <el-button link type="primary" @click="health(scope.row)">连通测试</el-button>
             <el-button v-if="scope.row.resource_type === 'database' && auth.canOperate" link type="primary" @click="router.push(`/resources/${scope.row.id}/database`)">操作台</el-button>
-            <el-button v-if="['rem', 'market', 'order', 'slnic'].includes(scope.row.resource_type) && auth.canOperate" link type="primary" :disabled="!scope.row.is_enabled" @click="router.push(`/resources/${scope.row.id}/terminal`)">操作台</el-button>
+            <el-button v-if="['rem', 'market', 'order', 'slnic', 'parser'].includes(scope.row.resource_type) && auth.canOperate" link type="primary" :disabled="!scope.row.is_enabled" @click="router.push(`/resources/${scope.row.id}/terminal`)">操作台</el-button>
             <template v-if="auth.isAdmin">
               <el-button link @click="open(scope.row)">编辑</el-button>
               <el-button link type="danger" @click="remove(scope.row)">删除</el-button>
@@ -374,6 +420,18 @@ onMounted(load)
               <el-select v-model="form.slnic_model" placeholder="请选择 SLNIC 型号" style="width:100%" @change="setSlnicDefaultPath">
                 <el-option v-for="item in slnicModels" :key="item.value" :label="item.value" :value="item.value" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.resource_type === 'parser'" :span="24">
+            <el-form-item label="解析工具" required>
+              <el-select v-model="form.parser_tool" placeholder="请选择解析工具" style="width:100%" @change="setParserToolDefaults">
+                <el-option v-for="item in parserTools" :key="item" :label="item" :value="item" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.resource_type === 'parser'" :span="24">
+            <el-form-item label="主配置 XML" required>
+              <el-input v-model="form.parser_config_filename" placeholder="例如 soft_cffex_speed_analysis.xml" />
             </el-form-item>
           </el-col>
           <el-col :span="12">

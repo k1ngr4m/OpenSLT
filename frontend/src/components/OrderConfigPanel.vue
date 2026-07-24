@@ -8,7 +8,7 @@ import OrderConfigNodeEditor from '@/components/OrderConfigNodeEditor.vue'
 import type { OrderConfigDetail, OrderConfigFile, XmlNode } from '@/types/orderConfig'
 import { formatBytes, parseDocument, prepareTree, serializeDocument } from '@/utils/orderConfigXml'
 
-const props = defineProps<{ resourceId: number; active: boolean }>()
+const props = defineProps<{ resourceId: number; active: boolean; resourceType?: 'order' | 'parser' }>()
 const loaded = ref(false)
 const loadingList = ref(false)
 const loadingDetail = ref(false)
@@ -40,10 +40,10 @@ const filteredFiles = computed(() => {
 const selectedFile = computed(() => files.value.find(item => item.name === selectedName.value))
 const prefix = computed(() => tool.value === 'ees_zf_trader_binary_api_test'
   ? 'ees_zf_trader_api_test_conf'
-  : 'ees_ef_vi_trader_api_test_conf')
+  : props.resourceType === 'parser' ? tool.value : 'ees_ef_vi_trader_api_test_conf')
 
 function endpoint(filename?: string) {
-  const base = `/resources/${props.resourceId}/order-configs`
+  const base = `/resources/${props.resourceId}/${props.resourceType === 'parser' ? 'parser-configs' : 'order-configs'}`
   return filename ? `${base}/${encodeURIComponent(filename)}` : base
 }
 

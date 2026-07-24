@@ -35,7 +35,12 @@ from app.models import (
     TestRun,
     TestScenario,
 )
-from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
+from app.services.order_configs import (
+    OrderConfigError,
+    order_config_service,
+    parser_main_config_filename,
+    update_symbol_csv_values,
+)
 
 SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
 NODE_TYPES = {
@@ -43,8 +48,10 @@ NODE_TYPES = {
     "database_config",
     "wiring_confirmation",
     "order_preparation",
+    "parser_parse",
     *SLNIC_NODE_TYPES,
 }
+PARSER_TABLES = ("t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders")
 SERVER_FIELDS = {
     "rem": {"ip", "nic_model", "machine_model", "os_version", "cpu_model"},
     "market": {"ip", "os_version", "cpu_model"},
@@ -209,6 +216,30 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 preceding = [item for item in version.nodes if item.position < node.position and item.node_type == "database_config"]
                 if not preceding:
                     errors.append({**prefix, "field": "database_node_key", "message": "发单节点前需要数据库配置节点"})
+        elif node.node_type == "parser_parse":
+            parser_resource = resources.get("parser")
+            database_resource = resources.get("database")
+            database_name = str(config.get("database_name") or "").strip()
+            if not parser_resource or parser_resource.is_deleted or not parser_resource.is_enabled:
+                errors.append({**prefix, "field": "resource", "message": "场景资源池缺少已启用的解析工具资源"})
+            else:
+                capabilities = parser_resource.capabilities or {}
+                if not str(capabilities.get("parser_binary") or capabilities.get("parser_tool") or "").strip():
+                    errors.append({**prefix, "field": "resource", "message": "解析工具资源未配置可执行文件"})
+                if not parser_resource.remote_path.strip():
+                    errors.append({**prefix, "field": "resource", "message": "解析工具资源未配置远端路径"})
+                if not parser_main_config_filename(parser_resource).strip():
+                    errors.append({**prefix, "field": "resource", "message": "解析工具资源未配置主 XML"})
+            if not database_resource:
+                errors.append({**prefix, "field": "resource", "message": "场景资源池缺少数据库资源"})
+            elif database_name not in (database_resource.database_names or []):
+                errors.append({**prefix, "field": "database_name", "message": "运行数据库不在资源白名单中"})
+            preceding_merges = [
+                item for item in version.nodes
+                if item.position < node.position and item.node_type == "slnic_merge_capture"
+            ]
+            if not preceding_merges or slnic_state != "merged":
+                errors.append({**prefix, "field": "position", "message": "数据解析前需要先完成 SLNIC 合并 pcapng 节点"})
         elif node.node_type in SLNIC_NODE_TYPES:
             resource = resources.get("slnic")
             if not resource or resource.is_deleted or not resource.is_enabled:
@@ -520,6 +551,15 @@ async def validate_publish(
     resources = resource_map(db, version)
     order_config_updates: list[dict[str, typing.Any]] = []
     for node in version.nodes:
+        if node.node_type == "parser_parse":
+            resource = resources.get("parser")
+            if resource:
+                filename = parser_main_config_filename(resource)
+                try:
+                    await order_config_service.read(resource, filename)
+                except OrderConfigError as exc:
+                    errors.append({"node_key": node.node_key, "field": "resource", "message": str(exc)})
+            continue
         if node.node_type != "order_preparation":
             continue
         config = node.config or {}
@@ -976,3 +1016,280 @@ async def execute_slnic_node(
         }
     )
     return summary
+
+
+async def _export_parser_table(
+    database_resource: Resource,
+    database_name: str,
+    table: str,
+    target: Path,
+) -> int:
+    if table not in PARSER_TABLES:
+        raise WorkflowError("PARSER_TABLE_INVALID", f"不支持导出数据表 {table}", 400)
+    if settings.execution_mode == "simulated":
+        rows = [
+            {"id": 1, "account": "100001", "symbol": "SIM0001"},
+            {"id": 2, "account": "100001", "symbol": "SIM0002"},
+        ]
+        with target.open("w", encoding="utf-8", newline="") as output:
+            writer = csv.DictWriter(output, fieldnames=list(rows[0]))
+            writer.writeheader()
+            writer.writerows(rows)
+        return len(rows)
+
+    try:
+        async with mysql_adapter.connection(database_resource, database_name) as connection:
+            def export() -> int:
+                with connection.cursor(SSCursor) as cursor, target.open(
+                    "w", encoding="utf-8", newline=""
+                ) as output:
+                    cursor.execute(f"SELECT * FROM `{table}`")
+                    columns = [item[0] for item in cursor.description or []]
+                    if not columns:
+                        return 0
+                    writer = csv.writer(output)
+                    writer.writerow(columns)
+                    row_count = 0
+                    while True:
+                        batch = cursor.fetchmany(1000)
+                        if not batch:
+                            break
+                        writer.writerows(batch)
+                        row_count += len(batch)
+                    return row_count
+
+            row_count = await to_thread(export)
+    except Exception as exc:
+        raise WorkflowError(
+            "PARSER_DATABASE_EXPORT_FAILED", f"导出 {table} 失败：{exc}", 409
+        ) from exc
+    if not row_count:
+        raise WorkflowError("PARSER_TABLE_EMPTY", f"数据表 {table} 没有可导出的记录", 409)
+    return row_count
+
+
+def _parser_artifact_directory(run: TestRun, step: RunStep) -> Path:
+    return (
+        settings.artifact_root
+        / run.business_code
+        / str(run.plan_id)
+        / str(run.scenario_id)
+        / run.run_number
+        / "parser"
+        / str(step.id)
+    )
+
+
+def _parser_pcap_artifact(db: Session, run: TestRun, step: RunStep) -> Artifact:
+    prior_steps = sorted(
+        (
+            item for item in run.steps
+            if item.position < step.position
+            and item.node_type == "slnic_merge_capture"
+            and item.status == "succeeded"
+        ),
+        key=lambda item: item.position,
+        reverse=True,
+    )
+    for prior in prior_steps:
+        artifact = db.scalar(
+            select(Artifact).where(
+                Artifact.run_id == run.id,
+                Artifact.step_id == prior.id,
+                Artifact.name == "merge_pcap.pcapng",
+            )
+        )
+        if artifact and Path(artifact.path).is_file():
+            return artifact
+    raise WorkflowError("PARSER_PCAP_REQUIRED", "未找到前置 SLNIC 节点生成的 merge_pcap.pcapng", 409)
+
+
+async def _parser_csv_snapshot(sftp: typing.Any, directory: str) -> dict[str, tuple[int, int]]:
+    snapshot: dict[str, tuple[int, int]] = {}
+    async for entry in sftp.scandir(directory):
+        if not entry.filename.lower().endswith(".csv"):
+            continue
+        if entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR:
+            continue
+        snapshot[entry.filename] = (entry.attrs.size or 0, entry.attrs.mtime or 0)
+    return snapshot
+
+
+async def _upload_parser_input(
+    sftp: typing.Any, directory: str, filename: str, source: Path
+) -> str:
+    target = posixpath.join(directory, filename)
+    temporary = posixpath.join(directory, f".openslt-{uuid4().hex}.tmp")
+    try:
+        await sftp.put(str(source), temporary)
+        await sftp.posix_rename(temporary, target)
+    except Exception as exc:
+        raise WorkflowError("PARSER_INPUT_UPLOAD_FAILED", f"上传 {filename} 失败：{exc}", 409) from exc
+    finally:
+        with suppress(Exception):
+            await sftp.remove(temporary)
+    return target
+
+
+def _register_parser_artifact(
+    db: Session, run: TestRun, step: RunStep, target: Path
+) -> Artifact:
+    data = target.read_bytes()
+    artifact = db.scalar(
+        select(Artifact).where(
+            Artifact.run_id == run.id,
+            Artifact.step_id == step.id,
+            Artifact.name == target.name,
+        )
+    )
+    if artifact is None:
+        artifact = Artifact(run_id=run.id, step_id=step.id, name=target.name, path=str(target))
+        db.add(artifact)
+    artifact.artifact_type = "parsed_csv"
+    artifact.path = str(target)
+    artifact.content_type = "text/csv"
+    artifact.size = len(data)
+    artifact.checksum = hashlib.sha256(data).hexdigest()
+    artifact.is_immutable = True
+    db.flush()
+    return artifact
+
+
+async def execute_parser_node(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    node: ScenarioWorkflowNode,
+    run_resources: dict[str, Resource],
+) -> dict:
+    parser_resource = run_resources.get("parser")
+    database_resource = run_resources.get("database")
+    if not parser_resource or parser_resource.is_deleted or not parser_resource.is_enabled:
+        raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
+    if not database_resource:
+        raise WorkflowError("PARSER_DATABASE_REQUIRED", "运行资源缺少数据库", 409)
+    database_name = str((node.config or {}).get("database_name") or "").strip()
+    try:
+        database_name = validate_database(database_resource, database_name)
+    except DatabaseOperationError as exc:
+        raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+    capabilities = parser_resource.capabilities or {}
+    binary = str(capabilities.get("parser_binary") or capabilities.get("parser_tool") or "").strip()
+    config_filename = parser_main_config_filename(parser_resource)
+    directory = parser_resource.remote_path.strip().rstrip("/")
+    if not binary or not directory or not config_filename:
+        raise WorkflowError("PARSER_RESOURCE_INVALID", "解析工具资源配置不完整", 409)
+    pcap_artifact = _parser_pcap_artifact(db, run, step)
+    artifact_directory = _parser_artifact_directory(run, step)
+    artifact_directory.mkdir(parents=True, exist_ok=True)
+    command = (
+        f"cd {shlex.quote(directory)} && "
+        f"{shlex.quote('./' + binary)} {shlex.quote(config_filename)}"
+    )
+    table_rows: dict[str, int] = {}
+    input_checksums: dict[str, str] = {}
+    output_artifacts: list[Artifact] = []
+    stdout = ""
+    stderr = ""
+    started_at = datetime.now(timezone.utc)
+
+    with tempfile.TemporaryDirectory(prefix="openslt-parser-") as temporary_name:
+        staging = Path(temporary_name)
+        input_files: dict[str, Path] = {}
+        for table in PARSER_TABLES:
+            target = staging / f"{table}.csv"
+            table_rows[table] = await _export_parser_table(
+                database_resource, database_name, table, target
+            )
+            input_files[target.name] = target
+        input_files["merge_pcap.pcapng"] = Path(pcap_artifact.path)
+        for filename, source in input_files.items():
+            input_checksums[filename] = hashlib.sha256(source.read_bytes()).hexdigest()
+
+        if settings.execution_mode == "simulated":
+            simulated_outputs = (
+                "write_clt_new_to_mkt.csv",
+                "write_clt_action_to_mkt.csv",
+                "write_clt_quote_action_to_mkt.csv",
+                "write_mkt_accept_to_clt.csv",
+                "write_clt_new_quote_to_mkt.csv",
+                "write_mkt_quote_accept_to_clt.csv",
+            )
+            for filename in simulated_outputs:
+                target = artifact_directory / filename
+                with target.open("w", encoding="utf-8", newline="") as output:
+                    writer = csv.writer(output)
+                    writer.writerow(["sequence", "latency_us"])
+                    writer.writerows([(1, 82.1), (2, 83.5)])
+                output_artifacts.append(_register_parser_artifact(db, run, step, target))
+            stdout = "simulated parser completed"
+        else:
+            connection = None
+            sftp = None
+            try:
+                connection = await asyncssh.connect(**_ssh_options(parser_resource))
+                sftp = await connection.start_sftp_client()
+                await sftp.makedirs(directory, exist_ok=True)
+                before = await _parser_csv_snapshot(sftp, directory)
+                for filename, source in input_files.items():
+                    await _upload_parser_input(sftp, directory, filename, source)
+                result = await connection.run(command, check=False)
+                stdout = str(result.stdout or "")
+                stderr = str(result.stderr or "")
+                if result.exit_status != 0:
+                    detail = (stderr or stdout or "远端命令没有返回错误信息").strip()[:1000]
+                    raise WorkflowError(
+                        "PARSER_COMMAND_FAILED",
+                        f"解析命令失败（退出码 {result.exit_status}）：{detail}",
+                        409,
+                    )
+                after = await _parser_csv_snapshot(sftp, directory)
+                changed = sorted(
+                    name for name, state in after.items()
+                    if name not in input_files and (name not in before or before[name] != state)
+                )
+                if not changed:
+                    raise WorkflowError("PARSER_OUTPUT_MISSING", "解析成功但没有生成或更新 CSV 文件", 409)
+                for filename in changed:
+                    target = artifact_directory / filename
+                    partial = target.with_name(f".{target.name}.{uuid4().hex}.part")
+                    try:
+                        await sftp.get(posixpath.join(directory, filename), str(partial))
+                        partial.replace(target)
+                    except Exception as exc:
+                        raise WorkflowError(
+                            "PARSER_OUTPUT_DOWNLOAD_FAILED", f"下载 {filename} 失败：{exc}", 409
+                        ) from exc
+                    finally:
+                        partial.unlink(missing_ok=True)
+                    output_artifacts.append(_register_parser_artifact(db, run, step, target))
+            except WorkflowError:
+                raise
+            except Exception as exc:
+                raise WorkflowError("PARSER_EXECUTION_FAILED", f"解析节点执行失败：{exc}", 409) from exc
+            finally:
+                if sftp:
+                    with suppress(Exception):
+                        sftp.exit()
+                if connection:
+                    connection.close()
+                    with suppress(Exception):
+                        await connection.wait_closed()
+
+    if not output_artifacts:
+        raise WorkflowError("PARSER_OUTPUT_MISSING", "解析节点没有产生 CSV 产物", 409)
+    duration_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+    return {
+        "resource_id": parser_resource.id,
+        "database_name": database_name,
+        "table_rows": table_rows,
+        "input_checksums": input_checksums,
+        "pcap_artifact_id": pcap_artifact.id,
+        "command": command,
+        "exit_code": 0,
+        "duration_ms": duration_ms,
+        "stdout": stdout[-4000:],
+        "stderr": stderr[-4000:],
+        "artifact_ids": [item.id for item in output_artifacts],
+        "output_files": [item.name for item in output_artifacts],
+    }

@@ -76,12 +76,12 @@
     资源管理中新增资源添加一个解析工具
         也是跟其他一样 是连接linux的服务器的，类型分为以下几种 
         软核做市
-            soft_cffex_speed_analvsis
+            soft_cffex_speed_analysis
             soft_cffex_speed_analysis_v2
             soft_shfe_speed_analysis_v2
-            soft czce_speed_analvsis
+            soft_czce_speed_analysis
             soft_dce_speed_analysis_v7
-            soft_gfex_speed_analvsis
+            soft_gfex_speed_analysis
         整合版二期（NF11）
             hwcffex_1414_2.0
             hwshfe_1414_2.0
