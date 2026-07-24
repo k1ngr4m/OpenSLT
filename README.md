@@ -37,6 +37,30 @@ npm --prefix frontend run dev
 
 初始账号为 `admin`，初始密码为 `shengli123`。首次部署后必须立即修改密码，并更新 `.env` 中的 JWT 与凭据加密密钥。
 
+## Linux 一键启动
+
+Linux 开发或测试环境可使用根目录的 `start-web.sh` 自动准备依赖、执行数据库迁移，并在名为 `openslt` 的 tmux 会话中分别启动 FastAPI 和 Vite：
+
+```bash
+chmod +x ./start-web.sh
+./start-web.sh
+```
+
+前端监听 `0.0.0.0:5173`，可通过脚本输出的局域网地址访问；API 只监听 `127.0.0.1:8000`，由 Vite 代理 `/api` 和 WebSocket 请求。脚本要求系统已安装 tmux、curl、Python 3.8.2（3.8.x）、Node.js 20+ 和 npm 10+。
+
+常用管理命令：
+
+```bash
+./start-web.sh status
+./start-web.sh logs backend
+./start-web.sh logs frontend
+./start-web.sh attach
+./start-web.sh restart
+./start-web.sh stop
+```
+
+该脚本用于开发和测试，不替代生产环境的 systemd、Nginx 与权限隔离配置。
+
 ## Web 功能
 
 - 管理 REM 柜台、模拟市场、发单工具、SLNIC、数据库等测试资源。
