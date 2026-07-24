@@ -26,7 +26,7 @@ from app.models import Artifact, AuditLog, BusinessType, ContractDataFile, Datab
 from app.schemas import ArtifactOut, AuditOut, CaptureSnapshotOut, ContractDataFetchRequest, ContractDataFileOut, DatabaseDiscoveryOut, DatabaseDiscoveryRequest, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite, WorkflowDocumentOut, WorkflowDocumentWrite, WorkflowVersionOut
 from app.services.audit import write_audit
 from app.services.events import broker
-from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, cancel_run, continue_after_wiring, create_steps, create_workflow_steps, confirm_workflow_step, release_locks, start_run
+from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, begin_workflow_step, cancel_run, complete_workflow_step, continue_after_wiring, create_steps, create_workflow_steps, confirm_workflow_step, release_locks, start_run, start_workflow_run
 from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.reports import generate_reports
 from app.services.terminal import handle_resource_terminal
@@ -1179,13 +1179,43 @@ def confirm_wiring(run_id: int, background: BackgroundTasks, request: Request, a
 
 
 @router.post("/runs/{run_id}/steps/{step_id}/confirm", response_model=RunOut)
-def confirm_run_step(run_id: int, step_id: int, background: BackgroundTasks, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+def confirm_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
     try:
         confirm_workflow_step(db, run, step_id, actor.id)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
-    write_audit(db, "run.step_confirm", "run_step", step_id, actor, request, detail={"run_id": run.id}); db.commit(); background.add_task(start_run, run.id); return load_run(db, run.id)
+    write_audit(db, "run.step_confirm", "run_step", step_id, actor, request, detail={"run_id": run.id}); db.commit(); return load_run(db, run.id)
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/start", response_model=RunOut)
+def start_run_step(run_id: int, step_id: int, background: BackgroundTasks, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    run = load_run(db, run_id)
+    try:
+        step = begin_workflow_step(db, run, step_id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "run.step_start", "run_step", step.id, actor, request, detail={"run_id": run.id}); db.commit(); background.add_task(start_workflow_run, run.id, step.id); return load_run(db, run.id)
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/complete", response_model=RunOut)
+def complete_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    run = load_run(db, run_id)
+    try:
+        complete_workflow_step(db, run, step_id, actor.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "run.step_complete", "run_step", step_id, actor, request, detail={"run_id": run.id}); db.commit(); return load_run(db, run.id)
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/retry", response_model=RunOut)
+def retry_run_step(run_id: int, step_id: int, background: BackgroundTasks, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    run = load_run(db, run_id)
+    try:
+        step = begin_workflow_step(db, run, step_id, retry=True)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "run.step_retry", "run_step", step.id, actor, request, detail={"run_id": run.id, "retry_count": step.retry_count}); db.commit(); background.add_task(start_workflow_run, run.id, step.id); return load_run(db, run.id)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)
@@ -1198,7 +1228,7 @@ def run_cancel(run_id: int, request: Request, actor: User = Depends(operators), 
 @router.post("/runs/{run_id}/pause", response_model=RunOut)
 def run_pause(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
-    if run.status not in {"resource_queue", "awaiting_wiring", "awaiting_confirmation", "awaiting_review"}:
+    if run.status not in {"resource_queue", "awaiting_wiring", "awaiting_confirmation", "awaiting_review", "awaiting_step_start", "awaiting_step_completion", "awaiting_step_retry"}:
         raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "仅排队或人工节点可安全暂停"})
     run.paused_from = run.status; run.status = "paused"
     write_audit(db, "run.pause", "test_run", run.id, actor, request); db.commit(); return run
@@ -1218,6 +1248,15 @@ def run_resume(run_id: int, background: BackgroundTasks, request: Request, actor
 @router.post("/runs/{run_id}/retry", response_model=RunOut)
 def run_retry(run_id: int, background: BackgroundTasks, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
+    if run.workflow_version_id:
+        failed = next((step for step in run.steps if step.status == "failed"), None)
+        if not failed:
+            raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前没有可重试的节点"})
+        try:
+            begin_workflow_step(db, run, failed.id, retry=True)
+        except WorkflowError as exc:
+            raise workflow_http_error(exc) from exc
+        write_audit(db, "run.retry", "test_run", run.id, actor, request, detail={"step": failed.code}); db.commit(); background.add_task(start_workflow_run, run.id, failed.id); return load_run(db, run.id)
     if run.status not in {"precheck_failed", "execution_failed", "parse_failed"}:
         raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前状态不能重试"})
     failed = next((step for step in run.steps if step.status == "failed"), None)

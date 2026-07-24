@@ -22,11 +22,37 @@ def test_complete_dynamic_workflow(client, admin_headers):
     run_id = created.json()["id"]
     assert [item["node_type"] for item in created.json()["steps"]] == ["server_config", "wiring_confirmation"]
     assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
-    waiting = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
-    assert waiting["status"] == "awaiting_confirmation"
-    assert waiting["steps"][0]["result_summary"]["failed"] == 0
-    waiting_step = next(item for item in waiting["steps"] if item["status"] == "waiting")
-    confirmed = client.post(f"/api/v1/runs/{run_id}/steps/{waiting_step['id']}/confirm", headers=admin_headers)
+    ready = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert ready["status"] == "awaiting_step_start"
+    assert [item["status"] for item in ready["steps"]] == ["pending", "pending"]
+
+    first_step = ready["steps"][0]
+    assert client.post(
+        f"/api/v1/runs/{run_id}/steps/{first_step['id']}/start",
+        headers=admin_headers,
+    ).status_code == 200
+    executed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert executed["status"] == "awaiting_step_completion"
+    assert executed["steps"][0]["status"] == "waiting"
+    assert executed["steps"][0]["result_summary"]["failed"] == 0
+    assert executed["steps"][1]["status"] == "pending"
+    assert client.post(
+        f"/api/v1/runs/{run_id}/steps/{first_step['id']}/complete",
+        headers=admin_headers,
+    ).status_code == 200
+
+    second_ready = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert second_ready["status"] == "awaiting_step_start"
+    second_step = second_ready["steps"][1]
+    assert client.post(
+        f"/api/v1/runs/{run_id}/steps/{second_step['id']}/start",
+        headers=admin_headers,
+    ).status_code == 200
+    assert client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()["status"] == "awaiting_step_completion"
+    confirmed = client.post(
+        f"/api/v1/runs/{run_id}/steps/{second_step['id']}/complete",
+        headers=admin_headers,
+    )
     assert confirmed.status_code == 200
     completed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
     assert completed["status"] == "completed"
@@ -54,7 +80,7 @@ def test_resource_lock_queues_competing_run(client, admin_headers):
     assert "资源被占用" in queued["queue_reason"]
     client.post(f"/api/v1/runs/{first['id']}/cancel", headers=admin_headers)
     client.post(f"/api/v1/runs/{second['id']}/start", headers=admin_headers)
-    assert client.get(f"/api/v1/runs/{second['id']}", headers=admin_headers).json()["status"] == "awaiting_confirmation"
+    assert client.get(f"/api/v1/runs/{second['id']}", headers=admin_headers).json()["status"] == "awaiting_step_start"
 
 
 def test_sensitive_data_redaction():

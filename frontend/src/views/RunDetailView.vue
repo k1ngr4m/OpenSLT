@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { CircleCheck, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, statusText, statusType } from '@/utils/status'
@@ -16,9 +17,10 @@ const verdict = reactive({ final_result: 'passed', issue_description: '', notes:
 let socket: WebSocket | null = null
 let timer: number | undefined
 const runId = Number(route.params.id)
+const actingStepId = ref<number | null>(null)
 const canStart = computed(() => ['draft', 'resource_queue'].includes(run.value?.status))
 const terminal = computed(() => ['completed', 'cancelled', 'execution_failed', 'parse_failed', 'precheck_failed', 'timed_out'].includes(run.value?.status))
-const waitingStep = computed(() => run.value?.steps?.find((step: any) => step.status === 'waiting'))
+const currentStep = computed(() => run.value?.steps?.find((step: any) => step.status !== 'succeeded'))
 
 async function load() {
   run.value = (await api.get(`/runs/${runId}`)).data
@@ -40,13 +42,18 @@ async function cancel() {
   action('cancel', '取消指令已提交')
 }
 
-async function confirmStep() {
-  if (!waitingStep.value) return
+async function stepAction(step: any, operation: 'start' | 'complete' | 'retry') {
+  actingStepId.value = step.id
   try {
-    await api.post(`/runs/${runId}/steps/${waitingStep.value.id}/confirm`)
-    ElMessage.success('已确认接线，工作流继续执行')
+    await api.post(`/runs/${runId}/steps/${step.id}/${operation}`)
+    const messages = { start: '节点已开始', complete: '节点已完成', retry: '节点已重新执行' }
+    ElMessage.success(messages[operation])
     setTimeout(load, 300)
-  } catch (error) { ElMessage.error(errorMessage(error)) }
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    actingStepId.value = null
+  }
 }
 
 async function submitVerdict() {
@@ -112,9 +119,7 @@ onBeforeUnmount(() => {
         <p class="muted">{{ businessText[run.business_code] }} · {{ run.config_snapshot?.plan?.name }} / {{ run.config_snapshot?.scenario?.name }}</p>
       </div>
       <div v-if="auth.canOperate" class="toolbar">
-        <el-button v-if="canStart" type="primary" @click="action('start', '运行已启动')">启动运行</el-button>
-        <el-button v-if="run.status === 'awaiting_confirmation'" type="warning" @click="confirmStep">确认接线完成</el-button>
-        <el-button v-else-if="run.status === 'awaiting_wiring'" type="warning" @click="action('confirm-wiring', '已确认接线，自动流程继续')">确认接线完成</el-button>
+        <el-button v-if="canStart" type="primary" @click="action('start', '运行已就绪')">启动运行</el-button>
         <el-button v-if="run.status === 'awaiting_review'" type="success" @click="verdictDialog = true">提交人工结论</el-button>
         <el-button v-if="!terminal" type="danger" plain @click="cancel">取消</el-button>
       </div>
@@ -125,8 +130,7 @@ onBeforeUnmount(() => {
       <div><span class="muted">Trace ID</span><p class="mono trace">{{ run.trace_id }}</p></div>
       <div><span class="muted">日志完整性</span><p>{{ run.logs_complete ? '完整' : '已降级，待补传' }}</p></div>
     </div>
-    <el-alert v-if="['awaiting_wiring', 'awaiting_confirmation'].includes(run.status)" title="人工确认节点" description="请按接线图完成机房接线，确认链路无误后点击“确认接线完成”。" type="warning" show-icon :closable="false" />
-    <div v-if="['awaiting_wiring', 'awaiting_confirmation'].includes(run.status)" class="wiring-run card">
+    <div v-if="currentStep?.node_type === 'wiring_confirmation' && ['running', 'waiting'].includes(currentStep.status)" class="wiring-run card">
       <div class="wiring-device"><strong>REM 系统</strong><span>测试服务器</span></div>
       <div class="wiring-cable"><i></i><span>链路连接</span><i></i></div>
       <div class="wiring-device market"><strong>模拟市场</strong><span>行情服务器</span></div>
@@ -138,7 +142,46 @@ onBeforeUnmount(() => {
       <div class="card main-card">
         <el-tabs v-model="active">
           <el-tab-pane label="步骤时间线" name="timeline">
-            <el-timeline><el-timeline-item v-for="step in run.steps" :key="step.id" :type="statusType(step.status) as any" :timestamp="step.duration_ms != null ? `${step.duration_ms} ms` : ''"><div class="step"><strong>{{ step.position }}. {{ step.name }}</strong><el-tag size="small" :type="statusType(step.status)">{{ statusText[step.status] || step.status }}</el-tag></div><p v-if="step.error_message" class="danger">{{ step.error_message }}</p><div v-if="step.result_summary && Object.keys(step.result_summary).length" class="step-result"><span v-if="step.result_summary.sources">采集来源 {{ step.result_summary.sources }} 个，失败 {{ step.result_summary.failed || 0 }} 个</span><span v-if="step.result_summary.prepared">XML 与合约文件已校验，未启动发单进程</span><span v-if="step.result_summary.confirmed">确认人 ID {{ step.result_summary.confirmed_by }}</span></div></el-timeline-item></el-timeline>
+            <el-timeline>
+              <el-timeline-item v-for="step in run.steps" :key="step.id" :type="statusType(step.status) as any" :timestamp="step.duration_ms != null ? `${step.duration_ms} ms` : ''">
+                <div class="step">
+                  <strong>{{ step.position }}. {{ step.name }}</strong>
+                  <div class="step-actions">
+                    <el-tag size="small" :type="statusType(step.status)">{{ statusText[step.status] || step.status }}</el-tag>
+                    <el-button
+                      v-if="auth.canOperate && currentStep?.id === step.id && step.status === 'pending' && run.status === 'awaiting_step_start'"
+                      size="small"
+                      type="primary"
+                      :icon="VideoPlay"
+                      :loading="actingStepId === step.id"
+                      @click="stepAction(step, 'start')"
+                    >开始</el-button>
+                    <el-button
+                      v-if="auth.canOperate && currentStep?.id === step.id && step.status === 'waiting' && run.status === 'awaiting_step_completion'"
+                      size="small"
+                      type="success"
+                      :icon="CircleCheck"
+                      :loading="actingStepId === step.id"
+                      @click="stepAction(step, 'complete')"
+                    >完成</el-button>
+                    <el-button
+                      v-if="auth.canOperate && currentStep?.id === step.id && step.status === 'failed' && run.status === 'awaiting_step_retry'"
+                      size="small"
+                      type="warning"
+                      :icon="RefreshRight"
+                      :loading="actingStepId === step.id"
+                      @click="stepAction(step, 'retry')"
+                    >重试</el-button>
+                  </div>
+                </div>
+                <p v-if="step.error_message" class="danger">{{ step.error_message }}</p>
+                <div v-if="step.result_summary && Object.keys(step.result_summary).length" class="step-result">
+                  <span v-if="step.result_summary.sources">采集来源 {{ step.result_summary.sources }} 个，失败 {{ step.result_summary.failed || 0 }} 个</span>
+                  <span v-if="step.result_summary.prepared">XML 与合约文件已校验，未启动发单进程</span>
+                  <span v-if="step.result_summary.confirmed">确认人 ID {{ step.result_summary.confirmed_by }}</span>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
           </el-tab-pane>
           <el-tab-pane label="实时日志" name="logs">
             <div class="log-toolbar"><span class="muted">{{ logs.length }} 条记录</span><el-button size="small" @click="load">刷新</el-button></div>
@@ -163,5 +206,5 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.summary{display:grid;grid-template-columns:180px 1fr 1.5fr 180px;gap:28px;padding:18px 22px;margin-bottom:16px}.summary p{margin:10px 0 0}.trace{font-size:12px;overflow:hidden;text-overflow:ellipsis}.wiring-run{display:grid;grid-template-columns:1fr minmax(110px,1fr) 1fr minmax(110px,1fr) 1fr;align-items:center;gap:12px;padding:18px;margin-top:12px}.wiring-device{min-height:76px;border:1px solid #9bc8bd;border-left:4px solid #269a82;border-radius:8px;background:#f3faf8;display:flex;flex-direction:column;align-items:center;justify-content:center}.wiring-device.market{border-color:#b7c9dd;border-left-color:#4f83b2;background:#f5f8fc}.wiring-device.order{border-color:#d9bd84;border-left-color:#bd842f;background:#fffaf1}.wiring-device span,.wiring-cable span{font-size:11px;color:#75848c;margin-top:4px}.wiring-cable{display:flex;align-items:center;gap:5px;text-align:center}.wiring-cable i{height:2px;flex:1;background:#94aaa5;position:relative}.wiring-cable i:first-child:before,.wiring-cable i:last-child:after{content:'';position:absolute;top:-3px;width:8px;height:8px;border-radius:50%;background:#269a82}.wiring-cable i:first-child:before{left:0}.wiring-cable i:last-child:after{right:0}.content{display:grid;grid-template-columns:1fr 280px;gap:16px;margin-top:16px}.main-card{padding:0 20px 20px;min-height:530px}.side{padding:18px}.side h3{margin-top:0}.side dl{font-size:13px}.side dt{color:#7b8794;margin-top:16px}.side dd{margin:4px 0}.step{display:flex;align-items:center;justify-content:space-between}.step-result{margin-top:8px;padding:8px 10px;border-radius:6px;background:#f2f7f5;color:#557269;font-size:12px}.step-result span{display:block}.log-toolbar{display:flex;justify-content:space-between;margin-bottom:8px}.verdict{padding:16px;background:#f7faf9;border-radius:8px;margin-top:14px}@media(max-width:1250px){.wiring-run{grid-template-columns:1fr 80px 1fr 80px 1fr}.wiring-cable span{display:none}}
+.summary{display:grid;grid-template-columns:180px 1fr 1.5fr 180px;gap:28px;padding:18px 22px;margin-bottom:16px}.summary p{margin:10px 0 0}.trace{font-size:12px;overflow:hidden;text-overflow:ellipsis}.wiring-run{display:grid;grid-template-columns:1fr minmax(110px,1fr) 1fr minmax(110px,1fr) 1fr;align-items:center;gap:12px;padding:18px;margin-top:12px}.wiring-device{min-height:76px;border:1px solid #9bc8bd;border-left:4px solid #269a82;border-radius:8px;background:#f3faf8;display:flex;flex-direction:column;align-items:center;justify-content:center}.wiring-device.market{border-color:#b7c9dd;border-left-color:#4f83b2;background:#f5f8fc}.wiring-device.order{border-color:#d9bd84;border-left-color:#bd842f;background:#fffaf1}.wiring-device span,.wiring-cable span{font-size:11px;color:#75848c;margin-top:4px}.wiring-cable{display:flex;align-items:center;gap:5px;text-align:center}.wiring-cable i{height:2px;flex:1;background:#94aaa5;position:relative}.wiring-cable i:first-child:before,.wiring-cable i:last-child:after{content:'';position:absolute;top:-3px;width:8px;height:8px;border-radius:50%;background:#269a82}.wiring-cable i:first-child:before{left:0}.wiring-cable i:last-child:after{right:0}.content{display:grid;grid-template-columns:1fr 280px;gap:16px;margin-top:16px}.main-card{padding:0 20px 20px;min-height:530px}.side{padding:18px}.side h3{margin-top:0}.side dl{font-size:13px}.side dt{color:#7b8794;margin-top:16px}.side dd{margin:4px 0}.step{display:flex;align-items:center;justify-content:space-between;gap:16px}.step-actions{display:flex;align-items:center;gap:8px;min-height:28px}.step-result{margin-top:8px;padding:8px 10px;border-radius:6px;background:#f2f7f5;color:#557269;font-size:12px}.step-result span{display:block}.log-toolbar{display:flex;justify-content:space-between;margin-bottom:8px}.verdict{padding:16px;background:#f7faf9;border-radius:8px;margin-top:14px}@media(max-width:1250px){.wiring-run{grid-template-columns:1fr 80px 1fr 80px 1fr}.wiring-cable span{display:none}}
 </style>

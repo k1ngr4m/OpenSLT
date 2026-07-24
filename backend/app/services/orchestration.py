@@ -45,6 +45,14 @@ STEPS = [
 TERMINAL_STATUSES = {"completed", "precheck_failed", "execution_failed", "parse_failed", "cancelled", "timed_out"}
 
 
+def _duration_ms(started_at: datetime, finished_at: datetime) -> int:
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if finished_at.tzinfo is None:
+        finished_at = finished_at.replace(tzinfo=timezone.utc)
+    return int((finished_at - started_at).total_seconds() * 1000)
+
+
 def append_log(db: Session, run: TestRun, event: str, message: str, *, level: str = "INFO", step: typing.Union[RunStep, None] = None, source: str = "worker", detail: typing.Union[dict, None] = None, log_type: str = "run") -> LogRecord:
     safe_message = redact(message)
     record = LogRecord(
@@ -209,18 +217,40 @@ async def start_run(run_id: int) -> None:
         db.close()
 
 
-async def start_workflow_run(run_id: int) -> None:
+async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) -> None:
     db = SessionLocal()
     try:
         run = _load(db, run_id)
-        if not run or not run.workflow_version_id or run.status not in {"draft", "resource_queue"}:
+        if not run or not run.workflow_version_id:
             return
-        acquired, conflicts = acquire_locks(db, run)
-        if not acquired:
-            run.status = "resource_queue"
-            run.queue_reason = f"资源被占用: {conflicts}"
-            append_log(db, run, "run.queued", run.queue_reason, level="WARNING")
+        if step_id is None:
+            if run.status not in {"draft", "resource_queue"}:
+                return
+            acquired, conflicts = acquire_locks(db, run)
+            if not acquired:
+                run.status = "resource_queue"
+                run.queue_reason = f"资源被占用: {conflicts}"
+                append_log(db, run, "run.queued", run.queue_reason, level="WARNING")
+                db.commit()
+                return
+            run.started_at = run.started_at or datetime.now(timezone.utc)
+            run.queue_reason = None
+            if run.steps:
+                run.status = "awaiting_step_start"
+                append_log(db, run, "run.started", "工作流已启动，等待手动开始第一个节点")
+            else:
+                run.status = "completed"
+                run.progress = 100
+                run.finished_at = datetime.now(timezone.utc)
+                release_locks(db, run.id, "completed")
+                append_log(db, run, "run.completed", "工作流运行完成")
             db.commit()
+            broker.publish(
+                run.id,
+                {"type": "status", "status": run.status, "progress": run.progress},
+            )
+            return
+        if run.status != "running":
             return
         workflow = db.get(ScenarioWorkflowVersion, run.workflow_version_id)
         scenario = db.get(TestScenario, run.scenario_id)
@@ -229,33 +259,19 @@ async def start_workflow_run(run_id: int) -> None:
         nodes = {node.id: node for node in db.scalars(select(ScenarioWorkflowNode).where(ScenarioWorkflowNode.workflow_version_id == workflow.id)).all()}
         resources = list(db.scalars(select(Resource).where(Resource.id.in_(run.resource_ids))).all())
         run_resources = {item.resource_type: item for item in resources}
-        run.started_at = run.started_at or datetime.now(timezone.utc)
-        run.queue_reason = None
-        append_log(db, run, "run.started", "工作流运行已启动")
-        db.commit()
         total = max(1, len(run.steps))
         for step in run.steps:
-            if step.status == "succeeded":
+            if step.id != step_id:
                 continue
             node = nodes.get(step.workflow_node_id)
             if not node:
                 raise WorkflowError("WORKFLOW_NODE_NOT_FOUND", f"节点 {step.name} 不存在", 409)
             if node.node_type == "wiring_confirmation":
-                step.status = "waiting"
-                step.started_at = step.started_at or datetime.now(timezone.utc)
-                step.result_summary = {"diagram": "placeholder", "confirmed": False}
-                run.status = "awaiting_confirmation"
-                run.progress = int((step.position - 1) * 100 / total)
-                append_log(db, run, "workflow.confirmation_waiting", f"{step.name}等待人工确认", step=step)
-                db.commit()
-                broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
-                return
-            step.status = "running"
-            step.started_at = datetime.now(timezone.utc)
-            run.status = "running"
-            append_log(db, run, "workflow.step_started", f"{step.name}开始", step=step)
-            db.commit()
-            if node.node_type == "server_config":
+                step.result_summary = {
+                    "diagram": (node.config or {}).get("diagram", "placeholder"),
+                    "confirmed": False,
+                }
+            elif node.node_type == "server_config":
                 snapshots = await capture_server(db, scenario, workflow, node, scope="run", actor_id=run.created_by, run_id=run.id, run_step_id=step.id, run_resources=run_resources)
                 failed = [item for item in snapshots if item.status == "failed"]
                 step.result_summary = {"snapshot_ids": [item.id for item in snapshots], "sources": len(snapshots), "failed": len(failed)}
@@ -290,24 +306,21 @@ async def start_workflow_run(run_id: int) -> None:
                 )
             else:
                 raise WorkflowError("WORKFLOW_NODE_UNSUPPORTED", f"不支持节点类型 {node.node_type}", 409)
-            step.status = "succeeded"
+            executed_at = datetime.now(timezone.utc)
+            step.status = "waiting"
             step.progress = 100
-            step.finished_at = datetime.now(timezone.utc)
-            step.duration_ms = int((step.finished_at - step.started_at).total_seconds() * 1000)
-            run.progress = int(step.position * 100 / total)
-            append_log(db, run, "workflow.step_completed", f"{step.name}完成", step=step)
+            step.duration_ms = _duration_ms(step.started_at, executed_at)
+            run.status = "awaiting_step_completion"
+            run.progress = int((step.position - 1) * 100 / total)
+            append_log(db, run, "workflow.step_executed", f"{step.name}执行结束，等待手动完成", step=step)
             db.commit()
-        run.status = "completed"
-        run.progress = 100
-        run.finished_at = datetime.now(timezone.utc)
-        release_locks(db, run.id, "completed")
-        append_log(db, run, "run.completed", "工作流运行完成")
-        db.commit()
-        broker.publish(run.id, {"type": "status", "status": "completed", "progress": 100})
+            broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+            return
+        raise WorkflowError("WORKFLOW_STEP_NOT_FOUND", "运行步骤不存在", 404)
     except asyncio.CancelledError:
         pass
     except Exception as exc:
-        logger.exception("workflow_run_failed", run_id=run_id)
+        logger.exception("workflow_step_execution_failed", run_id=run_id, step_id=step_id)
         run = _load(db, run_id)
         if run:
             failed = next((step for step in run.steps if step.status == "running"), None)
@@ -315,37 +328,108 @@ async def start_workflow_run(run_id: int) -> None:
                 failed.status = "failed"
                 failed.error_message = redact(str(exc))
                 failed.finished_at = datetime.now(timezone.utc)
-            run.status = "execution_failed"
-            run.error_code = getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED")
-            run.error_message = redact(str(exc))
-            run.finished_at = datetime.now(timezone.utc)
-            append_log(db, run, "run.failed", str(exc), level="ERROR", step=failed)
-            release_locks(db, run.id, "execution_failed")
+                started_at = failed.started_at or failed.finished_at
+                failed.duration_ms = _duration_ms(started_at, failed.finished_at)
+                run.status = "awaiting_step_retry"
+                run.error_code = None
+                run.error_message = None
+                run.finished_at = None
+                append_log(
+                    db,
+                    run,
+                    "workflow.step_failed",
+                    str(exc),
+                    level="ERROR",
+                    step=failed,
+                    detail={"error_code": getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED")},
+                )
+            else:
+                run.status = "execution_failed"
+                run.error_code = getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED")
+                run.error_message = redact(str(exc))
+                run.finished_at = datetime.now(timezone.utc)
+                append_log(db, run, "run.failed", str(exc), level="ERROR")
+                release_locks(db, run.id, run.status)
             db.commit()
             broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
     finally:
         db.close()
 
 
-def confirm_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
-    if not run.workflow_version_id or run.status != "awaiting_confirmation":
-        raise WorkflowError("INVALID_TRANSITION", "当前运行不等待人工确认", 409)
+def begin_workflow_step(
+    db: Session,
+    run: TestRun,
+    step_id: int,
+    *,
+    retry: bool = False,
+) -> RunStep:
+    expected_status = "awaiting_step_retry" if retry else "awaiting_step_start"
+    if not run.workflow_version_id or run.status != expected_status:
+        raise WorkflowError("INVALID_TRANSITION", "当前运行不能执行该节点", 409)
+    current = next((item for item in run.steps if item.status != "succeeded"), None)
+    if not current or current.id != step_id:
+        raise WorkflowError("INVALID_WORKFLOW_STEP", "只能操作当前节点", 409)
+    expected_step_status = "failed" if retry else "pending"
+    if current.status != expected_step_status:
+        raise WorkflowError("INVALID_TRANSITION", "当前节点状态不能执行此操作", 409)
+    if retry:
+        current.retry_count += 1
+    current.status = "running"
+    current.progress = 0
+    current.error_message = None
+    current.finished_at = None
+    current.started_at = datetime.now(timezone.utc)
+    run.status = "running"
+    run.error_code = None
+    run.error_message = None
+    append_log(
+        db,
+        run,
+        "workflow.step_retried" if retry else "workflow.step_started",
+        f"{current.name}{'重试' if retry else '开始'}",
+        step=current,
+        detail={"retry_count": current.retry_count},
+    )
+    db.flush()
+    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+    return current
+
+
+def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
+    if not run.workflow_version_id or run.status != "awaiting_step_completion":
+        raise WorkflowError("INVALID_TRANSITION", "当前运行没有待完成的节点", 409)
     step = next((item for item in run.steps if item.id == step_id), None)
-    if not step or step.node_type != "wiring_confirmation" or step.status != "waiting":
-        raise WorkflowError("INVALID_CONFIRMATION_STEP", "当前节点不能确认", 409)
+    current = next((item for item in run.steps if item.status != "succeeded"), None)
+    if not step or not current or current.id != step.id or step.status != "waiting":
+        raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
     now = datetime.now(timezone.utc)
     step.status = "succeeded"
     step.progress = 100
     step.finished_at = now
-    started_at = step.started_at or now
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=timezone.utc)
-    step.duration_ms = int((now - started_at).total_seconds() * 1000)
-    step.result_summary = {"diagram": "placeholder", "confirmed": True, "confirmed_by": actor_id, "confirmed_at": now.isoformat()}
-    run.status = "resource_queue"
+    if step.node_type == "wiring_confirmation":
+        step.result_summary = {
+            **(step.result_summary or {}),
+            "confirmed": True,
+            "confirmed_by": actor_id,
+            "confirmed_at": now.isoformat(),
+        }
     run.progress = int(step.position * 100 / max(1, len(run.steps)))
-    append_log(db, run, "workflow.confirmed", f"{step.name}已确认", step=step)
+    next_step = next((item for item in run.steps if item.status != "succeeded"), None)
+    if next_step:
+        run.status = "awaiting_step_start"
+        append_log(db, run, "workflow.step_completed", f"{step.name}已完成", step=step)
+    else:
+        run.status = "completed"
+        run.progress = 100
+        run.finished_at = now
+        release_locks(db, run.id, "completed")
+        append_log(db, run, "run.completed", "工作流运行完成", step=step)
     db.flush()
+    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+
+
+def confirm_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
+    complete_workflow_step(db, run, step_id, actor_id)
 
 
 async def continue_after_wiring(run_id: int) -> None:

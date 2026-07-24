@@ -298,13 +298,24 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
     cpu_value = workflows.SIMULATED_VALUES["cpu_model"]
     monkeypatch.delitem(workflows.SIMULATED_VALUES, "cpu_model")
     assert client.post(f"/api/v1/runs/{created['id']}/start", headers=admin_headers).status_code == 200
+    step_id = created["steps"][0]["id"]
+    assert client.post(
+        f"/api/v1/runs/{created['id']}/steps/{step_id}/start",
+        headers=admin_headers,
+    ).status_code == 200
     failed = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
-    assert failed["status"] == "execution_failed"
+    assert failed["status"] == "awaiting_step_retry"
     assert failed["steps"][0]["result_summary"] == {"snapshot_ids": [1], "sources": 1, "failed": 1}
 
     monkeypatch.setitem(workflows.SIMULATED_VALUES, "cpu_model", cpu_value)
     retried = client.post(f"/api/v1/runs/{created['id']}/retry", headers=admin_headers)
     assert retried.status_code == 200, retried.text
+    waiting = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
+    assert waiting["status"] == "awaiting_step_completion"
+    assert client.post(
+        f"/api/v1/runs/{created['id']}/steps/{step_id}/complete",
+        headers=admin_headers,
+    ).status_code == 200
     completed = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
     assert completed["status"] == "completed"
     assert completed["steps"][0]["retry_count"] == 1

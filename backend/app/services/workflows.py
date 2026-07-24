@@ -976,7 +976,8 @@ async def execute_slnic_node(
         finally:
             temporary.unlink(missing_ok=True)
             if sftp:
-                sftp.exit()
+                with suppress(Exception):
+                    sftp.exit()
             if connection:
                 connection.close()
                 with suppress(Exception):

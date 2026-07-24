@@ -63,6 +63,20 @@ def parser_nodes():
     ]
 
 
+def complete_workflow(client, headers, run_id):
+    for _ in range(20):
+        run = client.get(f"/api/v1/runs/{run_id}", headers=headers).json()
+        if run["status"] == "completed":
+            return run
+        step = next(item for item in run["steps"] if item["status"] != "succeeded")
+        operation = "complete" if step["status"] == "waiting" else "start"
+        response = client.post(
+            f"/api/v1/runs/{run_id}/steps/{step['id']}/{operation}", headers=headers
+        )
+        assert response.status_code == 200, response.text
+    raise AssertionError("workflow did not complete")
+
+
 def test_parser_tools_are_available_to_every_business(client, admin_headers):
     businesses = ["fut_mm", "rem_two", "rem_two_mm"]
     for index, tool in enumerate(PARSER_TOOLS):
@@ -128,7 +142,7 @@ def test_simulated_parser_workflow_archives_all_csv_outputs(client, admin_header
     run_id = created.json()["id"]
     started = client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers)
     assert started.status_code == 200, started.text
-    run = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    run = complete_workflow(client, admin_headers, run_id)
     assert run["status"] == "completed"
     parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
     assert parse_step["result_summary"]["table_rows"] == {
@@ -273,7 +287,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
         "timeout_minutes": 30,
     }).json()
     client.post(f"/api/v1/runs/{created['id']}/start", headers=admin_headers)
-    run = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
+    run = complete_workflow(client, admin_headers, created["id"])
     assert run["status"] == "completed"
     parsed = [item for item in run["artifacts"] if item["artifact_type"] == "parsed_csv"]
     assert [item["name"] for item in parsed] == ["analysis-result.csv"]

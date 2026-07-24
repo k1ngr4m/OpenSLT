@@ -50,6 +50,33 @@ def create_slnic_run(client, headers):
     return resource, scenario, response.json()
 
 
+def execute_current_step(client, headers, run_id):
+    run = client.get(f"/api/v1/runs/{run_id}", headers=headers).json()
+    step = next(item for item in run["steps"] if item["status"] != "succeeded")
+    operation = "retry" if step["status"] == "failed" else "start"
+    response = client.post(
+        f"/api/v1/runs/{run_id}/steps/{step['id']}/{operation}", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    return client.get(f"/api/v1/runs/{run_id}", headers=headers).json()
+
+
+def complete_current_step(client, headers, run_id):
+    run = client.get(f"/api/v1/runs/{run_id}", headers=headers).json()
+    step = next(item for item in run["steps"] if item["status"] != "succeeded")
+    response = client.post(
+        f"/api/v1/runs/{run_id}/steps/{step['id']}/complete", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    return client.get(f"/api/v1/runs/{run_id}", headers=headers).json()
+
+
+def execute_and_complete_current_step(client, headers, run_id):
+    executed = execute_current_step(client, headers, run_id)
+    assert executed["status"] == "awaiting_step_completion"
+    return complete_current_step(client, headers, run_id)
+
+
 def test_slnic_publish_rejects_invalid_sequence(client, admin_headers):
     resource = create_resource(client, admin_headers, "SLNIC-order", resource_type="slnic")
     _, scenario = create_plan_scenario(
@@ -88,7 +115,9 @@ def test_simulated_slnic_run_creates_downloadable_artifact(
     resource, _, run = create_slnic_run(client, admin_headers)
     started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
     assert started.status_code == 200, started.text
-    completed = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    completed = None
+    for _ in range(3):
+        completed = execute_and_complete_current_step(client, admin_headers, run["id"])
     assert completed["status"] == "completed"
     assert [step["node_type"] for step in completed["steps"]] == [
         "slnic_start_capture",
@@ -160,7 +189,9 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
     _, _, run = create_slnic_run(client, admin_headers)
     started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
     assert started.status_code == 200, started.text
-    completed = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    completed = None
+    for _ in range(3):
+        completed = execute_and_complete_current_step(client, admin_headers, run["id"])
     assert completed["status"] == "completed"
     assert len(connections) == 3
     assert all(connection.closed for connection in connections)
@@ -178,7 +209,7 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
     assert merge["size"] == len(b"remote-pcapng")
 
 
-def test_remote_slnic_command_failure_marks_run_failed(client, admin_headers, monkeypatch):
+def test_remote_slnic_command_failure_waits_for_step_retry(client, admin_headers, monkeypatch):
     class FailedConnection:
         async def run(self, command, check=False):
             return SimpleNamespace(exit_status=7, stdout="", stderr="permission denied")
@@ -197,9 +228,77 @@ def test_remote_slnic_command_failure_marks_run_failed(client, admin_headers, mo
     _, _, run = create_slnic_run(client, admin_headers)
     started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
     assert started.status_code == 200, started.text
-    failed = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
-    assert failed["status"] == "execution_failed"
-    assert failed["error_code"] == "SLNIC_COMMAND_FAILED"
+    failed = execute_current_step(client, admin_headers, run["id"])
+    assert failed["status"] == "awaiting_step_retry"
+    assert failed["error_code"] is None
+    assert failed["error_message"] is None
     assert failed["steps"][0]["status"] == "failed"
     assert "退出码 7" in failed["steps"][0]["error_message"]
     assert failed["artifacts"] == []
+
+
+def test_remote_slnic_stop_failure_continues_to_merge(client, admin_headers, monkeypatch):
+    commands = []
+    stop_attempts = 0
+
+    class FakeSFTP:
+        async def get(self, remote_path, local_path):
+            assert remote_path == "/tmp/openslt/tcpdump/merge_pcap.pcapng"
+            Path(local_path).write_bytes(b"remote-pcapng")
+
+        def exit(self):
+            return None
+
+    class FakeConnection:
+        async def run(self, command, check=False):
+            nonlocal stop_attempts
+            assert check is False
+            commands.append(command)
+            if command.endswith("./stop_slnic_dump.sh"):
+                stop_attempts += 1
+                if stop_attempts == 1:
+                    return SimpleNamespace(
+                        exit_status=1,
+                        stdout="",
+                        stderr="window not found: slnic:2_slnic",
+                    )
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+        async def start_sftp_client(self):
+            return FakeSFTP()
+
+        def close(self):
+            return None
+
+        async def wait_closed(self):
+            return None
+
+    async def fake_connect(**kwargs):
+        return FakeConnection()
+
+    monkeypatch.setattr(workflows.settings, "execution_mode", "remote")
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    _, _, run = create_slnic_run(client, admin_headers)
+
+    started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
+
+    assert started.status_code == 200, started.text
+    execute_and_complete_current_step(client, admin_headers, run["id"])
+    failed = execute_current_step(client, admin_headers, run["id"])
+    assert failed["status"] == "awaiting_step_retry"
+    assert failed["steps"][1]["status"] == "failed"
+    assert failed["steps"][2]["status"] == "pending"
+    assert "window not found" in failed["steps"][1]["error_message"]
+
+    retried = execute_current_step(client, admin_headers, run["id"])
+    assert retried["status"] == "awaiting_step_completion"
+    assert retried["steps"][1]["status"] == "waiting"
+    assert retried["steps"][1]["retry_count"] == 1
+    complete_current_step(client, admin_headers, run["id"])
+    completed = execute_and_complete_current_step(client, admin_headers, run["id"])
+    assert completed["status"] == "completed"
+    assert completed["error_code"] is None
+    assert completed["error_message"] is None
+    assert completed["steps"][2]["status"] == "succeeded"
+    assert any("./pcap_mergetoo slnic*" in command for command in commands)
+    assert completed["artifacts"][0]["name"] == "merge_pcap.pcapng"
