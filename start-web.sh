@@ -2,7 +2,9 @@
 
 set -Eeuo pipefail
 
-PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(dirname -- "$0")"
+cd -- "$SCRIPT_DIR"
+PROJECT_ROOT="$(pwd)"
 FRONTEND_ROOT="$PROJECT_ROOT/frontend"
 VENV_ROOT="$PROJECT_ROOT/.venv"
 PYTHON="$VENV_ROOT/bin/python"
@@ -311,10 +313,12 @@ start_services() {
         tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
         die "Failed to create the frontend tmux window."
     fi
-    tmux set-option -w -t "$SESSION_NAME:backend" remain-on-exit on >/dev/null
-    tmux set-option -w -t "$SESSION_NAME:frontend" remain-on-exit on >/dev/null
-    if ! tmux respawn-pane -k -t "$SESSION_NAME:backend.0" "$backend_command" \
-        || ! tmux respawn-pane -k -t "$SESSION_NAME:frontend.0" "$frontend_command"; then
+    if ! tmux set-option -w -t "$SESSION_NAME:backend" remain-on-exit on >/dev/null \
+        || ! tmux set-option -w -t "$SESSION_NAME:frontend" remain-on-exit on >/dev/null \
+        || ! tmux respawn-pane -k -c "$PROJECT_ROOT" -t "$SESSION_NAME:backend.0" \
+            "$backend_command" \
+        || ! tmux respawn-pane -k -c "$FRONTEND_ROOT" -t "$SESSION_NAME:frontend.0" \
+            "$frontend_command"; then
         tmux kill-session -t "=$SESSION_NAME" 2>/dev/null || true
         die "Failed to start one of the tmux service windows."
     fi
