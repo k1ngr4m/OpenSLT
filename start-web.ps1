@@ -38,7 +38,7 @@ function Get-SupportedPython {
     $Candidates = @()
     $PyLauncher = Get-Command "py.exe" -ErrorAction SilentlyContinue
     if ($PyLauncher) {
-        $Candidates += [pscustomobject]@{ File = $PyLauncher.Source; Prefix = @("-3.12") }
+        $Candidates += [pscustomobject]@{ File = $PyLauncher.Source; Prefix = @("-3.8") }
         $Candidates += [pscustomobject]@{ File = $PyLauncher.Source; Prefix = @("-3") }
     }
 
@@ -52,13 +52,13 @@ function Get-SupportedPython {
         $VersionText = & $Candidate.File @Prefix -c "import platform; print(platform.python_version())" 2>$null
         if ($LASTEXITCODE -eq 0 -and $VersionText) {
             $Version = [version]($VersionText | Select-Object -Last 1)
-            if ($Version -ge [version]"3.12") {
+            if ($Version -ge [version]"3.8.2" -and $Version -lt [version]"3.9") {
                 return $Candidate
             }
         }
     }
 
-    throw "Python 3.12 or newer was not found. Install Python and run start-web.cmd again."
+    throw "Python 3.8.2 (3.8.x) was not found. Install Python 3.8.2 and run start-web.cmd again."
 }
 
 function Test-PortOpen {
@@ -146,8 +146,8 @@ try {
     }
 
     $VenvVersion = [version](& $Python -c "import platform; print(platform.python_version())")
-    if ($VenvVersion -lt [version]"3.12") {
-        throw "The existing .venv uses Python $VenvVersion. OpenSLT requires Python 3.12 or newer."
+    if ($VenvVersion -lt [version]"3.8.2" -or $VenvVersion -ge [version]"3.9") {
+        throw "The existing .venv uses Python $VenvVersion. OpenSLT requires Python 3.8.2 (3.8.x); remove .venv and run start-web.cmd again."
     }
 
     $PyprojectHash = (Get-FileHash (Join-Path $ProjectRoot "pyproject.toml") -Algorithm SHA256).Hash

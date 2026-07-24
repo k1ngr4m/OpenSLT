@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 import asyncio
 
 from celery import Celery
@@ -47,7 +50,7 @@ def dispatch_queued_runs_task() -> int:
 
 
 @celery_app.task(name="openslt.archive_and_clean_logs")
-def archive_and_clean_logs_task() -> dict[str, int]:
+def archive_and_clean_logs_task() -> typing.Dict[str, int]:
     db = SessionLocal()
     try: return archive_and_clean_logs(db)
     finally: db.close()

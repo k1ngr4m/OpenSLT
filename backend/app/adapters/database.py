@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import asyncio
 import csv
 import hashlib
@@ -22,6 +24,7 @@ from openpyxl import Workbook
 from pymysql.cursors import SSCursor
 from sqlglot import exp
 
+from app.core.compat import to_thread
 from app.core.security import decrypt_secret
 from app.models import Resource
 
@@ -41,33 +44,33 @@ class DatabaseOperationError(Exception):
         self.status_code = status_code
 
 
-@dataclass(slots=True)
+@dataclass
 class SqlPlan:
     sql: str
     normalized_sql: str
     fingerprint: str
     statement: exp.Expression
-    table_name: str | None = None
-    count_sql: str | None = None
+    table_name: typing.Union[str, None] = None
+    count_sql: typing.Union[str, None] = None
 
 
-@dataclass(slots=True)
+@dataclass
 class DatabaseDiscoveryConfig:
     database_host: str
     database_port: int
     database_username: str
-    database_password: str | None
+    database_password: typing.Union[str, None]
     database_tls_enabled: bool
     connection_mode: str
     ssh_host: str = ""
     ssh_port: int = 22
     ssh_username: str = ""
-    ssh_password: str | None = None
-    ssh_private_key: str | None = None
+    ssh_password: typing.Union[str, None] = None
+    ssh_private_key: typing.Union[str, None] = None
 
 
-def filter_database_names(rows: list[Any]) -> tuple[list[str], int]:
-    names: dict[str, str] = {}
+def filter_database_names(rows: typing.List[Any]) -> typing.Tuple[typing.List[str], int]:
+    names: typing.Dict[str, str] = {}
     filtered_system_count = 0
     for row in rows:
         value = row[0] if isinstance(row, (tuple, list)) else row
@@ -175,8 +178,8 @@ def _json_value(value: Any) -> Any:
     return str(value)
 
 
-def _mock_columns(plan: SqlPlan) -> list[str]:
-    columns: list[str] = []
+def _mock_columns(plan: SqlPlan) -> typing.List[str]:
+    columns: typing.List[str] = []
     for index, expression in enumerate(plan.statement.expressions, 1):
         if isinstance(expression, exp.Star):
             return ["mock_id", "mock_value", "mock_updated_at"]
@@ -184,12 +187,12 @@ def _mock_columns(plan: SqlPlan) -> list[str]:
     return columns or ["result"]
 
 
-def simulated_select(plan: SqlPlan, row_limit: int = 8) -> dict[str, Any]:
+def simulated_select(plan: SqlPlan, row_limit: int = 8) -> typing.Dict[str, Any]:
     columns = _mock_columns(plan)
     seed = int(plan.fingerprint[:8], 16)
-    rows: list[dict[str, Any]] = []
+    rows: typing.List[typing.Dict[str, Any]] = []
     for row_index in range(1, row_limit + 1):
-        row: dict[str, Any] = {}
+        row: typing.Dict[str, Any] = {}
         for column_index, column in enumerate(columns):
             lowered = column.casefold()
             if lowered == "mock_id" or lowered.endswith("_id") or lowered == "id":
@@ -215,7 +218,7 @@ def simulated_update_rows(plan: SqlPlan) -> int:
 
 
 class MySQLAdapter:
-    async def discover_databases(self, config: DatabaseDiscoveryConfig) -> tuple[list[str], int]:
+    async def discover_databases(self, config: DatabaseDiscoveryConfig) -> typing.Tuple[typing.List[str], int]:
         ssh_connection = None
         tunnel = None
         connection = None
@@ -223,7 +226,7 @@ class MySQLAdapter:
         port = config.database_port
         try:
             if config.connection_mode == "ssh_tunnel":
-                options: dict[str, Any] = {
+                options: typing.Dict[str, Any] = {
                     "host": config.ssh_host,
                     "port": config.ssh_port,
                     "username": config.ssh_username,
@@ -244,7 +247,7 @@ class MySQLAdapter:
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
-            connection = await asyncio.to_thread(
+            connection = await to_thread(
                 pymysql.connect,
                 host=host,
                 port=port,
@@ -259,12 +262,12 @@ class MySQLAdapter:
                 ssl=ssl_context,
             )
 
-            def discover() -> list[Any]:
+            def discover() -> typing.List[Any]:
                 with connection.cursor() as cursor:
                     cursor.execute("SHOW DATABASES")
                     return list(cursor.fetchall())
 
-            rows = await asyncio.to_thread(discover)
+            rows = await to_thread(discover)
             return filter_database_names(rows)
         except DatabaseOperationError:
             raise
@@ -276,7 +279,7 @@ class MySQLAdapter:
             ) from exc
         finally:
             if connection:
-                await asyncio.to_thread(connection.close)
+                await to_thread(connection.close)
             if tunnel:
                 tunnel.close()
                 await tunnel.wait_closed()
@@ -292,7 +295,7 @@ class MySQLAdapter:
         port = resource.database_port or 3306
         try:
             if resource.database_connection_mode == "ssh_tunnel":
-                options: dict[str, Any] = {
+                options: typing.Dict[str, Any] = {
                     "host": resource.host,
                     "port": resource.ssh_port,
                     "username": resource.username,
@@ -314,7 +317,7 @@ class MySQLAdapter:
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
-            connection = await asyncio.to_thread(
+            connection = await to_thread(
                 pymysql.connect,
                 host=host,
                 port=port,
@@ -331,7 +334,7 @@ class MySQLAdapter:
             try:
                 yield connection
             finally:
-                await asyncio.to_thread(connection.close)
+                await to_thread(connection.close)
         finally:
             if tunnel:
                 tunnel.close()
@@ -340,20 +343,20 @@ class MySQLAdapter:
                 ssh_connection.close()
                 await ssh_connection.wait_closed()
 
-    async def health(self, resource: Resource) -> dict[str, Any]:
+    async def health(self, resource: Resource) -> typing.Dict[str, Any]:
         details = []
         version = None
         for database_name in resource.database_names or []:
             try:
                 async with self.connection(resource, database_name) as connection:
-                    def check() -> tuple[Any, Any]:
+                    def check() -> typing.Tuple[Any, Any]:
                         with connection.cursor() as cursor:
                             cursor.execute("SELECT 1")
                             one = cursor.fetchone()
                             cursor.execute("SELECT VERSION()")
                             return one, cursor.fetchone()
 
-                    one, version_row = await asyncio.to_thread(check)
+                    one, version_row = await to_thread(check)
                     version = version_row[0] if version_row else None
                     details.append({"database": database_name, "ok": bool(one), "version": version})
             except Exception as exc:
@@ -367,10 +370,10 @@ class MySQLAdapter:
             "simulated": False,
         }
 
-    async def select(self, resource: Resource, database_name: str, plan: SqlPlan) -> dict[str, Any]:
+    async def select(self, resource: Resource, database_name: str, plan: SqlPlan) -> typing.Dict[str, Any]:
         started = time.perf_counter()
         async with self.connection(resource, database_name) as connection:
-            def run() -> tuple[list[str], list[dict[str, Any]], bool]:
+            def run() -> typing.Tuple[typing.List[str], typing.List[typing.Dict[str, Any]], bool]:
                 with connection.cursor(SSCursor) as cursor:
                     cursor.execute(plan.sql)
                     columns = [item[0] for item in (cursor.description or [])]
@@ -382,7 +385,7 @@ class MySQLAdapter:
                     ]
                     return columns, rows, truncated
 
-            columns, rows, truncated = await asyncio.to_thread(run)
+            columns, rows, truncated = await to_thread(run)
         return {
             "columns": columns,
             "rows": rows,
@@ -399,7 +402,7 @@ class MySQLAdapter:
                     cursor.execute(plan.count_sql)
                     return len(cursor.fetchall())
 
-            return await asyncio.to_thread(count)
+            return await to_thread(count)
 
     async def execute_update(
         self,
@@ -439,19 +442,19 @@ class MySQLAdapter:
                     connection.rollback()
                     raise
 
-            return await asyncio.to_thread(execute)
+            return await to_thread(execute)
 
     async def iter_csv(
         self,
         resource: Resource,
         database_name: str,
         plan: SqlPlan,
-    ) -> AsyncIterator[bytes]:
+    ) -> typing.AsyncIterator[bytes]:
         deadline = time.monotonic() + OPERATION_TIMEOUT_SECONDS
         async with self.connection(resource, database_name) as connection:
             cursor = connection.cursor(SSCursor)
             try:
-                await asyncio.to_thread(cursor.execute, plan.sql)
+                await to_thread(cursor.execute, plan.sql)
                 columns = [item[0] for item in (cursor.description or [])]
                 output = io.StringIO()
                 writer = csv.writer(output)
@@ -459,7 +462,7 @@ class MySQLAdapter:
                 yield ("\ufeff" + output.getvalue()).encode("utf-8")
                 exported = 0
                 while True:
-                    rows = await asyncio.to_thread(cursor.fetchmany, 1_000)
+                    rows = await to_thread(cursor.fetchmany, 1_000)
                     if not rows:
                         break
                     exported += len(rows)
@@ -472,7 +475,7 @@ class MySQLAdapter:
                     writer.writerows([[_json_value(value) for value in row] for row in rows])
                     yield output.getvalue().encode("utf-8")
             finally:
-                await asyncio.to_thread(cursor.close)
+                await to_thread(cursor.close)
 
     async def write_xlsx(self, resource: Resource, database_name: str, plan: SqlPlan) -> Path:
         handle, filename = tempfile.mkstemp(prefix="openslt-db-", suffix=".xlsx")
@@ -483,14 +486,14 @@ class MySQLAdapter:
             async with self.connection(resource, database_name) as connection:
                 cursor = connection.cursor(SSCursor)
                 try:
-                    await asyncio.to_thread(cursor.execute, plan.sql)
+                    await to_thread(cursor.execute, plan.sql)
                     columns = [item[0] for item in (cursor.description or [])]
                     workbook = Workbook(write_only=True)
                     worksheet = workbook.create_sheet("Query")
                     worksheet.append(columns)
                     exported = 0
                     while True:
-                        rows = await asyncio.to_thread(cursor.fetchmany, 1_000)
+                        rows = await to_thread(cursor.fetchmany, 1_000)
                         if not rows:
                             break
                         exported += len(rows)
@@ -500,9 +503,9 @@ class MySQLAdapter:
                             raise DatabaseOperationError("QUERY_TIMEOUT", "导出超过 5 分钟", 408)
                         for row in rows:
                             worksheet.append([_json_value(value) for value in row])
-                    await asyncio.to_thread(workbook.save, filename)
+                    await to_thread(workbook.save, filename)
                 finally:
-                    await asyncio.to_thread(cursor.close)
+                    await to_thread(cursor.close)
             return Path(filename)
         except Exception:
             Path(filename).unlink(missing_ok=True)

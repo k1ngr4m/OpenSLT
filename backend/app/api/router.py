@@ -1,6 +1,9 @@
+from __future__ import annotations
+
+import typing
 import csv
 import io
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -35,7 +38,7 @@ def not_found(name: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"{name}不存在"})
 
 
-def validate_scenario_resources(db: Session, plan: TestPlan, resource_ids: list[int]) -> tuple[list[int], list[str]]:
+def validate_scenario_resources(db: Session, plan: TestPlan, resource_ids: typing.List[int]) -> typing.Tuple[typing.List[int], typing.List[str]]:
     if not resource_ids:
         raise HTTPException(status_code=400, detail={"code": "SCENARIO_RESOURCES_REQUIRED", "message": "场景至少需要选择一个资源"})
     if len(resource_ids) != len(set(resource_ids)):
@@ -67,7 +70,7 @@ def database_http_error(exc: DatabaseOperationError) -> HTTPException:
     )
 
 
-def database_resource(db: Session, resource_id: int, database_name: str) -> tuple[Resource, str]:
+def database_resource(db: Session, resource_id: int, database_name: str) -> typing.Tuple[Resource, str]:
     resource = db.get(Resource, resource_id)
     if not resource or resource.is_deleted:
         raise not_found("资源")
@@ -101,8 +104,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     access = create_access_token(user.id, user.role)
     refresh = create_refresh_token(user.id)
     decoded = decode_token(refresh, "refresh")
-    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(refresh), expires_at=datetime.fromtimestamp(decoded["exp"], UTC)))
-    user.last_login_at = datetime.now(UTC)
+    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(refresh), expires_at=datetime.fromtimestamp(decoded["exp"], timezone.utc)))
+    user.last_login_at = datetime.now(timezone.utc)
     write_audit(db, "login", "user", user.id, user, request)
     db.commit()
     return TokenPair(access_token=access, refresh_token=refresh, expires_in=settings.jwt_access_minutes * 60)
@@ -116,13 +119,13 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair
         user = db.get(User, int(decoded["sub"]))
     except (jwt.InvalidTokenError, KeyError, ValueError):
         stored = user = None
-    now = datetime.now(UTC)
-    if not stored or stored.revoked_at or stored.expires_at.replace(tzinfo=UTC) <= now or not user or not user.is_active:
+    now = datetime.now(timezone.utc)
+    if not stored or stored.revoked_at or stored.expires_at.replace(tzinfo=timezone.utc) <= now or not user or not user.is_active:
         raise HTTPException(status_code=401, detail={"code": "INVALID_REFRESH_TOKEN", "message": "刷新令牌无效"})
     stored.revoked_at = now
     new_refresh = create_refresh_token(user.id)
     new_decoded = decode_token(new_refresh, "refresh")
-    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(new_refresh), expires_at=datetime.fromtimestamp(new_decoded["exp"], UTC)))
+    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(new_refresh), expires_at=datetime.fromtimestamp(new_decoded["exp"], timezone.utc)))
     db.commit()
     return TokenPair(access_token=create_access_token(user.id, user.role), refresh_token=new_refresh, expires_in=settings.jwt_access_minutes * 60)
 
@@ -131,7 +134,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair
 def logout(payload: RefreshRequest, request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
     stored = db.scalar(select(RefreshToken).where(RefreshToken.fingerprint == token_fingerprint(payload.refresh_token)))
     if stored and stored.user_id == user.id:
-        stored.revoked_at = datetime.now(UTC)
+        stored.revoked_at = datetime.now(timezone.utc)
     write_audit(db, "logout", "user", user.id, user, request)
     db.commit()
     return Response(status_code=204)
@@ -142,8 +145,8 @@ def me(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-@router.get("/users", response_model=list[UserOut])
-def list_users(_: User = Depends(admin_only), db: Session = Depends(get_db)) -> list[User]:
+@router.get("/users", response_model=typing.List[UserOut])
+def list_users(_: User = Depends(admin_only), db: Session = Depends(get_db)) -> typing.List[User]:
     return list(db.scalars(select(User).order_by(User.id)).all())
 
 
@@ -168,25 +171,25 @@ def update_user(user_id: int, payload: UserUpdate, request: Request, actor: User
 
 
 @router.get("/business-types")
-def list_business_types(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
+def list_business_types(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[dict]:
     return [{"id": row.id, "code": row.code, "name": row.name, "is_active": row.is_active} for row in db.scalars(select(BusinessType).order_by(BusinessType.id)).all()]
 
 
-@router.get("/resources", response_model=list[ResourceOut])
-def list_resources(business_code: str | None = None, resource_type: str | None = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[Resource]:
+@router.get("/resources", response_model=typing.List[ResourceOut])
+def list_resources(business_code: typing.Union[str, None] = None, resource_type: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[Resource]:
     query = select(Resource).where(Resource.is_deleted.is_(False))
     if business_code: query = query.where(Resource.business_code == business_code)
     if resource_type: query = query.where(Resource.resource_type == resource_type)
     return list(db.scalars(query.order_by(Resource.id.desc())).all())
 
 
-def _same_identity(value: str | None, other: str | None) -> bool:
+def _same_identity(value: typing.Union[str, None], other: typing.Union[str, None]) -> bool:
     return (value or "").strip().casefold() == (other or "").strip().casefold()
 
 
 def database_discovery_config(
     payload: DatabaseDiscoveryRequest,
-    stored: Resource | None,
+    stored: typing.Union[Resource, None],
 ) -> DatabaseDiscoveryConfig:
     database_password = payload.database_password or None
     if stored and not database_password:
@@ -379,7 +382,7 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
         resource.health_status = "healthy" if result["ok"] else "unhealthy"
     except Exception as exc:
         result = {"ok": False, "message": str(exc)}; resource.health_status = "unhealthy"
-    resource.health_checked_at = datetime.now(UTC); write_audit(db, "resource.health_check", "resource", resource.id, actor, request, result="success" if result["ok"] else "failed"); db.commit(); return result
+    resource.health_checked_at = datetime.now(timezone.utc); write_audit(db, "resource.health_check", "resource", resource.id, actor, request, result="success" if result["ok"] else "failed"); db.commit(); return result
 
 
 def write_order_config_audit(
@@ -389,7 +392,7 @@ def write_order_config_audit(
     resource_id: int,
     action: str,
     result: str = "success",
-    detail: dict | None = None,
+    detail: typing.Union[dict, None] = None,
 ) -> None:
     write_audit(
         db,
@@ -614,7 +617,7 @@ async def database_update_preview(
         estimated_rows=estimated_rows,
         simulated=simulated,
         status="pending",
-        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
     )
     db.add(confirmation)
     write_audit(db, "database.update_preview", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "estimated_rows": estimated_rows, "simulated": simulated})
@@ -643,10 +646,10 @@ async def database_update_execute(
     except DatabaseOperationError as exc:
         raise database_http_error(exc) from exc
     confirmation = db.get(DatabaseUpdateConfirmation, payload.confirmation_id)
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     expires_at = confirmation.expires_at if confirmation else None
     if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=UTC)
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if (
         not confirmation
         or confirmation.resource_id != resource.id
@@ -680,16 +683,16 @@ async def database_update_execute(
         )
     except DatabaseOperationError as exc:
         confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
-        confirmation.status = "failed"; confirmation.completed_at = datetime.now(UTC)
+        confirmation.status = "failed"; confirmation.completed_at = datetime.now(timezone.utc)
         write_audit(db, "database.update_execute", "resource", resource.id, actor, request, "failed", {"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "code": exc.code}); db.commit()
         raise database_http_error(exc) from exc
     except Exception as exc:
         confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
-        confirmation.status = "failed"; confirmation.completed_at = datetime.now(UTC)
+        confirmation.status = "failed"; confirmation.completed_at = datetime.now(timezone.utc)
         write_audit(db, "database.update_execute", "resource", resource.id, actor, request, "failed", {"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "code": "DATABASE_OPERATION_FAILED"}); db.commit()
         raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
     confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
-    confirmation.status = "executed"; confirmation.actual_rows = affected_rows; confirmation.completed_at = datetime.now(UTC)
+    confirmation.status = "executed"; confirmation.actual_rows = affected_rows; confirmation.completed_at = datetime.now(timezone.utc)
     write_audit(db, "database.update_execute", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "affected_rows": affected_rows, "simulated": confirmation.simulated}); db.commit()
     return {"affected_rows": affected_rows, "simulated": confirmation.simulated, "status": "executed"}
 
@@ -729,8 +732,8 @@ async def database_export(
     return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=filename, background=BackgroundTask(path.unlink, missing_ok=True))
 
 
-@router.get("/plans", response_model=list[PlanOut])
-def list_plans(business_code: str | None = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TestPlan]:
+@router.get("/plans", response_model=typing.List[PlanOut])
+def list_plans(business_code: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestPlan]:
     query = select(TestPlan)
     if business_code: query = query.where(TestPlan.business_code == business_code)
     return list(db.scalars(query.order_by(TestPlan.id.desc())).all())
@@ -767,8 +770,8 @@ def delete_plan(plan_id: int, request: Request, actor: User = Depends(operators)
     db.delete(plan); write_audit(db, "plan.delete", "test_plan", plan_id, actor, request); db.commit(); return Response(status_code=204)
 
 
-@router.get("/scenarios", response_model=list[ScenarioOut])
-def list_scenarios(plan_id: int | None = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TestScenario]:
+@router.get("/scenarios", response_model=typing.List[ScenarioOut])
+def list_scenarios(plan_id: typing.Union[int, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestScenario]:
     query = select(TestScenario)
     if plan_id: query = query.where(TestScenario.plan_id == plan_id)
     return list(db.scalars(query.order_by(TestScenario.id.desc())).all())
@@ -843,12 +846,12 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
         extra = sorted(set(provided_types) - required_types)
         raise HTTPException(status_code=400, detail={"code": "RESOURCE_SET_MISMATCH", "message": f"运行资源类型与场景不一致，缺少: {missing}，多余: {extra}"})
     snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
-    run = TestRun(run_number=f"R{datetime.now(UTC):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=datetime.now(UTC) + timedelta(minutes=payload.timeout_minutes))
+    run = TestRun(run_number=f"R{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=datetime.now(timezone.utc) + timedelta(minutes=payload.timeout_minutes))
     create_steps(run); db.add(run); db.flush(); write_audit(db, "run.create", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 
 
-@router.get("/runs", response_model=list[RunOut])
-def list_runs(business_code: str | None = None, run_status: str | None = Query(default=None, alias="status"), conclusion: str | None = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TestRun]:
+@router.get("/runs", response_model=typing.List[RunOut])
+def list_runs(business_code: typing.Union[str, None] = None, run_status: typing.Union[str, None] = Query(default=None, alias="status"), conclusion: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestRun]:
     query = select(TestRun).options(selectinload(TestRun.steps), selectinload(TestRun.metrics), selectinload(TestRun.artifacts), selectinload(TestRun.verdict))
     if business_code: query = query.where(TestRun.business_code == business_code)
     if run_status: query = query.where(TestRun.status == run_status)
@@ -919,25 +922,25 @@ def submit_verdict(run_id: int, payload: VerdictWrite, request: Request, actor: 
     run = load_run(db, run_id)
     if run.status not in {"awaiting_review", "completed"}: raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前状态不能提交结论"})
     verdict = run.verdict or Verdict(run_id=run.id)
-    verdict.final_result = payload.final_result; verdict.issue_description = payload.issue_description; verdict.notes = payload.notes; verdict.reviewed_by = actor.id; verdict.reviewed_at = datetime.now(UTC)
+    verdict.final_result = payload.final_result; verdict.issue_description = payload.issue_description; verdict.notes = payload.notes; verdict.reviewed_by = actor.id; verdict.reviewed_at = datetime.now(timezone.utc)
     if not run.verdict: db.add(verdict)
     review = next(step for step in run.steps if step.code == "manual_review"); review.status = "succeeded"; review.progress = 100; review.started_at = review.started_at or verdict.reviewed_at; review.finished_at = verdict.reviewed_at; review.duration_ms = 0
-    report_step = next(step for step in run.steps if step.code == "reporting"); report_step.status = "running"; report_step.started_at = datetime.now(UTC)
+    report_step = next(step for step in run.steps if step.code == "reporting"); report_step.status = "running"; report_step.started_at = datetime.now(timezone.utc)
     db.flush(); generate_reports(db, run)
-    report_step.status = "succeeded"; report_step.progress = 100; report_step.finished_at = datetime.now(UTC); report_step.duration_ms = int((report_step.finished_at - report_step.started_at).total_seconds() * 1000)
-    run.status = "completed"; run.progress = 100; run.finished_at = datetime.now(UTC); release_locks(db, run.id, "completed")
+    report_step.status = "succeeded"; report_step.progress = 100; report_step.finished_at = datetime.now(timezone.utc); report_step.duration_ms = int((report_step.finished_at - report_step.started_at).total_seconds() * 1000)
+    run.status = "completed"; run.progress = 100; run.finished_at = datetime.now(timezone.utc); release_locks(db, run.id, "completed")
     write_audit(db, "run.verdict_submit", "test_run", run.id, actor, request, detail={"final_result": payload.final_result}); db.commit(); broker.publish(run.id, {"type": "status", "status": "completed", "progress": 100}); return verdict
 
 
-@router.post("/runs/{run_id}/reports", response_model=list[ArtifactOut])
-def regenerate_reports(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> list[Artifact]:
+@router.post("/runs/{run_id}/reports", response_model=typing.List[ArtifactOut])
+def regenerate_reports(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> typing.List[Artifact]:
     run = load_run(db, run_id)
     if run.status != "completed": raise HTTPException(status_code=409, detail={"code": "RUN_NOT_COMPLETE", "message": "运行完成后才能生成报告"})
     artifacts = generate_reports(db, run); write_audit(db, "report.regenerate", "test_run", run.id, actor, request); db.commit(); return artifacts
 
 
-@router.get("/runs/{run_id}/logs", response_model=list[LogOut])
-def list_run_logs(run_id: int, level: str | None = None, source: str | None = None, keyword: str | None = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[LogRecord]:
+@router.get("/runs/{run_id}/logs", response_model=typing.List[LogOut])
+def list_run_logs(run_id: int, level: typing.Union[str, None] = None, source: typing.Union[str, None] = None, keyword: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[LogRecord]:
     query = select(LogRecord).where(LogRecord.run_id == run_id)
     if level: query = query.where(LogRecord.level == level.upper())
     if source: query = query.where(LogRecord.source == source)
@@ -945,8 +948,8 @@ def list_run_logs(run_id: int, level: str | None = None, source: str | None = No
     return list(db.scalars(query.order_by(LogRecord.created_at).limit(5000)).all())
 
 
-@router.get("/logs", response_model=list[LogOut])
-def query_logs(log_type: str | None = None, level: str | None = None, trace_id: str | None = None, keyword: str | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[LogRecord]:
+@router.get("/logs", response_model=typing.List[LogOut])
+def query_logs(log_type: typing.Union[str, None] = None, level: typing.Union[str, None] = None, trace_id: typing.Union[str, None] = None, keyword: typing.Union[str, None] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[LogRecord]:
     query = select(LogRecord)
     if user.role == "visitor": query = query.where(LogRecord.log_type.notin_(["command", "access"]))
     if log_type: query = query.where(LogRecord.log_type == log_type)
@@ -956,8 +959,8 @@ def query_logs(log_type: str | None = None, level: str | None = None, trace_id: 
     return list(db.scalars(query.order_by(LogRecord.created_at.desc()).limit(1000)).all())
 
 
-@router.get("/audit-logs", response_model=list[AuditOut])
-def list_audit_logs(action: str | None = None, object_type: str | None = None, _: User = Depends(admin_only), db: Session = Depends(get_db)) -> list[AuditLog]:
+@router.get("/audit-logs", response_model=typing.List[AuditOut])
+def list_audit_logs(action: typing.Union[str, None] = None, object_type: typing.Union[str, None] = None, _: User = Depends(admin_only), db: Session = Depends(get_db)) -> typing.List[AuditLog]:
     query = select(AuditLog)
     if action: query = query.where(AuditLog.action == action)
     if object_type: query = query.where(AuditLog.object_type == object_type)

@@ -1,4 +1,7 @@
-from datetime import UTC, datetime
+from __future__ import annotations
+
+import typing
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
@@ -8,7 +11,7 @@ from app.core.database import Base
 
 
 def utcnow() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 class TimestampMixin:
@@ -24,8 +27,8 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="visitor", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    last_login_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    refresh_tokens: Mapped[typing.List['RefreshToken']] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class RefreshToken(Base):
@@ -34,7 +37,7 @@ class RefreshToken(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
 
@@ -57,25 +60,25 @@ class Resource(TimestampMixin, Base):
     ssh_port: Mapped[int] = mapped_column(Integer, default=22)
     username: Mapped[str] = mapped_column(String(128))
     auth_type: Mapped[str] = mapped_column(String(16), default="password")
-    encrypted_password: Mapped[str | None] = mapped_column(Text)
-    encrypted_private_key: Mapped[str | None] = mapped_column(Text)
-    database_engine: Mapped[str | None] = mapped_column(String(32))
-    database_connection_mode: Mapped[str | None] = mapped_column(String(32))
-    database_host: Mapped[str | None] = mapped_column(String(255))
-    database_port: Mapped[int | None] = mapped_column(Integer)
-    database_names: Mapped[list[str] | None] = mapped_column(JSON)
-    database_username: Mapped[str | None] = mapped_column(String(128))
-    encrypted_database_password: Mapped[str | None] = mapped_column(Text)
+    encrypted_password: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    encrypted_private_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    database_engine: Mapped[typing.Union[str, None]] = mapped_column(String(32))
+    database_connection_mode: Mapped[typing.Union[str, None]] = mapped_column(String(32))
+    database_host: Mapped[typing.Union[str, None]] = mapped_column(String(255))
+    database_port: Mapped[typing.Union[int, None]] = mapped_column(Integer)
+    database_names: Mapped[typing.Union[typing.List[str], None]] = mapped_column(JSON)
+    database_username: Mapped[typing.Union[str, None]] = mapped_column(String(128))
+    encrypted_database_password: Mapped[typing.Union[str, None]] = mapped_column(Text)
     database_tls_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     remote_path: Mapped[str] = mapped_column(String(512), default="")
-    capabilities: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    capabilities: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
     version_info: Mapped[str] = mapped_column(String(255), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     health_status: Mapped[str] = mapped_column(String(32), default="unknown")
-    health_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    locks: Mapped[list["ResourceLock"]] = relationship(back_populates="resource")
+    health_checked_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    locks: Mapped[typing.List['ResourceLock']] = relationship(back_populates="resource")
 
     @property
     def has_database_password(self) -> bool:
@@ -91,12 +94,12 @@ class DatabaseUpdateConfirmation(Base):
     table_name: Mapped[str] = mapped_column(String(255))
     sql_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     estimated_rows: Mapped[int] = mapped_column(Integer)
-    actual_rows: Mapped[int | None] = mapped_column(Integer)
+    actual_rows: Mapped[typing.Union[int, None]] = mapped_column(Integer)
     simulated: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
 
 
 class TestPlan(TimestampMixin, Base):
@@ -105,11 +108,11 @@ class TestPlan(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
-    default_resource_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    scenarios: Mapped[list["TestScenario"]] = relationship(back_populates="plan", cascade="all, delete-orphan")
+    scenarios: Mapped[typing.List['TestScenario']] = relationship(back_populates="plan", cascade="all, delete-orphan")
 
 
 class TestScenario(TimestampMixin, Base):
@@ -119,9 +122,9 @@ class TestScenario(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128))
     scenario_type: Mapped[str] = mapped_column(String(64), index=True)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
-    expected_artifacts: Mapped[list[str]] = mapped_column(JSON, default=list)
-    default_resource_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
-    required_resource_types: Mapped[list[str]] = mapped_column(JSON, default=list)
+    expected_artifacts: Mapped[typing.List[str]] = mapped_column(JSON, default=list)
+    default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
+    required_resource_types: Mapped[typing.List[str]] = mapped_column(JSON, default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     plan: Mapped[TestPlan] = relationship(back_populates="scenarios")
 
@@ -135,23 +138,23 @@ class TestRun(TimestampMixin, Base):
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
-    resource_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
-    config_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
+    config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    timeout_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    error_code: Mapped[str | None] = mapped_column(String(64))
-    error_message: Mapped[str | None] = mapped_column(Text)
-    queue_reason: Mapped[str | None] = mapped_column(Text)
-    paused_from: Mapped[str | None] = mapped_column(String(40))
+    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    timeout_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[typing.Union[str, None]] = mapped_column(String(64))
+    error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    queue_reason: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    paused_from: Mapped[typing.Union[str, None]] = mapped_column(String(40))
     logs_complete: Mapped[bool] = mapped_column(Boolean, default=True)
-    steps: Mapped[list["RunStep"]] = relationship(back_populates="run", cascade="all, delete-orphan", order_by="RunStep.position")
-    artifacts: Mapped[list["Artifact"]] = relationship(back_populates="run", cascade="all, delete-orphan")
-    metrics: Mapped[list["Metric"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+    steps: Mapped[typing.List['RunStep']] = relationship(back_populates="run", cascade="all, delete-orphan", order_by="RunStep.position")
+    artifacts: Mapped[typing.List['Artifact']] = relationship(back_populates="run", cascade="all, delete-orphan")
+    metrics: Mapped[typing.List['Metric']] = relationship(back_populates="run", cascade="all, delete-orphan")
     verdict: Mapped["Verdict | None"] = relationship(back_populates="run", cascade="all, delete-orphan", uselist=False)
-    locks: Mapped[list["ResourceLock"]] = relationship(back_populates="run")
+    locks: Mapped[typing.List['ResourceLock']] = relationship(back_populates="run")
 
 
 class RunStep(Base):
@@ -166,10 +169,10 @@ class RunStep(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=2)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    duration_ms: Mapped[int | None] = mapped_column(Integer)
-    error_message: Mapped[str | None] = mapped_column(Text)
+    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[typing.Union[int, None]] = mapped_column(Integer)
+    error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
     run: Mapped[TestRun] = relationship(back_populates="steps")
 
 
@@ -185,12 +188,12 @@ class LogRecord(Base):
     event: Mapped[str] = mapped_column(String(128), index=True)
     message: Mapped[str] = mapped_column(Text)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
-    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
-    run_id: Mapped[int | None] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
-    step_id: Mapped[int | None] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"), index=True)
+    user_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"), index=True)
+    run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
+    step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"), index=True)
     source: Mapped[str] = mapped_column(String(64), default="api", index=True)
-    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    artifact_path: Mapped[str | None] = mapped_column(String(1024))
+    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    artifact_path: Mapped[typing.Union[str, None]] = mapped_column(String(1024))
     is_redacted: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
@@ -199,7 +202,7 @@ class Artifact(Base):
     __tablename__ = "artifacts"
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
-    step_id: Mapped[int | None] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"))
+    step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"))
     artifact_type: Mapped[str] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(255))
     path: Mapped[str] = mapped_column(String(1024))
@@ -219,8 +222,8 @@ class Metric(Base):
     name: Mapped[str] = mapped_column(String(128))
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32), default="us")
-    sample_count: Mapped[int | None] = mapped_column(Integer)
-    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    sample_count: Mapped[typing.Union[int, None]] = mapped_column(Integer)
+    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
     run: Mapped[TestRun] = relationship(back_populates="metrics")
 
 
@@ -228,11 +231,11 @@ class Verdict(TimestampMixin, Base):
     __tablename__ = "verdicts"
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), unique=True)
-    final_result: Mapped[str | None] = mapped_column(String(32))
+    final_result: Mapped[typing.Union[str, None]] = mapped_column(String(32))
     issue_description: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
-    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
+    reviewed_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
     run: Mapped[TestRun] = relationship(back_populates="verdict")
 
 
@@ -243,8 +246,8 @@ class ResourceLock(Base):
     run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
     acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    release_reason: Mapped[str | None] = mapped_column(String(128))
+    released_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True), index=True)
+    release_reason: Mapped[typing.Union[str, None]] = mapped_column(String(128))
     resource: Mapped[Resource] = relationship(back_populates="locks")
     run: Mapped[TestRun] = relationship(back_populates="locks")
 
@@ -252,13 +255,13 @@ class ResourceLock(Base):
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[int] = mapped_column(primary_key=True)
-    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"), index=True)
     action: Mapped[str] = mapped_column(String(128), index=True)
     object_type: Mapped[str] = mapped_column(String(64), index=True)
-    object_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    object_id: Mapped[typing.Union[str, None]] = mapped_column(String(64), index=True)
     result: Mapped[str] = mapped_column(String(32), default="success")
-    source_ip: Mapped[str | None] = mapped_column(String(64))
-    user_agent: Mapped[str | None] = mapped_column(String(512))
+    source_ip: Mapped[typing.Union[str, None]] = mapped_column(String(64))
+    user_agent: Mapped[typing.Union[str, None]] = mapped_column(String(512))
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
-    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

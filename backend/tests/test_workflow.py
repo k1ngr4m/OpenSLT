@@ -1,3 +1,4 @@
+from __future__ import annotations
 from app.core.database import SessionLocal
 from app.models import ResourceLock
 from app.core.logging import redact

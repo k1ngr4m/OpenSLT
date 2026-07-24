@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 from collections.abc import Callable
 
 import jwt
@@ -12,7 +15,7 @@ from app.models import User
 bearer = HTTPBearer(auto_error=False)
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)) -> User:
+def get_current_user(credentials: typing.Union[HTTPAuthorizationCredentials, None] = Depends(bearer), db: Session = Depends(get_db)) -> User:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "NOT_AUTHENTICATED", "message": "请先登录"})
     try:

@@ -1,9 +1,12 @@
+from __future__ import annotations
+
+import typing
 import hashlib
 import posixpath
 import re
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import AsyncIterator
 from uuid import uuid4
 from xml.dom import Node, minidom
@@ -33,7 +36,7 @@ class OrderConfigError(Exception):
         self.status_code = status_code
 
 
-@dataclass(slots=True)
+@dataclass
 class OrderConfigContext:
     resource_id: int
     tool: str
@@ -42,11 +45,11 @@ class OrderConfigContext:
     host: str
     port: int
     username: str
-    password: str | None
-    private_key: str | None
+    password: typing.Union[str, None]
+    private_key: typing.Union[str, None]
 
 
-@dataclass(slots=True)
+@dataclass
 class SimulatedFile:
     content: str
     modified_at: datetime
@@ -56,7 +59,7 @@ def checksum(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def _tool_from_resource(resource: Resource) -> str | None:
+def _tool_from_resource(resource: Resource) -> typing.Union[str, None]:
     configured = (resource.capabilities or {}).get("order_tool")
     if configured in ORDER_TOOLS:
         return configured
@@ -134,7 +137,7 @@ def _node_to_dict(node: Node) -> dict:
     }
 
 
-def parse_xml(content: str) -> tuple[str, dict]:
+def parse_xml(content: str) -> typing.Tuple[str, dict]:
     try:
         encoded = content.encode("utf-8")
     except UnicodeEncodeError as exc:
@@ -202,13 +205,13 @@ def _sample_xml(tool: str) -> str:
 
 class SimulatedOrderConfigStore:
     def __init__(self) -> None:
-        self._files: dict[int, dict[str, SimulatedFile]] = {}
+        self._files: typing.Dict[int, typing.Dict[str, SimulatedFile]] = {}
 
-    def files(self, context: OrderConfigContext) -> dict[str, SimulatedFile]:
+    def files(self, context: OrderConfigContext) -> typing.Dict[str, SimulatedFile]:
         if context.resource_id not in self._files:
             filename = f"{context.prefix}.xml"
             self._files[context.resource_id] = {
-                filename: SimulatedFile(_sample_xml(context.tool), datetime.now(UTC))
+                filename: SimulatedFile(_sample_xml(context.tool), datetime.now(timezone.utc))
             }
         return self._files[context.resource_id]
 
@@ -220,8 +223,8 @@ simulated_store = SimulatedOrderConfigStore()
 
 
 @asynccontextmanager
-async def _sftp_client(context: OrderConfigContext) -> AsyncIterator[asyncssh.SFTPClient]:
-    options: dict[str, object] = {
+async def _sftp_client(context: OrderConfigContext) -> typing.AsyncIterator[asyncssh.SFTPClient]:
+    options: typing.Dict[str, object] = {
         "host": context.host,
         "port": context.port,
         "username": context.username,
@@ -255,7 +258,7 @@ async def _read_remote_file(
     sftp: asyncssh.SFTPClient,
     context: OrderConfigContext,
     filename: str,
-) -> tuple[str, asyncssh.SFTPAttrs]:
+) -> typing.Tuple[str, asyncssh.SFTPAttrs]:
     path = _path(context, filename)
     try:
         attrs = await sftp.lstat(path)
@@ -280,7 +283,7 @@ async def _write_remote_file(
     context: OrderConfigContext,
     filename: str,
     content: str,
-    permissions: int | None,
+    permissions: typing.Union[int, None],
     replace: bool,
 ) -> None:
     target = _path(context, filename)
@@ -299,8 +302,8 @@ async def _write_remote_file(
             await sftp.remove(temporary)
 
 
-def _modified_at(value: int | None) -> datetime:
-    return datetime.fromtimestamp(value or 0, UTC)
+def _modified_at(value: typing.Union[int, None]) -> datetime:
+    return datetime.fromtimestamp(value or 0, timezone.utc)
 
 
 class OrderConfigService:
@@ -376,7 +379,7 @@ class OrderConfigService:
             if not source:
                 raise OrderConfigError("ORDER_CONFIG_NOT_FOUND", "模板配置不存在", 404)
             parse_xml(source.content)
-            files[name] = SimulatedFile(source.content, datetime.now(UTC))
+            files[name] = SimulatedFile(source.content, datetime.now(timezone.utc))
             return config_detail(context, name, files[name].content, files[name].modified_at)
         try:
             async with _sftp_client(context) as sftp:
@@ -385,7 +388,7 @@ class OrderConfigService:
                 content, attrs = await _read_remote_file(sftp, context, source_name)
                 parse_xml(content)
                 await _write_remote_file(sftp, context, name, content, attrs.permissions, replace=False)
-            return config_detail(context, name, content, datetime.now(UTC))
+            return config_detail(context, name, content, datetime.now(timezone.utc))
         except OrderConfigError:
             raise
         except (asyncssh.Error, OSError) as exc:
@@ -403,7 +406,7 @@ class OrderConfigService:
             if checksum(item.content) != expected_checksum:
                 raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
             item.content = content
-            item.modified_at = datetime.now(UTC)
+            item.modified_at = datetime.now(timezone.utc)
             return config_detail(context, filename, item.content, item.modified_at)
         try:
             async with _sftp_client(context) as sftp:
@@ -411,7 +414,7 @@ class OrderConfigService:
                 if checksum(current) != expected_checksum:
                     raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
                 await _write_remote_file(sftp, context, filename, content, attrs.permissions, replace=True)
-            return config_detail(context, filename, content, datetime.now(UTC))
+            return config_detail(context, filename, content, datetime.now(timezone.utc))
         except OrderConfigError:
             raise
         except (asyncssh.Error, OSError) as exc:
@@ -433,7 +436,7 @@ class OrderConfigService:
             if checksum(item.content) != expected_checksum:
                 raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
             files[new_name] = files.pop(filename)
-            files[new_name].modified_at = datetime.now(UTC)
+            files[new_name].modified_at = datetime.now(timezone.utc)
             return config_detail(context, new_name, files[new_name].content, files[new_name].modified_at)
         try:
             async with _sftp_client(context) as sftp:
@@ -444,7 +447,7 @@ class OrderConfigService:
                 if await sftp.exists(_path(context, new_name)):
                     raise OrderConfigError("ORDER_CONFIG_NAME_CONFLICT", "配置文件名已存在", 409)
                 await sftp.rename(_path(context, filename), _path(context, new_name))
-            return config_detail(context, new_name, current, datetime.now(UTC))
+            return config_detail(context, new_name, current, datetime.now(timezone.utc))
         except OrderConfigError:
             raise
         except (asyncssh.Error, OSError) as exc:
@@ -461,7 +464,7 @@ class OrderConfigService:
             if checksum(item.content) != expected_checksum:
                 raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
             del files[filename]
-            timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
             return f"{timestamp}-{uuid4().hex[:8]}-{filename}"
         try:
             async with _sftp_client(context) as sftp:
@@ -470,7 +473,7 @@ class OrderConfigService:
                     raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
                 trash_directory = _path(context, TRASH_DIRECTORY)
                 await sftp.makedirs(trash_directory, exist_ok=True)
-                timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
                 trash_name = f"{timestamp}-{uuid4().hex[:8]}-{filename}"
                 await sftp.rename(_path(context, filename), posixpath.join(trash_directory, trash_name))
                 return trash_name

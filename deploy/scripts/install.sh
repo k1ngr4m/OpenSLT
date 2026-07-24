@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd /opt/openslt
-python3.12 -m venv .venv
+python3.8 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install .
 .venv/bin/alembic upgrade head

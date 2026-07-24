@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 import hashlib
 from pathlib import Path
 
@@ -35,7 +38,7 @@ def _register(db: Session, run: TestRun, path: Path, artifact_type: str, content
     return artifact
 
 
-def generate_reports(db: Session, run: TestRun) -> list[Artifact]:
+def generate_reports(db: Session, run: TestRun) -> typing.List[Artifact]:
     directory = settings.artifact_root / run.business_code / str(run.plan_id) / str(run.scenario_id) / run.run_number / "reports"
     directory.mkdir(parents=True, exist_ok=True)
     html = Template(REPORT_TEMPLATE).render(run=run)

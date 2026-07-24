@@ -1,10 +1,13 @@
+from __future__ import annotations
+
+import typing
 import asyncio
 import gzip
 import hashlib
 import json
 import random
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -33,7 +36,7 @@ STEPS = [
 TERMINAL_STATUSES = {"completed", "precheck_failed", "execution_failed", "parse_failed", "cancelled", "timed_out"}
 
 
-def append_log(db: Session, run: TestRun, event: str, message: str, *, level: str = "INFO", step: RunStep | None = None, source: str = "worker", detail: dict | None = None, log_type: str = "run") -> LogRecord:
+def append_log(db: Session, run: TestRun, event: str, message: str, *, level: str = "INFO", step: typing.Union[RunStep, None] = None, source: str = "worker", detail: typing.Union[dict, None] = None, log_type: str = "run") -> LogRecord:
     safe_message = redact(message)
     record = LogRecord(
         log_type=log_type,
@@ -49,7 +52,7 @@ def append_log(db: Session, run: TestRun, event: str, message: str, *, level: st
     )
     db.add(record)
     db.flush()
-    broker.publish(run.id, {"type": "log", "data": {"id": record.id, "level": level, "event": event, "message": safe_message, "step_id": record.step_id, "created_at": datetime.now(UTC).isoformat()}})
+    broker.publish(run.id, {"type": "log", "data": {"id": record.id, "level": level, "event": event, "message": safe_message, "step_id": record.step_id, "created_at": datetime.now(timezone.utc).isoformat()}})
     return record
 
 
@@ -57,8 +60,8 @@ def create_steps(run: TestRun) -> None:
     run.steps = [RunStep(code=code, name=name, position=index) for index, (code, name) in enumerate(STEPS, 1)]
 
 
-def acquire_locks(db: Session, run: TestRun, lease_minutes: int = 180) -> tuple[bool, list[int]]:
-    now = datetime.now(UTC)
+def acquire_locks(db: Session, run: TestRun, lease_minutes: int = 180) -> typing.Tuple[bool, typing.List[int]]:
+    now = datetime.now(timezone.utc)
     active = db.scalars(select(ResourceLock).where(and_(ResourceLock.resource_id.in_(run.resource_ids), ResourceLock.released_at.is_(None), ResourceLock.lease_expires_at > now))).all()
     conflicts = sorted({lock.resource_id for lock in active if lock.run_id != run.id})
     if conflicts:
@@ -73,7 +76,7 @@ def acquire_locks(db: Session, run: TestRun, lease_minutes: int = 180) -> tuple[
 
 def release_locks(db: Session, run_id: int, reason: str) -> int:
     locks = db.scalars(select(ResourceLock).where(ResourceLock.run_id == run_id, ResourceLock.released_at.is_(None))).all()
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     for lock in locks:
         lock.released_at = now
         lock.release_reason = reason
@@ -81,7 +84,7 @@ def release_locks(db: Session, run_id: int, reason: str) -> int:
     return len(locks)
 
 
-def _load(db: Session, run_id: int) -> TestRun | None:
+def _load(db: Session, run_id: int) -> typing.Union[TestRun, None]:
     return db.scalar(select(TestRun).where(TestRun.id == run_id).options(selectinload(TestRun.steps), selectinload(TestRun.metrics), selectinload(TestRun.artifacts), selectinload(TestRun.verdict)))
 
 
@@ -93,7 +96,7 @@ async def _perform_step(db: Session, run: TestRun, code: str, run_status: str, d
     step = _step(run, code)
     run.status = run_status
     step.status = "running"
-    step.started_at = datetime.now(UTC)
+    step.started_at = datetime.now(timezone.utc)
     started_clock = time.perf_counter()
     append_log(db, run, f"{code}.started", f"{step.name}开始", step=step)
     db.commit()
@@ -104,7 +107,7 @@ async def _perform_step(db: Session, run: TestRun, code: str, run_status: str, d
         raise asyncio.CancelledError
     step.status = "succeeded"
     step.progress = 100
-    step.finished_at = datetime.now(UTC)
+    step.finished_at = datetime.now(timezone.utc)
     step.duration_ms = int((time.perf_counter() - started_clock) * 1000)
     run.progress = min(90, step.position * 9)
     append_log(db, run, f"{code}.completed", f"{step.name}完成", step=step)
@@ -146,7 +149,7 @@ async def start_run(run_id: int) -> None:
             db.commit()
             return
         run.status = "precheck"
-        run.started_at = run.started_at or datetime.now(UTC)
+        run.started_at = run.started_at or datetime.now(timezone.utc)
         run.queue_reason = None
         append_log(db, run, "run.started", "测速运行已启动")
         db.commit()
@@ -170,7 +173,7 @@ async def start_run(run_id: int) -> None:
             run.status = "precheck_failed"
             run.error_code = "PRECHECK_FAILED"
             run.error_message = redact(str(exc))
-            run.finished_at = datetime.now(UTC)
+            run.finished_at = datetime.now(timezone.utc)
             append_log(db, run, "run.failed", str(exc), level="ERROR")
             release_locks(db, run.id, "precheck_failed")
             db.commit()
@@ -185,7 +188,7 @@ async def continue_after_wiring(run_id: int) -> None:
         if not run or run.status != "awaiting_wiring":
             return
         wiring = _step(run, "wiring_confirmation")
-        wiring.status = "succeeded"; wiring.progress = 100; wiring.started_at = wiring.started_at or datetime.now(UTC); wiring.finished_at = datetime.now(UTC); wiring.duration_ms = 0
+        wiring.status = "succeeded"; wiring.progress = 100; wiring.started_at = wiring.started_at or datetime.now(timezone.utc); wiring.finished_at = datetime.now(timezone.utc); wiring.duration_ms = 0
         append_log(db, run, "wiring.confirmed", "人工接线已确认", step=wiring)
         db.commit()
         phases = [
@@ -219,9 +222,9 @@ async def continue_after_wiring(run_id: int) -> None:
         if run:
             failed_step = next((step for step in run.steps if step.status == "running"), None)
             if failed_step:
-                failed_step.status = "failed"; failed_step.error_message = redact(str(exc)); failed_step.finished_at = datetime.now(UTC)
+                failed_step.status = "failed"; failed_step.error_message = redact(str(exc)); failed_step.finished_at = datetime.now(timezone.utc)
             run.status = "parse_failed" if failed_step and failed_step.code == "coco_parse" else "execution_failed"
-            run.error_code = "EXECUTION_FAILED"; run.error_message = redact(str(exc)); run.finished_at = datetime.now(UTC)
+            run.error_code = "EXECUTION_FAILED"; run.error_message = redact(str(exc)); run.finished_at = datetime.now(timezone.utc)
             append_log(db, run, "run.failed", str(exc), level="ERROR", step=failed_step)
             release_locks(db, run.id, run.status)
             db.commit()
@@ -233,10 +236,10 @@ def cancel_run(db: Session, run: TestRun, reason: str = "user_cancelled") -> Non
     if run.status in TERMINAL_STATUSES:
         return
     run.status = "cancelled"
-    run.finished_at = datetime.now(UTC)
+    run.finished_at = datetime.now(timezone.utc)
     for step in run.steps:
         if step.status in {"running", "waiting"}:
-            step.status = "cancelled"; step.finished_at = datetime.now(UTC)
+            step.status = "cancelled"; step.finished_at = datetime.now(timezone.utc)
     append_log(db, run, "run.cancelled", "运行已取消，安全清理已触发", level="WARNING", detail={"reason": reason})
     release_locks(db, run.id, reason)
     db.commit()
@@ -244,7 +247,7 @@ def cancel_run(db: Session, run: TestRun, reason: str = "user_cancelled") -> Non
 
 
 def reclaim_expired_locks(db: Session) -> int:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     locks = db.scalars(select(ResourceLock).where(ResourceLock.released_at.is_(None), ResourceLock.lease_expires_at <= now)).all()
     for lock in locks:
         lock.released_at = now; lock.release_reason = "lease_expired"
@@ -253,7 +256,7 @@ def reclaim_expired_locks(db: Session) -> int:
 
 
 def expire_timed_out_runs(db: Session) -> int:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     runs = db.scalars(
         select(TestRun).where(
             TestRun.timeout_at <= now,
@@ -275,7 +278,7 @@ def expire_timed_out_runs(db: Session) -> int:
     return len(runs)
 
 
-def queued_run_ids(db: Session, limit: int = 20) -> list[int]:
+def queued_run_ids(db: Session, limit: int = 20) -> typing.List[int]:
     return list(
         db.scalars(
             select(TestRun.id)
@@ -286,8 +289,8 @@ def queued_run_ids(db: Session, limit: int = 20) -> list[int]:
     )
 
 
-def archive_and_clean_logs(db: Session) -> dict[str, int]:
-    now = datetime.now(UTC)
+def archive_and_clean_logs(db: Session) -> typing.Dict[str, int]:
+    now = datetime.now(timezone.utc)
     log_cutoff = now - timedelta(days=settings.app_log_retention_days)
     audit_cutoff = now - timedelta(days=settings.audit_log_retention_days)
     old_logs = db.scalars(select(LogRecord).where(LogRecord.created_at < log_cutoff)).all()

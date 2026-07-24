@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
@@ -18,7 +21,7 @@ engine = create_engine(settings.database_url, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def get_db() -> Generator[Session, None, None]:
+def get_db() -> typing.Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db

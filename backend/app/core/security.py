@@ -1,9 +1,12 @@
+from __future__ import annotations
+
+import typing
 import base64
 import hashlib
 import hmac
 import os
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
@@ -32,7 +35,7 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def create_token(subject: str, token_type: str, expires_delta: timedelta, **claims: Any) -> str:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,
         "type": token_type,
@@ -52,7 +55,7 @@ def create_refresh_token(user_id: int) -> str:
     return create_token(str(user_id), "refresh", timedelta(days=settings.jwt_refresh_days))
 
 
-def decode_token(token: str, expected_type: str) -> dict[str, Any]:
+def decode_token(token: str, expected_type: str) -> typing.Dict[str, Any]:
     payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
     if payload.get("type") != expected_type:
         raise jwt.InvalidTokenError("unexpected token type")
@@ -70,10 +73,10 @@ def _fernet() -> Fernet:
     return Fernet(key.encode())
 
 
-def encrypt_secret(value: str | None) -> str | None:
+def encrypt_secret(value: typing.Union[str, None]) -> typing.Union[str, None]:
     return _fernet().encrypt(value.encode()).decode() if value else None
 
 
-def decrypt_secret(value: str | None) -> str | None:
+def decrypt_secret(value: typing.Union[str, None]) -> typing.Union[str, None]:
     return _fernet().decrypt(value.encode()).decode() if value else None
 

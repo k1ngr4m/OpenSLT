@@ -1,9 +1,12 @@
+from __future__ import annotations
+
+import typing
 from fastapi.testclient import TestClient
 
 from conftest import create_plan_scenario, create_resource
 
 
-def create_plan(client: TestClient, headers: dict[str, str], business_code: str = "fut_mm") -> dict:
+def create_plan(client: TestClient, headers: typing.Dict[str, str], business_code: str = "fut_mm") -> dict:
     response = client.post(
         "/api/v1/plans",
         headers=headers,
@@ -38,7 +41,7 @@ def resource_payload(name: str, resource_type: str, *, business_code: str = "fut
     }
 
 
-def scenario_payload(plan_id: int, resource_ids: list[int]) -> dict:
+def scenario_payload(plan_id: int, resource_ids: typing.List[int]) -> dict:
     return {
         "plan_id": plan_id,
         "name": "资源场景",
@@ -51,7 +54,7 @@ def scenario_payload(plan_id: int, resource_ids: list[int]) -> dict:
     }
 
 
-def test_scenario_resources_are_derived_and_copied(client: TestClient, admin_headers: dict[str, str]):
+def test_scenario_resources_are_derived_and_copied(client: TestClient, admin_headers: typing.Dict[str, str]):
     rem = create_resource(client, admin_headers, "REM-01")
     market = create_resource(client, admin_headers, "Market-01", resource_type="market")
     plan = create_plan(client, admin_headers)
@@ -93,7 +96,7 @@ def test_scenario_resources_are_derived_and_copied(client: TestClient, admin_hea
     assert all(item["default_resource_ids"] == scenario["default_resource_ids"] for item in copied_scenarios)
 
 
-def test_scenario_resource_validation(client: TestClient, admin_headers: dict[str, str]):
+def test_scenario_resource_validation(client: TestClient, admin_headers: typing.Dict[str, str]):
     rem_one = create_resource(client, admin_headers, "REM-01")
     rem_two = create_resource(client, admin_headers, "REM-02")
     plan = create_plan(client, admin_headers)
@@ -157,7 +160,7 @@ def test_scenario_resource_validation(client: TestClient, admin_headers: dict[st
     assert deleted_response.json()["code"] == "INVALID_RESOURCES"
 
 
-def test_removed_scenario_json_fields_are_rejected(client: TestClient, admin_headers: dict[str, str]):
+def test_removed_scenario_json_fields_are_rejected(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_resource(client, admin_headers, "REM-01")
     plan = create_plan(client, admin_headers)
     payload = scenario_payload(plan["id"], [resource["id"]])
@@ -166,13 +169,13 @@ def test_removed_scenario_json_fields_are_rejected(client: TestClient, admin_hea
     assert response.status_code == 422
 
 
-def test_legacy_type_only_scenario_is_still_supported(client: TestClient, admin_headers: dict[str, str]):
+def test_legacy_type_only_scenario_is_still_supported(client: TestClient, admin_headers: typing.Dict[str, str]):
     _, scenario = create_plan_scenario(client, admin_headers, required_types=["rem"])
     assert scenario["default_resource_ids"] == []
     assert scenario["required_resource_types"] == ["rem"]
 
 
-def test_run_resources_must_match_scenario_types(client: TestClient, admin_headers: dict[str, str]):
+def test_run_resources_must_match_scenario_types(client: TestClient, admin_headers: typing.Dict[str, str]):
     rem_default = create_resource(client, admin_headers, "REM-default")
     rem_replacement = create_resource(client, admin_headers, "REM-replacement")
     market = create_resource(client, admin_headers, "Market-01", resource_type="market")
@@ -217,7 +220,7 @@ def test_run_resources_must_match_scenario_types(client: TestClient, admin_heade
     assert extra.json()["code"] == "RESOURCE_SET_MISMATCH"
 
 
-def test_plan_and_scenario_can_be_deleted_without_run_history(client: TestClient, admin_headers: dict[str, str]):
+def test_plan_and_scenario_can_be_deleted_without_run_history(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_resource(client, admin_headers, "REM-01")
     plan = create_plan(client, admin_headers)
     scenario_response = client.post(
@@ -238,7 +241,7 @@ def test_plan_and_scenario_can_be_deleted_without_run_history(client: TestClient
     assert plan["id"] not in remaining_plan_ids
 
 
-def test_plan_and_scenario_with_run_history_cannot_be_deleted(client: TestClient, admin_headers: dict[str, str]):
+def test_plan_and_scenario_with_run_history_cannot_be_deleted(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_resource(client, admin_headers, "REM-01")
     plan = create_plan(client, admin_headers)
     scenario_response = client.post(

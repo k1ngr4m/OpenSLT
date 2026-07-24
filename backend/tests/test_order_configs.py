@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+import typing
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import asyncssh
@@ -20,7 +23,7 @@ def reset_simulated_configs():
     simulated_store.clear()
 
 
-def create_order_resource(client: TestClient, headers: dict[str, str], name: str = "Order-Config") -> dict:
+def create_order_resource(client: TestClient, headers: typing.Dict[str, str], name: str = "Order-Config") -> dict:
     response = client.post(
         "/api/v1/resources",
         headers=headers,
@@ -67,7 +70,7 @@ def test_xml_parser_preserves_comments_and_rejects_unsafe_content():
     assert oversized.value.code == "ORDER_CONFIG_TOO_LARGE"
 
 
-def test_simulated_order_config_crud_conflict_and_audit(client: TestClient, admin_headers: dict[str, str]):
+def test_simulated_order_config_crud_conflict_and_audit(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_order_resource(client, admin_headers)
     base = f"/api/v1/resources/{resource['id']}/order-configs"
 
@@ -145,7 +148,7 @@ def test_simulated_order_config_crud_conflict_and_audit(client: TestClient, admi
         db.close()
 
 
-def test_order_config_security_and_role_boundary(client: TestClient, admin_headers: dict[str, str]):
+def test_order_config_security_and_role_boundary(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_order_resource(client, admin_headers, "Order-Security")
     base = f"/api/v1/resources/{resource['id']}/order-configs"
     traversal = client.get(f"{base}/not-the-right-prefix.xml", headers=admin_headers)
@@ -199,7 +202,7 @@ class FakeRemoteFile:
         self.sftp.files[self.path] = {
             "content": content,
             "permissions": 0o600,
-            "mtime": int(datetime.now(UTC).timestamp()),
+            "mtime": int(datetime.now(timezone.utc).timestamp()),
             "type": asyncssh.FILEXFER_TYPE_REGULAR,
         }
         return len(content)
@@ -222,8 +225,8 @@ class FakeSFTP:
                 "type": asyncssh.FILEXFER_TYPE_SYMLINK,
             },
         }
-        self.renames: list[tuple[str, str, str]] = []
-        self.directories: set[str] = set()
+        self.renames: typing.List[typing.Tuple[str, str, str]] = []
+        self.directories: typing.Set[str] = set()
 
     async def scandir(self, path: str):
         for full_path, item in list(self.files.items()):
@@ -295,7 +298,7 @@ class FakeConnection:
 
 def test_remote_sftp_atomic_update_permissions_and_trash(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_headers: typing.Dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ):
     resource = create_order_resource(client, admin_headers, "Order-Remote")
@@ -303,7 +306,7 @@ def test_remote_sftp_atomic_update_permissions_and_trash(
     filename = "ees_ef_vi_trader_api_test_conf.xml"
     content = '<?xml version="1.0" encoding="utf-8"?><tcp><price value="1495" /></tcp>'
     sftp = FakeSFTP(directory, filename, content)
-    connection_options: list[dict] = []
+    connection_options: typing.List[dict] = []
 
     async def fake_connect(**options):
         connection_options.append(options)

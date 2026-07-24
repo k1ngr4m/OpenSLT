@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 import logging
 import re
 import sys
@@ -37,7 +40,7 @@ def redact(value: Any) -> Any:
     return result
 
 
-def add_context(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
+def add_context(_: Any, __: str, event_dict: typing.Dict[str, Any]) -> typing.Dict[str, Any]:
     event_dict.setdefault("trace_id", trace_id_ctx.get() or str(uuid4()))
     event_dict.setdefault("service", "openslt-api")
     event_dict.setdefault("environment", settings.environment)

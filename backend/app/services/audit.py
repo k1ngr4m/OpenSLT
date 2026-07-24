@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 from typing import Any
 
 from fastapi import Request, WebSocket
@@ -11,11 +14,11 @@ def write_audit(
     db: Session,
     action: str,
     object_type: str,
-    object_id: int | str | None,
-    actor: User | None = None,
-    request: Request | WebSocket | None = None,
+    object_id: typing.Union[int, str, None],
+    actor: typing.Union[User, None] = None,
+    request: typing.Union[Request, WebSocket, None] = None,
     result: str = "success",
-    detail: dict[str, Any] | None = None,
+    detail: typing.Union[typing.Dict[str, Any], None] = None,
 ) -> AuditLog:
     record = AuditLog(
         actor_id=actor.id if actor else None,

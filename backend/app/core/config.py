@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 from functools import lru_cache
 from pathlib import Path
 import sys
@@ -18,7 +21,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_minutes: int = 30
     jwt_refresh_days: int = 7
-    credential_encryption_key: str | None = None
+    credential_encryption_key: typing.Union[str, None] = None
     artifact_root: Path = Path("./backend/data/artifacts")
     log_dir: Path = Path("./backend/logs")
     log_level: str = "INFO"
@@ -27,7 +30,7 @@ class Settings(BaseSettings):
     execution_mode: str = Field(default="simulated", pattern="^(simulated|remote)$")
     portable_mode: bool = False
     enable_internal_scheduler: bool = False
-    frontend_dist: Path | None = None
+    frontend_dist: typing.Union[Path, None] = None
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)
     open_browser: bool = False
@@ -43,7 +46,8 @@ class Settings(BaseSettings):
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         if self.database_url.startswith("sqlite:///"):
-            Path(self.database_url.removeprefix("sqlite:///" )).parent.mkdir(parents=True, exist_ok=True)
+            database_path = self.database_url[len("sqlite:///") :]
+            Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         return self
 
 

@@ -50,7 +50,7 @@ OpenSLT Windows 免安装版
 
 六、从源码生成 EXE
 
-在仓库根目录打开 PowerShell，要求 Python 3.12、Node.js 20+ 和 pnpm：
+在仓库根目录打开 PowerShell，要求 Python 3.8.2（3.8.x）、Node.js 20+ 和 pnpm：
 
   Set-ExecutionPolicy -Scope Process Bypass
   .\deploy\portable\build-portable.ps1 -Python python

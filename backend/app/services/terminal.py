@@ -1,9 +1,12 @@
+from __future__ import annotations
+
+import typing
 import asyncio
 import posixpath
 import shlex
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Callable
 from uuid import uuid4
 
@@ -27,7 +30,7 @@ MIN_ROWS = 5
 MAX_ROWS = 120
 
 
-@dataclass(slots=True)
+@dataclass
 class TerminalResource:
     id: int
     name: str
@@ -35,8 +38,8 @@ class TerminalResource:
     host: str
     port: int
     username: str
-    password: str | None
-    private_key: str | None
+    password: typing.Union[str, None]
+    private_key: typing.Union[str, None]
     remote_path: str
 
 
@@ -69,7 +72,7 @@ def _audit(
     resource_id: int,
     action: str,
     result: str = "success",
-    detail: dict | None = None,
+    detail: typing.Union[dict, None] = None,
 ) -> None:
     db = SessionLocal()
     try:
@@ -89,7 +92,7 @@ def _audit(
         db.close()
 
 
-def _load_context(token: str, resource_id: int) -> tuple[int, TerminalResource] | tuple[None, str]:
+def _load_context(token: str, resource_id: int) -> typing.Union[typing.Tuple[int, TerminalResource], typing.Tuple[None, str]]:
     try:
         payload = decode_token(token, "access")
         actor_id = int(payload["sub"])
@@ -167,7 +170,7 @@ class SimulatedTerminal:
             value = f"{self.cwd}/{value}"
         return posixpath.normpath(value)
 
-    def _run_command(self, line: str) -> tuple[str, bool]:
+    def _run_command(self, line: str) -> typing.Tuple[str, bool]:
         try:
             parts = shlex.split(line)
         except ValueError as exc:
@@ -198,7 +201,7 @@ class SimulatedTerminal:
         if command == "hostname":
             return f"{self.resource.host or 'simulated-host'}\r\n", False
         if command == "date":
-            return f"{datetime.now(UTC):%a %b %d %H:%M:%S UTC %Y}\r\n", False
+            return f"{datetime.now(timezone.utc):%a %b %d %H:%M:%S UTC %Y}\r\n", False
         if command == "uname":
             if args == ["-a"]:
                 host = self.resource.host or "simulated-host"
@@ -213,8 +216,8 @@ class SimulatedTerminal:
             return "logout\r\n", True
         return f"{command}: command not found (simulated)\r\n", False
 
-    def feed(self, data: str) -> tuple[str, bool]:
-        output: list[str] = []
+    def feed(self, data: str) -> typing.Tuple[str, bool]:
+        output: typing.List[str] = []
         should_exit = False
         for character in data:
             if self.escape_buffer:
@@ -281,7 +284,7 @@ async def _receive_simulated(websocket: WebSocket, terminal: SimulatedTerminal) 
             return "shell_exit"
 
 
-def _remote_command(resource: TerminalResource) -> str | None:
+def _remote_command(resource: TerminalResource) -> typing.Union[str, None]:
     if not resource.remote_path.strip():
         return None
     path = shlex.quote(resource.remote_path.strip())
@@ -324,8 +327,8 @@ async def _send_remote_output(websocket: WebSocket, process: asyncssh.SSHClientP
             return "client_disconnected"
 
 
-async def _run_remote(websocket: WebSocket, resource: TerminalResource, on_connected: Callable[[], None]) -> str:
-    options: dict[str, object] = {
+async def _run_remote(websocket: WebSocket, resource: TerminalResource, on_connected: typing.Callable[[], None]) -> str:
+    options: typing.Dict[str, object] = {
         "host": resource.host,
         "port": resource.port,
         "username": resource.username,
@@ -373,9 +376,9 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, on_conne
 
 async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token: str) -> None:
     trace_token = trace_id_ctx.set(str(uuid4()))
-    started_at = datetime.now(UTC)
-    actor_id: int | None = None
-    resource: TerminalResource | None = None
+    started_at = datetime.now(timezone.utc)
+    actor_id: typing.Union[int, None] = None
+    resource: typing.Union[TerminalResource, None] = None
     opened = False
     reason = "connection_failed"
     try:
@@ -425,7 +428,7 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
         await _close(websocket)
     finally:
         if opened and actor_id is not None and resource is not None:
-            duration_ms = max(0, int((datetime.now(UTC) - started_at).total_seconds() * 1000))
+            duration_ms = max(0, int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000))
             _audit(
                 websocket,
                 actor_id,

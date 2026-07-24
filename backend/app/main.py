@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -121,7 +124,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
 
 
 @app.get("/health")
-def health() -> dict[str, str]: return {"status": "ok", "service": "openslt-api"}
+def health() -> typing.Dict[str, str]: return {"status": "ok", "service": "openslt-api"}
 
 
 app.include_router(router, prefix=settings.api_v1_prefix)

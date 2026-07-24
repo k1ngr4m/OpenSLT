@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import typing
+
 import importlib
 
 from fastapi.testclient import TestClient
@@ -32,13 +34,13 @@ def database_payload(**overrides):
     return payload
 
 
-def create_database(client: TestClient, headers: dict[str, str], **overrides) -> dict:
+def create_database(client: TestClient, headers: typing.Dict[str, str], **overrides) -> dict:
     response = client.post("/api/v1/resources", headers=headers, json=database_payload(**overrides))
     assert response.status_code == 201, response.text
     return response.json()
 
 
-def test_database_resource_normalizes_names_and_hides_secret(client: TestClient, admin_headers: dict[str, str]):
+def test_database_resource_normalizes_names_and_hides_secret(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_database(client, admin_headers)
     assert resource["database_names"] == ["rem_core", "rem_report"]
     assert resource["database_connection_mode"] == "direct"
@@ -56,7 +58,7 @@ def test_database_resource_normalizes_names_and_hides_secret(client: TestClient,
     assert edited.json()["has_database_password"] is True
 
 
-def test_tunnel_requires_ssh_endpoint(client: TestClient, admin_headers: dict[str, str]):
+def test_tunnel_requires_ssh_endpoint(client: TestClient, admin_headers: typing.Dict[str, str]):
     invalid = client.post(
         "/api/v1/resources",
         headers=admin_headers,
@@ -78,7 +80,7 @@ def test_tunnel_requires_ssh_endpoint(client: TestClient, admin_headers: dict[st
     assert resource["database_host"] == "10.0.0.8"
 
 
-def test_simulated_health_select_export_and_update(client: TestClient, admin_headers: dict[str, str]):
+def test_simulated_health_select_export_and_update(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_database(client, admin_headers)
     resource_id = resource["id"]
     health = client.post(f"/api/v1/resources/{resource_id}/health", headers=admin_headers)
@@ -152,7 +154,7 @@ def test_simulated_health_select_export_and_update(client: TestClient, admin_hea
     assert replay.status_code == 409
 
 
-def test_visitor_cannot_use_database_console(client: TestClient, admin_headers: dict[str, str]):
+def test_visitor_cannot_use_database_console(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_database(client, admin_headers)
     created = client.post(
         "/api/v1/users",
@@ -195,7 +197,7 @@ def test_sql_safety_rejects_cross_database_and_unsafe_updates():
         raise AssertionError("cross-database SELECT was accepted")
 
 
-def test_real_mode_dispatches_to_database_adapter(client: TestClient, admin_headers: dict[str, str], monkeypatch):
+def test_real_mode_dispatches_to_database_adapter(client: TestClient, admin_headers: typing.Dict[str, str], monkeypatch):
     resource = create_database(client, admin_headers)
 
     class FakeAdapter:
@@ -245,7 +247,7 @@ def discovery_payload(**overrides):
 
 def test_simulated_database_discovery_filters_system_databases(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_headers: typing.Dict[str, str],
     monkeypatch,
 ):
     async def unexpected_discovery(_):
@@ -284,7 +286,7 @@ def test_simulated_database_discovery_filters_system_databases(
 
 def test_database_discovery_reuses_secrets_only_for_unchanged_identity(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_headers: typing.Dict[str, str],
     monkeypatch,
 ):
     resource = create_database(
@@ -339,7 +341,7 @@ def test_database_discovery_reuses_secrets_only_for_unchanged_identity(
     assert changed_jump_host.json()["code"] == "SSH_PRIVATE_KEY_REQUIRED"
 
 
-def test_database_discovery_is_admin_only(client: TestClient, admin_headers: dict[str, str]):
+def test_database_discovery_is_admin_only(client: TestClient, admin_headers: typing.Dict[str, str]):
     created = client.post(
         "/api/v1/users",
         headers=admin_headers,

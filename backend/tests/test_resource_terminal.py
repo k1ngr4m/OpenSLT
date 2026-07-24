@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import typing
 import asyncio
 
 import pytest
@@ -11,15 +14,15 @@ from app.services import terminal as terminal_service
 from conftest import create_resource
 
 
-def access_token(headers: dict[str, str]) -> str:
-    return headers["Authorization"].removeprefix("Bearer ")
+def access_token(headers: typing.Dict[str, str]) -> str:
+    return headers["Authorization"][len("Bearer ") :]
 
 
 def terminal_url(resource_id: int, token: str) -> str:
     return f"/api/v1/ws/resources/{resource_id}/terminal?token={token}"
 
 
-def test_simulated_terminal_commands_and_audit(client: TestClient, admin_headers: dict[str, str]):
+def test_simulated_terminal_commands_and_audit(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_resource(client, admin_headers, "REM-Terminal")
     token = access_token(admin_headers)
 
@@ -65,7 +68,7 @@ def test_simulated_terminal_commands_and_audit(client: TestClient, admin_headers
         db.close()
 
 
-def test_terminal_rejects_invalid_token_and_visitor(client: TestClient, admin_headers: dict[str, str]):
+def test_terminal_rejects_invalid_token_and_visitor(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_resource(client, admin_headers, "REM-Permissions")
     with pytest.raises(WebSocketDisconnect) as invalid:
         with client.websocket_connect(terminal_url(resource["id"], "invalid-token")):
@@ -86,7 +89,7 @@ def test_terminal_rejects_invalid_token_and_visitor(client: TestClient, admin_he
     assert forbidden.value.code == 4403
 
 
-def test_terminal_rejects_unsupported_and_disabled_resources(client: TestClient, admin_headers: dict[str, str]):
+def test_terminal_rejects_unsupported_and_disabled_resources(client: TestClient, admin_headers: typing.Dict[str, str]):
     token = access_token(admin_headers)
     with pytest.raises(WebSocketDisconnect) as missing_close:
         with client.websocket_connect(terminal_url(999_999, token)):
@@ -115,7 +118,7 @@ def test_terminal_rejects_unsupported_and_disabled_resources(client: TestClient,
 
 class FakeStdin:
     def __init__(self) -> None:
-        self.writes: list[str] = []
+        self.writes: typing.List[str] = []
 
     def write(self, data: str) -> None:
         self.writes.append(data)
@@ -135,7 +138,7 @@ class FakeProcess:
         self.stdin = FakeStdin()
         self.stdout = FakeStdout()
         self.exit_status = 0
-        self.sizes: list[tuple[int, int]] = []
+        self.sizes: typing.List[typing.Tuple[int, int]] = []
         self.closed = False
 
     def change_terminal_size(self, columns: int, rows: int) -> None:
@@ -154,11 +157,11 @@ class FakeProcess:
 class FakeConnection:
     def __init__(self) -> None:
         self.process = FakeProcess()
-        self.command: str | None = None
+        self.command: typing.Union[str, None] = None
         self.process_options: dict = {}
         self.closed = False
 
-    async def create_process(self, command: str | None, **options):
+    async def create_process(self, command: typing.Union[str, None], **options):
         self.command = command
         self.process_options = options
         return self.process
@@ -172,7 +175,7 @@ class FakeConnection:
 
 def test_remote_terminal_uses_pty_and_forwards_io(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_headers: typing.Dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ):
     resource = create_resource(client, admin_headers, "REM-Remote")
@@ -210,7 +213,7 @@ def test_remote_terminal_uses_pty_and_forwards_io(
 
 def test_remote_terminal_reports_connection_failure(
     client: TestClient,
-    admin_headers: dict[str, str],
+    admin_headers: typing.Dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ):
     resource = create_resource(client, admin_headers, "REM-Unreachable")

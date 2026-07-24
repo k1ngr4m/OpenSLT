@@ -2,7 +2,7 @@
 name = "openslt"
 version = "0.1.0"
 description = "OpenSLT REM futures automated latency testing platform"
-requires-python = ">=3.12"
+requires-python = ">=3.8.2,<3.9"
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn[standard]>=0.30,<1",
@@ -18,14 +18,14 @@ dependencies = [
   "cryptography>=43,<46",
   "python-multipart>=0.0.12,<1",
   "asyncssh>=2.17,<3",
-  "pandas>=2.2,<3",
+  "pandas>=2.0,<2.1",
   "openpyxl>=3.1,<4",
   "jinja2>=3.1,<4",
-  "weasyprint>=62,<67",
+  "weasyprint>=61,<62",
 ]
 
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=75,<75.4"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -45,5 +45,5 @@ pythonpath = ["backend"]
 asyncio_mode = "auto"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py38"
 line-length = 100
