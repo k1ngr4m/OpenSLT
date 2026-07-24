@@ -4,10 +4,11 @@ import typing
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.types import JSONText
 
 
 def utcnow() -> datetime:
@@ -66,12 +67,12 @@ class Resource(TimestampMixin, Base):
     database_connection_mode: Mapped[typing.Union[str, None]] = mapped_column(String(32))
     database_host: Mapped[typing.Union[str, None]] = mapped_column(String(255))
     database_port: Mapped[typing.Union[int, None]] = mapped_column(Integer)
-    database_names: Mapped[typing.Union[typing.List[str], None]] = mapped_column(JSON)
+    database_names: Mapped[typing.Union[typing.List[str], None]] = mapped_column(JSONText)
     database_username: Mapped[typing.Union[str, None]] = mapped_column(String(128))
     encrypted_database_password: Mapped[typing.Union[str, None]] = mapped_column(Text)
     database_tls_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     remote_path: Mapped[str] = mapped_column(String(512), default="")
-    capabilities: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    capabilities: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     version_info: Mapped[str] = mapped_column(String(255), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -108,7 +109,7 @@ class TestPlan(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
-    default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
+    default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
@@ -122,9 +123,9 @@ class TestScenario(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128))
     scenario_type: Mapped[str] = mapped_column(String(64), index=True)
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
-    expected_artifacts: Mapped[typing.List[str]] = mapped_column(JSON, default=list)
-    default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
-    required_resource_types: Mapped[typing.List[str]] = mapped_column(JSON, default=list)
+    expected_artifacts: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
+    default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
+    required_resource_types: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     workflow_status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     draft_workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(
@@ -160,7 +161,7 @@ class ScenarioWorkflowVersion(TimestampMixin, Base):
     version_no: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     revision: Mapped[int] = mapped_column(Integer, default=1)
-    resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
+    resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     published_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
     published_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
@@ -184,7 +185,7 @@ class ScenarioWorkflowNode(TimestampMixin, Base):
     position: Mapped[int] = mapped_column(Integer)
     node_type: Mapped[str] = mapped_column(String(40), index=True)
     name: Mapped[str] = mapped_column(String(128))
-    config: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    config: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     workflow_version: Mapped[ScenarioWorkflowVersion] = relationship(back_populates="nodes")
 
 
@@ -198,8 +199,8 @@ class TestRun(TimestampMixin, Base):
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
-    resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
-    config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
+    config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
@@ -226,8 +227,8 @@ class RunStep(Base):
     code: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
     node_type: Mapped[str] = mapped_column(String(40), default="legacy")
-    config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
-    result_summary: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    result_summary: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     position: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(24), default="pending")
     progress: Mapped[int] = mapped_column(Integer, default=0)
@@ -303,7 +304,7 @@ class ContractDataFile(Base):
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     size: Mapped[int] = mapped_column(Integer, default=0)
     checksum: Mapped[str] = mapped_column(String(64), index=True)
-    preview_rows: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSON, default=list)
+    preview_rows: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -324,7 +325,7 @@ class LogRecord(Base):
     run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
     step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="SET NULL"), index=True)
     source: Mapped[str] = mapped_column(String(64), default="api", index=True)
-    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     artifact_path: Mapped[typing.Union[str, None]] = mapped_column(String(1024))
     is_redacted: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
@@ -355,7 +356,7 @@ class Metric(Base):
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str] = mapped_column(String(32), default="us")
     sample_count: Mapped[typing.Union[int, None]] = mapped_column(Integer)
-    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     run: Mapped[TestRun] = relationship(back_populates="metrics")
 
 
@@ -395,5 +396,5 @@ class AuditLog(Base):
     source_ip: Mapped[typing.Union[str, None]] = mapped_column(String(64))
     user_agent: Mapped[typing.Union[str, None]] = mapped_column(String(512))
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
-    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

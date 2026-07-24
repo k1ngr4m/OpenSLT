@@ -7,6 +7,8 @@ Revises: 0003
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.types import JSONText
+
 revision = "0004"
 down_revision = "0003"
 branch_labels = None
@@ -40,7 +42,7 @@ def upgrade() -> None:
         sa.Column("version_no", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(24), nullable=False, server_default="draft"),
         sa.Column("revision", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("resource_ids", sa.JSON(), nullable=False),
+        sa.Column("resource_ids", JSONText(), nullable=False),
         sa.Column("created_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("published_by", sa.Integer(), sa.ForeignKey("users.id")),
         sa.Column("published_at", sa.DateTime(timezone=True)),
@@ -60,7 +62,7 @@ def upgrade() -> None:
         sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("node_type", sa.String(40), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
-        sa.Column("config", sa.JSON(), nullable=False),
+        sa.Column("config", JSONText(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("workflow_version_id", "node_key", name="uq_workflow_node_key"),
@@ -122,8 +124,8 @@ def upgrade() -> None:
                 ),
             ),
             sa.Column("node_type", sa.String(40), nullable=False, server_default="legacy"),
-            sa.Column("config_snapshot", sa.JSON(), nullable=False, server_default="{}"),
-            sa.Column("result_summary", sa.JSON(), nullable=False, server_default="{}"),
+            sa.Column("config_snapshot", JSONText(), nullable=False, server_default="{}"),
+            sa.Column("result_summary", JSONText(), nullable=False, server_default="{}"),
         ) if column.name not in run_step_columns
     ]
     if missing_run_step_columns:
@@ -193,7 +195,7 @@ def upgrade() -> None:
         sa.Column("row_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("size", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("checksum", sa.String(64), nullable=False),
-        sa.Column("preview_rows", sa.JSON(), nullable=False),
+        sa.Column("preview_rows", JSONText(), nullable=False),
         sa.Column("created_by", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(

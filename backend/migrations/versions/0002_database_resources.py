@@ -7,6 +7,8 @@ Revises: 0001
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.types import JSONText
+
 revision = "0002"
 down_revision = "0001"
 branch_labels = None
@@ -21,7 +23,7 @@ def upgrade() -> None:
         sa.Column("database_connection_mode", sa.String(length=32), nullable=True),
         sa.Column("database_host", sa.String(length=255), nullable=True),
         sa.Column("database_port", sa.Integer(), nullable=True),
-        sa.Column("database_names", sa.JSON(), nullable=True),
+        sa.Column("database_names", JSONText(), nullable=True),
         sa.Column("database_username", sa.String(length=128), nullable=True),
         sa.Column("encrypted_database_password", sa.Text(), nullable=True),
         sa.Column("database_tls_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),

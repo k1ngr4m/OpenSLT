@@ -7,6 +7,8 @@ Revises: 0002
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.types import JSONText
+
 revision = "0003"
 down_revision = "0002"
 branch_labels = None
@@ -18,7 +20,7 @@ def _clean_run_snapshots() -> None:
     runs = sa.table(
         "test_runs",
         sa.column("id", sa.Integer),
-        sa.column("config_snapshot", sa.JSON),
+        sa.column("config_snapshot", JSONText()),
     )
     rows = connection.execute(sa.select(runs.c.id, runs.c.config_snapshot)).mappings().all()
     for row in rows:
@@ -41,17 +43,17 @@ def upgrade() -> None:
     scenario_columns = {column["name"]: column for column in inspector.get_columns("test_scenarios")}
     added_default_resources = "default_resource_ids" not in scenario_columns
     if added_default_resources:
-        op.add_column("test_scenarios", sa.Column("default_resource_ids", sa.JSON(), nullable=True))
+        op.add_column("test_scenarios", sa.Column("default_resource_ids", JSONText(), nullable=True))
         scenarios = sa.table(
             "test_scenarios",
-            sa.column("default_resource_ids", sa.JSON),
+            sa.column("default_resource_ids", JSONText()),
         )
         op.get_bind().execute(sa.update(scenarios).values(default_resource_ids=[]))
     _clean_run_snapshots()
 
     with op.batch_alter_table("test_scenarios") as batch_op:
         if added_default_resources or scenario_columns["default_resource_ids"]["nullable"]:
-            batch_op.alter_column("default_resource_ids", existing_type=sa.JSON(), nullable=False)
+            batch_op.alter_column("default_resource_ids", existing_type=JSONText(), nullable=False)
         for column in ("parameters", "actions", "statistics_rules"):
             if column in scenario_columns:
                 batch_op.drop_column(column)
@@ -66,17 +68,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.add_column("test_scenarios", sa.Column("parameters", sa.JSON(), nullable=True))
-    op.add_column("test_scenarios", sa.Column("actions", sa.JSON(), nullable=True))
-    op.add_column("test_scenarios", sa.Column("statistics_rules", sa.JSON(), nullable=True))
+    op.add_column("test_scenarios", sa.Column("parameters", JSONText(), nullable=True))
+    op.add_column("test_scenarios", sa.Column("actions", JSONText(), nullable=True))
+    op.add_column("test_scenarios", sa.Column("statistics_rules", JSONText(), nullable=True))
     op.add_column("metrics", sa.Column("rule_result", sa.String(length=32), nullable=True))
     op.add_column("verdicts", sa.Column("automatic_result", sa.String(length=32), nullable=True))
 
     scenarios = sa.table(
         "test_scenarios",
-        sa.column("parameters", sa.JSON),
-        sa.column("actions", sa.JSON),
-        sa.column("statistics_rules", sa.JSON),
+        sa.column("parameters", JSONText()),
+        sa.column("actions", JSONText()),
+        sa.column("statistics_rules", JSONText()),
     )
     verdicts = sa.table("verdicts", sa.column("automatic_result", sa.String(length=32)))
     connection = op.get_bind()
@@ -84,9 +86,9 @@ def downgrade() -> None:
     connection.execute(sa.update(verdicts).values(automatic_result="pending"))
 
     with op.batch_alter_table("test_scenarios") as batch_op:
-        batch_op.alter_column("parameters", existing_type=sa.JSON(), nullable=False)
-        batch_op.alter_column("actions", existing_type=sa.JSON(), nullable=False)
-        batch_op.alter_column("statistics_rules", existing_type=sa.JSON(), nullable=False)
+        batch_op.alter_column("parameters", existing_type=JSONText(), nullable=False)
+        batch_op.alter_column("actions", existing_type=JSONText(), nullable=False)
+        batch_op.alter_column("statistics_rules", existing_type=JSONText(), nullable=False)
         batch_op.drop_column("default_resource_ids")
     with op.batch_alter_table("verdicts") as batch_op:
         batch_op.alter_column("automatic_result", existing_type=sa.String(length=32), nullable=False)
