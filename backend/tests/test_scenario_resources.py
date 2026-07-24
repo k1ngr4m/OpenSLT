@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 from fastapi.testclient import TestClient
 
-from conftest import create_plan_scenario, create_resource
+from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
 def create_plan(client: TestClient, headers: typing.Dict[str, str], business_code: str = "fut_mm") -> dict:
@@ -187,6 +187,9 @@ def test_run_resources_must_match_scenario_types(client: TestClient, admin_heade
         json=scenario_payload(plan["id"], [rem_default["id"], market["id"]]),
     )
     scenario = scenario_response.json()
+    publish_workflow(client, admin_headers, scenario, [rem_default["id"], market["id"]], [
+        {"node_key": "wiring", "node_type": "wiring_confirmation", "name": "确认接线", "config": {"diagram": "placeholder"}},
+    ])
 
     valid = client.post(
         "/api/v1/runs",
@@ -229,6 +232,9 @@ def test_plan_and_scenario_can_be_deleted_without_run_history(client: TestClient
         json=scenario_payload(plan["id"], [resource["id"]]),
     )
     scenario = scenario_response.json()
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        {"node_key": "wiring", "node_type": "wiring_confirmation", "name": "确认接线", "config": {"diagram": "placeholder"}},
+    ])
 
     deleted_scenario = client.delete(f"/api/v1/scenarios/{scenario['id']}", headers=admin_headers)
     assert deleted_scenario.status_code == 204
@@ -250,6 +256,9 @@ def test_plan_and_scenario_with_run_history_cannot_be_deleted(client: TestClient
         json=scenario_payload(plan["id"], [resource["id"]]),
     )
     scenario = scenario_response.json()
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        {"node_key": "wiring", "node_type": "wiring_confirmation", "name": "确认接线", "config": {"diagram": "placeholder"}},
+    ])
     run = client.post(
         "/api/v1/runs",
         headers=admin_headers,

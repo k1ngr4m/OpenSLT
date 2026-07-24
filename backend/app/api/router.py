@@ -22,20 +22,61 @@ from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.logging import trace_id_ctx
 from app.core.security import create_access_token, create_refresh_token, decode_token, decrypt_secret, encrypt_secret, hash_password, token_fingerprint, verify_password
-from app.models import Artifact, AuditLog, BusinessType, DatabaseUpdateConfirmation, LogRecord, RefreshToken, Resource, ResourceLock, TestPlan, TestRun, TestScenario, User, Verdict
-from app.schemas import ArtifactOut, AuditOut, DatabaseDiscoveryOut, DatabaseDiscoveryRequest, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite
+from app.models import Artifact, AuditLog, BusinessType, ContractDataFile, DatabaseUpdateConfirmation, LogRecord, RefreshToken, Resource, ResourceLock, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestPlan, TestRun, TestScenario, User, Verdict
+from app.schemas import ArtifactOut, AuditOut, CaptureSnapshotOut, ContractDataFetchRequest, ContractDataFileOut, DatabaseDiscoveryOut, DatabaseDiscoveryRequest, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite, WorkflowDocumentOut, WorkflowDocumentWrite, WorkflowVersionOut
 from app.services.audit import write_audit
 from app.services.events import broker
-from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, cancel_run, continue_after_wiring, create_steps, release_locks, start_run
+from app.services.orchestration import TERMINAL_STATUSES, acquire_locks, cancel_run, continue_after_wiring, create_steps, create_workflow_steps, confirm_workflow_step, release_locks, start_run
 from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.reports import generate_reports
 from app.services.terminal import handle_resource_terminal
+from app.services.workflows import WorkflowError, clone_published_to_draft, copy_version_contents, create_draft, fetch_contract_files, load_version, preview_node, publish, replace_draft, resource_map, validate_structure, workflow_payload
 
 router = APIRouter()
 
 
 def not_found(name: str) -> HTTPException:
     return HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"{name}不存在"})
+
+
+def workflow_http_error(exc: WorkflowError) -> HTTPException:
+    detail = {"code": exc.code, "message": exc.message}
+    if exc.errors:
+        detail["errors"] = exc.errors
+    return HTTPException(status_code=exc.status_code, detail=detail)
+
+
+def workflow_nodes_snapshot(db: Session, workflow: ScenarioWorkflowVersion) -> list[dict]:
+    snapshots = []
+    for node in workflow.nodes:
+        config = dict(node.config or {})
+        file_ids = list(config.get("contract_file_ids") or [])
+        if file_ids:
+            files = list(db.scalars(select(ContractDataFile).where(ContractDataFile.id.in_(file_ids))).all())
+            by_id = {item.id: item for item in files}
+            config["contract_files"] = [
+                {
+                    "id": item.id,
+                    "filename": item.filename,
+                    "contract_type": item.contract_type,
+                    "quote_date": item.quote_date,
+                    "row_count": item.row_count,
+                    "size": item.size,
+                    "checksum": item.checksum,
+                    "remote_path": item.remote_path,
+                }
+                for file_id in file_ids
+                if (item := by_id.get(file_id)) is not None
+            ]
+        snapshots.append({
+            "id": node.id,
+            "node_key": node.node_key,
+            "position": node.position,
+            "node_type": node.node_type,
+            "name": node.name,
+            "config": config,
+        })
+    return snapshots
 
 
 def validate_scenario_resources(db: Session, plan: TestPlan, resource_ids: typing.List[int]) -> typing.Tuple[typing.List[int], typing.List[str]]:
@@ -758,7 +799,16 @@ def copy_plan(plan_id: int, request: Request, actor: User = Depends(operators), 
     if not original: raise not_found("方案")
     copied = TestPlan(name=f"{original.name} - 副本", business_code=original.business_code, description=original.description, default_resource_ids=list(original.default_resource_ids), config_version=original.config_version, created_by=actor.id)
     db.add(copied); db.flush()
-    for scenario in original.scenarios: db.add(TestScenario(plan_id=copied.id, name=scenario.name, scenario_type=scenario.scenario_type, config_version=scenario.config_version, expected_artifacts=scenario.expected_artifacts, default_resource_ids=list(scenario.default_resource_ids), required_resource_types=list(scenario.required_resource_types), is_enabled=scenario.is_enabled))
+    for scenario in original.scenarios:
+        if scenario.is_archived:
+            continue
+        source_version_id = scenario.published_workflow_version_id or scenario.draft_workflow_version_id
+        source_version = load_version(db, source_version_id) if source_version_id else None
+        resource_ids = list(source_version.resource_ids if source_version else scenario.default_resource_ids)
+        copied_scenario = TestScenario(plan_id=copied.id, name=scenario.name, scenario_type=scenario.scenario_type, config_version=scenario.config_version, expected_artifacts=scenario.expected_artifacts, default_resource_ids=resource_ids, required_resource_types=list(scenario.required_resource_types), is_enabled=False, workflow_status="draft")
+        db.add(copied_scenario); db.flush()
+        draft = create_draft(db, copied_scenario, actor.id, resource_ids)
+        if source_version: copy_version_contents(db, source_version, draft, actor.id)
     write_audit(db, "plan.copy", "test_plan", copied.id, actor, request, detail={"source_id": plan_id}); db.commit(); return copied
 
 
@@ -771,8 +821,9 @@ def delete_plan(plan_id: int, request: Request, actor: User = Depends(operators)
 
 
 @router.get("/scenarios", response_model=typing.List[ScenarioOut])
-def list_scenarios(plan_id: typing.Union[int, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestScenario]:
+def list_scenarios(plan_id: typing.Union[int, None] = None, include_archived: bool = False, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestScenario]:
     query = select(TestScenario)
+    if not include_archived: query = query.where(TestScenario.is_archived.is_(False))
     if plan_id: query = query.where(TestScenario.plan_id == plan_id)
     return list(db.scalars(query.order_by(TestScenario.id.desc())).all())
 
@@ -788,7 +839,11 @@ def create_scenario(payload: ScenarioWrite, request: Request, actor: User = Depe
         values["required_resource_types"] = resource_types
     else:
         values["default_resource_ids"] = []
-    scenario = TestScenario(**values); db.add(scenario); db.flush(); write_audit(db, "scenario.create", "test_scenario", scenario.id, actor, request); db.commit(); return scenario
+    values["is_enabled"] = False
+    values["workflow_status"] = "draft"
+    scenario = TestScenario(**values); db.add(scenario); db.flush()
+    create_draft(db, scenario, actor.id, values["default_resource_ids"])
+    write_audit(db, "scenario.create", "test_scenario", scenario.id, actor, request); db.commit(); return scenario
 
 
 @router.put("/scenarios/{scenario_id}", response_model=ScenarioOut)
@@ -807,6 +862,10 @@ def update_scenario(scenario_id: int, payload: ScenarioWrite, request: Request, 
         values["default_resource_ids"] = resource_ids
         values["required_resource_types"] = resource_types
     for key, value in values.items(): setattr(scenario, key, value)
+    if scenario.draft_workflow_version_id and "default_resource_ids" in values:
+        draft = db.get(ScenarioWorkflowVersion, scenario.draft_workflow_version_id)
+        if draft:
+            draft.resource_ids = list(values["default_resource_ids"])
     write_audit(db, "scenario.update", "test_scenario", scenario.id, actor, request); db.commit(); return scenario
 
 
@@ -814,8 +873,119 @@ def update_scenario(scenario_id: int, payload: ScenarioWrite, request: Request, 
 def copy_scenario(scenario_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestScenario:
     source = db.get(TestScenario, scenario_id)
     if not source: raise not_found("场景")
-    copied = TestScenario(plan_id=source.plan_id, name=f"{source.name} - 副本", scenario_type=source.scenario_type, config_version=source.config_version, expected_artifacts=source.expected_artifacts, default_resource_ids=list(source.default_resource_ids), required_resource_types=list(source.required_resource_types))
-    db.add(copied); db.flush(); write_audit(db, "scenario.copy", "test_scenario", copied.id, actor, request, detail={"source_id": scenario_id}); db.commit(); return copied
+    source_version_id = source.published_workflow_version_id or source.draft_workflow_version_id
+    source_version = load_version(db, source_version_id) if source_version_id else None
+    resource_ids = list(source_version.resource_ids if source_version else source.default_resource_ids)
+    copied = TestScenario(plan_id=source.plan_id, name=f"{source.name} - 副本", scenario_type=source.scenario_type, config_version=source.config_version, expected_artifacts=source.expected_artifacts, default_resource_ids=resource_ids, required_resource_types=list(source.required_resource_types), is_enabled=False, workflow_status="draft")
+    db.add(copied); db.flush()
+    draft = create_draft(db, copied, actor.id, resource_ids)
+    if source_version: copy_version_contents(db, source_version, draft, actor.id)
+    write_audit(db, "scenario.copy", "test_scenario", copied.id, actor, request, detail={"source_id": scenario_id}); db.commit(); return copied
+
+
+@router.post("/scenarios/{scenario_id}/workflow/draft", response_model=WorkflowDocumentOut)
+def ensure_workflow_draft(scenario_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> dict:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or scenario.is_archived: raise not_found("场景")
+    version = clone_published_to_draft(db, scenario, actor.id)
+    write_audit(db, "workflow.draft", "test_scenario", scenario.id, actor, request, detail={"version_id": version.id}); db.commit()
+    version = load_version(db, version.id)
+    return workflow_payload(scenario, version, validate_structure(db, scenario, version))
+
+
+@router.get("/scenarios/{scenario_id}/workflow", response_model=WorkflowDocumentOut)
+def get_scenario_workflow(scenario_id: int, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or scenario.is_archived: raise not_found("场景")
+    version_id = scenario.draft_workflow_version_id or scenario.published_workflow_version_id
+    if not version_id: raise not_found("工作流")
+    version = load_version(db, version_id)
+    return workflow_payload(scenario, version, validate_structure(db, scenario, version))
+
+
+@router.put("/scenarios/{scenario_id}/workflow", response_model=WorkflowDocumentOut)
+def save_scenario_workflow(scenario_id: int, payload: WorkflowDocumentWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> dict:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or scenario.is_archived: raise not_found("场景")
+    if not scenario.draft_workflow_version_id:
+        raise HTTPException(status_code=409, detail={"code": "WORKFLOW_DRAFT_REQUIRED", "message": "请先创建工作流草稿"})
+    plan = db.get(TestPlan, scenario.plan_id)
+    resource_ids, _ = validate_scenario_resources(db, plan, payload.resource_ids)
+    version = load_version(db, scenario.draft_workflow_version_id)
+    try:
+        replace_draft(db, scenario, version, expected_revision=payload.expected_revision, resource_ids=resource_ids, nodes=[item.model_dump() for item in payload.nodes])
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "workflow.save", "test_scenario", scenario.id, actor, request, detail={"version_id": version.id, "revision": version.revision}); db.commit()
+    version = load_version(db, version.id)
+    return workflow_payload(scenario, version, validate_structure(db, scenario, version))
+
+
+@router.get("/scenarios/{scenario_id}/workflow/versions", response_model=typing.List[WorkflowVersionOut])
+def list_workflow_versions(scenario_id: int, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ScenarioWorkflowVersion]:
+    if not db.get(TestScenario, scenario_id): raise not_found("场景")
+    return list(db.scalars(select(ScenarioWorkflowVersion).where(ScenarioWorkflowVersion.scenario_id == scenario_id).options(selectinload(ScenarioWorkflowVersion.nodes)).order_by(ScenarioWorkflowVersion.version_no.desc())).all())
+
+
+@router.post("/scenarios/{scenario_id}/workflow/nodes/{node_key}/preview", response_model=typing.List[CaptureSnapshotOut])
+async def preview_workflow_node(scenario_id: int, node_key: str, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> list:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or not scenario.draft_workflow_version_id: raise not_found("工作流草稿")
+    version = load_version(db, scenario.draft_workflow_version_id)
+    node = next((item for item in version.nodes if item.node_key == node_key), None)
+    if not node: raise not_found("节点")
+    errors = [item for item in validate_structure(db, scenario, version) if item.get("node_key") == node_key]
+    if errors: raise HTTPException(status_code=422, detail={"code": "NODE_VALIDATION_FAILED", "message": "节点配置未完成", "errors": errors})
+    try:
+        snapshots = await preview_node(db, scenario, version, node, actor.id)
+    except (WorkflowError, DatabaseOperationError) as exc:
+        if isinstance(exc, WorkflowError): raise workflow_http_error(exc) from exc
+        raise database_http_error(exc) from exc
+    write_audit(db, "workflow.node_preview", "workflow_node", node.id, actor, request, detail={"snapshot_ids": [item.id for item in snapshots]}); db.commit()
+    return snapshots
+
+
+@router.post("/scenarios/{scenario_id}/workflow/publish", response_model=WorkflowDocumentOut)
+async def publish_scenario_workflow(scenario_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> dict:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or not scenario.draft_workflow_version_id: raise not_found("工作流草稿")
+    version = load_version(db, scenario.draft_workflow_version_id)
+    try:
+        await publish(db, scenario, version, actor.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "workflow.publish", "test_scenario", scenario.id, actor, request, detail={"version_id": version.id, "version_no": version.version_no}); db.commit()
+    return workflow_payload(scenario, load_version(db, version.id), [])
+
+
+@router.get("/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files", response_model=typing.List[ContractDataFileOut])
+def list_contract_files(scenario_id: int, node_key: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ContractDataFile]:
+    node = db.scalar(select(ScenarioWorkflowNode).join(ScenarioWorkflowVersion).where(ScenarioWorkflowVersion.scenario_id == scenario_id, ScenarioWorkflowNode.node_key == node_key).order_by(ScenarioWorkflowVersion.version_no.desc()))
+    if not node: raise not_found("节点")
+    referenced_ids = list((node.config or {}).get("contract_file_ids") or [])
+    criteria = [ContractDataFile.workflow_node_id == node.id]
+    if referenced_ids:
+        criteria.append(ContractDataFile.id.in_(referenced_ids))
+    return list(db.scalars(
+        select(ContractDataFile).where(or_(*criteria)).order_by(ContractDataFile.id.desc())
+    ).all())
+
+
+@router.post("/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files/fetch", response_model=typing.List[ContractDataFileOut], status_code=201)
+async def create_contract_files(scenario_id: int, node_key: str, payload: ContractDataFetchRequest, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> list[ContractDataFile]:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or not scenario.draft_workflow_version_id: raise not_found("工作流草稿")
+    version = load_version(db, scenario.draft_workflow_version_id)
+    node = next((item for item in version.nodes if item.node_key == node_key), None)
+    if not node: raise not_found("节点")
+    database_resource = db.get(Resource, payload.database_resource_id)
+    if not database_resource or database_resource.is_deleted: raise not_found("数据库资源")
+    try:
+        files = await fetch_contract_files(db, scenario, version, node, database_resource, payload.database_name, payload.contract_types, actor.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "workflow.contract_fetch", "workflow_node", node.id, actor, request, detail={"file_ids": [item.id for item in files]}); db.commit()
+    return files
 
 
 @router.delete("/scenarios/{scenario_id}", status_code=204)
@@ -831,7 +1001,8 @@ def delete_scenario(scenario_id: int, request: Request, actor: User = Depends(op
 def create_run(payload: RunCreate, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     plan = db.get(TestPlan, payload.plan_id); scenario = db.get(TestScenario, payload.scenario_id)
     if not plan or not plan.is_enabled: raise not_found("可用方案")
-    if not scenario or not scenario.is_enabled or scenario.plan_id != plan.id: raise not_found("可用场景")
+    if not scenario or not scenario.is_enabled or scenario.is_archived or scenario.plan_id != plan.id or not scenario.published_workflow_version_id: raise not_found("可用场景")
+    workflow = load_version(db, scenario.published_workflow_version_id)
     resources = list(db.scalars(select(Resource).where(Resource.id.in_(payload.resource_ids), Resource.is_deleted.is_(False), Resource.is_enabled.is_(True))).all())
     if len(resources) != len(set(payload.resource_ids)): raise HTTPException(status_code=400, detail={"code": "INVALID_RESOURCES", "message": "资源不存在或已停用"})
     resources_by_id = {resource.id: resource for resource in resources}
@@ -840,14 +1011,19 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
     provided_types = [resource.resource_type for resource in resources]
     if len(provided_types) != len(set(provided_types)):
         raise HTTPException(status_code=400, detail={"code": "DUPLICATE_RESOURCE_TYPES", "message": "每种资源类型只能选择一个资源"})
-    required_types = set(scenario.required_resource_types)
+    required_types = set(resource_map(db, workflow))
     if set(provided_types) != required_types:
         missing = sorted(required_types - set(provided_types))
         extra = sorted(set(provided_types) - required_types)
         raise HTTPException(status_code=400, detail={"code": "RESOURCE_SET_MISMATCH", "message": f"运行资源类型与场景不一致，缺少: {missing}，多余: {extra}"})
-    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
-    run = TestRun(run_number=f"R{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=datetime.now(timezone.utc) + timedelta(minutes=payload.timeout_minutes))
-    create_steps(run); db.add(run); db.flush(); write_audit(db, "run.create", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
+    node_snapshots = workflow_nodes_snapshot(db, workflow)
+    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "workflow": {"id": workflow.id, "version_no": workflow.version_no, "nodes": node_snapshots}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
+    run = TestRun(run_number=f"R{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, workflow_version_id=workflow.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=datetime.now(timezone.utc) + timedelta(minutes=payload.timeout_minutes))
+    create_workflow_steps(run, workflow)
+    node_configs = {item["id"]: item["config"] for item in node_snapshots}
+    for step in run.steps:
+        step.config_snapshot = dict(node_configs.get(step.workflow_node_id) or {})
+    db.add(run); db.flush(); write_audit(db, "run.create", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 
 
 @router.get("/runs", response_model=typing.List[RunOut])
@@ -878,6 +1054,16 @@ def confirm_wiring(run_id: int, background: BackgroundTasks, request: Request, a
     write_audit(db, "run.wiring_confirm", "test_run", run.id, actor, request); db.commit(); background.add_task(continue_after_wiring, run.id); return run
 
 
+@router.post("/runs/{run_id}/steps/{step_id}/confirm", response_model=RunOut)
+def confirm_run_step(run_id: int, step_id: int, background: BackgroundTasks, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    run = load_run(db, run_id)
+    try:
+        confirm_workflow_step(db, run, step_id, actor.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "run.step_confirm", "run_step", step_id, actor, request, detail={"run_id": run.id}); db.commit(); background.add_task(start_run, run.id); return load_run(db, run.id)
+
+
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)
 def run_cancel(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
@@ -888,7 +1074,7 @@ def run_cancel(run_id: int, request: Request, actor: User = Depends(operators), 
 @router.post("/runs/{run_id}/pause", response_model=RunOut)
 def run_pause(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
-    if run.status not in {"resource_queue", "awaiting_wiring", "awaiting_review"}:
+    if run.status not in {"resource_queue", "awaiting_wiring", "awaiting_confirmation", "awaiting_review"}:
         raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "仅排队或人工节点可安全暂停"})
     run.paused_from = run.status; run.status = "paused"
     write_audit(db, "run.pause", "test_run", run.id, actor, request); db.commit(); return run

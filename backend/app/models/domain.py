@@ -126,7 +126,66 @@ class TestScenario(TimestampMixin, Base):
     default_resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
     required_resource_types: Mapped[typing.List[str]] = mapped_column(JSON, default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    workflow_status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    draft_workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey(
+            "scenario_workflow_versions.id",
+            name="fk_test_scenarios_draft_workflow_version_id",
+            ondelete="SET NULL",
+            use_alter=True,
+        )
+    )
+    published_workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey(
+            "scenario_workflow_versions.id",
+            name="fk_test_scenarios_published_workflow_version_id",
+            ondelete="SET NULL",
+            use_alter=True,
+        )
+    )
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     plan: Mapped[TestPlan] = relationship(back_populates="scenarios")
+    workflow_versions: Mapped[typing.List['ScenarioWorkflowVersion']] = relationship(
+        back_populates="scenario",
+        cascade="all, delete-orphan",
+        foreign_keys="ScenarioWorkflowVersion.scenario_id",
+    )
+
+
+class ScenarioWorkflowVersion(TimestampMixin, Base):
+    __tablename__ = "scenario_workflow_versions"
+    __table_args__ = (UniqueConstraint("scenario_id", "version_no", name="uq_scenario_workflow_version"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("test_scenarios.id", ondelete="CASCADE"), index=True)
+    version_no: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    resource_ids: Mapped[typing.List[int]] = mapped_column(JSON, default=list)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    published_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
+    published_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    scenario: Mapped[TestScenario] = relationship(
+        back_populates="workflow_versions", foreign_keys=[scenario_id]
+    )
+    nodes: Mapped[typing.List['ScenarioWorkflowNode']] = relationship(
+        back_populates="workflow_version", cascade="all, delete-orphan", order_by="ScenarioWorkflowNode.position"
+    )
+
+
+class ScenarioWorkflowNode(TimestampMixin, Base):
+    __tablename__ = "scenario_workflow_nodes"
+    __table_args__ = (
+        UniqueConstraint("workflow_version_id", "node_key", name="uq_workflow_node_key"),
+        UniqueConstraint("workflow_version_id", "position", name="uq_workflow_node_position"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workflow_version_id: Mapped[int] = mapped_column(ForeignKey("scenario_workflow_versions.id", ondelete="CASCADE"), index=True)
+    node_key: Mapped[str] = mapped_column(String(36))
+    position: Mapped[int] = mapped_column(Integer)
+    node_type: Mapped[str] = mapped_column(String(40), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    config: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    workflow_version: Mapped[ScenarioWorkflowVersion] = relationship(back_populates="nodes")
 
 
 class TestRun(TimestampMixin, Base):
@@ -135,6 +194,7 @@ class TestRun(TimestampMixin, Base):
     run_number: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     plan_id: Mapped[int] = mapped_column(ForeignKey("test_plans.id"), index=True)
     scenario_id: Mapped[int] = mapped_column(ForeignKey("test_scenarios.id"), index=True)
+    workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("scenario_workflow_versions.id"), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)
@@ -162,8 +222,12 @@ class RunStep(Base):
     __table_args__ = (UniqueConstraint("run_id", "code", name="uq_run_step_code"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
+    workflow_node_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("scenario_workflow_nodes.id", ondelete="SET NULL"), index=True)
     code: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
+    node_type: Mapped[str] = mapped_column(String(40), default="legacy")
+    config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
+    result_summary: Mapped[typing.Dict[str, Any]] = mapped_column(JSON, default=dict)
     position: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(24), default="pending")
     progress: Mapped[int] = mapped_column(Integer, default=0)
@@ -174,6 +238,74 @@ class RunStep(Base):
     duration_ms: Mapped[typing.Union[int, None]] = mapped_column(Integer)
     error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
     run: Mapped[TestRun] = relationship(back_populates="steps")
+
+
+class ConfigurationCaptureSnapshot(Base):
+    __tablename__ = "configuration_capture_snapshots"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("test_scenarios.id", ondelete="CASCADE"), index=True)
+    workflow_version_id: Mapped[int] = mapped_column(ForeignKey("scenario_workflow_versions.id", ondelete="CASCADE"), index=True)
+    workflow_node_id: Mapped[int] = mapped_column(ForeignKey("scenario_workflow_nodes.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("test_runs.id", ondelete="CASCADE"), index=True)
+    run_step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("run_steps.id", ondelete="CASCADE"), index=True)
+    scope: Mapped[str] = mapped_column(String(16), index=True)
+    source_type: Mapped[str] = mapped_column(String(24), index=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), index=True)
+    database_name: Mapped[typing.Union[str, None]] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(24), default="running", index=True)
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    created_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("users.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    items: Mapped[typing.List['ConfigurationCaptureItem']] = relationship(
+        cascade="all, delete-orphan", order_by="ConfigurationCaptureItem.id"
+    )
+
+
+class ConfigurationCaptureItem(Base):
+    __tablename__ = "configuration_capture_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(ForeignKey("configuration_capture_snapshots.id", ondelete="CASCADE"), index=True)
+    item_key: Mapped[str] = mapped_column(String(128), index=True)
+    item_label: Mapped[str] = mapped_column(String(128))
+    value_text: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    source_reference: Mapped[str] = mapped_column(Text, default="")
+    raw_output: Mapped[str] = mapped_column(Text, default="")
+    exit_code: Mapped[typing.Union[int, None]] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), default="succeeded", index=True)
+    error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
+
+
+class ContractDataFile(Base):
+    __tablename__ = "contract_data_files"
+    __table_args__ = (
+        UniqueConstraint(
+            "workflow_node_id", "filename", "checksum", name="uq_contract_file_node_name_checksum"
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("test_scenarios.id", ondelete="SET NULL"), index=True
+    )
+    workflow_node_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("scenario_workflow_nodes.id", ondelete="SET NULL"), index=True
+    )
+    order_resource_id: Mapped[int] = mapped_column(ForeignKey("resources.id"), index=True)
+    database_resource_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("resources.id"), index=True)
+    database_name: Mapped[typing.Union[str, None]] = mapped_column(String(128))
+    contract_type: Mapped[str] = mapped_column(String(16), index=True)
+    source_table: Mapped[str] = mapped_column(String(128), default="")
+    filename: Mapped[str] = mapped_column(String(255))
+    remote_path: Mapped[str] = mapped_column(String(1024))
+    archive_path: Mapped[str] = mapped_column(String(1024))
+    quote_date: Mapped[typing.Union[str, None]] = mapped_column(String(32), index=True)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    checksum: Mapped[str] = mapped_column(String(64), index=True)
+    preview_rows: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class LogRecord(Base):

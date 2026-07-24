@@ -266,6 +266,108 @@ class ScenarioOut(ORMModel):
     default_resource_ids: typing.List[int]
     required_resource_types: typing.List[str]
     is_enabled: bool
+    workflow_status: str
+    draft_workflow_version_id: typing.Union[int, None]
+    published_workflow_version_id: typing.Union[int, None]
+    is_archived: bool
+    created_at: datetime
+
+
+class WorkflowNodeWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    node_key: str = Field(min_length=1, max_length=36)
+    node_type: Literal["server_config", "database_config", "wiring_confirmation", "order_preparation"]
+    name: str = Field(min_length=1, max_length=128)
+    config: typing.Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDocumentWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
+    resource_ids: typing.List[int] = Field(min_length=1)
+    nodes: typing.List[WorkflowNodeWrite] = Field(default_factory=list)
+
+
+class WorkflowNodeOut(WorkflowNodeWrite):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    position: int
+
+
+class WorkflowVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    scenario_id: int
+    version_no: int
+    status: str
+    revision: int
+    resource_ids: typing.List[int]
+    published_by: typing.Union[int, None]
+    published_at: typing.Union[datetime, None]
+    created_at: datetime
+    updated_at: datetime
+    nodes: typing.List[WorkflowNodeOut] = Field(default_factory=list)
+
+
+class WorkflowDocumentOut(BaseModel):
+    scenario: ScenarioOut
+    draft: WorkflowVersionOut
+    published_version_id: typing.Union[int, None]
+    validation_errors: typing.List[typing.Dict[str, Any]] = Field(default_factory=list)
+
+
+class CaptureItemOut(ORMModel):
+    id: int
+    item_key: str
+    item_label: str
+    value_text: typing.Union[str, None]
+    source_reference: str
+    raw_output: str
+    exit_code: typing.Union[int, None]
+    status: str
+    error_message: typing.Union[str, None]
+
+
+class CaptureSnapshotOut(ORMModel):
+    id: int
+    scope: str
+    source_type: str
+    resource_id: int
+    database_name: typing.Union[str, None]
+    status: str
+    attempt: int
+    error_message: typing.Union[str, None]
+    started_at: datetime
+    finished_at: typing.Union[datetime, None]
+    items: typing.List[CaptureItemOut] = Field(default_factory=list)
+
+
+class ContractDataFetchRequest(BaseModel):
+    database_resource_id: int
+    database_name: str
+    contract_types: typing.List[Literal["futures", "options"]] = Field(min_length=1)
+
+
+class ContractDataFileOut(ORMModel):
+    id: int
+    scenario_id: typing.Union[int, None]
+    workflow_node_id: typing.Union[int, None]
+    order_resource_id: int
+    database_resource_id: typing.Union[int, None]
+    database_name: typing.Union[str, None]
+    contract_type: str
+    source_table: str
+    filename: str
+    remote_path: str
+    quote_date: typing.Union[str, None]
+    row_count: int
+    size: int
+    checksum: str
+    preview_rows: typing.List[typing.Dict[str, Any]]
     created_at: datetime
 
 
@@ -280,6 +382,10 @@ class StepOut(ORMModel):
     id: int
     code: str
     name: str
+    workflow_node_id: typing.Union[int, None]
+    node_type: str
+    config_snapshot: typing.Dict[str, Any]
+    result_summary: typing.Dict[str, Any]
     position: int
     status: str
     progress: int
@@ -326,6 +432,7 @@ class RunOut(ORMModel):
     run_number: str
     plan_id: int
     scenario_id: int
+    workflow_version_id: typing.Union[int, None]
     business_code: str
     status: str
     progress: int

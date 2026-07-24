@@ -1,40 +1,49 @@
 from __future__ import annotations
+
 from app.core.database import SessionLocal
-from app.models import ResourceLock
+from app.models import ConfigurationCaptureSnapshot, ResourceLock
 from app.core.logging import redact
-from conftest import create_plan_scenario, create_resource
+from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
-def test_complete_run_and_reports(client, admin_headers):
+def node(key: str, node_type: str, name: str, config: dict) -> dict:
+    return {"node_key": key, "node_type": node_type, "name": name, "config": config}
+
+
+def test_complete_dynamic_workflow(client, admin_headers):
     resource = create_resource(client, admin_headers, "REM-01")
-    plan, scenario = create_plan_scenario(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        node("server", "server_config", "采集 REM 配置", {"targets": [{"resource_type": "rem", "fields": ["ip", "cpu_model"]}]}),
+        node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
+    ])
     created = client.post("/api/v1/runs", headers=admin_headers, json={"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]], "timeout_minutes": 30})
-    assert created.status_code == 201
+    assert created.status_code == 201, created.text
     run_id = created.json()["id"]
-    started = client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers)
-    assert started.status_code == 200
-    assert client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()["status"] == "awaiting_wiring"
-    confirmed = client.post(f"/api/v1/runs/{run_id}/confirm-wiring", headers=admin_headers)
+    assert [item["node_type"] for item in created.json()["steps"]] == ["server_config", "wiring_confirmation"]
+    assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
+    waiting = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert waiting["status"] == "awaiting_confirmation"
+    assert waiting["steps"][0]["result_summary"]["failed"] == 0
+    waiting_step = next(item for item in waiting["steps"] if item["status"] == "waiting")
+    confirmed = client.post(f"/api/v1/runs/{run_id}/steps/{waiting_step['id']}/confirm", headers=admin_headers)
     assert confirmed.status_code == 200
-    ready = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
-    assert ready["status"] == "awaiting_review"
-    assert len(ready["metrics"]) == 7
-    assert ready["verdict"] is None
-    assert all("rule_result" not in metric for metric in ready["metrics"])
-    assert not ({"parameters", "actions", "statistics_rules"} & ready["config_snapshot"]["scenario"].keys())
-    verdict = client.post(f"/api/v1/runs/{run_id}/verdict", headers=admin_headers, json={"final_result": "passed", "issue_description": "", "notes": "验收通过"})
-    assert verdict.status_code == 200
-    assert "automatic_result" not in verdict.json()
     completed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
     assert completed["status"] == "completed"
-    assert {item["artifact_type"] for item in completed["artifacts"]} >= {"web_report", "excel_report", "pdf_report", "parsed_data"}
+    assert completed["progress"] == 100
     with SessionLocal() as db:
+        snapshots = db.query(ConfigurationCaptureSnapshot).filter(ConfigurationCaptureSnapshot.run_id == run_id).all()
+        assert len(snapshots) == 1
+        assert snapshots[0].status == "succeeded"
         assert all(lock.released_at is not None for lock in db.query(ResourceLock).filter(ResourceLock.run_id == run_id))
 
 
 def test_resource_lock_queues_competing_run(client, admin_headers):
     resource = create_resource(client, admin_headers, "REM-shared")
-    plan, scenario = create_plan_scenario(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
+    ])
     payload = {"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]], "timeout_minutes": 30}
     first = client.post("/api/v1/runs", headers=admin_headers, json=payload).json()
     second = client.post("/api/v1/runs", headers=admin_headers, json=payload).json()
@@ -45,7 +54,7 @@ def test_resource_lock_queues_competing_run(client, admin_headers):
     assert "资源被占用" in queued["queue_reason"]
     client.post(f"/api/v1/runs/{first['id']}/cancel", headers=admin_headers)
     client.post(f"/api/v1/runs/{second['id']}/start", headers=admin_headers)
-    assert client.get(f"/api/v1/runs/{second['id']}", headers=admin_headers).json()["status"] == "awaiting_wiring"
+    assert client.get(f"/api/v1/runs/{second['id']}", headers=admin_headers).json()["status"] == "awaiting_confirmation"
 
 
 def test_sensitive_data_redaction():

@@ -38,10 +38,23 @@ def create_resource(client: TestClient, headers: typing.Dict[str, str], name: st
     return response.json()
 
 
-def create_plan_scenario(client: TestClient, headers: typing.Dict[str, str], required_types: typing.Union[typing.List[str], None] = None) -> typing.Tuple[dict, dict]:
+def create_plan_scenario(client: TestClient, headers: typing.Dict[str, str], required_types: typing.Union[typing.List[str], None] = None, resource_ids: typing.Union[typing.List[int], None] = None) -> typing.Tuple[dict, dict]:
     plan_response = client.post("/api/v1/plans", headers=headers, json={"name": "基础测速方案", "business_code": "fut_mm", "description": "test", "default_resource_ids": [], "config_version": "1.0", "is_enabled": True})
     assert plan_response.status_code == 201
     plan = plan_response.json()
-    scenario_response = client.post("/api/v1/scenarios", headers=headers, json={"plan_id": plan["id"], "name": "发单延迟", "scenario_type": "order", "config_version": "1.0", "expected_artifacts": ["pcapng"], "required_resource_types": required_types or ["rem"], "is_enabled": True})
+    scenario_response = client.post("/api/v1/scenarios", headers=headers, json={"plan_id": plan["id"], "name": "发单延迟", "scenario_type": "order", "config_version": "1.0", "expected_artifacts": ["pcapng"], "default_resource_ids": resource_ids, "required_resource_types": required_types or ["rem"], "is_enabled": True})
     assert scenario_response.status_code == 201
     return plan, scenario_response.json()
+
+
+def publish_workflow(client: TestClient, headers: typing.Dict[str, str], scenario: dict, resource_ids: typing.List[int], nodes: typing.List[dict]) -> dict:
+    document = client.get(f"/api/v1/scenarios/{scenario['id']}/workflow", headers=headers).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=headers,
+        json={"expected_revision": document["draft"]["revision"], "resource_ids": resource_ids, "nodes": nodes},
+    )
+    assert saved.status_code == 200, saved.text
+    published = client.post(f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=headers)
+    assert published.status_code == 200, published.text
+    return published.json()

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
@@ -7,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
 
 const auth = useAuthStore()
+const router = useRouter()
 const plans = ref<any[]>([])
 const scenarios = ref<any[]>([])
 const resources = ref<any[]>([])
@@ -125,10 +127,11 @@ async function saveScenario() {
       default_resource_ids: selectedIds,
       required_resource_types: resourceTypes.filter(type => resourceSelections[type]),
     }
-    scenarioEdit.value ? await api.put(`/scenarios/${scenarioEdit.value}`, data) : await api.post('/scenarios', data)
+    const response = scenarioEdit.value ? await api.put(`/scenarios/${scenarioEdit.value}`, data) : await api.post('/scenarios', data)
     scenarioDialog.value = false
     ElMessage.success('场景已保存')
     await load()
+    if (!scenarioEdit.value) await router.push(`/plans/scenarios/${response.data.id}/workflow`)
   } catch (error) {
     ElMessage.error(errorMessage(error))
   }
@@ -195,8 +198,8 @@ onMounted(load)
           <el-table-column label="场景资源" min-width="260">
             <template #default="scope"><el-tag v-for="label in scenarioResourceLabels(scope.row)" :key="label" size="small" class="tag">{{ label }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="状态"><template #default="scope">{{ scope.row.is_enabled ? '启用' : '停用' }}</template></el-table-column>
-          <el-table-column v-if="auth.canOperate" width="150"><template #default="scope"><el-button link @click="openScenario(scope.row)">编辑</el-button><el-button link @click="copyScenario(scope.row)">复制</el-button><el-tooltip content="删除场景" placement="top"><el-button link type="danger" :icon="Delete" aria-label="删除场景" @click="removeScenario(scope.row)" /></el-tooltip></template></el-table-column>
+          <el-table-column label="工作流状态" width="120"><template #default="scope"><el-tag size="small" :type="scope.row.workflow_status === 'published' ? 'success' : 'warning'">{{ scope.row.workflow_status === 'published' ? '已发布' : '草稿' }}</el-tag></template></el-table-column>
+          <el-table-column v-if="auth.canOperate" width="220"><template #default="scope"><el-button link type="primary" @click="router.push(`/plans/scenarios/${scope.row.id}/workflow`)">工作流</el-button><el-button link @click="openScenario(scope.row)">基础信息</el-button><el-button link @click="copyScenario(scope.row)">复制</el-button><el-tooltip content="删除场景" placement="top"><el-button link type="danger" :icon="Delete" aria-label="删除场景" @click="removeScenario(scope.row)" /></el-tooltip></template></el-table-column>
         </el-table>
       </el-collapse-item>
     </el-collapse>
