@@ -102,7 +102,11 @@ def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers
     xml_filename = listed["files"][0]["name"]
     detail = client.get(f"{xml_base}/{xml_filename}", headers=admin_headers).json()
     xml_with_contracts = detail["content"].replace(
-        "</tcp>", '<read_symbol_csv value="1" />\n</tcp>'
+        "</tcp>",
+        '<read_symbol_csv value="1" />\n'
+        '<fut_symbol_csv value="t_close_report.csv" />\n'
+        '<opt_symbol_csv value="t_close_report_opt.csv" />\n'
+        '</tcp>',
     )
     updated = client.put(
         f"{xml_base}/{xml_filename}", headers=admin_headers,
@@ -203,7 +207,19 @@ def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers
         item for item in published.json()["draft"]["nodes"] if item["node_key"] == "order"
     )
     assert published_order["config"]["read_symbol_csv"] == 1
-    assert published_order["config"]["xml_checksum"] == updated.json()["checksum"]
+    published_xml = client.get(f"{xml_base}/{xml_filename}", headers=admin_headers).json()
+    expected_symbol_files = {
+        "fut_symbol_csv": next(item["filename"] for item in files if item["contract_type"] == "futures"),
+        "opt_symbol_csv": next(item["filename"] for item in files if item["contract_type"] == "options"),
+    }
+    symbol_values = {
+        child["name"]: {item["name"]: item["value"] for item in child["attributes"]}["value"]
+        for child in published_xml["document"]["children"]
+        if child["type"] == "element" and child["name"] in expected_symbol_files
+    }
+    assert symbol_values == expected_symbol_files
+    assert published_order["config"]["xml_checksum"] == published_xml["checksum"]
+    assert published_xml["checksum"] != updated.json()["checksum"]
 
     run = client.post("/api/v1/runs", headers=admin_headers, json={
         "plan_id": plan["id"], "scenario_id": scenario["id"],

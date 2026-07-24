@@ -26,6 +26,10 @@ ORDER_TOOLS = {
     "ees_zf_trader_binary_api_test": "ees_zf_trader_api_test_conf",
 }
 FORBIDDEN_XML = re.compile(r"<!\s*(DOCTYPE|ENTITY)\b", re.IGNORECASE)
+SYMBOL_CSV_ELEMENTS = {
+    "futures": "fut_symbol_csv",
+    "options": "opt_symbol_csv",
+}
 
 
 class OrderConfigError(Exception):
@@ -159,6 +163,55 @@ def parse_xml(content: str) -> typing.Tuple[str, dict]:
         raise OrderConfigError("INVALID_ORDER_CONFIG_XML", "XML 缺少根节点")
     declaration = declaration_match.group(1) if declaration_match else '<?xml version="1.0" encoding="utf-8"?>'
     return declaration, _node_to_dict(document.documentElement)
+
+
+def update_symbol_csv_values(content: str, filenames: typing.Dict[str, str]) -> str:
+    parse_xml(content)
+    unsupported = set(filenames) - set(SYMBOL_CSV_ELEMENTS)
+    if unsupported:
+        raise OrderConfigError("ORDER_CONFIG_SYMBOL_CSV_INVALID", "存在不受支持的合约 CSV 类型")
+
+    document = minidom.parseString(content.encode("utf-8"))
+    type_by_element = {name.casefold(): contract_type for contract_type, name in SYMBOL_CSV_ELEMENTS.items()}
+    elements: typing.Dict[str, typing.List[typing.Any]] = {contract_type: [] for contract_type in SYMBOL_CSV_ELEMENTS}
+    for element in document.getElementsByTagName("*"):
+        contract_type = type_by_element.get(element.tagName.casefold())
+        if contract_type:
+            elements[contract_type].append(element)
+
+    for contract_type, matches in elements.items():
+        element_name = SYMBOL_CSV_ELEMENTS[contract_type]
+        if len(matches) > 1:
+            raise OrderConfigError(
+                "ORDER_CONFIG_SYMBOL_CSV_INVALID",
+                f"XML 中 {element_name} 必须唯一",
+                409,
+            )
+        if matches and contract_type not in filenames:
+            raise OrderConfigError(
+                "ORDER_CONFIG_SYMBOL_CSV_VALUE_REQUIRED",
+                f"XML 包含 {element_name}，请先选择对应的合约 CSV",
+                409,
+            )
+        if not matches and contract_type in filenames:
+            raise OrderConfigError(
+                "ORDER_CONFIG_SYMBOL_CSV_MISSING",
+                f"XML 缺少 {element_name} 配置项",
+                409,
+            )
+
+    changed = False
+    for contract_type, filename in filenames.items():
+        element = elements[contract_type][0]
+        if element.getAttribute("value") != filename:
+            element.setAttribute("value", filename)
+            changed = True
+    if not changed:
+        return content
+
+    updated = document.toxml(encoding="utf-8").decode("utf-8")
+    parse_xml(updated)
+    return updated
 
 
 def config_detail(context: OrderConfigContext, filename: str, content: str, modified_at: datetime) -> dict:

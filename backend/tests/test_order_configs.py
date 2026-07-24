@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models import AuditLog
 from app.services import order_configs
-from app.services.order_configs import OrderConfigError, parse_xml, simulated_store
+from app.services.order_configs import OrderConfigError, parse_xml, simulated_store, update_symbol_csv_values
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +68,37 @@ def test_xml_parser_preserves_comments_and_rejects_unsafe_content():
     with pytest.raises(OrderConfigError) as oversized:
         parse_xml(f"<tcp>{'x' * (1024 * 1024)}</tcp>")
     assert oversized.value.code == "ORDER_CONFIG_TOO_LARGE"
+
+
+def test_update_symbol_csv_values_uses_contract_type_and_preserves_comments():
+    content = '''<?xml version="1.0" encoding="utf-8"?>
+<tcp><!-- keep --><fut_symbol_csv value="old-fut.csv" /><opt_symbol_csv value="old-opt.csv" /></tcp>'''
+    updated = update_symbol_csv_values(content, {
+        "futures": "t_close_report_20260720.csv",
+        "options": "t_close_report_opt_20260720.csv",
+    })
+    _, document = parse_xml(updated)
+    values = {
+        child["name"]: {item["name"]: item["value"] for item in child["attributes"]}["value"]
+        for child in document["children"]
+        if child["type"] == "element"
+    }
+    assert values == {
+        "fut_symbol_csv": "t_close_report_20260720.csv",
+        "opt_symbol_csv": "t_close_report_opt_20260720.csv",
+    }
+    assert "<!-- keep -->" in updated
+
+    with pytest.raises(OrderConfigError) as missing_file:
+        update_symbol_csv_values(content, {"futures": "t_close_report_20260720.csv"})
+    assert missing_file.value.code == "ORDER_CONFIG_SYMBOL_CSV_VALUE_REQUIRED"
+
+    with pytest.raises(OrderConfigError) as missing_element:
+        update_symbol_csv_values(
+            '<tcp><fut_symbol_csv value="old.csv" /></tcp>',
+            {"futures": "fut.csv", "options": "opt.csv"},
+        )
+    assert missing_element.value.code == "ORDER_CONFIG_SYMBOL_CSV_MISSING"
 
 
 def test_simulated_order_config_crud_conflict_and_audit(client: TestClient, admin_headers: typing.Dict[str, str]):

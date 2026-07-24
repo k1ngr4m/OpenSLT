@@ -31,7 +31,7 @@ from app.models import (
     ScenarioWorkflowVersion,
     TestScenario,
 )
-from app.services.order_configs import OrderConfigError, order_config_service
+from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
 
 NODE_TYPES = {"server_config", "database_config", "wiring_confirmation", "order_preparation"}
 SERVER_FIELDS = {
@@ -67,6 +67,7 @@ KEY_COLUMN_CANDIDATES = ["setting_name", "name", "setting_key", "key", "param_na
 VALUE_COLUMN_CANDIDATES = ["setting_value", "value", "param_value"]
 INTERFACE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
 CONTRACT_TABLES = {"futures": "t_close_report", "options": "t_close_report_opt"}
+CONTRACT_TYPE_LABELS = {"futures": "期货", "options": "期权"}
 
 
 class WorkflowError(Exception):
@@ -476,9 +477,14 @@ def parse_read_symbol_csv(document: dict) -> int:
     return int(matches[0])
 
 
-async def validate_publish(db: Session, scenario: TestScenario, version: ScenarioWorkflowVersion) -> list[dict]:
+async def validate_publish(
+    db: Session,
+    scenario: TestScenario,
+    version: ScenarioWorkflowVersion,
+) -> tuple[list[dict], list[dict[str, typing.Any]]]:
     errors = validate_structure(db, scenario, version)
     resources = resource_map(db, version)
+    order_config_updates: list[dict[str, typing.Any]] = []
     for node in version.nodes:
         if node.node_type != "order_preparation":
             continue
@@ -513,20 +519,56 @@ async def validate_publish(db: Session, scenario: TestScenario, version: Scenari
                 )).all())
                 if len(files) != len(set(file_ids)):
                     raise WorkflowError("CONTRACT_FILES_INVALID", "合约 CSV 不存在", 409)
+                filenames: dict[str, str] = {}
                 for item in files:
+                    label = CONTRACT_TYPE_LABELS.get(item.contract_type)
+                    if not label:
+                        raise WorkflowError("CONTRACT_TYPE_INVALID", f"合约文件 {item.filename} 类型不受支持", 409)
+                    if item.contract_type in filenames:
+                        raise WorkflowError("CONTRACT_FILES_AMBIGUOUS", f"{label} CSV 只能选择一个", 409)
                     archive = Path(item.archive_path)
                     if not archive.is_file() or hashlib.sha256(archive.read_bytes()).hexdigest() != item.checksum:
                         raise WorkflowError("CONTRACT_FILE_CHANGED", f"合约文件 {item.filename} 已丢失或校验失败", 409)
+                    filenames[item.contract_type] = item.filename
+                updated_content = update_symbol_csv_values(detail["content"], filenames)
+                if updated_content != detail["content"]:
+                    order_config_updates.append({
+                        "node": node,
+                        "resource": resource,
+                        "filename": detail["name"],
+                        "content": updated_content,
+                        "expected_checksum": detail["checksum"],
+                    })
             node.config = dict(config)
         except (OrderConfigError, WorkflowError) as exc:
             errors.append({"node_key": node.node_key, "field": "xml_filename", "message": str(exc)})
-    return errors
+    return errors, order_config_updates
 
 
 async def publish(db: Session, scenario: TestScenario, version: ScenarioWorkflowVersion, actor_id: int) -> ScenarioWorkflowVersion:
-    errors = await validate_publish(db, scenario, version)
+    errors, order_config_updates = await validate_publish(db, scenario, version)
     if errors:
         raise WorkflowError("WORKFLOW_VALIDATION_FAILED", "工作流校验未通过", 422, errors=errors)
+    for item in order_config_updates:
+        try:
+            detail = await order_config_service.update(
+                item["resource"],
+                item["filename"],
+                item["content"],
+                item["expected_checksum"],
+            )
+        except OrderConfigError as exc:
+            node = item["node"]
+            raise WorkflowError(
+                "WORKFLOW_VALIDATION_FAILED",
+                "工作流校验未通过",
+                422,
+                errors=[{"node_key": node.node_key, "field": "xml_filename", "message": str(exc)}],
+            ) from exc
+        node = item["node"]
+        config = dict(node.config or {})
+        config["xml_checksum"] = detail["checksum"]
+        node.config = config
     if scenario.published_workflow_version_id:
         previous = db.get(ScenarioWorkflowVersion, scenario.published_workflow_version_id)
         if previous:
