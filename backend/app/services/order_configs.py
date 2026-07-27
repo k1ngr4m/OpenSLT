@@ -257,7 +257,50 @@ def parser_main_config_filename(resource: Resource) -> str:
     return f"{tool or 'parser'}.xml"
 
 
-def _parser_default_files(main_filename: str) -> typing.Dict[str, str]:
+def _parser_main_default_content(tool: str) -> str:
+    if tool == "soft_cffex_speed_analysis":
+        return '''<?xml version="1.0" encoding="utf-8"?>
+<tcp>
+  <group_quote_src_conf id="quote_src_conf">
+    <quote_file_name value="merge_pcap.pcapng"/>
+    <rem_client_ip value="180.1.1.31"/>
+    <rem_ip value="10.1.51.107"/>
+    <market_ip value="10.1.51.8"/>
+    <enable_log_disp disp="disable:0, enable:1" default_value="" value="1"/>
+    <account_exchange_code_file_name value="t_account_exchange_code.csv"/>
+    <fut_orders_file_name value="t_fut_orders.csv"/>
+    <fut_quotes_file_name value="t_fut_quotes.csv"/>
+  </group_quote_src_conf>
+</tcp>
+'''
+    if tool == "soft_cffex_speed_analysis_v2":
+        return '''<?xml version="1.0" encoding="utf-8"?>
+<tcp>
+  <group_quote_src_conf id="quote_src_conf">
+    <quote_file_name value="merge_pcap.pcapng"/>
+    <rem_client_ip value="180.1.1.181"/>
+    <rem_ip value="10.1.51.107"/>
+    <market_ip value="10.1.51.129"/>
+    <parse_type value="soft" disp="soft:软核  mg11:mg版本"/>
+    <enable_log_disp disp="disable:0, enable:1" default_value="" value="1"/>
+    <account_exchange_code_file_name value="t_account_exchange_code.csv"/>
+    <fut_orders_file_name value="t_fut_orders.csv"/>
+    <fut_quotes_file_name value="t_fut_quotes.csv"/>
+    <sm4_key value="30313233343536373839303132333435"/>
+    <sm4_iv value="39383736353433323130393837363534"/>
+  </group_quote_src_conf>
+</tcp>
+'''
+    return '''<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <quoto_file_name value="merge_pcap.pcapng"/>
+  <rem_client_ip value=""/>
+  <market_ip value=""/>
+</root>
+'''
+
+
+def _parser_default_files(tool: str, main_filename: str) -> typing.Dict[str, str]:
     return {
         "config.xml": '''<?xml version="1.0" encoding="utf-8"?>
 <root>
@@ -273,13 +316,7 @@ def _parser_default_files(main_filename: str) -> typing.Dict[str, str]:
   </instance>
 </root>
 ''',
-        main_filename: '''<?xml version="1.0" encoding="utf-8"?>
-<root>
-  <quoto_file_name value="merge_pcap.pcapng"/>
-  <rem_client_ip value=""/>
-  <market_ip value=""/>
-</root>
-''',
+        main_filename: _parser_main_default_content(tool),
     }
 
 
@@ -374,7 +411,7 @@ class OrderConfigService:
         if context.resource_type != "parser":
             return
         await sftp.makedirs(context.directory, exist_ok=True)
-        for filename, content in _parser_default_files(parser_main_config_filename(resource)).items():
+        for filename, content in _parser_default_files(context.tool, parser_main_config_filename(resource)).items():
             validate_filename(context, filename)
             if not await sftp.exists(_path(context, filename)):
                 parse_xml(content)

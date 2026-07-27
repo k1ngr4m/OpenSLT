@@ -55,12 +55,8 @@ const parserTools = [
   'mg11',
 ]
 
-function parserConfigFilename(tool: string) {
-  return `${tool.endsWith('_v2') ? tool.slice(0, -3) : tool}.xml`
-}
-
 const empty = () => ({
-  name: '', resource_type: 'rem', market_environment: '', order_tool: '', slnic_model: '', parser_tool: '', parser_config_filename: '', business_code: 'fut_mm',
+  name: '', resource_type: 'rem', market_environment: '', order_tool: '', slnic_model: '', parser_tool: '', business_code: 'fut_mm',
   host: '', ssh_port: 22, username: '', auth_type: 'password', password: '', private_key: '',
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
@@ -96,7 +92,6 @@ function setSlnicDefaultPath(value: string) {
 function setParserToolDefaults(value: string) {
   if (!parserTools.includes(value)) return
   form.remote_path = `/home/user0/${value}`
-  form.parser_config_filename = parserConfigFilename(value)
 }
 
 function handleResourceTypeChange(value: string) {
@@ -125,7 +120,6 @@ function open(row?: any) {
   form.order_tool = row?.capabilities?.order_tool || orderTools.find(item => item.path === row?.remote_path)?.value || ''
   form.slnic_model = row?.capabilities?.slnic_model || slnicModels.find(item => item.path === row?.remote_path)?.value || ''
   form.parser_tool = row?.capabilities?.parser_tool || parserTools.find(item => `/home/user0/${item}` === row?.remote_path) || ''
-  form.parser_config_filename = row?.capabilities?.parser_config_filename || (form.parser_tool ? parserConfigFilename(form.parser_tool) : '')
   form.database_names = [...(row?.database_names || [])]
   if (!form.remote_path) {
     if (form.resource_type === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
@@ -229,13 +223,9 @@ async function save() {
     ElMessage.warning('请选择解析工具')
     return
   }
-  if (form.resource_type === 'parser' && !form.parser_config_filename.trim().endsWith('.xml')) {
-    ElMessage.warning('解析主配置文件必须以 .xml 结尾')
-    return
-  }
   loading.value = true
   try {
-    const { market_environment, order_tool, slnic_model, parser_tool, parser_config_filename, ...payload } = form
+    const { market_environment, order_tool, slnic_model, parser_tool, ...payload } = form
     const capabilities = { ...(form.capabilities || {}) }
     if (form.resource_type === 'market') {
       const selected = marketEnvironments.find(item => item.value === market_environment)!
@@ -269,10 +259,10 @@ async function save() {
       for (const key of ['slnic_model', 'slnic_model_name', 'slnic_default_path']) delete capabilities[key]
     }
     if (form.resource_type === 'parser') {
+      delete capabilities.parser_config_filename
       Object.assign(capabilities, {
         parser_tool,
         parser_binary: parser_tool,
-        parser_config_filename: parser_config_filename.trim(),
       })
     } else {
       for (const key of ['parser_tool', 'parser_binary', 'parser_config_filename']) delete capabilities[key]
@@ -423,11 +413,6 @@ onMounted(load)
               <el-select v-model="form.parser_tool" placeholder="请选择解析工具" style="width:100%" @change="setParserToolDefaults">
                 <el-option v-for="item in parserTools" :key="item" :label="item" :value="item" />
               </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col v-if="form.resource_type === 'parser'" :span="24">
-            <el-form-item label="主配置 XML" required>
-              <el-input v-model="form.parser_config_filename" placeholder="例如 soft_cffex_speed_analysis.xml" />
             </el-form-item>
           </el-col>
           <el-col :span="12">

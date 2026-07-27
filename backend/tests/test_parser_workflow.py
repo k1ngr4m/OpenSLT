@@ -229,6 +229,63 @@ def test_parser_config_defaults_and_crud(client, admin_headers, monkeypatch):
     assert deleted.status_code == 204
 
 
+def test_soft_cffex_speed_analysis_uses_tcp_default_config(client, admin_headers, monkeypatch):
+    resource = create_parser_resource(
+        client, admin_headers, tool="soft_cffex_speed_analysis"
+    )
+    sftp = FakeConfigSFTP()
+
+    async def fake_connect(**_options):
+        return FakeConfigConnection(sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
+    base = f"/api/v1/resources/{resource['id']}/parser-configs"
+    detail = client.get(f"{base}/soft_cffex_speed_analysis.xml", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    content = detail.json()["content"]
+    assert "<tcp>" in content
+    assert '<group_quote_src_conf id="quote_src_conf">' in content
+    assert '<quote_file_name value="merge_pcap.pcapng"/>' in content
+    assert '<rem_client_ip value="180.1.1.31"/>' in content
+    assert '<rem_ip value="10.1.51.107"/>' in content
+    assert '<market_ip value="10.1.51.8"/>' in content
+    assert '<enable_log_disp disp="disable:0, enable:1" default_value="" value="1"/>' in content
+    assert '<account_exchange_code_file_name value="t_account_exchange_code.csv"/>' in content
+    assert '<fut_orders_file_name value="t_fut_orders.csv"/>' in content
+    assert '<fut_quotes_file_name value="t_fut_quotes.csv"/>' in content
+
+
+def test_soft_cffex_speed_analysis_v2_uses_tcp_default_config(
+    client, admin_headers, monkeypatch
+):
+    resource = create_parser_resource(
+        client, admin_headers, tool="soft_cffex_speed_analysis_v2"
+    )
+    sftp = FakeConfigSFTP()
+
+    async def fake_connect(**_options):
+        return FakeConfigConnection(sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
+    base = f"/api/v1/resources/{resource['id']}/parser-configs"
+    detail = client.get(f"{base}/soft_cffex_speed_analysis.xml", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    content = detail.json()["content"]
+    assert "<tcp>" in content
+    assert '<group_quote_src_conf id="quote_src_conf">' in content
+    assert '<quote_file_name value="merge_pcap.pcapng"/>' in content
+    assert '<rem_client_ip value="180.1.1.181"/>' in content
+    assert '<rem_ip value="10.1.51.107"/>' in content
+    assert '<market_ip value="10.1.51.129"/>' in content
+    assert '<parse_type value="soft" disp="soft:软核  mg11:mg版本"/>' in content
+    assert '<enable_log_disp disp="disable:0, enable:1" default_value="" value="1"/>' in content
+    assert '<account_exchange_code_file_name value="t_account_exchange_code.csv"/>' in content
+    assert '<fut_orders_file_name value="t_fut_orders.csv"/>' in content
+    assert '<fut_quotes_file_name value="t_fut_quotes.csv"/>' in content
+    assert '<sm4_key value="30313233343536373839303132333435"/>' in content
+    assert '<sm4_iv value="39383736353433323130393837363534"/>' in content
+
+
 def test_parser_publish_rejects_missing_merge(client, admin_headers):
     database = create_database_resource(client, admin_headers)
     parser = create_parser_resource(client, admin_headers)
