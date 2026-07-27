@@ -11,7 +11,7 @@ from starlette.websockets import WebSocketDisconnect
 from app.core.database import SessionLocal
 from app.models import AuditLog, Resource
 from app.services import terminal as terminal_service
-from conftest import create_resource
+from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
 def access_token(headers: typing.Dict[str, str]) -> str:
@@ -20,6 +20,37 @@ def access_token(headers: typing.Dict[str, str]) -> str:
 
 def terminal_url(resource_id: int, token: str) -> str:
     return f"/api/v1/ws/resources/{resource_id}/terminal?token={token}"
+
+
+def slnic_start_nodes() -> list[dict]:
+    return [
+        {
+            "node_key": "slnic-start",
+            "node_type": "slnic_start_capture",
+            "name": "启动 SLNIC 节点",
+            "config": {},
+        }
+    ]
+
+
+def create_slnic_start_run(client: TestClient, headers: typing.Dict[str, str]) -> tuple[dict, dict]:
+    resource = create_resource(client, headers, "SLNIC-Terminal", resource_type="slnic")
+    plan, scenario = create_plan_scenario(client, headers, required_types=["slnic"], resource_ids=[resource["id"]])
+    publish_workflow(client, headers, scenario, [resource["id"]], slnic_start_nodes())
+    created = client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": [resource["id"]],
+            "timeout_minutes": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    started = client.post(f"/api/v1/runs/{created.json()['id']}/start", headers=headers)
+    assert started.status_code == 200, started.text
+    return resource, client.get(f"/api/v1/runs/{created.json()['id']}", headers=headers).json()
 
 
 def test_terminal_rejects_invalid_token_and_visitor(client: TestClient, admin_headers: typing.Dict[str, str]):
@@ -178,6 +209,88 @@ def test_remote_terminal_uses_pty_and_forwards_io(
         assert "echo ready" not in str([item.detail for item in audits])
     finally:
         db.close()
+
+
+def test_terminal_workflow_command_dispatches_slnic_start_and_waits_for_completion(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_slnic_start_run(client, admin_headers)
+    step = run["steps"][0]
+    token = access_token(admin_headers)
+    connection = FakeConnection()
+
+    async def fake_connect(**_):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": step["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["type"] == "workflow_command"
+        assert response["status"] == "dispatched"
+        assert response["command"] == "cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh"
+
+    assert connection.process.stdin.writes == ["cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh\r"]
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_completion"
+    updated_step = updated["steps"][0]
+    assert updated_step["status"] == "waiting"
+    assert updated_step["progress"] == 100
+    assert updated_step["result_summary"]["resource_id"] == resource["id"]
+    assert updated_step["result_summary"]["resource_name"] == resource["name"]
+    assert updated_step["result_summary"]["mode"] == "terminal"
+    assert updated_step["result_summary"]["exit_code"] is None
+
+
+def test_terminal_workflow_command_rejects_wrong_resource(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_slnic_start_run(client, admin_headers)
+    other_resource = create_resource(client, admin_headers, "SLNIC-Other", resource_type="slnic")
+    token = access_token(admin_headers)
+    connection = FakeConnection()
+
+    async def fake_connect(**_):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    with client.websocket_connect(terminal_url(other_resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": run["steps"][0]["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["type"] == "workflow_command"
+        assert response["status"] == "failed"
+        assert response["code"] == "INVALID_RESOURCE"
+
+    assert connection.process.stdin.writes == []
+    unchanged = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert unchanged["status"] == "awaiting_step_start"
+    assert unchanged["steps"][0]["status"] == "pending"
 
 
 def test_remote_terminal_reports_connection_failure(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 import asyncio
+import posixpath
 import shlex
 from contextlib import suppress
 from dataclasses import dataclass
@@ -11,12 +12,15 @@ from uuid import uuid4
 import asyncssh
 import jwt
 from fastapi import WebSocket, WebSocketDisconnect
+from sqlalchemy.orm import selectinload
 
 from app.core.database import SessionLocal
 from app.core.logging import trace_id_ctx
 from app.core.security import CredentialSecretError, decode_token, decrypt_secret
-from app.models import Resource, User
+from app.models import Resource, TestRun, User
 from app.services.audit import write_audit
+from app.services.events import broker
+from app.services.orchestration import append_log
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
@@ -138,7 +142,114 @@ def _remote_command(resource: TerminalResource) -> typing.Union[str, None]:
     )
 
 
-async def _receive_remote(websocket: WebSocket, process: asyncssh.SSHClientProcess) -> str:
+def _workflow_command_error(code: str, message: str) -> dict:
+    return {"type": "workflow_command", "status": "failed", "code": code, "message": message}
+
+
+def _dispatch_slnic_start_command(
+    *,
+    actor_id: int,
+    resource: TerminalResource,
+    run_id: object,
+    step_id: object,
+    operation: object,
+) -> typing.Tuple[typing.Union[str, None], dict]:
+    if operation not in {"start", "retry"}:
+        return None, _workflow_command_error("INVALID_OPERATION", "仅支持启动或重试 SLNIC 启动节点")
+    try:
+        parsed_run_id = int(run_id)  # type: ignore[arg-type]
+        parsed_step_id = int(step_id)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "运行或节点参数无效")
+    if resource.resource_type != "slnic":
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是 SLNIC 资源")
+    if not resource.remote_path.strip():
+        return None, _workflow_command_error("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径")
+
+    db = SessionLocal()
+    try:
+        run = db.get(TestRun, parsed_run_id, options=[selectinload(TestRun.steps)])
+        if not run:
+            return None, _workflow_command_error("RUN_NOT_FOUND", "运行不存在")
+        if resource.id not in run.resource_ids:
+            return None, _workflow_command_error("INVALID_RESOURCE", "当前 SLNIC 资源不属于该运行")
+        current = next((item for item in run.steps if item.status != "succeeded"), None)
+        step = next((item for item in run.steps if item.id == parsed_step_id), None)
+        if not current or not step or current.id != step.id:
+            return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "只能操作当前节点")
+        if step.node_type != "slnic_start_capture":
+            return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不是启动 SLNIC 节点")
+
+        retrying = operation == "retry"
+        expected_run_status = "awaiting_step_retry" if retrying else "awaiting_step_start"
+        expected_step_status = "failed" if retrying else "pending"
+        if run.status != expected_run_status or step.status != expected_step_status:
+            return None, _workflow_command_error("INVALID_TRANSITION", "当前状态不能通过终端执行该节点")
+
+        now = datetime.now(timezone.utc)
+        workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
+        command = f"cd {shlex.quote(workdir)} && ./start_slnic_dump.sh"
+        if retrying:
+            step.retry_count += 1
+        step.status = "waiting"
+        step.progress = 100
+        step.started_at = now
+        step.finished_at = None
+        step.duration_ms = 0
+        step.error_message = None
+        step.result_summary = {
+            "resource_id": resource.id,
+            "resource_name": resource.name,
+            "command": command,
+            "mode": "terminal",
+            "exit_code": None,
+            "dispatched_by": actor_id,
+            "dispatched_at": now.isoformat(),
+        }
+        run.status = "awaiting_step_completion"
+        run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
+        run.error_code = None
+        run.error_message = None
+        append_log(
+            db,
+            run,
+            "workflow.step_retried" if retrying else "workflow.step_started",
+            f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发启动指令",
+            step=step,
+            source="terminal",
+            detail={"retry_count": step.retry_count, "mode": "terminal"},
+        )
+        append_log(
+            db,
+            run,
+            "workflow.step_executed",
+            f"{step.name}启动指令已在终端下发，等待手动完成",
+            step=step,
+            source="terminal",
+            detail={"command": command, "resource_id": resource.id, "mode": "terminal"},
+            log_type="remote_command",
+        )
+        db.commit()
+        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+        return command, {
+            "type": "workflow_command",
+            "status": "dispatched",
+            "command": command,
+            "run_id": run.id,
+            "step_id": step.id,
+            "resource_id": resource.id,
+        }
+    finally:
+        db.close()
+
+
+async def _receive_remote(
+    websocket: WebSocket,
+    process: asyncssh.SSHClientProcess,
+    *,
+    actor_id: int,
+    resource: TerminalResource,
+) -> str:
     while True:
         try:
             message = await websocket.receive_json()
@@ -155,6 +266,17 @@ async def _receive_remote(websocket: WebSocket, process: asyncssh.SSHClientProce
             columns = _clamp(message.get("cols"), MIN_COLUMNS, MAX_COLUMNS, 120)
             rows = _clamp(message.get("rows"), MIN_ROWS, MAX_ROWS, 32)
             process.change_terminal_size(columns, rows)
+        elif message_type == "workflow_step_command":
+            command, response = _dispatch_slnic_start_command(
+                actor_id=actor_id,
+                resource=resource,
+                run_id=message.get("run_id"),
+                step_id=message.get("step_id"),
+                operation=message.get("operation"),
+            )
+            if command:
+                process.stdin.write(f"{command}\r")
+            await _send(websocket, response)
         else:
             await _send(websocket, {"type": "error", "code": "INVALID_MESSAGE", "message": "不支持的终端消息"})
 
@@ -170,7 +292,7 @@ async def _send_remote_output(websocket: WebSocket, process: asyncssh.SSHClientP
             return "client_disconnected"
 
 
-async def _run_remote(websocket: WebSocket, resource: TerminalResource, on_connected: typing.Callable[[], None]) -> str:
+async def _run_remote(websocket: WebSocket, resource: TerminalResource, actor_id: int, on_connected: typing.Callable[[], None]) -> str:
     options: typing.Dict[str, object] = {
         "host": resource.host,
         "port": resource.port,
@@ -197,7 +319,7 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, on_conne
         )
         await _send(websocket, {"type": "status", "status": "connected", "message": "SSH 已连接"})
         on_connected()
-        receiver = asyncio.create_task(_receive_remote(websocket, process))
+        receiver = asyncio.create_task(_receive_remote(websocket, process, actor_id=actor_id, resource=resource))
         sender = asyncio.create_task(_send_remote_output(websocket, process))
         done, pending = await asyncio.wait({receiver, sender}, return_when=asyncio.FIRST_COMPLETED)
         reason = next(iter(done)).result()
@@ -254,7 +376,7 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
             _audit(websocket, actor_id, resource.id, "resource.terminal.open")
 
         try:
-            reason = await _run_remote(websocket, resource, record_open)
+            reason = await _run_remote(websocket, resource, actor_id, record_open)
         except Exception as exc:
             if not opened:
                 _audit(

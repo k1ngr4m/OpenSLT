@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.logging import trace_id_ctx
 from app.core.security import create_access_token, create_refresh_token, decode_token, decrypt_secret, encrypt_secret, hash_password, token_fingerprint, verify_password
-from app.models import Artifact, AuditLog, BusinessType, ContractDataFile, DatabaseUpdateConfirmation, LogRecord, RefreshToken, Resource, ResourceLock, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestPlan, TestRun, TestScenario, User, Verdict
+from app.models import Artifact, AuditLog, BusinessType, ConfigurationCaptureSnapshot, ContractDataFile, DatabaseUpdateConfirmation, LogRecord, RefreshToken, Resource, ResourceLock, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestPlan, TestRun, TestScenario, User, Verdict
 from app.schemas import ArtifactOut, AuditOut, CaptureSnapshotOut, ContractDataFetchRequest, ContractDataFileOut, DatabaseDiscoveryOut, DatabaseDiscoveryRequest, DatabaseExportRequest, DatabaseSqlRequest, DatabaseUpdateExecuteRequest, LoginRequest, LogOut, OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, PlanOut, PlanWrite, RefreshRequest, ResourceOut, ResourceWrite, RunCreate, RunOut, ScenarioOut, ScenarioWrite, TokenPair, UserCreate, UserOut, UserUpdate, VerdictOut, VerdictWrite, WorkflowDocumentOut, WorkflowDocumentWrite, WorkflowVersionOut
 from app.services.audit import write_audit
 from app.services.events import broker
@@ -1109,6 +1109,22 @@ def list_runs(business_code: typing.Union[str, None] = None, run_status: typing.
 @router.get("/runs/{run_id}", response_model=RunOut)
 def get_run(run_id: int, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TestRun:
     return load_run(db, run_id)
+
+
+@router.get("/runs/{run_id}/steps/{step_id}/capture-snapshots", response_model=typing.List[CaptureSnapshotOut])
+def list_run_step_capture_snapshots(run_id: int, step_id: int, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[ConfigurationCaptureSnapshot]:
+    run = load_run(db, run_id)
+    if not any(step.id == step_id for step in run.steps):
+        raise not_found("运行步骤")
+    return list(db.scalars(
+        select(ConfigurationCaptureSnapshot)
+        .where(
+            ConfigurationCaptureSnapshot.run_id == run_id,
+            ConfigurationCaptureSnapshot.run_step_id == step_id,
+        )
+        .options(selectinload(ConfigurationCaptureSnapshot.items))
+        .order_by(ConfigurationCaptureSnapshot.id)
+    ).all())
 
 
 @router.post("/runs/{run_id}/start", response_model=RunOut)

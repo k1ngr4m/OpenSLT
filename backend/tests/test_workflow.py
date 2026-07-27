@@ -59,6 +59,21 @@ def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
     assert executed["steps"][0]["status"] == "waiting"
     assert executed["steps"][0]["result_summary"]["failed"] == 0
     assert executed["steps"][1]["status"] == "pending"
+    captures = client.get(
+        f"/api/v1/runs/{run_id}/steps/{first_step['id']}/capture-snapshots",
+        headers=admin_headers,
+    )
+    assert captures.status_code == 200, captures.text
+    capture_items = captures.json()[0]["items"]
+    assert [item["item_key"] for item in capture_items] == ["ip", "cpu_model"]
+    assert capture_items[0]["value_text"] == "10.0.0.1/24"
+    assert capture_items[1]["value_text"] == "CPU(s): 32"
+    empty_captures = client.get(
+        f"/api/v1/runs/{run_id}/steps/{executed['steps'][1]['id']}/capture-snapshots",
+        headers=admin_headers,
+    )
+    assert empty_captures.status_code == 200
+    assert empty_captures.json() == []
     assert client.post(
         f"/api/v1/runs/{run_id}/steps/{first_step['id']}/complete",
         headers=admin_headers,
