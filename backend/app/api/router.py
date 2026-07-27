@@ -1089,7 +1089,7 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
         raise HTTPException(status_code=400, detail={"code": "RESOURCE_SET_MISMATCH", "message": f"运行资源类型与场景不一致，缺少: {missing}，多余: {extra}"})
     node_snapshots = workflow_nodes_snapshot(db, workflow)
     snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "workflow": {"id": workflow.id, "version_no": workflow.version_no, "nodes": node_snapshots}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
-    run = TestRun(run_number=f"R{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, workflow_version_id=workflow.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=datetime.now(timezone.utc) + timedelta(minutes=payload.timeout_minutes))
+    run = TestRun(run_number=f"R{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, workflow_version_id=workflow.id, business_code=plan.business_code, resource_ids=payload.resource_ids, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=None)
     create_workflow_steps(run, workflow)
     node_configs = {item["id"]: item["config"] for item in node_snapshots}
     for step in run.steps:

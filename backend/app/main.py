@@ -21,7 +21,6 @@ from app.core.security import CredentialSecretError, hash_password
 from app.models import BusinessType, User
 from app.services.orchestration import (
     archive_and_clean_logs,
-    expire_timed_out_runs,
     queued_run_ids,
     reclaim_expired_locks,
     start_run,
@@ -43,7 +42,6 @@ async def internal_scheduler() -> None:
     """Run queue dispatch and maintenance inside the API process."""
     loop = asyncio.get_running_loop()
     next_lock_reclaim = loop.time()
-    next_timeout_check = loop.time()
     next_retention_cleanup = loop.time() + 300
     while True:
         now = loop.time()
@@ -52,9 +50,6 @@ async def internal_scheduler() -> None:
             if now >= next_lock_reclaim:
                 reclaim_expired_locks(db)
                 next_lock_reclaim = now + 60
-            if now >= next_timeout_check:
-                expire_timed_out_runs(db)
-                next_timeout_check = now + 30
             queued = queued_run_ids(db)
         except Exception:
             logger.exception("internal_scheduler_iteration_failed")

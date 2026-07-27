@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.core.database import SessionLocal
-from app.models import ConfigurationCaptureSnapshot, ResourceLock
+from app.models import ConfigurationCaptureSnapshot, ResourceLock, TestRun as TestRunModel
 from app.core.logging import redact
+from app.services.orchestration import expire_timed_out_runs
 from app.services import workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
@@ -40,8 +42,9 @@ def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
         node("server", "server_config", "采集 REM 配置", {"targets": [{"resource_type": "rem", "fields": ["ip", "cpu_model"]}]}),
         node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
     ])
-    created = client.post("/api/v1/runs", headers=admin_headers, json={"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]], "timeout_minutes": 30})
+    created = client.post("/api/v1/runs", headers=admin_headers, json={"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]]})
     assert created.status_code == 201, created.text
+    assert created.json()["timeout_at"] is None
     run_id = created.json()["id"]
     assert [item["node_type"] for item in created.json()["steps"]] == ["server_config", "wiring_confirmation"]
     assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
@@ -102,13 +105,41 @@ def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
         assert all(lock.released_at is not None for lock in db.query(ResourceLock).filter(ResourceLock.run_id == run_id))
 
 
+def test_run_timeout_cleanup_is_disabled(client, admin_headers):
+    resource = create_resource(client, admin_headers, "REM-no-timeout")
+    plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
+    ])
+    created = client.post("/api/v1/runs", headers=admin_headers, json={
+        "plan_id": plan["id"],
+        "scenario_id": scenario["id"],
+        "resource_ids": [resource["id"]],
+    })
+    assert created.status_code == 201, created.text
+    run_id = created.json()["id"]
+    assert created.json()["timeout_at"] is None
+    client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers)
+
+    with SessionLocal() as db:
+        run = db.get(TestRunModel, run_id)
+        assert run is not None
+        run.timeout_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        db.commit()
+        assert expire_timed_out_runs(db) == 0
+
+    unchanged = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert unchanged["status"] == "awaiting_step_start"
+    assert unchanged["error_code"] is None
+
+
 def test_resource_lock_queues_competing_run(client, admin_headers):
     resource = create_resource(client, admin_headers, "REM-shared")
     plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
     publish_workflow(client, admin_headers, scenario, [resource["id"]], [
         node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
     ])
-    payload = {"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]], "timeout_minutes": 30}
+    payload = {"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]]}
     first = client.post("/api/v1/runs", headers=admin_headers, json=payload).json()
     second = client.post("/api/v1/runs", headers=admin_headers, json=payload).json()
     client.post(f"/api/v1/runs/{first['id']}/start", headers=admin_headers)

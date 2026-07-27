@@ -413,7 +413,6 @@ class RunCreate(BaseModel):
     plan_id: int
     scenario_id: int
     resource_ids: typing.List[int] = Field(min_length=1)
-    timeout_minutes: int = Field(default=120, ge=5, le=1440)
 
 
 class StepOut(ORMModel):

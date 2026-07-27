@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 import asyncio
+from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
@@ -35,6 +36,35 @@ def slnic_start_nodes() -> list[dict]:
     ]
 
 
+def slnic_start_stop_nodes() -> list[dict]:
+    return [
+        {
+            "node_key": "slnic-start",
+            "node_type": "slnic_start_capture",
+            "name": "启动 SLNIC 节点",
+            "config": {},
+        },
+        {
+            "node_key": "slnic-stop",
+            "node_type": "slnic_stop_capture",
+            "name": "关闭 SLNIC 节点",
+            "config": {},
+        },
+    ]
+
+
+def slnic_start_stop_merge_nodes() -> list[dict]:
+    return [
+        *slnic_start_stop_nodes(),
+        {
+            "node_key": "slnic-merge",
+            "node_type": "slnic_merge_capture",
+            "name": "合并 pcapng",
+            "config": {},
+        },
+    ]
+
+
 def order_start_nodes() -> list[dict]:
     return [
         {
@@ -57,6 +87,46 @@ def create_slnic_start_run(client: TestClient, headers: typing.Dict[str, str]) -
     resource = create_resource(client, headers, "SLNIC-Terminal", resource_type="slnic")
     plan, scenario = create_plan_scenario(client, headers, required_types=["slnic"], resource_ids=[resource["id"]])
     publish_workflow(client, headers, scenario, [resource["id"]], slnic_start_nodes())
+    created = client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": [resource["id"]],
+            "timeout_minutes": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    started = client.post(f"/api/v1/runs/{created.json()['id']}/start", headers=headers)
+    assert started.status_code == 200, started.text
+    return resource, client.get(f"/api/v1/runs/{created.json()['id']}", headers=headers).json()
+
+
+def create_slnic_start_stop_run(client: TestClient, headers: typing.Dict[str, str]) -> tuple[dict, dict]:
+    resource = create_resource(client, headers, "SLNIC-Terminal", resource_type="slnic")
+    plan, scenario = create_plan_scenario(client, headers, required_types=["slnic"], resource_ids=[resource["id"]])
+    publish_workflow(client, headers, scenario, [resource["id"]], slnic_start_stop_nodes())
+    created = client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": [resource["id"]],
+            "timeout_minutes": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    started = client.post(f"/api/v1/runs/{created.json()['id']}/start", headers=headers)
+    assert started.status_code == 200, started.text
+    return resource, client.get(f"/api/v1/runs/{created.json()['id']}", headers=headers).json()
+
+
+def create_slnic_start_stop_merge_run(client: TestClient, headers: typing.Dict[str, str]) -> tuple[dict, dict]:
+    resource = create_resource(client, headers, "SLNIC-Terminal", resource_type="slnic")
+    plan, scenario = create_plan_scenario(client, headers, required_types=["slnic"], resource_ids=[resource["id"]])
+    publish_workflow(client, headers, scenario, [resource["id"]], slnic_start_stop_merge_nodes())
     created = client.post(
         "/api/v1/runs",
         headers=headers,
@@ -195,9 +265,22 @@ class FakeProcess:
         return None
 
 
+class FakeSFTP:
+    def __init__(self) -> None:
+        self.gets: typing.List[typing.Tuple[str, str]] = []
+
+    async def get(self, remote_path: str, local_path: str) -> None:
+        self.gets.append((remote_path, local_path))
+        Path(local_path).write_bytes(b"merged-pcapng")
+
+    def exit(self) -> None:
+        return None
+
+
 class FakeConnection:
     def __init__(self) -> None:
         self.process = FakeProcess()
+        self.sftp = FakeSFTP()
         self.command: typing.Union[str, None] = None
         self.process_options: dict = {}
         self.closed = False
@@ -206,6 +289,9 @@ class FakeConnection:
         self.command = command
         self.process_options = options
         return self.process
+
+    async def start_sftp_client(self):
+        return self.sftp
 
     def close(self) -> None:
         self.closed = True
@@ -307,6 +393,151 @@ def test_terminal_workflow_command_dispatches_slnic_start_and_waits_for_completi
     assert updated_step["result_summary"]["resource_name"] == resource["name"]
     assert updated_step["result_summary"]["mode"] == "terminal"
     assert updated_step["result_summary"]["exit_code"] is None
+
+
+def test_terminal_workflow_command_dispatches_slnic_stop_and_waits_for_completion(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_slnic_start_stop_run(client, admin_headers)
+    token = access_token(admin_headers)
+    connections: typing.List[FakeConnection] = []
+
+    async def fake_connect(**_):
+        connection = FakeConnection()
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    start_step = run["steps"][0]
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": start_step["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["status"] == "dispatched"
+        assert response["command"] == "cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh"
+
+    completed = client.post(f"/api/v1/runs/{run['id']}/steps/{start_step['id']}/complete", headers=admin_headers)
+    assert completed.status_code == 200, completed.text
+    after_start = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    stop_step = after_start["steps"][1]
+    assert after_start["status"] == "awaiting_step_start"
+    assert stop_step["status"] == "pending"
+
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": stop_step["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["type"] == "workflow_command"
+        assert response["status"] == "dispatched"
+        assert response["command"] == "cd /tmp/openslt/tcpdump && ./stop_slnic_dump.sh"
+
+    assert connections[0].process.stdin.writes == ["cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh\r"]
+    assert connections[1].process.stdin.writes == ["cd /tmp/openslt/tcpdump && ./stop_slnic_dump.sh\r"]
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_completion"
+    updated_step = updated["steps"][1]
+    assert updated_step["status"] == "waiting"
+    assert updated_step["progress"] == 100
+    assert updated_step["result_summary"]["resource_id"] == resource["id"]
+    assert updated_step["result_summary"]["resource_name"] == resource["name"]
+    assert updated_step["result_summary"]["mode"] == "terminal"
+    assert updated_step["result_summary"]["command"] == "cd /tmp/openslt/tcpdump && ./stop_slnic_dump.sh"
+
+
+def test_terminal_workflow_command_dispatches_slnic_merge_and_collects_artifact_on_complete(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_slnic_start_stop_merge_run(client, admin_headers)
+    token = access_token(admin_headers)
+    connections: typing.List[FakeConnection] = []
+
+    async def fake_connect(**_):
+        connection = FakeConnection()
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+
+    start_step = run["steps"][0]
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        websocket.receive_json()
+        websocket.receive_json()
+        websocket.receive_json()
+        websocket.send_json({"type": "workflow_step_command", "run_id": run["id"], "step_id": start_step["id"], "operation": "start"})
+        assert websocket.receive_json()["command"] == "cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh"
+    completed_start = client.post(f"/api/v1/runs/{run['id']}/steps/{start_step['id']}/complete", headers=admin_headers)
+    assert completed_start.status_code == 200, completed_start.text
+
+    after_start = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    stop_step = after_start["steps"][1]
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        websocket.receive_json()
+        websocket.receive_json()
+        websocket.receive_json()
+        websocket.send_json({"type": "workflow_step_command", "run_id": run["id"], "step_id": stop_step["id"], "operation": "start"})
+        assert websocket.receive_json()["command"] == "cd /tmp/openslt/tcpdump && ./stop_slnic_dump.sh"
+    completed_stop = client.post(f"/api/v1/runs/{run['id']}/steps/{stop_step['id']}/complete", headers=admin_headers)
+    assert completed_stop.status_code == 200, completed_stop.text
+
+    after_stop = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    merge_step = after_stop["steps"][2]
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": merge_step["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["type"] == "workflow_command"
+        assert response["status"] == "dispatched"
+        assert "./pcap_mergetoo slnic*" in response["command"]
+        assert "./editcap merge_pcap.pcap merge_pcap.pcapng" in response["command"]
+
+    assert "./pcap_mergetoo slnic*" in connections[2].process.stdin.writes[0]
+    before_complete = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert before_complete["status"] == "awaiting_step_completion"
+    assert before_complete["steps"][2]["result_summary"]["mode"] == "terminal"
+    assert "artifact_id" not in before_complete["steps"][2]["result_summary"]
+
+    completed_merge = client.post(f"/api/v1/runs/{run['id']}/steps/{merge_step['id']}/complete", headers=admin_headers)
+    assert completed_merge.status_code == 200, completed_merge.text
+    completed = completed_merge.json()
+    assert completed["status"] == "completed"
+    assert completed["steps"][2]["status"] == "succeeded"
+    assert completed["steps"][2]["result_summary"]["filename"] == "merge_pcap.pcapng"
+    assert completed["steps"][2]["result_summary"]["size"] == len(b"merged-pcapng")
+    assert completed["artifacts"][0]["name"] == "merge_pcap.pcapng"
+    assert connections[3].sftp.gets[0][0] == "/tmp/openslt/tcpdump/merge_pcap.pcapng"
 
 
 def test_terminal_workflow_command_rejects_wrong_resource(

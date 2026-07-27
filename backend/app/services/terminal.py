@@ -25,6 +25,17 @@ from app.services.orchestration import append_log
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
+SLNIC_TERMINAL_COMMANDS = {
+    "slnic_start_capture": {"script": "./start_slnic_dump.sh", "action": "启动", "node_label": "启动 SLNIC 节点"},
+    "slnic_stop_capture": {"script": "./stop_slnic_dump.sh", "action": "关闭", "node_label": "关闭 SLNIC 节点"},
+    "slnic_merge_capture": {
+        "script": "./pcap_mergetoo slnic* && "
+        "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
+        "test -f merge_pcap.pcap && ./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
+        "action": "合并",
+        "node_label": "合并 pcapng 节点",
+    },
+}
 MAX_INPUT_SIZE = 64 * 1024
 MIN_COLUMNS = 20
 MAX_COLUMNS = 300
@@ -191,7 +202,7 @@ def _validate_terminal_step(
     return run, step, retrying, None
 
 
-def _dispatch_slnic_start_command(
+def _dispatch_slnic_terminal_command(
     *,
     db,
     actor_id: int,
@@ -202,14 +213,16 @@ def _dispatch_slnic_start_command(
 ) -> typing.Tuple[typing.Union[str, None], dict]:
     if resource.resource_type != "slnic":
         return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是 SLNIC 资源")
-    if step.node_type != "slnic_start_capture":
-        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不是启动 SLNIC 节点")
+    command_meta = SLNIC_TERMINAL_COMMANDS.get(step.node_type)
+    if not command_meta:
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不支持通过 SLNIC 终端执行")
     if not resource.remote_path.strip():
         return None, _workflow_command_error("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径")
 
     now = datetime.now(timezone.utc)
     workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
-    command = f"cd {shlex.quote(workdir)} && ./start_slnic_dump.sh"
+    action = str(command_meta["action"])
+    command = f"cd {shlex.quote(workdir)} && {command_meta['script']}"
     if retrying:
         step.retry_count += 1
     step.status = "waiting"
@@ -235,19 +248,19 @@ def _dispatch_slnic_start_command(
         db,
         run,
         "workflow.step_retried" if retrying else "workflow.step_started",
-        f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发启动指令",
+        f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发{action}指令",
         step=step,
         source="terminal",
-        detail={"retry_count": step.retry_count, "mode": "terminal"},
+        detail={"retry_count": step.retry_count, "mode": "terminal", "action": action},
     )
     append_log(
         db,
         run,
         "workflow.step_executed",
-        f"{step.name}启动指令已在终端下发，等待手动完成",
+        f"{step.name}{action}指令已在终端下发，等待手动完成",
         step=step,
         source="terminal",
-        detail={"command": command, "resource_id": resource.id, "mode": "terminal"},
+        detail={"command": command, "resource_id": resource.id, "mode": "terminal", "action": action},
         log_type="remote_command",
     )
     db.commit()
@@ -404,8 +417,8 @@ async def _dispatch_workflow_step_command(
         )
         if error or not run or not step:
             return None, error or _workflow_command_error("INVALID_WORKFLOW_STEP", "运行步骤无效")
-        if step.node_type == "slnic_start_capture":
-            return _dispatch_slnic_start_command(
+        if step.node_type in SLNIC_TERMINAL_COMMANDS:
+            return _dispatch_slnic_terminal_command(
                 db=db,
                 actor_id=actor_id,
                 resource=resource,

@@ -10,6 +10,7 @@ import { businessText, resourceText, statusText, statusType } from '@/utils/stat
 
 type JsonMap = Record<string, any>
 type LogScope = 'all' | number
+type WorkflowTerminalKind = 'slnic' | 'order'
 
 interface RunStep {
   id: number
@@ -184,9 +185,10 @@ const selectedStepId = ref<number | null>(null)
 const manualStepSelection = ref(false)
 const logScope = ref<LogScope>('all')
 const captureStates = reactive<Record<number, CaptureState>>({})
-const workflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
+const slnicWorkflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
+const orderWorkflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
 const terminalCommandPendingStepId = ref<number | null>(null)
-const queuedTerminalCommand = ref<{ stepId: number; operation: 'start' | 'retry' } | null>(null)
+const queuedTerminalCommand = ref<{ stepId: number; operation: 'start' | 'retry'; kind: WorkflowTerminalKind } | null>(null)
 const contractPreviewDialog = ref(false)
 const contractPreviewFile = ref<ContractFilePreview | null>(null)
 const contractPreviewLoading = ref(false)
@@ -214,18 +216,25 @@ const orderResource = computed<RunResourceSnapshot | null>(() => {
   if (!Array.isArray(resources)) return null
   return (resources.find((resource: JsonMap) => resource.type === 'order') as RunResourceSnapshot) || null
 })
-const showWorkflowTerminal = computed(() => ['slnic_start_capture', 'order_preparation'].includes(selectedStep.value?.node_type || ''))
-const workflowTerminalResource = computed(() => selectedStep.value?.node_type === 'order_preparation' ? orderResource.value : slnicResource.value)
-const workflowTerminalResourceText = computed(() => selectedStep.value?.node_type === 'order_preparation' ? resourceText.order : resourceText.slnic)
-const workflowTerminalTitle = computed(() => selectedStep.value?.node_type === 'order_preparation' ? '发单 SSH 终端' : 'SLNIC SSH 终端')
-const workflowTerminalDescription = computed(() => selectedStep.value?.node_type === 'order_preparation'
-  ? '点击顶部“开始”后，会先完成 XML/合约准备，再把发单命令下发到这个终端。'
-  : '点击顶部“开始”后，启动脚本会在这个终端中下发。')
-const workflowTerminalSubtitle = computed(() => {
-  const resource = workflowTerminalResource.value
-  if (!resource) return ''
-  return [workflowTerminalResourceText.value, resource.host, resource.version].filter(Boolean).join(' · ')
+const workflowTerminalKind = computed<WorkflowTerminalKind | null>(() => terminalKindForStep(selectedStep.value))
+const showWorkflowTerminal = computed(() => Boolean(workflowTerminalKind.value))
+const workflowTerminalResource = computed(() => workflowTerminalKind.value ? resourceForTerminalKind(workflowTerminalKind.value) : null)
+const workflowTerminalResourceText = computed(() => workflowTerminalKind.value === 'order' ? resourceText.order : resourceText.slnic)
+const workflowTerminalTitle = computed(() => workflowTerminalKind.value ? titleForTerminalKind(workflowTerminalKind.value) : 'SSH 终端')
+const workflowTerminalDescription = computed(() => {
+  if (selectedStep.value?.node_type === 'order_preparation') {
+    return '点击顶部“开始”后，会先完成 XML/合约准备，再把发单命令下发到这个终端。'
+  }
+  if (selectedStep.value?.node_type === 'slnic_stop_capture') {
+    return '点击顶部“开始”后，关闭抓包脚本会在这个终端中下发。'
+  }
+  if (selectedStep.value?.node_type === 'slnic_merge_capture') {
+    return '点击顶部“开始”后，合并与转换 pcapng 的命令会在这个终端中下发；确认完成后再点击顶部“完成”。'
+  }
+  return '点击顶部“开始”后，启动脚本会在这个终端中下发。'
 })
+const slnicTerminalSubtitle = computed(() => terminalSubtitle('slnic'))
+const orderTerminalSubtitle = computed(() => terminalSubtitle('order'))
 const selectedConfig = computed(() => selectedStep.value?.config_snapshot || {})
 const selectedResult = computed(() => selectedStep.value?.result_summary || {})
 const selectedArtifacts = computed(() => {
@@ -347,7 +356,7 @@ const resultRows = computed<InfoRow[]>(() => {
     return [
       { label: '资源', value: result.resource_name || (result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
       { label: '执行模式', value: result.mode === 'terminal' ? 'SSH 终端' : '后端自动执行' },
-      { label: '启动指令', value: result.command || '-', mono: true },
+      { label: 'SLNIC 指令', value: result.command || '-', mono: true },
       { label: '退出码', value: result.exit_code ?? '-' },
       { label: '下发时间', value: formatDate(result.dispatched_at) },
       { label: '产物文件', value: result.filename || '-' },
@@ -414,6 +423,32 @@ const showCaptureDetails = computed(() => ['server_config', 'database_config'].i
 
 function findCurrentStep(steps: RunStep[]) {
   return steps.find(step => step.status !== 'succeeded') || steps[steps.length - 1] || null
+}
+
+function terminalKindForStep(step: RunStep | null): WorkflowTerminalKind | null {
+  if (!step) return null
+  if (step.node_type === 'order_preparation') return 'order'
+  if (['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'].includes(step.node_type)) return 'slnic'
+  return null
+}
+
+function panelForTerminalKind(kind: WorkflowTerminalKind) {
+  return kind === 'order' ? orderWorkflowTerminalPanel.value : slnicWorkflowTerminalPanel.value
+}
+
+function resourceForTerminalKind(kind: WorkflowTerminalKind) {
+  return kind === 'order' ? orderResource.value : slnicResource.value
+}
+
+function titleForTerminalKind(kind: WorkflowTerminalKind) {
+  return kind === 'order' ? '发单 SSH 终端' : 'SLNIC SSH 终端'
+}
+
+function terminalSubtitle(kind: WorkflowTerminalKind) {
+  const resource = resourceForTerminalKind(kind)
+  if (!resource) return ''
+  const label = kind === 'order' ? resourceText.order : resourceText.slnic
+  return [label, resource.host, resource.version].filter(Boolean).join(' · ')
 }
 
 function snapshotSignature(step: RunStep) {
@@ -538,7 +573,7 @@ async function cancel() {
 async function stepAction(step: RunStep, operation: 'start' | 'complete' | 'retry') {
   actingStepId.value = step.id
   try {
-    if (['slnic_start_capture', 'order_preparation'].includes(step.node_type) && ['start', 'retry'].includes(operation)) {
+    if (['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture', 'order_preparation'].includes(step.node_type) && ['start', 'retry'].includes(operation)) {
       await runWorkflowStepInTerminal(step, operation as 'start' | 'retry')
       return
     }
@@ -554,59 +589,65 @@ async function stepAction(step: RunStep, operation: 'start' | 'complete' | 'retr
 }
 
 async function runWorkflowStepInTerminal(step: RunStep, operation: 'start' | 'retry') {
+  const kind = terminalKindForStep(step)
+  if (!kind) {
+    throw new Error('当前节点不支持 SSH 终端执行')
+  }
   manualStepSelection.value = false
   selectedStepId.value = step.id
   active.value = 'detail'
   await nextTick()
-  const panel = workflowTerminalPanel.value
-  if (!workflowTerminalResource.value || !panel) {
-    throw new Error(`未找到${workflowTerminalTitle.value}，请检查运行资源配置`)
+  const panel = panelForTerminalKind(kind)
+  const title = titleForTerminalKind(kind)
+  if (!resourceForTerminalKind(kind) || !panel) {
+    throw new Error(`未找到${title}，请检查运行资源配置`)
   }
   if (!panel.connected) {
-    queuedTerminalCommand.value = { stepId: step.id, operation }
+    queuedTerminalCommand.value = { stepId: step.id, operation, kind }
     terminalCommandPendingStepId.value = step.id
     if (!panel.connecting) panel.connect()
-    ElMessage.info(`${workflowTerminalTitle.value}连接中，连接成功后会自动下发指令`)
+    ElMessage.info(`${title}连接中，连接成功后会自动下发指令`)
     return
   }
   terminalCommandPendingStepId.value = step.id
   const sent = panel.sendWorkflowStepCommand({ run_id: runId, step_id: step.id, operation })
   if (!sent) {
     terminalCommandPendingStepId.value = null
-    throw new Error(`${workflowTerminalTitle.value}未连接，无法下发指令`)
+    throw new Error(`${title}未连接，无法下发指令`)
   }
 }
 
-function dispatchQueuedTerminalCommand() {
+function dispatchQueuedTerminalCommand(kind: WorkflowTerminalKind) {
   const queued = queuedTerminalCommand.value
-  const panel = workflowTerminalPanel.value
-  if (!queued || !panel?.connected) return
+  const panel = panelForTerminalKind(kind)
+  if (!queued || queued.kind !== kind || !panel?.connected) return
   const sent = panel.sendWorkflowStepCommand({ run_id: runId, step_id: queued.stepId, operation: queued.operation })
   if (!sent) {
-    ElMessage.error(`${workflowTerminalTitle.value}未连接，无法下发指令`)
+    ElMessage.error(`${titleForTerminalKind(kind)}未连接，无法下发指令`)
     terminalCommandPendingStepId.value = null
   }
   queuedTerminalCommand.value = null
 }
 
-function handleWorkflowTerminalStatus(message: JsonMap) {
-  if (message.status === 'connected') dispatchQueuedTerminalCommand()
+function handleWorkflowTerminalStatus(kind: WorkflowTerminalKind, message: JsonMap) {
+  if (message.status === 'connected') dispatchQueuedTerminalCommand(kind)
 }
 
-function handleWorkflowTerminalError(message: string) {
-  if (queuedTerminalCommand.value) {
+function handleWorkflowTerminalError(kind: WorkflowTerminalKind, message: string) {
+  if (queuedTerminalCommand.value?.kind === kind) {
     ElMessage.error(message)
     queuedTerminalCommand.value = null
     terminalCommandPendingStepId.value = null
   }
 }
 
-function handleWorkflowTerminalCommand(message: JsonMap) {
+function handleWorkflowTerminalCommand(kind: WorkflowTerminalKind, message: JsonMap) {
+  const title = titleForTerminalKind(kind)
   if (message.status === 'dispatched') {
-    ElMessage.success(`${workflowTerminalTitle.value}指令已在终端中下发`)
+    ElMessage.success(`${title}指令已在终端中下发`)
     setTimeout(load, 300)
   } else if (message.status === 'failed') {
-    ElMessage.error(message.message || `${workflowTerminalTitle.value}指令下发失败`)
+    ElMessage.error(message.message || `${title}指令下发失败`)
   }
   queuedTerminalCommand.value = null
   terminalCommandPendingStepId.value = null
@@ -851,7 +892,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <section v-if="showWorkflowTerminal" class="detail-section workflow-terminal-section">
+              <section v-show="showWorkflowTerminal" class="detail-section workflow-terminal-section">
                 <div class="section-heading">
                   <div>
                     <h3>{{ workflowTerminalTitle }}</h3>
@@ -860,18 +901,32 @@ onBeforeUnmount(() => {
                   <el-tag v-if="workflowTerminalResource" type="success" effect="plain">{{ workflowTerminalResource.name }}</el-tag>
                 </div>
                 <SshTerminalPanel
-                  v-if="workflowTerminalResource"
-                  ref="workflowTerminalPanel"
-                  :resource-id="workflowTerminalResource.id"
-                  :title="workflowTerminalResource.name"
-                  :subtitle="workflowTerminalSubtitle"
-                  :active="showWorkflowTerminal"
+                  v-if="slnicResource"
+                  v-show="workflowTerminalKind === 'slnic'"
+                  ref="slnicWorkflowTerminalPanel"
+                  :resource-id="slnicResource.id"
+                  :title="slnicResource.name"
+                  :subtitle="slnicTerminalSubtitle"
+                  :active="workflowTerminalKind === 'slnic'"
                   :min-height="320"
-                  @status="handleWorkflowTerminalStatus"
-                  @error="handleWorkflowTerminalError"
-                  @workflow-command="handleWorkflowTerminalCommand"
+                  @status="message => handleWorkflowTerminalStatus('slnic', message)"
+                  @error="message => handleWorkflowTerminalError('slnic', message)"
+                  @workflow-command="message => handleWorkflowTerminalCommand('slnic', message)"
                 />
-                <div v-else class="empty-line">当前运行没有{{ workflowTerminalResourceText }}，无法加载 SSH 终端</div>
+                <SshTerminalPanel
+                  v-if="orderResource"
+                  v-show="workflowTerminalKind === 'order'"
+                  ref="orderWorkflowTerminalPanel"
+                  :resource-id="orderResource.id"
+                  :title="orderResource.name"
+                  :subtitle="orderTerminalSubtitle"
+                  :active="workflowTerminalKind === 'order'"
+                  :min-height="320"
+                  @status="message => handleWorkflowTerminalStatus('order', message)"
+                  @error="message => handleWorkflowTerminalError('order', message)"
+                  @workflow-command="message => handleWorkflowTerminalCommand('order', message)"
+                />
+                <div v-if="showWorkflowTerminal && !workflowTerminalResource" class="empty-line">当前运行没有{{ workflowTerminalResourceText }}，无法加载 SSH 终端</div>
               </section>
 
               <div v-if="selectedStep.node_type === 'wiring_confirmation'" class="wiring-run">

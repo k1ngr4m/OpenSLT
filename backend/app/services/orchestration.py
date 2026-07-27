@@ -24,6 +24,7 @@ from app.services.workflows import (
     WorkflowError,
     capture_database,
     capture_server,
+    collect_slnic_merge_artifact,
     execute_slnic_node,
     execute_parser_node,
     prepare_order_node,
@@ -403,6 +404,23 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
     if not step or not current or current.id != step.id or step.status != "waiting":
         raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
     now = datetime.now(timezone.utc)
+    if (
+        step.node_type == "slnic_merge_capture"
+        and (step.result_summary or {}).get("mode") == "terminal"
+        and not (step.result_summary or {}).get("artifact_id")
+    ):
+        slnic_resource = db.scalar(select(Resource).where(
+            Resource.id.in_(run.resource_ids),
+            Resource.resource_type == "slnic",
+        ))
+        if not slnic_resource:
+            raise WorkflowError("SLNIC_RESOURCE_REQUIRED", "运行资源缺少已启用的 SLNIC 节点", 409)
+        artifact_summary = asyncio.run(collect_slnic_merge_artifact(db, run, step, slnic_resource))
+        step.result_summary = {
+            **(step.result_summary or {}),
+            **artifact_summary,
+        }
+        db.expire(run, ["artifacts"])
     step.status = "succeeded"
     step.progress = 100
     step.finished_at = now
@@ -507,26 +525,7 @@ def reclaim_expired_locks(db: Session) -> int:
 
 
 def expire_timed_out_runs(db: Session) -> int:
-    now = datetime.now(timezone.utc)
-    runs = db.scalars(
-        select(TestRun).where(
-            TestRun.timeout_at <= now,
-            TestRun.status.notin_(TERMINAL_STATUSES | {"awaiting_review"}),
-        ).options(selectinload(TestRun.steps))
-    ).all()
-    for run in runs:
-        run.status = "timed_out"
-        run.finished_at = now
-        run.error_code = "RUN_TIMEOUT"
-        run.error_message = "运行超过配置的最长执行时间"
-        for step in run.steps:
-            if step.status in {"running", "waiting"}:
-                step.status = "cancelled"
-                step.finished_at = now
-        append_log(db, run, "run.timed_out", run.error_message, level="ERROR")
-        release_locks(db, run.id, "timed_out")
-    db.commit()
-    return len(runs)
+    return 0
 
 
 def queued_run_ids(db: Session, limit: int = 20) -> typing.List[int]:

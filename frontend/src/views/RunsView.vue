@@ -11,7 +11,7 @@ const plans = ref<any[]>([])
 const scenarios = ref<any[]>([])
 const resources = ref<any[]>([])
 const dialog = ref(false)
-const form = reactive({ plan_id: 0, scenario_id: 0, timeout_minutes: 120 })
+const form = reactive({ plan_id: 0, scenario_id: 0 })
 const resourceSelections = reactive<Record<string, number | null>>({})
 const selectedPlan = computed(() => plans.value.find(plan => plan.id === form.plan_id))
 const selectedScenario = computed(() => scenarios.value.find(scenario => scenario.id === form.scenario_id))
@@ -35,7 +35,6 @@ function resetResourceSelections() {
 function open() {
   form.plan_id = plans.value.find(plan => plan.is_enabled)?.id || 0
   form.scenario_id = 0
-  form.timeout_minutes = 120
   resetResourceSelections()
   dialog.value = true
 }
@@ -122,7 +121,6 @@ onMounted(load)
           </el-form-item>
           <el-alert v-if="!requiredTypes.length" title="该场景尚未配置资源，请先编辑场景" type="warning" :closable="false" show-icon />
         </template>
-        <el-form-item label="超时时间"><el-input-number v-model="form.timeout_minutes" :min="5" :max="1440" /> 分钟</el-form-item>
       </el-form>
       <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" :disabled="!canCreate" @click="create">创建</el-button></template>
     </el-dialog>

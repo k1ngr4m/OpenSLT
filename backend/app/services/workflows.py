@@ -850,6 +850,80 @@ def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
     )
 
 
+def _register_slnic_merge_artifact(db: Session, run: TestRun, step: RunStep, target: Path) -> dict:
+    data = target.read_bytes()
+    checksum = hashlib.sha256(data).hexdigest()
+    artifact = db.scalar(
+        select(Artifact).where(
+            Artifact.run_id == run.id,
+            Artifact.step_id == step.id,
+            Artifact.name == target.name,
+        )
+    )
+    if artifact is None:
+        artifact = Artifact(
+            run_id=run.id,
+            step_id=step.id,
+            artifact_type="packet_capture",
+            name=target.name,
+            path=str(target),
+        )
+        db.add(artifact)
+    artifact.artifact_type = "packet_capture"
+    artifact.path = str(target)
+    artifact.content_type = "application/vnd.tcpdump.pcap"
+    artifact.size = len(data)
+    artifact.checksum = checksum
+    artifact.is_immutable = True
+    db.flush()
+    return {
+        "artifact_id": artifact.id,
+        "filename": artifact.name,
+        "checksum": artifact.checksum,
+        "size": artifact.size,
+    }
+
+
+async def collect_slnic_merge_artifact(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    resource: Resource,
+    connection: typing.Any = None,
+) -> dict:
+    if not resource or resource.is_deleted or not resource.is_enabled:
+        raise WorkflowError("SLNIC_RESOURCE_REQUIRED", "运行资源缺少已启用的 SLNIC 节点", 409)
+    if not resource.remote_path.strip():
+        raise WorkflowError("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径", 409)
+
+    target = _slnic_artifact_path(run, step)
+    workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
+    remote_file = posixpath.join(workdir, "merge_pcap.pcapng")
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
+    owns_connection = connection is None
+    sftp = None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if connection is None:
+            connection = await asyncssh.connect(**_ssh_options(resource))
+        sftp = await connection.start_sftp_client()
+        await sftp.get(remote_file, str(temporary))
+        temporary.replace(target)
+    except Exception as exc:
+        raise WorkflowError("SLNIC_ARTIFACT_COLLECT_FAILED", f"拉取合并后的 pcapng 失败：{exc}", 409) from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+        if sftp:
+            with suppress(Exception):
+                sftp.exit()
+        if owns_connection and connection:
+            connection.close()
+            with suppress(Exception):
+                await connection.wait_closed()
+
+    return _register_slnic_merge_artifact(db, run, step, target)
+
+
 async def _run_slnic_command(connection: typing.Any, command: str, label: str) -> None:
     result = await connection.run(command, check=False)
     if result.exit_status == 0:
@@ -878,12 +952,9 @@ async def execute_slnic_node(
         raise WorkflowError("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径", 409)
 
     summary = {"resource_id": resource.id, "exit_code": 0}
-    target = _slnic_artifact_path(run, step)
     workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
     prefix = f"cd {shlex.quote(workdir)} && "
     connection = None
-    sftp = None
-    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
     try:
         connection = await asyncssh.connect(**_ssh_options(resource))
         if node.node_type == "slnic_start_capture":
@@ -913,59 +984,17 @@ async def execute_slnic_node(
             prefix + "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
             "转换 pcapng 文件",
         )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        sftp = await connection.start_sftp_client()
-        remote_file = posixpath.join(workdir, "merge_pcap.pcapng")
-        await sftp.get(remote_file, str(temporary))
-        temporary.replace(target)
+        summary.update(await collect_slnic_merge_artifact(db, run, step, resource, connection=connection))
+        return summary
     except WorkflowError:
         raise
     except Exception as exc:
         raise WorkflowError("SLNIC_EXECUTION_FAILED", f"SLNIC 节点执行失败：{exc}", 409) from exc
     finally:
-        temporary.unlink(missing_ok=True)
-        if sftp:
-            with suppress(Exception):
-                sftp.exit()
         if connection:
             connection.close()
             with suppress(Exception):
                 await connection.wait_closed()
-
-    data = target.read_bytes()
-    checksum = hashlib.sha256(data).hexdigest()
-    artifact = db.scalar(
-        select(Artifact).where(
-            Artifact.run_id == run.id,
-            Artifact.step_id == step.id,
-            Artifact.name == target.name,
-        )
-    )
-    if artifact is None:
-        artifact = Artifact(
-            run_id=run.id,
-            step_id=step.id,
-            artifact_type="packet_capture",
-            name=target.name,
-            path=str(target),
-        )
-        db.add(artifact)
-    artifact.artifact_type = "packet_capture"
-    artifact.path = str(target)
-    artifact.content_type = "application/vnd.tcpdump.pcap"
-    artifact.size = len(data)
-    artifact.checksum = checksum
-    artifact.is_immutable = True
-    db.flush()
-    summary.update(
-        {
-            "artifact_id": artifact.id,
-            "filename": artifact.name,
-            "checksum": artifact.checksum,
-            "size": artifact.size,
-        }
-    )
-    return summary
 
 
 async def _export_parser_table(
