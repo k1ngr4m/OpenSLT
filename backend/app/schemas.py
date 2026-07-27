@@ -6,8 +6,19 @@ from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from typing_extensions import Annotated
 
 from app.services.run_state import RunStatus, StepStatus
+from app.workflow_node_configs import (
+    DatabaseConfig,
+    OrderPreparationConfig,
+    ParserConfig,
+    ServerConfig,
+    SlnicMergeConfig,
+    SlnicStartConfig,
+    SlnicStopConfig,
+    WiringConfirmationConfig,
+)
 
 
 class ORMModel(BaseModel):
@@ -304,22 +315,66 @@ class ScenarioOut(ORMModel):
     created_at: datetime
 
 
-class WorkflowNodeWrite(BaseModel):
+class WorkflowNodeBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     node_key: str = Field(min_length=1, max_length=36)
-    node_type: Literal[
-        "server_config",
-        "database_config",
-        "wiring_confirmation",
-        "order_preparation",
-        "slnic_start_capture",
-        "slnic_stop_capture",
-        "slnic_merge_capture",
-        "parser_parse",
-    ]
     name: str = Field(min_length=1, max_length=128)
-    config: typing.Dict[str, Any] = Field(default_factory=dict)
+
+
+class ServerConfigNodeWrite(WorkflowNodeBase):
+    node_type: Literal["server_config"]
+    config: ServerConfig = Field(default_factory=ServerConfig)
+
+
+class DatabaseConfigNodeWrite(WorkflowNodeBase):
+    node_type: Literal["database_config"]
+    config: DatabaseConfig = Field(default_factory=DatabaseConfig)
+
+
+class WiringConfirmationNodeWrite(WorkflowNodeBase):
+    node_type: Literal["wiring_confirmation"]
+    config: WiringConfirmationConfig = Field(default_factory=WiringConfirmationConfig)
+
+
+class OrderPreparationNodeWrite(WorkflowNodeBase):
+    node_type: Literal["order_preparation"]
+    config: OrderPreparationConfig = Field(default_factory=OrderPreparationConfig)
+
+
+class SlnicStartNodeWrite(WorkflowNodeBase):
+    node_type: Literal["slnic_start_capture"]
+    config: SlnicStartConfig = Field(default_factory=SlnicStartConfig)
+
+
+class SlnicStopNodeWrite(WorkflowNodeBase):
+    node_type: Literal["slnic_stop_capture"]
+    config: SlnicStopConfig = Field(default_factory=SlnicStopConfig)
+
+
+class SlnicMergeNodeWrite(WorkflowNodeBase):
+    node_type: Literal["slnic_merge_capture"]
+    config: SlnicMergeConfig = Field(default_factory=SlnicMergeConfig)
+
+
+class ParserNodeWrite(WorkflowNodeBase):
+    node_type: Literal["parser_parse"]
+    config: ParserConfig = Field(default_factory=ParserConfig)
+
+
+WorkflowNodeWrite = Annotated[
+    typing.Union[
+        ServerConfigNodeWrite,
+        DatabaseConfigNodeWrite,
+        WiringConfirmationNodeWrite,
+        OrderPreparationNodeWrite,
+        SlnicStartNodeWrite,
+        SlnicStopNodeWrite,
+        SlnicMergeNodeWrite,
+        ParserNodeWrite,
+    ],
+    Field(discriminator="node_type"),
+]
 
 
 class WorkflowDocumentWrite(BaseModel):
@@ -330,11 +385,58 @@ class WorkflowDocumentWrite(BaseModel):
     nodes: typing.List[WorkflowNodeWrite] = Field(default_factory=list)
 
 
-class WorkflowNodeOut(WorkflowNodeWrite):
+class WorkflowNodeOutFields(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     position: int
+
+
+class ServerConfigNodeOut(ServerConfigNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class DatabaseConfigNodeOut(DatabaseConfigNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class WiringConfirmationNodeOut(WiringConfirmationNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class OrderPreparationNodeOut(OrderPreparationNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class SlnicStartNodeOut(SlnicStartNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class SlnicStopNodeOut(SlnicStopNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class SlnicMergeNodeOut(SlnicMergeNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class ParserNodeOut(ParserNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+WorkflowNodeOut = Annotated[
+    typing.Union[
+        ServerConfigNodeOut,
+        DatabaseConfigNodeOut,
+        WiringConfirmationNodeOut,
+        OrderPreparationNodeOut,
+        SlnicStartNodeOut,
+        SlnicStopNodeOut,
+        SlnicMergeNodeOut,
+        ParserNodeOut,
+    ],
+    Field(discriminator="node_type"),
+]
 
 
 class WorkflowVersionOut(BaseModel):
@@ -415,6 +517,7 @@ class RunCreate(BaseModel):
     plan_id: int
     scenario_id: int
     resource_ids: typing.List[int] = Field(min_length=1)
+    timeout_minutes: typing.Union[int, None] = Field(default=None, ge=1, le=1440)
 
 
 class StepOut(ORMModel):
@@ -466,6 +569,17 @@ class ArtifactOut(ORMModel):
     created_at: datetime
 
 
+class RunStatusTransitionOut(ORMModel):
+    id: int
+    from_status: RunStatus
+    to_status: RunStatus
+    status_version: int
+    source: str
+    actor_id: typing.Union[int, None]
+    reason: typing.Union[str, None]
+    created_at: datetime
+
+
 class RunOut(ORMModel):
     id: int
     run_number: str
@@ -474,6 +588,7 @@ class RunOut(ORMModel):
     workflow_version_id: typing.Union[int, None]
     business_code: str
     status: RunStatus
+    status_version: int
     progress: int
     resource_ids: typing.List[int]
     config_snapshot: typing.Dict[str, Any]
@@ -492,6 +607,7 @@ class RunOut(ORMModel):
     artifacts: typing.List[ArtifactOut] = Field(default_factory=list)
     metrics: typing.List[MetricOut] = Field(default_factory=list)
     verdict: typing.Union[VerdictOut, None] = None
+    status_transitions: typing.List[RunStatusTransitionOut] = Field(default_factory=list)
 
 
 class VerdictWrite(BaseModel):

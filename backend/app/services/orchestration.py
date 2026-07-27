@@ -113,6 +113,22 @@ def release_locks(db: Session, run_id: int, reason: str) -> int:
     return len(locks)
 
 
+def renew_run_locks(db: Session, run_id: int, lease_minutes: int = 180) -> int:
+    locks = list(
+        db.scalars(
+            select(ResourceLock).where(
+                ResourceLock.run_id == run_id,
+                ResourceLock.released_at.is_(None),
+            )
+        ).all()
+    )
+    lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=lease_minutes)
+    for lock in locks:
+        lock.lease_expires_at = lease_expires_at
+    db.flush()
+    return len(locks)
+
+
 def _load(db: Session, run_id: int) -> typing.Union[TestRun, None]:
     return db.scalar(select(TestRun).where(TestRun.id == run_id).options(selectinload(TestRun.steps), selectinload(TestRun.metrics), selectinload(TestRun.artifacts), selectinload(TestRun.verdict), selectinload(TestRun.resource_links)))
 
@@ -468,10 +484,21 @@ async def continue_after_wiring(run_id: int) -> None:
         db.close()
 
 
-def cancel_run(db: Session, run: TestRun, reason: str = "user_cancelled") -> None:
+def cancel_run(
+    db: Session,
+    run: TestRun,
+    reason: str = "user_cancelled",
+    actor_id: typing.Optional[int] = None,
+) -> None:
     if run.status in TERMINAL_STATUSES:
         return
-    transition_run(run, "cancelled")
+    transition_run(
+        run,
+        "cancelled",
+        source="api" if actor_id is not None else "service",
+        actor_id=actor_id,
+        reason=reason,
+    )
     run.finished_at = datetime.now(timezone.utc)
     for step in run.steps:
         if step.status in {"running", "waiting"}:
@@ -492,7 +519,47 @@ def reclaim_expired_locks(db: Session) -> int:
 
 
 def expire_timed_out_runs(db: Session) -> int:
-    return 0
+    now = datetime.now(timezone.utc)
+    runs = list(
+        db.scalars(
+            select(TestRun)
+            .where(
+                TestRun.timeout_at.is_not(None),
+                TestRun.timeout_at <= now,
+                TestRun.status.not_in(TERMINAL_RUN_STATUSES),
+            )
+            .order_by(TestRun.timeout_at, TestRun.id)
+        ).all()
+    )
+    for run in runs:
+        transition_run(
+            run,
+            "timed_out",
+            source="scheduler",
+            reason="run timeout deadline exceeded",
+        )
+        run.finished_at = now
+        run.error_code = "RUN_TIMED_OUT"
+        run.error_message = "运行超过设定时限"
+        for step in run.steps:
+            if step.status in {"pending", "running", "waiting", "failed"}:
+                transition_step(step, "cancelled")
+                step.finished_at = step.finished_at or now
+        append_log(
+            db,
+            run,
+            "run.timed_out",
+            "运行超过设定时限，资源已释放",
+            level="WARNING",
+        )
+        release_locks(db, run.id, "timed_out")
+    db.commit()
+    for run in runs:
+        broker.publish(
+            run.id,
+            {"type": "status", "status": run.status, "progress": run.progress},
+        )
+    return len(runs)
 
 
 def queued_run_ids(db: Session, limit: int = 20) -> typing.List[int]:

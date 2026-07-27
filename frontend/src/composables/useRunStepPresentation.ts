@@ -167,7 +167,15 @@ export function useRunStepPresentation(
     const files = new Map<number, ContractFilePreview>()
     const merge = (source: unknown) => {
       const file = normalizeContractFile(source)
-      if (file) files.set(file.id, { ...(files.get(file.id) || {}), ...file })
+      if (!file) return
+      const existing = files.get(file.id)
+      const sourceMap = isJsonMap(source) ? source : {}
+      const meaningful = Object.fromEntries(
+        Object.entries(file).filter(([key, value]) =>
+          value !== undefined && value !== '' && !(key === 'filename' && existing && !sourceMap.filename),
+        ),
+      )
+      files.set(file.id, { ...(existing || {}), ...meaningful } as ContractFilePreview)
     }
     ;(Array.isArray(selectedConfig.value.contract_files) ? selectedConfig.value.contract_files : []).forEach(merge)
     ;(Array.isArray(selectedResult.value.contract_files) ? selectedResult.value.contract_files : []).forEach(merge)

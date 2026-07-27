@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     audit_log_retention_days: int = 365
     portable_mode: bool = False
     enable_internal_scheduler: bool = True
+    task_lease_seconds: int = Field(default=60, ge=10, le=3600)
+    task_heartbeat_seconds: int = Field(default=20, ge=3, le=1200)
     frontend_dist: typing.Union[Path, None] = None
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)

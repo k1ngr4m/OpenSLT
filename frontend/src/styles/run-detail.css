@@ -1,0 +1,351 @@
+.run-detail-page {
+  min-height: 100vh;
+  background: #f3f6f8;
+}
+
+.run-header {
+  align-items: flex-start;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: 180px minmax(260px, 1fr) minmax(260px, 1.2fr) 180px;
+  gap: 28px;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+}
+
+.summary p {
+  margin: 10px 0 0;
+}
+
+.trace {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  align-items: start;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.main-card {
+  min-height: 620px;
+  padding: 0 20px 20px;
+}
+
+.node-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0 18px;
+  border-bottom: 1px solid #edf1f5;
+}
+
+.node-title h2 {
+  margin: 4px 0 6px;
+  font-size: 22px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #409eff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.info-tile {
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid #edf1f5;
+  border-radius: 8px;
+  background: #f7fafc;
+}
+
+.info-tile span {
+  display: block;
+  font-size: 12px;
+}
+
+.info-tile strong {
+  display: block;
+  margin-top: 8px;
+  color: #223041;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.detail-section {
+  padding: 18px 0;
+  border-top: 1px solid #edf1f5;
+}
+
+.detail-section:first-of-type {
+  border-top: 0;
+}
+
+.detail-section h3 {
+  margin: 0 0 14px;
+  font-size: 16px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.section-heading h3 {
+  margin: 0 0 6px;
+}
+
+.section-heading p {
+  margin: 0;
+}
+
+.workflow-terminal-section {
+  padding: 18px;
+  margin: 4px 0 18px;
+  border: 1px solid #dce8f4;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fbfdff, #f7fafc);
+}
+
+.info-list {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px 18px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.info-list dt {
+  color: #7b8794;
+}
+
+.info-list dd {
+  margin: 0;
+  color: #263445;
+  word-break: break-word;
+}
+
+.empty-line {
+  padding: 14px;
+  border-radius: 8px;
+  background: #f7fafc;
+  color: #7b8794;
+}
+
+.json-fold {
+  margin-top: 14px;
+}
+
+.json-fold summary {
+  color: #409eff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.json-fold pre {
+  max-height: 260px;
+  overflow: auto;
+  padding: 12px;
+  margin: 10px 0 0;
+  border-radius: 8px;
+  background: #111827;
+  color: #d1d5db;
+  font: 12px/1.6 "Cascadia Code", Consolas, monospace;
+}
+
+.wiring-run {
+  display: grid;
+  grid-template-columns: 1fr minmax(90px, .7fr) 1fr minmax(90px, .7fr) 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  margin: 10px 0 4px;
+  border: 1px solid #e3efeb;
+  border-radius: 8px;
+  background: #f8fbfa;
+}
+
+.wiring-device {
+  display: flex;
+  min-height: 76px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #9bc8bd;
+  border-left: 4px solid #269a82;
+  border-radius: 8px;
+  background: #f3faf8;
+}
+
+.wiring-device.market {
+  border-color: #b7c9dd;
+  border-left-color: #4f83b2;
+  background: #f5f8fc;
+}
+
+.wiring-device.order {
+  border-color: #d9bd84;
+  border-left-color: #bd842f;
+  background: #fffaf1;
+}
+
+.wiring-device span,
+.wiring-cable span {
+  margin-top: 4px;
+  color: #75848c;
+  font-size: 11px;
+}
+
+.wiring-cable {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+}
+
+.wiring-cable i {
+  position: relative;
+  height: 2px;
+  flex: 1;
+  background: #94aaa5;
+}
+
+.wiring-cable i:first-child::before,
+.wiring-cable i:last-child::after {
+  position: absolute;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #269a82;
+  content: '';
+}
+
+.wiring-cable i:first-child::before {
+  left: 0;
+}
+
+.wiring-cable i:last-child::after {
+  right: 0;
+}
+
+.mini-table {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.mini-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 90px minmax(160px, 1.4fr);
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f7fafc;
+  color: #263445;
+  font-size: 12px;
+}
+
+.mini-table.two-col .mini-row {
+  grid-template-columns: 1fr 120px;
+}
+
+.file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.artifact-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.file-chips span {
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #eef5ff;
+  color: #347fcf;
+  font-size: 12px;
+}
+
+.compact-snapshot {
+  padding: 18px;
+  margin: 6px -4px 0;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.verdict {
+  padding: 16px;
+  margin-top: 14px;
+  border-radius: 8px;
+  background: #f7faf9;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1250px) {
+  .summary {
+    grid-template-columns: 160px minmax(240px, 1fr) minmax(220px, 1fr) 150px;
+    gap: 18px;
+  }
+
+  .workbench {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .wiring-run {
+    grid-template-columns: 1fr 70px 1fr 70px 1fr;
+  }
+
+  .wiring-cable span {
+    display: none;
+  }
+}
+
+@media (max-width: 1120px) {
+  .workbench {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  .detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary {
+    grid-template-columns: 150px minmax(220px, 1fr) minmax(200px, 1fr) 130px;
+  }
+
+  .mini-row {
+    grid-template-columns: minmax(120px, 1fr) 80px minmax(120px, 1.1fr);
+  }
+}

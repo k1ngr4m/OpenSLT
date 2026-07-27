@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.models import ContractDataFile, Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestPlan, TestScenario, User
 from app.schemas import CaptureSnapshotOut, ContractDataFetchRequest, ContractDataFileOut, WorkflowDocumentOut, WorkflowDocumentWrite, WorkflowVersionOut
 from app.services.audit import write_audit
+from app.services.resource_relations import node_contract_file_ids
 from app.services.workflows import WorkflowError, clone_published_to_draft, fetch_contract_files, load_version, preview_node, publish, replace_draft, validate_structure, workflow_payload
 
 router = APIRouter()
@@ -96,7 +97,7 @@ async def publish_scenario_workflow(scenario_id: int, request: Request, actor: U
 def list_contract_files(scenario_id: int, node_key: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ContractDataFile]:
     node = db.scalar(select(ScenarioWorkflowNode).join(ScenarioWorkflowVersion).where(ScenarioWorkflowVersion.scenario_id == scenario_id, ScenarioWorkflowNode.node_key == node_key).order_by(ScenarioWorkflowVersion.version_no.desc()))
     if not node: raise not_found("节点")
-    referenced_ids = list((node.config or {}).get("contract_file_ids") or [])
+    referenced_ids = node_contract_file_ids(node)
     criteria = [ContractDataFile.workflow_node_id == node.id]
     if referenced_ids:
         criteria.append(ContractDataFile.id.in_(referenced_ids))
@@ -120,4 +121,3 @@ async def create_contract_files(scenario_id: int, node_key: str, payload: Contra
         raise workflow_http_error(exc) from exc
     write_audit(db, "workflow.contract_fetch", "workflow_node", node.id, actor, request, detail={"file_ids": [item.id for item in files]}); db.commit()
     return files
-

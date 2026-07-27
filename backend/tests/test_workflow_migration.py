@@ -66,7 +66,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 23
+    assert len(model_table_names) == 27
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -110,7 +110,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0003"
+        ).scalar_one() == "0006"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -139,7 +139,7 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 24
+    assert len(created_tables) == 28
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
@@ -160,6 +160,9 @@ def test_expected_migration_revisions_remain() -> None:
         "0001_initial.py",
         "0002_remove_simulated_mode.py",
         "0003_normalize_resource_relations.py",
+        "0004_normalize_plan_and_contract_relations.py",
+        "0005_run_state_governance.py",
+        "0006_durable_tasks.py",
     }
 
 
@@ -187,7 +190,7 @@ def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
         }
         assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
         assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
-            "0003",
+            "0006",
         )
 
 
@@ -211,7 +214,7 @@ def test_resource_relation_migration_backfills_legacy_json_in_order(tmp_path: Pa
         connection.execute(
             "INSERT INTO t_test_plans "
             "(id, name, business_code, description, default_resource_ids, config_version, is_enabled, created_by, created_at, updated_at) "
-            "VALUES (1, 'plan', 'fut_mm', '', '[]', '1.0', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            "VALUES (1, 'plan', 'fut_mm', '', '[20, 10]', '1.0', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         )
         connection.execute(
             "INSERT INTO t_test_scenarios "
@@ -230,6 +233,20 @@ def test_resource_relation_migration_backfills_legacy_json_in_order(tmp_path: Pa
             "resource_ids, config_snapshot, trace_id, created_by, logs_complete, created_at, updated_at) "
             "VALUES (1, 'R1', 1, 1, 1, 'fut_mm', 'draft', 0, '[20, 10]', '{}', 'trace', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         )
+        connection.execute(
+            "INSERT INTO t_scenario_workflow_nodes "
+            "(id, workflow_version_id, node_key, position, node_type, name, config, created_at, updated_at) "
+            "VALUES (1, 1, 'order-node', 1, 'order_preparation', 'order', "
+            "'{\"contract_file_ids\": [5]}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO t_contract_data_files "
+            "(id, scenario_id, workflow_node_id, order_resource_id, contract_type, source_table, "
+            "filename, remote_path, archive_path, row_count, size, checksum, preview_rows, created_by, created_at) "
+            "VALUES (5, 1, 1, 10, 'futures', 't_close_report', 'contracts.csv', '/tmp/contracts.csv', "
+            "'/tmp/contracts.csv', 1, 10, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', "
+            "'[]', 1, CURRENT_TIMESTAMP)"
+        )
         connection.commit()
 
     _alembic(database_path, "upgrade", "0003")
@@ -244,3 +261,12 @@ def test_resource_relation_migration_backfills_legacy_json_in_order(tmp_path: Pa
         assert connection.execute(
             "SELECT resource_id, position FROM t_run_resources ORDER BY position"
         ).fetchall() == [(20, 1), (10, 2)]
+
+    _alembic(database_path, "upgrade", "0004")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT resource_id, position FROM t_plan_resources ORDER BY position"
+        ).fetchall() == [(20, 1), (10, 2)]
+        assert connection.execute(
+            "SELECT contract_file_id, position FROM t_workflow_node_contract_files ORDER BY position"
+        ).fetchall() == [(5, 1)]

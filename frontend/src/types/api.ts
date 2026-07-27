@@ -11,4 +11,20 @@ export type ApiUser = Schemas['UserOut']
 export type ApiUserCreate = Schemas['UserCreate']
 export type ApiUserUpdate = Schemas['UserUpdate']
 export type WorkflowDocument = Schemas['WorkflowDocumentOut']
-export type WorkflowNode = Schemas['WorkflowNodeOut']
+export type WorkflowNode = NonNullable<Schemas['WorkflowVersionOut']['nodes']>[number]
+export type WorkflowNodeType = WorkflowNode['node_type']
+export type WorkflowNodeConfig = Partial<
+  Schemas['ServerConfig'] &
+  Schemas['DatabaseConfig'] &
+  Schemas['WiringConfirmationConfig'] &
+  Schemas['OrderPreparationConfig'] &
+  Schemas['ParserConfig']
+>
+export type EditableWorkflowNode = {
+  id?: number
+  node_key: string
+  position: number
+  node_type: WorkflowNodeType
+  name: string
+  config: WorkflowNodeConfig
+}

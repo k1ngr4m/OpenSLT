@@ -5,9 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Bottom, Check, Connection, Delete, Document, Files, Plus, Promotion, Refresh, Search, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import type { EditableWorkflowNode as WorkflowNode, WorkflowNodeType } from '@/types/api'
 import { resourceText } from '@/utils/status'
-
-type WorkflowNode = { id?: number; node_key: string; position: number; node_type: string; name: string; config: Record<string, any> }
 
 const route = useRoute()
 const router = useRouter()
@@ -179,7 +178,7 @@ function defaultNode(type: string): WorkflowNode {
   if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'placeholder' } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单准备', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return { node_key: key, position: 0, node_type: type, name: '数据解析', config: { database_name: '' } }
-  return { node_key: key, position: 0, node_type: type, name: nodeMeta(type).label, config: {} }
+  return { node_key: key, position: 0, node_type: type as WorkflowNodeType, name: nodeMeta(type).label, config: {} }
 }
 
 function openPicker(position: number) {
@@ -266,7 +265,10 @@ function toggleServerTarget(role: string, enabled: boolean) {
   const config = selectedNode.value!.config
   config.targets ||= []
   const index = config.targets.findIndex((item: any) => item.resource_type === role)
-  if (enabled && index < 0) config.targets.push({ resource_type: role, fields: SERVER_FIELD_OPTIONS[role].map(item => item.value) })
+  if (enabled && index < 0) config.targets.push({
+    resource_type: role as 'rem' | 'market' | 'order',
+    fields: SERVER_FIELD_OPTIONS[role].map(item => item.value as 'ip' | 'nic_model' | 'machine_model' | 'os_version' | 'cpu_model'),
+  })
   if (!enabled && index >= 0) config.targets.splice(index, 1)
   markDirty()
 }
@@ -290,7 +292,7 @@ async function loadOrderConfigs() {
   catch { orderConfigs.value = [] }
 }
 
-function xmlFlag(document: any): number {
+function xmlFlag(document: any): 0 | 1 {
   const matches: string[] = []
   const visit = (node: any) => {
     if ((node?.name || '').toLowerCase() === 'read_symbol_csv') {
@@ -427,7 +429,7 @@ onMounted(load)
             <div class="section-label">采集服务器与字段</div>
             <div v-for="role in ['rem', 'market', 'order']" :key="role" class="target-box" :class="{ disabled: !selectedResourceMap[role] }">
               <el-checkbox :model-value="Boolean(targetFor(role))" :disabled="!editable || !selectedResourceMap[role]" @change="value => toggleServerTarget(role, Boolean(value))"><strong>{{ resourceText[role] }}</strong><small>{{ selectedResourceMap[role]?.name || '资源池未绑定' }}</small></el-checkbox>
-              <el-checkbox-group v-if="targetFor(role)" v-model="targetFor(role).fields" :disabled="!editable" @change="markDirty"><el-checkbox v-for="field in SERVER_FIELD_OPTIONS[role]" :key="field.value" :label="field.value">{{ field.label }}</el-checkbox></el-checkbox-group>
+              <el-checkbox-group v-if="targetFor(role)" v-model="targetFor(role)!.fields" :disabled="!editable" @change="markDirty"><el-checkbox v-for="field in SERVER_FIELD_OPTIONS[role]" :key="field.value" :label="field.value">{{ field.label }}</el-checkbox></el-checkbox-group>
             </div>
             <el-button :icon="Refresh" :loading="previewing" :disabled="!editable" @click="previewNode">预采集并保存</el-button>
           </template>

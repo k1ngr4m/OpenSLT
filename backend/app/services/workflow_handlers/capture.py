@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.services import workflows
 from app.services.workflow_handlers.base import WorkflowExecutionContext
+from app.workflow_node_configs import WiringConfirmationConfig, parse_node_config
 
 
 class WiringConfirmationHandler:
@@ -9,8 +10,10 @@ class WiringConfirmationHandler:
     terminal_kind = None
 
     async def execute(self, context: WorkflowExecutionContext) -> dict:
+        config = parse_node_config(context.node.node_type, context.node.config or {})
+        assert isinstance(config, WiringConfirmationConfig)
         return {
-            "diagram": (context.node.config or {}).get("diagram", "placeholder"),
+            "diagram": config.diagram,
             "confirmed": False,
         }
 

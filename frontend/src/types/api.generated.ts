@@ -1072,6 +1072,46 @@ export interface components {
             /** Workflow Node Id */
             workflow_node_id: number | null;
         };
+        /** DatabaseConfig */
+        DatabaseConfig: {
+            /**
+             * Database Name
+             * @default
+             */
+            database_name: string;
+            /** Keys */
+            keys?: string[];
+        };
+        /** DatabaseConfigNodeOut */
+        DatabaseConfigNodeOut: {
+            config?: components["schemas"]["DatabaseConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "database_config";
+            /** Position */
+            position: number;
+        };
+        /** DatabaseConfigNodeWrite */
+        DatabaseConfigNodeWrite: {
+            config?: components["schemas"]["DatabaseConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "database_config";
+        };
         /** DatabaseDiscoveryOut */
         DatabaseDiscoveryOut: {
             /** Databases */
@@ -1283,6 +1323,110 @@ export interface components {
             /** Expected Checksum */
             expected_checksum: string;
         };
+        /** OrderPreparationConfig */
+        OrderPreparationConfig: {
+            /** Contract File Ids */
+            contract_file_ids?: number[];
+            /**
+             * Database Node Key
+             * @default
+             */
+            database_node_key: string;
+            /**
+             * Network Interface
+             * @default
+             */
+            network_interface: string;
+            /**
+             * Read Symbol Csv
+             * @default 0
+             * @enum {integer}
+             */
+            read_symbol_csv: 0 | 1;
+            /**
+             * Trading Database Name
+             * @default
+             */
+            trading_database_name: string;
+            /**
+             * Xml Checksum
+             * @default
+             */
+            xml_checksum: string;
+            /**
+             * Xml Filename
+             * @default
+             */
+            xml_filename: string;
+        };
+        /** OrderPreparationNodeOut */
+        OrderPreparationNodeOut: {
+            config?: components["schemas"]["OrderPreparationConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "order_preparation";
+            /** Position */
+            position: number;
+        };
+        /** OrderPreparationNodeWrite */
+        OrderPreparationNodeWrite: {
+            config?: components["schemas"]["OrderPreparationConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "order_preparation";
+        };
+        /** ParserConfig */
+        ParserConfig: {
+            /**
+             * Database Name
+             * @default
+             */
+            database_name: string;
+        };
+        /** ParserNodeOut */
+        ParserNodeOut: {
+            config?: components["schemas"]["ParserConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "parser_parse";
+            /** Position */
+            position: number;
+        };
+        /** ParserNodeWrite */
+        ParserNodeWrite: {
+            config?: components["schemas"]["ParserConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "parser_parse";
+        };
         /** PlanOut */
         PlanOut: {
             /** Business Code */
@@ -1482,6 +1626,8 @@ export interface components {
             resource_ids: number[];
             /** Scenario Id */
             scenario_id: number;
+            /** Timeout Minutes */
+            timeout_minutes?: number | null;
         };
         /** RunOut */
         RunOut: {
@@ -1527,6 +1673,10 @@ export interface components {
             /** Started At */
             started_at: string | null;
             status: components["schemas"]["RunStatus"];
+            /** Status Transitions */
+            status_transitions?: components["schemas"]["RunStatusTransitionOut"][];
+            /** Status Version */
+            status_version: number;
             /** Steps */
             steps?: components["schemas"]["StepOut"][];
             /** Timeout At */
@@ -1542,6 +1692,26 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "draft" | "resource_queue" | "precheck" | "awaiting_wiring" | "capture_validation" | "environment_start" | "order_execution" | "collection" | "coco_parse" | "statistics" | "awaiting_review" | "awaiting_step_start" | "running" | "awaiting_step_completion" | "awaiting_step_retry" | "paused" | "completed" | "precheck_failed" | "execution_failed" | "parse_failed" | "cancelled" | "timed_out";
+        /** RunStatusTransitionOut */
+        RunStatusTransitionOut: {
+            /** Actor Id */
+            actor_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            from_status: components["schemas"]["RunStatus"];
+            /** Id */
+            id: number;
+            /** Reason */
+            reason: string | null;
+            /** Source */
+            source: string;
+            /** Status Version */
+            status_version: number;
+            to_status: components["schemas"]["RunStatus"];
+        };
         /** ScenarioOut */
         ScenarioOut: {
             /** Config Version */
@@ -1600,6 +1770,147 @@ export interface components {
             required_resource_types?: string[];
             /** Scenario Type */
             scenario_type: string;
+        };
+        /** ServerConfig */
+        ServerConfig: {
+            /** Targets */
+            targets?: components["schemas"]["ServerTargetConfig"][];
+        };
+        /** ServerConfigNodeOut */
+        ServerConfigNodeOut: {
+            config?: components["schemas"]["ServerConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "server_config";
+            /** Position */
+            position: number;
+        };
+        /** ServerConfigNodeWrite */
+        ServerConfigNodeWrite: {
+            config?: components["schemas"]["ServerConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "server_config";
+        };
+        /** ServerTargetConfig */
+        ServerTargetConfig: {
+            /** Fields */
+            fields?: ("ip" | "nic_model" | "machine_model" | "os_version" | "cpu_model")[];
+            /**
+             * Resource Type
+             * @enum {string}
+             */
+            resource_type: "rem" | "market" | "order";
+        };
+        /** SlnicMergeConfig */
+        SlnicMergeConfig: Record<string, unknown>;
+        /** SlnicMergeNodeOut */
+        SlnicMergeNodeOut: {
+            config?: components["schemas"]["SlnicMergeConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "slnic_merge_capture";
+            /** Position */
+            position: number;
+        };
+        /** SlnicMergeNodeWrite */
+        SlnicMergeNodeWrite: {
+            config?: components["schemas"]["SlnicMergeConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "slnic_merge_capture";
+        };
+        /** SlnicStartConfig */
+        SlnicStartConfig: Record<string, unknown>;
+        /** SlnicStartNodeOut */
+        SlnicStartNodeOut: {
+            config?: components["schemas"]["SlnicStartConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "slnic_start_capture";
+            /** Position */
+            position: number;
+        };
+        /** SlnicStartNodeWrite */
+        SlnicStartNodeWrite: {
+            config?: components["schemas"]["SlnicStartConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "slnic_start_capture";
+        };
+        /** SlnicStopConfig */
+        SlnicStopConfig: Record<string, unknown>;
+        /** SlnicStopNodeOut */
+        SlnicStopNodeOut: {
+            config?: components["schemas"]["SlnicStopConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "slnic_stop_capture";
+            /** Position */
+            position: number;
+        };
+        /** SlnicStopNodeWrite */
+        SlnicStopNodeWrite: {
+            config?: components["schemas"]["SlnicStopConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "slnic_stop_capture";
         };
         /** StepOut */
         StepOut: {
@@ -1745,6 +2056,44 @@ export interface components {
              */
             notes: string;
         };
+        /** WiringConfirmationConfig */
+        WiringConfirmationConfig: {
+            /**
+             * Diagram
+             * @default placeholder
+             */
+            diagram: string;
+        };
+        /** WiringConfirmationNodeOut */
+        WiringConfirmationNodeOut: {
+            config?: components["schemas"]["WiringConfirmationConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "wiring_confirmation";
+            /** Position */
+            position: number;
+        };
+        /** WiringConfirmationNodeWrite */
+        WiringConfirmationNodeWrite: {
+            config?: components["schemas"]["WiringConfirmationConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "wiring_confirmation";
+        };
         /** WorkflowDocumentOut */
         WorkflowDocumentOut: {
             draft: components["schemas"]["WorkflowVersionOut"];
@@ -1759,41 +2108,9 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
             /** Nodes */
-            nodes?: components["schemas"]["WorkflowNodeWrite"][];
+            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"])[];
             /** Resource Ids */
             resource_ids: number[];
-        };
-        /** WorkflowNodeOut */
-        WorkflowNodeOut: {
-            /** Config */
-            config?: Record<string, unknown>;
-            /** Id */
-            id: number;
-            /** Name */
-            name: string;
-            /** Node Key */
-            node_key: string;
-            /**
-             * Node Type
-             * @enum {string}
-             */
-            node_type: "server_config" | "database_config" | "wiring_confirmation" | "order_preparation" | "slnic_start_capture" | "slnic_stop_capture" | "slnic_merge_capture" | "parser_parse";
-            /** Position */
-            position: number;
-        };
-        /** WorkflowNodeWrite */
-        WorkflowNodeWrite: {
-            /** Config */
-            config?: Record<string, unknown>;
-            /** Name */
-            name: string;
-            /** Node Key */
-            node_key: string;
-            /**
-             * Node Type
-             * @enum {string}
-             */
-            node_type: "server_config" | "database_config" | "wiring_confirmation" | "order_preparation" | "slnic_start_capture" | "slnic_stop_capture" | "slnic_merge_capture" | "parser_parse";
         };
         /** WorkflowVersionOut */
         WorkflowVersionOut: {
@@ -1805,7 +2122,7 @@ export interface components {
             /** Id */
             id: number;
             /** Nodes */
-            nodes?: components["schemas"]["WorkflowNodeOut"][];
+            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"])[];
             /** Published At */
             published_at: string | null;
             /** Published By */

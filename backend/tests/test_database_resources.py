@@ -144,8 +144,13 @@ def test_database_health_select_export_and_update_uses_adapter(
             finally:
                 handle.close()
 
-    router_module = importlib.import_module("app.api.routes.resources")
-    monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
+    adapter = FakeAdapter()
+    for module_name in (
+        "app.api.routes.resource_core",
+        "app.api.routes.database_resources",
+        "app.api.routes.database_updates",
+    ):
+        monkeypatch.setattr(importlib.import_module(module_name), "mysql_adapter", adapter)
 
     health = client.post(f"/api/v1/resources/{resource_id}/health", headers=admin_headers)
     assert health.status_code == 200
@@ -288,7 +293,7 @@ def test_database_discovery_filters_system_databases(
             assert config.database_host == "10.0.0.8"
             return ["fut_mm_config", "fut_mm_log_data", "fut_mm_risk_data"], 4
 
-    router_module = importlib.import_module("app.api.routes.resources")
+    router_module = importlib.import_module("app.api.routes.database_resources")
     monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
     response = client.post(
         "/api/v1/resources/database/discover",
@@ -341,7 +346,7 @@ def test_database_discovery_reuses_secrets_only_for_unchanged_identity(
             assert config.ssh_password is None
             return ["rem_core", "rem_report"], 4
 
-    router_module = importlib.import_module("app.api.routes.resources")
+    router_module = importlib.import_module("app.api.routes.database_resources")
     monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
     payload = discovery_payload(
         resource_id=resource["id"],

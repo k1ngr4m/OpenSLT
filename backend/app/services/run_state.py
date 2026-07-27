@@ -3,7 +3,7 @@ from __future__ import annotations
 import typing
 from enum import Enum
 
-from app.models import RunStep, TestRun
+from app.models import RunStatusTransition, RunStep, TestRun
 
 
 class RunStatus(str, Enum):
@@ -177,6 +177,12 @@ _RUN_TRANSITIONS: typing.Dict[str, typing.FrozenSet[str]] = {
     RunStatus.TIMED_OUT.value: frozenset(),
 }
 
+for _status in tuple(_RUN_TRANSITIONS):
+    if _status not in TERMINAL_RUN_STATUSES:
+        _RUN_TRANSITIONS[_status] = _RUN_TRANSITIONS[_status] | frozenset(
+            {RunStatus.TIMED_OUT.value}
+        )
+
 _STEP_TRANSITIONS: typing.Dict[str, typing.FrozenSet[str]] = {
     StepStatus.PENDING.value: frozenset(
         {StepStatus.RUNNING.value, StepStatus.WAITING.value, StepStatus.CANCELLED.value}
@@ -230,8 +236,31 @@ def _transition(
     entity.status = target_value
 
 
-def transition_run(run: TestRun, target: typing.Union[str, RunStatus]) -> None:
+def transition_run(
+    run: TestRun,
+    target: typing.Union[str, RunStatus],
+    *,
+    source: str = "service",
+    actor_id: typing.Optional[int] = None,
+    reason: typing.Optional[str] = None,
+) -> None:
+    target_value = target.value if isinstance(target, Enum) else target
+    current = run.status
     _transition(run, target, _RUN_TRANSITIONS, "run")
+    if current == target_value:
+        return
+    next_version = (run.status_version or 0) + 1
+    run.status_version = next_version
+    run.status_transitions.append(
+        RunStatusTransition(
+            from_status=current,
+            to_status=target_value,
+            status_version=next_version,
+            source=source,
+            actor_id=actor_id,
+            reason=reason,
+        )
+    )
 
 
 def transition_step(step: RunStep, target: typing.Union[str, StepStatus]) -> None:

@@ -113,6 +113,11 @@ class TestPlan(TimestampMixin, Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"))
     scenarios: Mapped[typing.List['TestScenario']] = relationship(back_populates="plan", cascade="all, delete-orphan")
+    resource_links: Mapped[typing.List['PlanResource']] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="PlanResource.position",
+    )
 
 
 class TestScenario(TimestampMixin, Base):
@@ -196,6 +201,11 @@ class ScenarioWorkflowNode(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128))
     config: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     workflow_version: Mapped[ScenarioWorkflowVersion] = relationship(back_populates="nodes")
+    contract_file_links: Mapped[typing.List['WorkflowNodeContractFile']] = relationship(
+        back_populates="workflow_node",
+        cascade="all, delete-orphan",
+        order_by="WorkflowNodeContractFile.position",
+    )
 
 
 class TestRun(TimestampMixin, Base):
@@ -207,6 +217,7 @@ class TestRun(TimestampMixin, Base):
     workflow_version_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_scenario_workflow_versions.id"), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
+    status_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     progress: Mapped[int] = mapped_column(Integer, default=0)
     resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
     config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
@@ -230,6 +241,62 @@ class TestRun(TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="RunResource.position",
     )
+    status_transitions: Mapped[typing.List['RunStatusTransition']] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="RunStatusTransition.id",
+    )
+    __mapper_args__ = {
+        "version_id_col": status_version,
+        "version_id_generator": False,
+    }
+
+
+class RunStatusTransition(Base):
+    __tablename__ = "t_run_status_transitions"
+    __table_args__ = (
+        UniqueConstraint("run_id", "status_version", name="uq_run_status_transition_version"),
+        Index("ix_run_status_transition_created", "run_id", "created_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True
+    )
+    from_status: Mapped[str] = mapped_column(String(40))
+    to_status: Mapped[str] = mapped_column(String(40))
+    status_version: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(64), default="service", index=True)
+    actor_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("t_users.id", ondelete="SET NULL"), index=True
+    )
+    reason: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )
+    run: Mapped[TestRun] = relationship(back_populates="status_transitions")
+
+
+class DurableTask(Base):
+    __tablename__ = "t_durable_tasks"
+    __table_args__ = (
+        Index("ix_durable_task_dispatch", "status", "available_at", "lease_expires_at"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    idempotency_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    lease_expires_at: Mapped[typing.Union[datetime, None]] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    locked_by: Mapped[typing.Union[str, None]] = mapped_column(String(128), index=True)
+    last_error: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
 
 
 class ScenarioResource(Base):
@@ -245,6 +312,21 @@ class ScenarioResource(Base):
     resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     scenario: Mapped[TestScenario] = relationship(back_populates="resource_links")
+
+
+class PlanResource(Base):
+    __tablename__ = "t_plan_resources"
+    __table_args__ = (
+        UniqueConstraint("plan_id", "resource_id", name="uq_plan_resource"),
+        UniqueConstraint("plan_id", "position", name="uq_plan_resource_position"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    plan_id: Mapped[int] = mapped_column(
+        ForeignKey("t_test_plans.id", ondelete="CASCADE"), index=True
+    )
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    plan: Mapped[TestPlan] = relationship(back_populates="resource_links")
 
 
 class WorkflowVersionResource(Base):
@@ -273,6 +355,23 @@ class RunResource(Base):
     resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
     position: Mapped[int] = mapped_column(Integer)
     run: Mapped[TestRun] = relationship(back_populates="resource_links")
+
+
+class WorkflowNodeContractFile(Base):
+    __tablename__ = "t_workflow_node_contract_files"
+    __table_args__ = (
+        UniqueConstraint("workflow_node_id", "contract_file_id", name="uq_workflow_node_contract_file"),
+        UniqueConstraint("workflow_node_id", "position", name="uq_workflow_node_contract_position"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workflow_node_id: Mapped[int] = mapped_column(
+        ForeignKey("t_scenario_workflow_nodes.id", ondelete="CASCADE"), index=True
+    )
+    contract_file_id: Mapped[int] = mapped_column(
+        ForeignKey("t_contract_data_files.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    workflow_node: Mapped[ScenarioWorkflowNode] = relationship(back_populates="contract_file_links")
 
 
 class RunStep(Base):

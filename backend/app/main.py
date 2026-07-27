@@ -19,11 +19,15 @@ from app.core.database import SessionLocal
 from app.core.logging import configure_logging, logger, trace_id_ctx
 from app.core.security import CredentialSecretError, hash_password
 from app.models import BusinessType, User
+from app.services.durable_tasks import (
+    claim_due_tasks,
+    execute_claimed_task,
+    recover_abandoned_tasks,
+)
 from app.services.orchestration import (
     archive_and_clean_logs,
-    queued_run_ids,
+    expire_timed_out_runs,
     reclaim_expired_locks,
-    start_run,
 )
 
 
@@ -39,7 +43,7 @@ def seed_database() -> None:
 
 
 async def internal_scheduler() -> None:
-    """Run queue dispatch and maintenance inside the API process."""
+    """Dispatch durable tasks and maintenance inside the API process."""
     loop = asyncio.get_running_loop()
     next_lock_reclaim = loop.time()
     next_retention_cleanup = loop.time() + 300
@@ -48,16 +52,17 @@ async def internal_scheduler() -> None:
         db = SessionLocal()
         try:
             if now >= next_lock_reclaim:
+                expire_timed_out_runs(db)
                 reclaim_expired_locks(db)
                 next_lock_reclaim = now + 60
-            queued = queued_run_ids(db)
+            task_ids = claim_due_tasks(db)
         except Exception:
             logger.exception("internal_scheduler_iteration_failed")
-            queued = []
+            task_ids = []
         finally:
             db.close()
-        for run_id in queued:
-            asyncio.create_task(start_run(run_id))
+        for task_id in task_ids:
+            asyncio.create_task(execute_claimed_task(task_id))
         if now >= next_retention_cleanup:
             db = SessionLocal()
             try:
@@ -74,6 +79,13 @@ async def internal_scheduler() -> None:
 async def lifespan(_: FastAPI):
     configure_logging()
     seed_database()
+    recovery_db = SessionLocal()
+    try:
+        recovered = recover_abandoned_tasks(recovery_db)
+        if recovered:
+            logger.info("durable_tasks_recovered", count=recovered)
+    finally:
+        recovery_db.close()
     scheduler_task = None
     if settings.enable_internal_scheduler:
         scheduler_task = asyncio.create_task(internal_scheduler())

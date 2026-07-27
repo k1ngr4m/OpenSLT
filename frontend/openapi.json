@@ -462,6 +462,99 @@
         "title": "ContractDataFileOut",
         "type": "object"
       },
+      "DatabaseConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "database_name": {
+            "default": "",
+            "title": "Database Name",
+            "type": "string"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "title": "DatabaseConfig",
+        "type": "object"
+      },
+      "DatabaseConfigNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/DatabaseConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "database_config",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "DatabaseConfigNodeOut",
+        "type": "object"
+      },
+      "DatabaseConfigNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/DatabaseConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "database_config",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "DatabaseConfigNodeWrite",
+        "type": "object"
+      },
       "DatabaseDiscoveryOut": {
         "properties": {
           "databases": {
@@ -1004,6 +1097,214 @@
         "title": "OrderConfigUpdate",
         "type": "object"
       },
+      "OrderPreparationConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_file_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Contract File Ids",
+            "type": "array"
+          },
+          "database_node_key": {
+            "default": "",
+            "title": "Database Node Key",
+            "type": "string"
+          },
+          "network_interface": {
+            "default": "",
+            "title": "Network Interface",
+            "type": "string"
+          },
+          "read_symbol_csv": {
+            "default": 0,
+            "enum": [
+              0,
+              1
+            ],
+            "title": "Read Symbol Csv",
+            "type": "integer"
+          },
+          "trading_database_name": {
+            "default": "",
+            "title": "Trading Database Name",
+            "type": "string"
+          },
+          "xml_checksum": {
+            "default": "",
+            "title": "Xml Checksum",
+            "type": "string"
+          },
+          "xml_filename": {
+            "default": "",
+            "title": "Xml Filename",
+            "type": "string"
+          }
+        },
+        "title": "OrderPreparationConfig",
+        "type": "object"
+      },
+      "OrderPreparationNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/OrderPreparationConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "order_preparation",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "OrderPreparationNodeOut",
+        "type": "object"
+      },
+      "OrderPreparationNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/OrderPreparationConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "order_preparation",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "OrderPreparationNodeWrite",
+        "type": "object"
+      },
+      "ParserConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "database_name": {
+            "default": "",
+            "title": "Database Name",
+            "type": "string"
+          }
+        },
+        "title": "ParserConfig",
+        "type": "object"
+      },
+      "ParserNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ParserConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "parser_parse",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "ParserNodeOut",
+        "type": "object"
+      },
+      "ParserNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ParserConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "parser_parse",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "ParserNodeWrite",
+        "type": "object"
+      },
       "PlanOut": {
         "properties": {
           "business_code": {
@@ -1520,6 +1821,19 @@
           "scenario_id": {
             "title": "Scenario Id",
             "type": "integer"
+          },
+          "timeout_minutes": {
+            "anyOf": [
+              {
+                "maximum": 1440.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout Minutes"
           }
         },
         "required": [
@@ -1665,6 +1979,17 @@
           "status": {
             "$ref": "#/components/schemas/RunStatus"
           },
+          "status_transitions": {
+            "items": {
+              "$ref": "#/components/schemas/RunStatusTransitionOut"
+            },
+            "title": "Status Transitions",
+            "type": "array"
+          },
+          "status_version": {
+            "title": "Status Version",
+            "type": "integer"
+          },
           "steps": {
             "items": {
               "$ref": "#/components/schemas/StepOut"
@@ -1718,6 +2043,7 @@
           "workflow_version_id",
           "business_code",
           "status",
+          "status_version",
           "progress",
           "resource_ids",
           "config_snapshot",
@@ -1763,6 +2089,67 @@
         ],
         "title": "RunStatus",
         "type": "string"
+      },
+      "RunStatusTransitionOut": {
+        "properties": {
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "from_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_version": {
+            "title": "Status Version",
+            "type": "integer"
+          },
+          "to_status": {
+            "$ref": "#/components/schemas/RunStatus"
+          }
+        },
+        "required": [
+          "id",
+          "from_status",
+          "to_status",
+          "status_version",
+          "source",
+          "actor_id",
+          "reason",
+          "created_at"
+        ],
+        "title": "RunStatusTransitionOut",
+        "type": "object"
       },
       "ScenarioOut": {
         "properties": {
@@ -1926,6 +2313,367 @@
           "scenario_type"
         ],
         "title": "ScenarioWrite",
+        "type": "object"
+      },
+      "ServerConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/ServerTargetConfig"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "title": "ServerConfig",
+        "type": "object"
+      },
+      "ServerConfigNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ServerConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "server_config",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "ServerConfigNodeOut",
+        "type": "object"
+      },
+      "ServerConfigNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ServerConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "server_config",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "ServerConfigNodeWrite",
+        "type": "object"
+      },
+      "ServerTargetConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "fields": {
+            "items": {
+              "enum": [
+                "ip",
+                "nic_model",
+                "machine_model",
+                "os_version",
+                "cpu_model"
+              ],
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "resource_type": {
+            "enum": [
+              "rem",
+              "market",
+              "order"
+            ],
+            "title": "Resource Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type"
+        ],
+        "title": "ServerTargetConfig",
+        "type": "object"
+      },
+      "SlnicMergeConfig": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SlnicMergeConfig",
+        "type": "object"
+      },
+      "SlnicMergeNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SlnicMergeConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "slnic_merge_capture",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "SlnicMergeNodeOut",
+        "type": "object"
+      },
+      "SlnicMergeNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SlnicMergeConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "slnic_merge_capture",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "SlnicMergeNodeWrite",
+        "type": "object"
+      },
+      "SlnicStartConfig": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SlnicStartConfig",
+        "type": "object"
+      },
+      "SlnicStartNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SlnicStartConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "slnic_start_capture",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "SlnicStartNodeOut",
+        "type": "object"
+      },
+      "SlnicStartNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SlnicStartConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "slnic_start_capture",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "SlnicStartNodeWrite",
+        "type": "object"
+      },
+      "SlnicStopConfig": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SlnicStopConfig",
+        "type": "object"
+      },
+      "SlnicStopNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SlnicStopConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "slnic_stop_capture",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "SlnicStopNodeOut",
+        "type": "object"
+      },
+      "SlnicStopNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SlnicStopConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "slnic_stop_capture",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "SlnicStopNodeWrite",
         "type": "object"
       },
       "StepOut": {
@@ -2360,6 +3108,92 @@
         "title": "VerdictWrite",
         "type": "object"
       },
+      "WiringConfirmationConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "diagram": {
+            "default": "placeholder",
+            "title": "Diagram",
+            "type": "string"
+          }
+        },
+        "title": "WiringConfirmationConfig",
+        "type": "object"
+      },
+      "WiringConfirmationNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/WiringConfirmationConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "wiring_confirmation",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "WiringConfirmationNodeOut",
+        "type": "object"
+      },
+      "WiringConfirmationNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/WiringConfirmationConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "wiring_confirmation",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "WiringConfirmationNodeWrite",
+        "type": "object"
+      },
       "WorkflowDocumentOut": {
         "properties": {
           "draft": {
@@ -2405,7 +3239,45 @@
           },
           "nodes": {
             "items": {
-              "$ref": "#/components/schemas/WorkflowNodeWrite"
+              "discriminator": {
+                "mapping": {
+                  "database_config": "#/components/schemas/DatabaseConfigNodeWrite",
+                  "order_preparation": "#/components/schemas/OrderPreparationNodeWrite",
+                  "parser_parse": "#/components/schemas/ParserNodeWrite",
+                  "server_config": "#/components/schemas/ServerConfigNodeWrite",
+                  "slnic_merge_capture": "#/components/schemas/SlnicMergeNodeWrite",
+                  "slnic_start_capture": "#/components/schemas/SlnicStartNodeWrite",
+                  "slnic_stop_capture": "#/components/schemas/SlnicStopNodeWrite",
+                  "wiring_confirmation": "#/components/schemas/WiringConfirmationNodeWrite"
+                },
+                "propertyName": "node_type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ServerConfigNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/DatabaseConfigNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/WiringConfirmationNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/OrderPreparationNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/SlnicStartNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/SlnicStopNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/SlnicMergeNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/ParserNodeWrite"
+                }
+              ]
             },
             "title": "Nodes",
             "type": "array"
@@ -2426,100 +3298,6 @@
         "title": "WorkflowDocumentWrite",
         "type": "object"
       },
-      "WorkflowNodeOut": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "title": "Config",
-            "type": "object"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "node_key": {
-            "maxLength": 36,
-            "minLength": 1,
-            "title": "Node Key",
-            "type": "string"
-          },
-          "node_type": {
-            "enum": [
-              "server_config",
-              "database_config",
-              "wiring_confirmation",
-              "order_preparation",
-              "slnic_start_capture",
-              "slnic_stop_capture",
-              "slnic_merge_capture",
-              "parser_parse"
-            ],
-            "title": "Node Type",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "node_key",
-          "node_type",
-          "name",
-          "id",
-          "position"
-        ],
-        "title": "WorkflowNodeOut",
-        "type": "object"
-      },
-      "WorkflowNodeWrite": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "title": "Config",
-            "type": "object"
-          },
-          "name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "node_key": {
-            "maxLength": 36,
-            "minLength": 1,
-            "title": "Node Key",
-            "type": "string"
-          },
-          "node_type": {
-            "enum": [
-              "server_config",
-              "database_config",
-              "wiring_confirmation",
-              "order_preparation",
-              "slnic_start_capture",
-              "slnic_stop_capture",
-              "slnic_merge_capture",
-              "parser_parse"
-            ],
-            "title": "Node Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "node_key",
-          "node_type",
-          "name"
-        ],
-        "title": "WorkflowNodeWrite",
-        "type": "object"
-      },
       "WorkflowVersionOut": {
         "properties": {
           "created_at": {
@@ -2533,7 +3311,45 @@
           },
           "nodes": {
             "items": {
-              "$ref": "#/components/schemas/WorkflowNodeOut"
+              "discriminator": {
+                "mapping": {
+                  "database_config": "#/components/schemas/DatabaseConfigNodeOut",
+                  "order_preparation": "#/components/schemas/OrderPreparationNodeOut",
+                  "parser_parse": "#/components/schemas/ParserNodeOut",
+                  "server_config": "#/components/schemas/ServerConfigNodeOut",
+                  "slnic_merge_capture": "#/components/schemas/SlnicMergeNodeOut",
+                  "slnic_start_capture": "#/components/schemas/SlnicStartNodeOut",
+                  "slnic_stop_capture": "#/components/schemas/SlnicStopNodeOut",
+                  "wiring_confirmation": "#/components/schemas/WiringConfirmationNodeOut"
+                },
+                "propertyName": "node_type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ServerConfigNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/DatabaseConfigNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/WiringConfirmationNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/OrderPreparationNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/SlnicStartNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/SlnicStopNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/SlnicMergeNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/ParserNodeOut"
+                }
+              ]
             },
             "title": "Nodes",
             "type": "array"

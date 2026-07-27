@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.adapters.database import DatabaseOperationError, validate_database
 from app.models import ContractDataFile, Resource, ScenarioWorkflowVersion, TestPlan, TestRun
 from app.services.order_configs import OrderConfigError
+from app.services.resource_relations import node_config_with_relations, node_contract_file_ids
 from app.services.workflows import WorkflowError
 
 
@@ -26,8 +27,8 @@ def workflow_http_error(exc: WorkflowError) -> HTTPException:
 def workflow_nodes_snapshot(db: Session, workflow: ScenarioWorkflowVersion) -> list[dict]:
     snapshots = []
     for node in workflow.nodes:
-        config = dict(node.config or {})
-        file_ids = list(config.get("contract_file_ids") or [])
+        config = node_config_with_relations(node)
+        file_ids = node_contract_file_ids(node)
         if file_ids:
             files = list(db.scalars(select(ContractDataFile).where(ContractDataFile.id.in_(file_ids))).all())
             by_id = {item.id: item for item in files}
@@ -88,6 +89,7 @@ def load_run(db: Session, run_id: int) -> TestRun:
             selectinload(TestRun.artifacts),
             selectinload(TestRun.verdict),
             selectinload(TestRun.resource_links),
+            selectinload(TestRun.status_transitions),
         )
     )
     if not run:

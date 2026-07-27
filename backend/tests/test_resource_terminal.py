@@ -13,7 +13,7 @@ from app.core.database import SessionLocal
 from app.models import AuditLog, Resource
 from app.services import order_configs
 from app.services import terminal as terminal_service
-from app.services import workflows
+from app.services import workflow_contracts, workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -157,7 +157,7 @@ def create_order_start_run(client: TestClient, headers: typing.Dict[str, str], m
             "tool": "ees_ef_vi_trader_binary_api_test",
         }
 
-    monkeypatch.setattr(workflows.order_config_service, "read", fake_read_order_config)
+    monkeypatch.setattr(workflow_contracts.order_config_service, "read", fake_read_order_config)
     resource = create_resource(client, headers, "Order-Terminal", resource_type="order")
     plan, scenario = create_plan_scenario(client, headers, required_types=["order"], resource_ids=[resource["id"]])
     publish_workflow(client, headers, scenario, [resource["id"]], order_start_nodes())

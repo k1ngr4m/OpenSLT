@@ -3,10 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
+from sqlalchemy.orm.exc import StaleDataError
+
 from app.core.database import SessionLocal
-from app.models import ConfigurationCaptureSnapshot, ResourceLock, TestRun as TestRunModel
+from app.models import ConfigurationCaptureSnapshot, ResourceLock, RunStatusTransition, TestRun as RunRecord
 from app.core.logging import redact
 from app.services.orchestration import expire_timed_out_runs
+from app.services.run_state import transition_run
 from app.services import workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
@@ -105,7 +109,7 @@ def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
         assert all(lock.released_at is not None for lock in db.query(ResourceLock).filter(ResourceLock.run_id == run_id))
 
 
-def test_run_timeout_cleanup_is_disabled(client, admin_headers):
+def test_run_timeout_marks_run_and_steps_and_releases_locks(client, admin_headers):
     resource = create_resource(client, admin_headers, "REM-no-timeout")
     plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
     publish_workflow(client, admin_headers, scenario, [resource["id"]], [
@@ -115,22 +119,67 @@ def test_run_timeout_cleanup_is_disabled(client, admin_headers):
         "plan_id": plan["id"],
         "scenario_id": scenario["id"],
         "resource_ids": [resource["id"]],
+        "timeout_minutes": 30,
     })
     assert created.status_code == 201, created.text
     run_id = created.json()["id"]
-    assert created.json()["timeout_at"] is None
+    assert created.json()["timeout_at"] is not None
     client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers)
 
     with SessionLocal() as db:
-        run = db.get(TestRunModel, run_id)
+        run = db.get(RunRecord, run_id)
         assert run is not None
         run.timeout_at = datetime.now(timezone.utc) - timedelta(minutes=1)
         db.commit()
-        assert expire_timed_out_runs(db) == 0
+        assert expire_timed_out_runs(db) == 1
 
-    unchanged = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
-    assert unchanged["status"] == "awaiting_step_start"
-    assert unchanged["error_code"] is None
+    timed_out = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert timed_out["status"] == "timed_out"
+    assert timed_out["error_code"] == "RUN_TIMED_OUT"
+    assert timed_out["steps"][0]["status"] == "cancelled"
+    assert timed_out["status_transitions"][-1]["source"] == "scheduler"
+    with SessionLocal() as db:
+        assert all(
+            lock.released_at is not None
+            for lock in db.query(ResourceLock).filter(ResourceLock.run_id == run_id)
+        )
+
+
+def test_run_status_version_rejects_stale_concurrent_transition(client, admin_headers):
+    resource = create_resource(client, admin_headers, "REM-versioned")
+    plan, scenario = create_plan_scenario(
+        client, admin_headers, resource_ids=[resource["id"]]
+    )
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
+    ])
+    created = client.post("/api/v1/runs", headers=admin_headers, json={
+        "plan_id": plan["id"],
+        "scenario_id": scenario["id"],
+        "resource_ids": [resource["id"]],
+    }).json()
+
+    first = SessionLocal()
+    second = SessionLocal()
+    try:
+        first_run = first.get(RunRecord, created["id"])
+        second_run = second.get(RunRecord, created["id"])
+        transition_run(first_run, "resource_queue", source="test-first")
+        transition_run(second_run, "resource_queue", source="test-second")
+        first.commit()
+        with pytest.raises(StaleDataError):
+            second.commit()
+        second.rollback()
+    finally:
+        first.close()
+        second.close()
+
+    with SessionLocal() as db:
+        run = db.get(RunRecord, created["id"])
+        transitions = db.query(RunStatusTransition).filter_by(run_id=run.id).all()
+        assert run.status == "resource_queue"
+        assert run.status_version == 1
+        assert [item.source for item in transitions] == ["test-first"]
 
 
 def test_resource_lock_queues_competing_run(client, admin_headers):

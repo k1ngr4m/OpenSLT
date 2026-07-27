@@ -6,9 +6,9 @@ from types import SimpleNamespace
 import asyncssh
 
 from app.core.database import SessionLocal
-from app.models import ContractDataFile
+from app.models import ConfigurationCaptureSnapshot, ContractDataFile
 from app.services import order_configs
-from app.services import workflows
+from app.services import workflow_capture, workflow_contracts, workflows
 from conftest import create_plan_scenario, create_resource
 
 
@@ -178,7 +178,7 @@ def test_workflow_draft_revision_preview_and_publish(client, admin_headers, monk
     async def fake_connect(**_options):
         return FakeCaptureConnection()
 
-    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflow_capture.asyncssh, "connect", fake_connect)
     rem = create_resource(client, admin_headers, "REM-01")
     _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
     document = client.get(f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers).json()
@@ -256,8 +256,8 @@ def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers
         return quote_date, len(rows), rows[:5]
 
     monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
-    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
-    monkeypatch.setattr(workflows, "_export_contract_csv", fake_export_contract_csv)
+    monkeypatch.setattr(workflow_contracts.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflow_contracts, "_export_contract_csv", fake_export_contract_csv)
     plan, scenario = create_plan_scenario(
         client, admin_headers, resource_ids=[database["id"], order["id"]]
     )
@@ -465,7 +465,7 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
         attempts["count"] += 1
         return FakeCaptureConnection(fail_cpu=attempts["count"] == 1)
 
-    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflow_capture.asyncssh, "connect", fake_connect)
     assert client.post(f"/api/v1/runs/{created['id']}/start", headers=admin_headers).status_code == 200
     step_id = created["steps"][0]["id"]
     assert client.post(
@@ -488,8 +488,8 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
     assert completed["status"] == "completed"
     assert completed["steps"][0]["retry_count"] == 1
     with SessionLocal() as db:
-        snapshots = db.query(workflows.ConfigurationCaptureSnapshot).order_by(
-            workflows.ConfigurationCaptureSnapshot.id
+        snapshots = db.query(ConfigurationCaptureSnapshot).order_by(
+            ConfigurationCaptureSnapshot.id
         ).all()
         assert [item.attempt for item in snapshots] == [1, 2]
         assert [entry.status for entry in snapshots[0].items] == ["succeeded", "failed"]

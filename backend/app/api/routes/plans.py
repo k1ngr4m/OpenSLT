@@ -14,7 +14,9 @@ from app.schemas import PlanOut, PlanWrite, ScenarioOut, ScenarioWrite
 from app.services.audit import write_audit
 from app.services.workflows import copy_version_contents, create_draft, load_version
 from app.services.resource_relations import (
+    plan_resource_ids,
     scenario_resource_ids,
+    sync_plan_resources,
     sync_scenario_resources,
     sync_workflow_resources,
     workflow_resource_ids,
@@ -31,14 +33,18 @@ def list_plans(business_code: typing.Union[str, None] = None, _: User = Depends(
 
 @router.post("/plans", response_model=PlanOut, status_code=201)
 def create_plan(payload: PlanWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestPlan:
-    plan = TestPlan(**payload.model_dump(), created_by=actor.id); db.add(plan); db.flush(); write_audit(db, "plan.create", "test_plan", plan.id, actor, request); db.commit(); return plan
+    values = payload.model_dump(exclude={"default_resource_ids"})
+    plan = TestPlan(**values, created_by=actor.id)
+    sync_plan_resources(plan, payload.default_resource_ids)
+    db.add(plan); db.flush(); write_audit(db, "plan.create", "test_plan", plan.id, actor, request); db.commit(); return plan
 
 
 @router.put("/plans/{plan_id}", response_model=PlanOut)
 def update_plan(plan_id: int, payload: PlanWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestPlan:
     plan = db.get(TestPlan, plan_id)
     if not plan: raise not_found("方案")
-    for key, value in payload.model_dump().items(): setattr(plan, key, value)
+    for key, value in payload.model_dump(exclude={"default_resource_ids"}).items(): setattr(plan, key, value)
+    sync_plan_resources(plan, payload.default_resource_ids, db)
     write_audit(db, "plan.update", "test_plan", plan.id, actor, request); db.commit(); return plan
 
 
@@ -46,7 +52,9 @@ def update_plan(plan_id: int, payload: PlanWrite, request: Request, actor: User 
 def copy_plan(plan_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestPlan:
     original = db.scalar(select(TestPlan).where(TestPlan.id == plan_id).options(selectinload(TestPlan.scenarios)))
     if not original: raise not_found("方案")
-    copied = TestPlan(name=f"{original.name} - 副本", business_code=original.business_code, description=original.description, default_resource_ids=list(original.default_resource_ids), config_version=original.config_version, created_by=actor.id)
+    copied_resource_ids = plan_resource_ids(original)
+    copied = TestPlan(name=f"{original.name} - 副本", business_code=original.business_code, description=original.description, config_version=original.config_version, created_by=actor.id)
+    sync_plan_resources(copied, copied_resource_ids)
     db.add(copied); db.flush()
     for scenario in original.scenarios:
         if scenario.is_archived:
