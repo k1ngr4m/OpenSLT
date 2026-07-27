@@ -15,8 +15,8 @@ OpenSLT Windows 免安装版
 二、无需安装的组件
 
 本版本已经包含 Python 运行时、FastAPI 后端和 Vue 前端，使用内置 SQLite
-数据库及应用内任务调度器，不需要另外安装 Python、Node.js、MySQL、Redis
-或 Celery。
+数据库及应用内任务调度器，不需要另外安装 Python、Node.js、MySQL、
+外部消息队列或独立任务进程。
 
 三、运行目录
 
@@ -35,11 +35,9 @@ OpenSLT Windows 免安装版
 
   PORT=8765                    本地访问端口
   LOG_LEVEL=INFO               日志级别
-  EXECUTION_MODE=simulated     模拟执行模式
 
 免安装版默认只监听 127.0.0.1，局域网其他电脑无法访问。真实远端执行前，必须先
-补充并验证 REM、模拟市场、抓包和 Coco 的版本化命令模板，再将 EXECUTION_MODE
-改为 remote。
+补充并验证 REM、模拟市场、抓包和 Coco 的版本化命令模板。
 
 五、常见问题
 

@@ -96,7 +96,6 @@ class DatabaseUpdateConfirmation(Base):
     sql_fingerprint: Mapped[str] = mapped_column(String(64), index=True)
     estimated_rows: Mapped[int] = mapped_column(Integer)
     actual_rows: Mapped[typing.Union[int, None]] = mapped_column(Integer)
-    simulated: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

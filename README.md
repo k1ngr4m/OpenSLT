@@ -2,7 +2,7 @@
 
 OpenSLT 是面向盛立 REM 期货测速流程的 Web 平台，提供资源集中管理、版本化方案与场景、资源独占与排队、自动编排、结构化日志、统计指标、人工复核以及 Excel/PDF 报告归档。
 
-系统由 Vue Web 前端和 FastAPI 后端组成。开发环境默认使用 SQLite，并通过 `EXECUTION_MODE=simulated` 提供安全的模拟执行；切换到 `remote` 后才会连接真实 SSH 或 MySQL 资源。
+系统由 Vue Web 前端和 FastAPI 后端组成。开发环境默认使用 SQLite；资源操作台、配置文件管理和数据库操作会连接已配置的真实 SSH 或 MySQL 资源。
 
 ## 快速启动
 
@@ -65,7 +65,7 @@ chmod +x ./start-web.sh
 
 - 管理 REM 柜台、模拟市场、发单工具、SLNIC、数据库等测试资源。
 - 管理测试方案、场景、运行任务、人工确认节点和测试报告。
-- 管理员和测试人员可使用浏览器内 SSH 操作台；模拟模式只运行内置安全命令，不访问本机 Shell。
+- 管理员和测试人员可使用浏览器内 SSH 操作台连接已配置的远端 Shell。
 - 发单工具操作台支持 EF/ZF XML 配置的查看、复制、结构化编辑、原文编辑、重命名和回收删除。
 - MySQL 资源支持直连或 SSH 隧道、数据库名称发现、查询、导出及受约束的 UPDATE 操作。
 
@@ -75,12 +75,12 @@ chmod +x ./start-web.sh
 
 ```text
 DATABASE_URL=sqlite:///./backend/data/openslt.sqlite3
-EXECUTION_MODE=simulated
+ENABLE_INTERNAL_SCHEDULER=true
 HOST=127.0.0.1
 PORT=8000
 ```
 
-`EXECUTION_MODE=simulated` 不连接真实 SSH 或 MySQL；只有改为 `remote` 并重启服务后才会访问远端资源。生产环境建议使用 MySQL 8、Redis 7、独立非 root 用户和随机生成的 `JWT_SECRET`、`CREDENTIAL_ENCRYPTION_KEY`。
+任务调度默认由 FastAPI 进程内置循环承担，不需要外部消息队列或独立任务进程。生产环境建议使用 MySQL 8、独立非 root 用户和随机生成的 `JWT_SECRET`、`CREDENTIAL_ENCRYPTION_KEY`。请在资源管理中配置并验证 REM、模拟市场、发单工具、SLNIC、解析工具和 MySQL 资源后再运行自动化任务。
 
 当 `DATABASE_URL` 指向 MySQL 时，启动和在线迁移会自动创建尚不存在的目标数据库，再执行 Alembic 建表。首次启动使用的 MySQL 账号需要具备 `CREATE` 权限；数据库创建完成后可按生产安全策略收紧权限。
 
@@ -93,7 +93,7 @@ npm --prefix frontend install
 npm --prefix frontend run build
 ```
 
-FastAPI 会在检测到 `frontend/dist` 后托管 Web SPA。Nginx、systemd API、Celery Worker 和 Celery Beat 的部署示例位于 `deploy/`。
+FastAPI 会在检测到 `frontend/dist` 后托管 Web SPA。Nginx 和 systemd API 的部署示例位于 `deploy/`。
 
 ## Windows Portable Web 版
 

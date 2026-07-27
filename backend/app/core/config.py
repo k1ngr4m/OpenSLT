@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_v1_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./backend/data/openslt.sqlite3"
-    redis_url: str = "redis://127.0.0.1:6379/0"
     jwt_secret: str = "development-only-secret-change-me-please"
     jwt_algorithm: str = "HS256"
     jwt_access_minutes: int = 30
@@ -27,9 +26,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     app_log_retention_days: int = 90
     audit_log_retention_days: int = 365
-    execution_mode: str = Field(default="simulated", pattern="^(simulated|remote)$")
     portable_mode: bool = False
-    enable_internal_scheduler: bool = False
+    enable_internal_scheduler: bool = True
     frontend_dist: typing.Union[Path, None] = None
     host: str = "127.0.0.1"
     port: int = Field(default=8000, ge=1, le=65535)

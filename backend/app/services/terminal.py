@@ -2,19 +2,16 @@ from __future__ import annotations
 
 import typing
 import asyncio
-import posixpath
 import shlex
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable
 from uuid import uuid4
 
 import asyncssh
 import jwt
 from fastapi import WebSocket, WebSocketDisconnect
 
-from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import trace_id_ctx
 from app.core.security import decode_token, decrypt_secret
@@ -130,160 +127,6 @@ def _load_context(token: str, resource_id: int) -> typing.Union[typing.Tuple[int
         db.close()
 
 
-class SimulatedTerminal:
-    def __init__(self, resource: TerminalResource) -> None:
-        self.resource = resource
-        self.home = f"/home/{resource.username or 'user'}"
-        self.cwd = posixpath.normpath(resource.remote_path or self.home)
-        self.previous_cwd = self.home
-        self.buffer = ""
-        self.escape_buffer = ""
-        self.last_was_carriage_return = False
-
-    def _display_path(self) -> str:
-        if self.cwd == self.home:
-            return "~"
-        if self.cwd.startswith(f"{self.home}/"):
-            return f"~{self.cwd[len(self.home):]}"
-        return self.cwd
-
-    def prompt(self) -> str:
-        user = self.resource.username or "user"
-        host = self.resource.host or "simulated-host"
-        return f"\x1b[36m[模拟]\x1b[0m \x1b[32m{user}@{host}\x1b[0m:\x1b[34m{self._display_path()}\x1b[0m$ "
-
-    def banner(self) -> str:
-        return (
-            "\x1b[33mOpenSLT 安全模拟终端\x1b[0m\r\n"
-            "当前会话不会连接远程服务器，也不会执行本机命令。输入 help 查看可用命令。\r\n\r\n"
-            f"{self.prompt()}"
-        )
-
-    def _resolve_path(self, value: str) -> str:
-        if value in {"", "~"}:
-            return self.home
-        if value == "-":
-            return self.previous_cwd
-        if value.startswith("~/"):
-            value = f"{self.home}/{value[2:]}"
-        elif not value.startswith("/"):
-            value = f"{self.cwd}/{value}"
-        return posixpath.normpath(value)
-
-    def _run_command(self, line: str) -> typing.Tuple[str, bool]:
-        try:
-            parts = shlex.split(line)
-        except ValueError as exc:
-            return f"模拟终端: {exc}\r\n", False
-        if not parts:
-            return "", False
-
-        command, *args = parts
-        if command == "help":
-            return (
-                "可用命令: pwd, ls, cd, echo, whoami, hostname, date, uname, clear, help, exit\r\n",
-                False,
-            )
-        if command == "pwd":
-            return f"{self.cwd}\r\n", False
-        if command == "ls":
-            return "bin  conf  logs  scripts\r\n", False
-        if command == "cd":
-            target = self._resolve_path(args[0] if args else "")
-            old_cwd = self.cwd
-            self.cwd = target
-            self.previous_cwd = old_cwd
-            return (f"{self.cwd}\r\n" if args and args[0] == "-" else ""), False
-        if command == "echo":
-            return f"{' '.join(args)}\r\n", False
-        if command == "whoami":
-            return f"{self.resource.username or 'user'}\r\n", False
-        if command == "hostname":
-            return f"{self.resource.host or 'simulated-host'}\r\n", False
-        if command == "date":
-            return f"{datetime.now(timezone.utc):%a %b %d %H:%M:%S UTC %Y}\r\n", False
-        if command == "uname":
-            if args == ["-a"]:
-                host = self.resource.host or "simulated-host"
-                return (
-                    f"Linux {host} 5.15.0-openslt #1 SMP x86_64 GNU/Linux (simulated)\r\n",
-                    False,
-                )
-            return "Linux\r\n", False
-        if command == "clear":
-            return "\x1b[2J\x1b[H", False
-        if command == "exit":
-            return "logout\r\n", True
-        return f"{command}: command not found (simulated)\r\n", False
-
-    def feed(self, data: str) -> typing.Tuple[str, bool]:
-        output: typing.List[str] = []
-        should_exit = False
-        for character in data:
-            if self.escape_buffer:
-                self.escape_buffer += character
-                if character.isalpha() or character == "~" or len(self.escape_buffer) >= 8:
-                    self.escape_buffer = ""
-                continue
-            if character == "\x1b":
-                self.escape_buffer = character
-                continue
-            if character == "\n" and self.last_was_carriage_return:
-                self.last_was_carriage_return = False
-                continue
-            if character in {"\r", "\n"}:
-                self.last_was_carriage_return = character == "\r"
-                output.append("\r\n")
-                command_output, should_exit = self._run_command(self.buffer.strip())
-                self.buffer = ""
-                output.append(command_output)
-                if not should_exit:
-                    output.append(self.prompt())
-                if should_exit:
-                    break
-            elif character in {"\x7f", "\b"}:
-                self.last_was_carriage_return = False
-                if self.buffer:
-                    self.buffer = self.buffer[:-1]
-                    output.append("\b \b")
-            elif character == "\x03":
-                self.last_was_carriage_return = False
-                self.buffer = ""
-                output.append(f"^C\r\n{self.prompt()}")
-            elif character == "\x0c":
-                self.last_was_carriage_return = False
-                output.append(f"\x1b[2J\x1b[H{self.prompt()}{self.buffer}")
-            elif character.isprintable() or character == "\t":
-                self.last_was_carriage_return = False
-                self.buffer += character
-                output.append(character)
-        return "".join(output), should_exit
-
-
-async def _receive_simulated(websocket: WebSocket, terminal: SimulatedTerminal) -> str:
-    await _send(websocket, {"type": "output", "data": terminal.banner()})
-    while True:
-        try:
-            message = await websocket.receive_json()
-        except (WebSocketDisconnect, RuntimeError):
-            return "client_disconnected"
-        if message.get("type") == "resize":
-            continue
-        if message.get("type") != "input":
-            await _send(websocket, {"type": "error", "code": "INVALID_MESSAGE", "message": "不支持的终端消息"})
-            continue
-        data = message.get("data")
-        if not isinstance(data, str) or len(data.encode("utf-8")) > MAX_INPUT_SIZE:
-            await _send(websocket, {"type": "error", "code": "INPUT_TOO_LARGE", "message": "单次输入不能超过 64 KiB"})
-            continue
-        output, should_exit = terminal.feed(data)
-        if output:
-            await _send(websocket, {"type": "output", "data": output})
-        if should_exit:
-            await _send(websocket, {"type": "exit", "exit_code": 0})
-            return "shell_exit"
-
-
 def _remote_command(resource: TerminalResource) -> typing.Union[str, None]:
     if not resource.remote_path.strip():
         return None
@@ -352,7 +195,7 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, on_conne
             encoding="utf-8",
             errors="replace",
         )
-        await _send(websocket, {"type": "status", "status": "connected", "mode": "remote", "message": "SSH 已连接"})
+        await _send(websocket, {"type": "status", "status": "connected", "message": "SSH 已连接"})
         on_connected()
         receiver = asyncio.create_task(_receive_remote(websocket, process))
         sender = asyncio.create_task(_send_remote_output(websocket, process))
@@ -390,41 +233,34 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
             return
         actor_id, resource = context
         await websocket.accept()
-        mode = settings.execution_mode
-        await _send(websocket, {"type": "status", "status": "connecting", "mode": mode, "message": "正在建立终端会话"})
+        await _send(websocket, {"type": "status", "status": "connecting", "message": "正在建立终端会话"})
 
-        if mode == "simulated":
-            await _send(websocket, {"type": "status", "status": "connected", "mode": mode, "message": "安全模拟终端已就绪"})
+        def record_open() -> None:
+            nonlocal opened
             opened = True
-            _audit(websocket, actor_id, resource.id, "resource.terminal.open", detail={"mode": mode})
-            reason = await _receive_simulated(websocket, SimulatedTerminal(resource))
-        else:
-            def record_open() -> None:
-                nonlocal opened
-                opened = True
-                _audit(websocket, actor_id, resource.id, "resource.terminal.open", detail={"mode": mode})
+            _audit(websocket, actor_id, resource.id, "resource.terminal.open")
 
-            try:
-                reason = await _run_remote(websocket, resource, record_open)
-            except Exception as exc:
-                if not opened:
-                    _audit(
-                        websocket,
-                        actor_id,
-                        resource.id,
-                        "resource.terminal.open",
-                        result="failed",
-                        detail={"mode": mode, "error_type": type(exc).__name__},
-                    )
-                else:
-                    reason = "session_error"
-                code = "SSH_SESSION_FAILED" if opened else "SSH_CONNECTION_FAILED"
-                label = "SSH 会话异常" if opened else "SSH 连接失败"
-                await _send(websocket, {"type": "error", "code": code, "message": f"{label}：{exc}"})
-                await _close(websocket, 4511)
-                return
+        try:
+            reason = await _run_remote(websocket, resource, record_open)
+        except Exception as exc:
+            if not opened:
+                _audit(
+                    websocket,
+                    actor_id,
+                    resource.id,
+                    "resource.terminal.open",
+                    result="failed",
+                    detail={"error_type": type(exc).__name__},
+                )
+            else:
+                reason = "session_error"
+            code = "SSH_SESSION_FAILED" if opened else "SSH_CONNECTION_FAILED"
+            label = "SSH 会话异常" if opened else "SSH 连接失败"
+            await _send(websocket, {"type": "error", "code": code, "message": f"{label}：{exc}"})
+            await _close(websocket, 4511)
+            return
 
-        await _send(websocket, {"type": "status", "status": "closed", "mode": mode, "message": "终端会话已结束"})
+        await _send(websocket, {"type": "status", "status": "closed", "message": "终端会话已结束"})
         await _close(websocket)
     finally:
         if opened and actor_id is not None and resource is not None:
@@ -434,6 +270,6 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
                 actor_id,
                 resource.id,
                 "resource.terminal.close",
-                detail={"mode": settings.execution_mode, "duration_ms": duration_ms, "reason": reason},
+                detail={"duration_ms": duration_ms, "reason": reason},
             )
         trace_id_ctx.reset(trace_token)

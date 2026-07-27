@@ -17,7 +17,6 @@ const databaseStep = ref(1)
 const databaseOptions = ref<{ name: string; missing: boolean }[]>([])
 const discoveringDatabases = ref(false)
 const discoveryError = ref('')
-const discoverySimulated = ref(false)
 
 const marketEnvironments = [
   { value: 'cffex_2_0', label: '中金所2.0标准模拟市场', frontendPorts: '5110-5141', fensPorts: '5142-5145', defaultPath: '/home/user0/rem_mkt/cffex_2.0' },
@@ -104,7 +103,6 @@ function handleResourceTypeChange(value: string) {
   databaseStep.value = 1
   databaseOptions.value = []
   discoveryError.value = ''
-  discoverySimulated.value = false
   if (value === 'rem') setRemDefaultPath(form.business_code)
   else if (value === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
   else if (value === 'order') {
@@ -143,7 +141,6 @@ function open(row?: any) {
   databaseStep.value = 1
   databaseOptions.value = []
   discoveryError.value = ''
-  discoverySimulated.value = false
   dialog.value = true
 }
 
@@ -196,7 +193,6 @@ async function discoverDatabases() {
         .filter((name: string) => !discovered.has(name))
         .map((name: string) => ({ name, missing: true })),
     ]
-    discoverySimulated.value = data.simulated
     databaseStep.value = 2
     if (!databaseOptions.value.length) discoveryError.value = '当前账号没有可选择的业务数据库'
   } catch (error) {
@@ -490,7 +486,7 @@ onMounted(load)
             <div><small>连接方式</small><strong>{{ form.database_connection_mode === 'ssh_tunnel' ? 'SSH 隧道' : '直接连接' }}</strong></div>
             <div><small>MySQL 地址</small><strong class="mono">{{ form.database_username }}@{{ form.database_host }}:{{ form.database_port }}</strong></div>
             <div v-if="form.database_connection_mode === 'ssh_tunnel'"><small>跳板机</small><strong class="mono">{{ form.username }}@{{ form.host }}:{{ form.ssh_port }}</strong></div>
-            <el-tag :type="discoverySimulated ? 'warning' : 'success'" effect="plain">{{ discoverySimulated ? '模拟发现' : '连接成功' }}</el-tag>
+            <el-tag type="success" effect="plain">连接成功</el-tag>
           </div>
           <div v-if="discoveryError" class="database-discovery-error">{{ discoveryError }}</div>
           <el-form-item label="数据库名称" required class="database-picker">

@@ -9,18 +9,10 @@ import asyncssh
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models import AuditLog
 from app.services import order_configs
-from app.services.order_configs import OrderConfigError, parse_xml, simulated_store, update_symbol_csv_values
-
-
-@pytest.fixture(autouse=True)
-def reset_simulated_configs():
-    simulated_store.clear()
-    yield
-    simulated_store.clear()
+from app.services.order_configs import OrderConfigError, parse_xml, update_symbol_csv_values
 
 
 def create_order_resource(client: TestClient, headers: typing.Dict[str, str], name: str = "Order-Config") -> dict:
@@ -101,19 +93,36 @@ def test_update_symbol_csv_values_uses_contract_type_and_preserves_comments():
     assert missing_element.value.code == "ORDER_CONFIG_SYMBOL_CSV_MISSING"
 
 
-def test_simulated_order_config_crud_conflict_and_audit(client: TestClient, admin_headers: typing.Dict[str, str]):
+def test_order_config_crud_conflict_and_audit(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
     resource = create_order_resource(client, admin_headers)
+    directory = resource["remote_path"]
+    source_name = "ees_ef_vi_trader_api_test_conf.xml"
+    content = '''<?xml version="1.0" encoding="utf-8"?>
+<tcp>
+  <group_broker id="rem_conf" disp="REM"><password disp="PASSWORD" value="1" /></group_broker>
+  <group_new_order id="new_order" disp="NEW_ORDER"><price disp="PRICE" value="1495.0000" /></group_new_order>
+</tcp>'''
+    sftp = FakeSFTP(directory, source_name, content)
+
+    async def fake_connect(**_options):
+        return FakeConnection(sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
     base = f"/api/v1/resources/{resource['id']}/order-configs"
 
     listed = client.get(base, headers=admin_headers)
     assert listed.status_code == 200
     payload = listed.json()
-    assert payload["simulated"] is True
+    assert "simulated" not in payload
     assert payload["tool"] == "ees_ef_vi_trader_binary_api_test"
     assert [item["name"] for item in payload["files"]] == ["ees_ef_vi_trader_api_test_conf.xml"]
 
-    source_name = payload["files"][0]["name"]
     detail = client.get(f"{base}/{source_name}", headers=admin_headers).json()
+    assert "simulated" not in detail
     assert detail["document"]["name"] == "tcp"
     assert "PASSWORD" in detail["content"]
 
@@ -343,7 +352,6 @@ def test_remote_sftp_atomic_update_permissions_and_trash(
         connection_options.append(options)
         return FakeConnection(sftp)
 
-    monkeypatch.setattr(settings, "execution_mode", "remote")
     monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
     base = f"/api/v1/resources/{resource['id']}/order-configs"
 

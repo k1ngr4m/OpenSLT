@@ -3,11 +3,12 @@ from __future__ import annotations
 import typing
 
 import importlib
+import tempfile
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.adapters.database import DatabaseDiscoveryConfig, mysql_adapter, parse_select, parse_update
-from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models import AuditLog
 
@@ -80,20 +81,78 @@ def test_tunnel_requires_ssh_endpoint(client: TestClient, admin_headers: typing.
     assert resource["database_host"] == "10.0.0.8"
 
 
-def test_simulated_health_select_export_and_update(client: TestClient, admin_headers: typing.Dict[str, str]):
+def test_database_health_select_export_and_update_uses_adapter(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch,
+):
     resource = create_database(client, admin_headers)
     resource_id = resource["id"]
+
+    class FakeAdapter:
+        async def health(self, configured_resource):
+            assert configured_resource.id == resource_id
+            return {
+                "ok": True,
+                "message": "数据库连接成功",
+                "details": [
+                    {"database": "rem_core", "ok": True, "version": "5.7.44"},
+                    {"database": "rem_report", "ok": True, "version": "5.7.44"},
+                ],
+                "version": "5.7.44",
+            }
+
+        async def select(self, configured_resource, database_name, plan):
+            assert configured_resource.id == resource_id
+            assert database_name == "rem_core"
+            assert plan.fingerprint
+            return {
+                "columns": ["id", "account_name"],
+                "rows": [{"id": 7, "account_name": "alpha"}],
+                "row_count": 1,
+                "truncated": False,
+                "elapsed_ms": 1,
+            }
+
+        async def preview_update(self, configured_resource, database_name, plan):
+            assert configured_resource.id == resource_id
+            assert database_name == "rem_core"
+            assert plan.table_name == "accounts"
+            return 3
+
+        async def execute_update(self, configured_resource, database_name, plan, expected_rows):
+            assert configured_resource.id == resource_id
+            assert database_name == "rem_core"
+            assert expected_rows == 3
+            return 3
+
+        def iter_csv(self, configured_resource, database_name, plan):
+            assert configured_resource.id == resource_id
+            assert database_name == "rem_core"
+            return iter([b"\xef\xbb\xbfid,account_name\r\n7,alpha\r\n"])
+
+        async def write_xlsx(self, configured_resource, database_name, plan):
+            assert configured_resource.id == resource_id
+            assert database_name == "rem_core"
+            handle = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            try:
+                handle.write(b"PK\x03\x04fake-xlsx")
+                return Path(handle.name)
+            finally:
+                handle.close()
+
+    router_module = importlib.import_module("app.api.router")
+    monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
+
     health = client.post(f"/api/v1/resources/{resource_id}/health", headers=admin_headers)
     assert health.status_code == 200
-    assert health.json()["simulated"] is True
     assert {item["database"] for item in health.json()["details"]} == {"rem_core", "rem_report"}
 
     query = {"database_name": "rem_core", "sql": "SELECT id, account_name FROM accounts"}
     selected = client.post(f"/api/v1/resources/{resource_id}/database/select", headers=admin_headers, json=query)
     assert selected.status_code == 200, selected.text
-    assert selected.json()["simulated"] is True
     assert selected.json()["columns"] == ["id", "account_name"]
-    assert selected.json()["rows"]
+    assert selected.json()["rows"] == [{"id": 7, "account_name": "alpha"}]
 
     csv_response = client.post(
         f"/api/v1/resources/{resource_id}/database/export",
@@ -118,8 +177,8 @@ def test_simulated_health_select_export_and_update(client: TestClient, admin_hea
     )
     assert preview.status_code == 200, preview.text
     preview_data = preview.json()
-    assert 1 <= preview_data["estimated_rows"] <= 5
-    assert preview_data["simulated"] is True
+    assert preview_data["estimated_rows"] == 3
+    assert "simulated" not in preview_data
 
     execute_payload = {
         "database_name": "rem_core",
@@ -145,7 +204,7 @@ def test_simulated_health_select_export_and_update(client: TestClient, admin_hea
         json=execute_payload,
     )
     assert executed.status_code == 200
-    assert executed.json()["affected_rows"] == preview_data["estimated_rows"]
+    assert executed.json() == {"affected_rows": 3, "status": "executed"}
     replay = client.post(
         f"/api/v1/resources/{resource_id}/database/update-execute",
         headers=admin_headers,
@@ -197,35 +256,6 @@ def test_sql_safety_rejects_cross_database_and_unsafe_updates():
         raise AssertionError("cross-database SELECT was accepted")
 
 
-def test_real_mode_dispatches_to_database_adapter(client: TestClient, admin_headers: typing.Dict[str, str], monkeypatch):
-    resource = create_database(client, admin_headers)
-
-    class FakeAdapter:
-        async def health(self, configured_resource):
-            assert configured_resource.id == resource["id"]
-            return {"ok": True, "message": "数据库连接成功", "details": [], "version": "5.7.44", "simulated": False}
-
-        async def select(self, configured_resource, database_name, plan):
-            assert database_name == "rem_core"
-            assert plan.fingerprint
-            return {"columns": ["version"], "rows": [{"version": "5.7.44"}], "row_count": 1, "truncated": False, "elapsed_ms": 1, "simulated": False}
-
-    router_module = importlib.import_module("app.api.router")
-    monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
-    monkeypatch.setattr(settings, "execution_mode", "remote")
-
-    health = client.post(f"/api/v1/resources/{resource['id']}/health", headers=admin_headers)
-    assert health.status_code == 200
-    assert health.json()["version"] == "5.7.44"
-    selected = client.post(
-        f"/api/v1/resources/{resource['id']}/database/select",
-        headers=admin_headers,
-        json={"database_name": "rem_core", "sql": "SELECT VERSION() AS version"},
-    )
-    assert selected.status_code == 200
-    assert selected.json()["simulated"] is False
-
-
 def discovery_payload(**overrides):
     payload = {
         "database_connection_mode": "direct",
@@ -245,16 +275,18 @@ def discovery_payload(**overrides):
     return payload
 
 
-def test_simulated_database_discovery_filters_system_databases(
+def test_database_discovery_filters_system_databases(
     client: TestClient,
     admin_headers: typing.Dict[str, str],
     monkeypatch,
 ):
-    async def unexpected_discovery(_):
-        raise AssertionError("simulated discovery must not connect to MySQL")
+    class FakeAdapter:
+        async def discover_databases(self, config):
+            assert config.database_host == "10.0.0.8"
+            return ["fut_mm_config", "fut_mm_log_data", "fut_mm_risk_data"], 4
 
     router_module = importlib.import_module("app.api.router")
-    monkeypatch.setattr(router_module.mysql_adapter, "discover_databases", unexpected_discovery)
+    monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
     response = client.post(
         "/api/v1/resources/database/discover",
         headers=admin_headers,
@@ -263,7 +295,6 @@ def test_simulated_database_discovery_filters_system_databases(
     assert response.status_code == 200
     assert response.json() == {
         "databases": ["fut_mm_config", "fut_mm_log_data", "fut_mm_risk_data"],
-        "simulated": True,
         "filtered_system_count": 4,
     }
     db = SessionLocal()
@@ -309,7 +340,6 @@ def test_database_discovery_reuses_secrets_only_for_unchanged_identity(
 
     router_module = importlib.import_module("app.api.router")
     monkeypatch.setattr(router_module, "mysql_adapter", FakeAdapter())
-    monkeypatch.setattr(settings, "execution_mode", "remote")
     payload = discovery_payload(
         resource_id=resource["id"],
         database_connection_mode="ssh_tunnel",

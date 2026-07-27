@@ -10,5 +10,5 @@ npm --prefix frontend run build
 install -m 0644 deploy/systemd/openslt-*.service /etc/systemd/system/
 install -m 0644 deploy/nginx/openslt.conf /etc/nginx/conf.d/openslt.conf
 systemctl daemon-reload
-systemctl enable --now openslt-api openslt-worker openslt-beat
+systemctl enable --now openslt-api
 nginx -t && systemctl reload nginx

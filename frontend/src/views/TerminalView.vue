@@ -18,7 +18,6 @@ const terminal = ref<Terminal | null>(null)
 const fitAddon = ref<FitAddon | null>(null)
 const socket = ref<WebSocket | null>(null)
 const state = ref<'loading' | 'connecting' | 'connected' | 'closed' | 'error'>('loading')
-const mode = ref<'remote' | 'simulated'>('simulated')
 const statusMessage = ref('准备连接')
 const lastError = ref('')
 const manualClose = ref(false)
@@ -111,7 +110,6 @@ function connect() {
   current.onmessage = event => {
     if (socket.value !== current) return
     const message = JSON.parse(event.data)
-    if (message.mode) mode.value = message.mode
     if (message.type === 'status') {
       statusMessage.value = message.message || message.status
       if (message.status === 'connected') { state.value = 'connected'; syncSize(); terminal.value?.focus() }
@@ -190,7 +188,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-if="activeWorkspace === 'terminal'" class="terminal-actions">
-        <el-tag :type="mode === 'remote' ? 'success' : 'warning'" effect="plain">{{ mode === 'remote' ? '真实 SSH' : '模拟会话' }}</el-tag>
+        <el-tag type="success" effect="plain">真实 SSH</el-tag>
         <el-button v-if="connected" :icon="VideoPause" plain @click="disconnect">断开</el-button>
         <el-button v-else :icon="RefreshRight" type="primary" :loading="connecting" @click="connect">重新连接</el-button>
       </div>
@@ -211,7 +209,7 @@ onBeforeUnmount(() => {
         <div ref="terminalHost" class="terminal-host" tabindex="0" aria-label="SSH 终端" />
         <div v-if="lastError" class="terminal-error">{{ lastError }}</div>
       </section>
-      <div class="terminal-footnote"><Connection /> <span>{{ mode === 'remote' ? '输入会直接发送到远端 Shell，请确认目标资源和权限。' : '模拟模式只提供内置命令，不会连接远程服务器或执行本机命令。' }}</span></div>
+      <div class="terminal-footnote"><Connection /> <span>输入会直接发送到远端 Shell，请确认目标资源和权限。</span></div>
     </div>
     <OrderConfigPanel v-if="['order', 'parser'].includes(resource?.resource_type)" v-show="activeWorkspace === 'configs'" :resource-id="resourceId" :active="activeWorkspace === 'configs'" :resource-type="resource.resource_type" />
   </div>

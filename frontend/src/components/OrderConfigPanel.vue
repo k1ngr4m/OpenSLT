@@ -16,7 +16,6 @@ const saving = ref(false)
 const files = ref<OrderConfigFile[]>([])
 const tool = ref('')
 const directory = ref('')
-const simulated = ref(false)
 const search = ref('')
 const selectedName = ref('')
 const checksum = ref('')
@@ -55,7 +54,6 @@ function applyDetail(detail: OrderConfigDetail) {
   declaration.value = detail.declaration
   documentTree.value = prepareTree(detail.document)
   rawContent.value = detail.content
-  simulated.value = detail.simulated
   tool.value = detail.tool
   dirty.value = false
   xmlError.value = ''
@@ -103,7 +101,6 @@ async function loadFiles(selectName?: string) {
     files.value = data.files
     tool.value = data.tool
     directory.value = data.directory
-    simulated.value = data.simulated
     loaded.value = true
     const target = selectName || (files.value.some(item => item.name === selectedName.value) ? selectedName.value : files.value[0]?.name)
     if (target) await loadDetail(target)
@@ -323,7 +320,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             <el-radio-button value="structured">结构化编辑</el-radio-button>
             <el-radio-button value="raw">XML 原文</el-radio-button>
           </el-radio-group>
-          <div class="mode-meta"><el-tag :type="simulated ? 'warning' : 'success'" effect="plain">{{ simulated ? '模拟配置' : '远端文件' }}</el-tag><span class="mono">{{ directory }}</span></div>
+          <div class="mode-meta"><el-tag type="success" effect="plain">远端文件</el-tag><span class="mono">{{ directory }}</span></div>
         </div>
 
         <div v-if="xmlError" class="xml-error">{{ xmlError }}</div>

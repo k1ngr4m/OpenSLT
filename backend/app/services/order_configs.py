@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import typing
 import hashlib
 import posixpath
 import re
+import typing
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,7 +14,6 @@ from xml.parsers.expat import ExpatError
 
 import asyncssh
 
-from app.core.config import settings
 from app.core.security import decrypt_secret
 from app.models import Resource
 
@@ -64,12 +63,6 @@ class OrderConfigContext:
     username: str
     password: typing.Union[str, None]
     private_key: typing.Union[str, None]
-
-
-@dataclass
-class SimulatedFile:
-    content: str
-    modified_at: datetime
 
 
 def checksum(content: str) -> str:
@@ -250,35 +243,7 @@ def config_detail(context: OrderConfigContext, filename: str, content: str, modi
         "declaration": declaration,
         "document": document,
         "tool": context.tool,
-        "simulated": settings.execution_mode == "simulated",
     }
-
-
-def _sample_xml(tool: str) -> str:
-    label = "EF" if tool.startswith("ees_ef") else "ZF"
-    return f'''<?xml version="1.0" encoding="utf-8"?>
-<tcp>
-  <group_zf_tpi id="tpi" disp="{label} TPI">
-    <tpi_instance_count disp="TPI_COUNT" default_value="" value="10" />
-    <enter_times disp="TIMES" default_value="" value="40" />
-  </group_zf_tpi>
-  <tpl_tpi_0 id="tpl_tpi" disp="tpl_tpi">
-    <group_broker id="rem_conf" disp="REM">
-      <app_id disp="APP_ID" default_value="" value="1234" />
-      <login_id disp="LOGIN_ID" default_value="" value="test001" />
-      <password disp="PASSWORD" default_value="" value="1" />
-      <rem_trade_ip disp="TRADE_IP" default_value="" value="180.1.1.130" />
-    </group_broker>
-    <group_new_order id="new_order" disp="NEW_ORDER">
-      <exchange disp="EXCHANGE" default_value="" value="102" />
-      <account disp="ACCOUNT" default_value="" value="100001" />
-      <symbol disp="SYMBOL" default_value="" value="ag2210" />
-      <price disp="PRICE" default_value="" value="1495.0000" />
-    </group_new_order>
-    <!-- additional scenario groups can be copied here -->
-  </tpl_tpi_0>
-</tcp>
-'''
 
 
 def parser_main_config_filename(resource: Resource) -> str:
@@ -316,32 +281,6 @@ def _parser_default_files(main_filename: str) -> typing.Dict[str, str]:
 </root>
 ''',
     }
-
-
-class SimulatedOrderConfigStore:
-    def __init__(self) -> None:
-        self._files: typing.Dict[typing.Tuple[str, int, str, str], typing.Dict[str, SimulatedFile]] = {}
-
-    def files(self, context: OrderConfigContext) -> typing.Dict[str, SimulatedFile]:
-        key = (context.resource_type, context.resource_id, context.tool, context.config_filename)
-        if key not in self._files:
-            if context.resource_type == "parser":
-                self._files[key] = {
-                    name: SimulatedFile(content, datetime.now(timezone.utc))
-                    for name, content in _parser_default_files(context.config_filename).items()
-                }
-            else:
-                filename = f"{context.prefix}.xml"
-                self._files[key] = {
-                    filename: SimulatedFile(_sample_xml(context.tool), datetime.now(timezone.utc))
-                }
-        return self._files[key]
-
-    def clear(self) -> None:
-        self._files.clear()
-
-
-simulated_store = SimulatedOrderConfigStore()
 
 
 @asynccontextmanager
@@ -443,54 +382,38 @@ class OrderConfigService:
 
     async def list(self, resource: Resource) -> dict:
         context = resource_context(resource)
-        if settings.execution_mode == "simulated":
-            rows = [
-                {
-                    "name": name,
-                    "size": len(item.content.encode("utf-8")),
-                    "modified_at": item.modified_at,
-                }
-                for name, item in simulated_store.files(context).items()
-            ]
-        else:
-            rows = []
-            try:
-                async with _sftp_client(context) as sftp:
-                    await self._ensure_parser_defaults(resource, context, sftp)
-                    async for entry in sftp.scandir(context.directory):
-                        try:
-                            validate_filename(context, entry.filename)
-                        except OrderConfigError:
-                            continue
-                        if entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR:
-                            continue
-                        rows.append(
-                            {
-                                "name": entry.filename,
-                                "size": entry.attrs.size or 0,
-                                "modified_at": _modified_at(entry.attrs.mtime),
-                            }
-                        )
-            except OrderConfigError:
-                raise
-            except (asyncssh.Error, OSError) as exc:
-                raise OrderConfigError("ORDER_CONFIG_SFTP_FAILED", f"读取远端配置目录失败：{exc}", 502) from exc
+        rows = []
+        try:
+            async with _sftp_client(context) as sftp:
+                await self._ensure_parser_defaults(resource, context, sftp)
+                async for entry in sftp.scandir(context.directory):
+                    try:
+                        validate_filename(context, entry.filename)
+                    except OrderConfigError:
+                        continue
+                    if entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR:
+                        continue
+                    rows.append(
+                        {
+                            "name": entry.filename,
+                            "size": entry.attrs.size or 0,
+                            "modified_at": _modified_at(entry.attrs.mtime),
+                        }
+                    )
+        except OrderConfigError:
+            raise
+        except (asyncssh.Error, OSError) as exc:
+            raise OrderConfigError("ORDER_CONFIG_SFTP_FAILED", f"读取远端配置目录失败：{exc}", 502) from exc
         rows.sort(key=lambda item: item["name"])
         return {
             "tool": context.tool,
             "directory": context.directory,
-            "simulated": settings.execution_mode == "simulated",
             "files": rows,
         }
 
     async def read(self, resource: Resource, filename: str) -> dict:
         context = resource_context(resource)
         filename = validate_filename(context, filename)
-        if settings.execution_mode == "simulated":
-            item = simulated_store.files(context).get(filename)
-            if not item:
-                raise OrderConfigError("ORDER_CONFIG_NOT_FOUND", "配置文件不存在", 404)
-            return config_detail(context, filename, item.content, item.modified_at)
         try:
             async with _sftp_client(context) as sftp:
                 await self._ensure_parser_defaults(resource, context, sftp)
@@ -507,16 +430,6 @@ class OrderConfigService:
         source_name = validate_filename(context, source_name)
         if name == source_name:
             raise OrderConfigError("ORDER_CONFIG_NAME_CONFLICT", "新配置文件名不能与模板相同", 409)
-        if settings.execution_mode == "simulated":
-            files = simulated_store.files(context)
-            if name in files:
-                raise OrderConfigError("ORDER_CONFIG_NAME_CONFLICT", "配置文件名已存在", 409)
-            source = files.get(source_name)
-            if not source:
-                raise OrderConfigError("ORDER_CONFIG_NOT_FOUND", "模板配置不存在", 404)
-            parse_xml(source.content)
-            files[name] = SimulatedFile(source.content, datetime.now(timezone.utc))
-            return config_detail(context, name, files[name].content, files[name].modified_at)
         try:
             async with _sftp_client(context) as sftp:
                 if await sftp.exists(_path(context, name)):
@@ -534,16 +447,6 @@ class OrderConfigService:
         context = resource_context(resource)
         filename = validate_filename(context, filename)
         parse_xml(content)
-        if settings.execution_mode == "simulated":
-            files = simulated_store.files(context)
-            item = files.get(filename)
-            if not item:
-                raise OrderConfigError("ORDER_CONFIG_NOT_FOUND", "配置文件不存在", 404)
-            if checksum(item.content) != expected_checksum:
-                raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
-            item.content = content
-            item.modified_at = datetime.now(timezone.utc)
-            return config_detail(context, filename, item.content, item.modified_at)
         try:
             async with _sftp_client(context) as sftp:
                 current, attrs = await _read_remote_file(sftp, context, filename)
@@ -562,18 +465,6 @@ class OrderConfigService:
         new_name = validate_filename(context, new_name)
         if filename == new_name:
             raise OrderConfigError("ORDER_CONFIG_NAME_CONFLICT", "新文件名与当前文件名相同", 409)
-        if settings.execution_mode == "simulated":
-            files = simulated_store.files(context)
-            item = files.get(filename)
-            if not item:
-                raise OrderConfigError("ORDER_CONFIG_NOT_FOUND", "配置文件不存在", 404)
-            if new_name in files:
-                raise OrderConfigError("ORDER_CONFIG_NAME_CONFLICT", "配置文件名已存在", 409)
-            if checksum(item.content) != expected_checksum:
-                raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
-            files[new_name] = files.pop(filename)
-            files[new_name].modified_at = datetime.now(timezone.utc)
-            return config_detail(context, new_name, files[new_name].content, files[new_name].modified_at)
         try:
             async with _sftp_client(context) as sftp:
                 current, _ = await _read_remote_file(sftp, context, filename)
@@ -592,16 +483,6 @@ class OrderConfigService:
     async def delete(self, resource: Resource, filename: str, expected_checksum: str) -> str:
         context = resource_context(resource)
         filename = validate_filename(context, filename)
-        if settings.execution_mode == "simulated":
-            files = simulated_store.files(context)
-            item = files.get(filename)
-            if not item:
-                raise OrderConfigError("ORDER_CONFIG_NOT_FOUND", "配置文件不存在", 404)
-            if checksum(item.content) != expected_checksum:
-                raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
-            del files[filename]
-            timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-            return f"{timestamp}-{uuid4().hex[:8]}-{filename}"
         try:
             async with _sftp_client(context) as sftp:
                 current, _ = await _read_remote_file(sftp, context, filename)

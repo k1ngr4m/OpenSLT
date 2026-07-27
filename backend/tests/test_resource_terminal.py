@@ -7,7 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models import AuditLog, Resource
 from app.services import terminal as terminal_service
@@ -20,52 +19,6 @@ def access_token(headers: typing.Dict[str, str]) -> str:
 
 def terminal_url(resource_id: int, token: str) -> str:
     return f"/api/v1/ws/resources/{resource_id}/terminal?token={token}"
-
-
-def test_simulated_terminal_commands_and_audit(client: TestClient, admin_headers: typing.Dict[str, str]):
-    resource = create_resource(client, admin_headers, "REM-Terminal")
-    token = access_token(admin_headers)
-
-    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
-        connecting = websocket.receive_json()
-        connected = websocket.receive_json()
-        banner = websocket.receive_json()
-        assert connecting == {
-            "type": "status",
-            "status": "connecting",
-            "mode": "simulated",
-            "message": "正在建立终端会话",
-        }
-        assert connected["status"] == "connected"
-        assert connected["mode"] == "simulated"
-        assert "安全模拟终端" in banner["data"]
-
-        websocket.send_json({"type": "input", "data": "pwd\r"})
-        assert "/tmp/openslt" in websocket.receive_json()["data"]
-        websocket.send_json({"type": "input", "data": "secret-command --password hidden\r"})
-        assert "command not found (simulated)" in websocket.receive_json()["data"]
-        websocket.send_json({"type": "input", "data": "cd /var/log\r\npwd\r\n"})
-        assert "/var/log" in websocket.receive_json()["data"]
-        websocket.send_json({"type": "resize", "cols": 160, "rows": 48})
-        websocket.send_json({"type": "input", "data": "exit\r"})
-        assert "logout" in websocket.receive_json()["data"]
-        assert websocket.receive_json() == {"type": "exit", "exit_code": 0}
-        assert websocket.receive_json()["status"] == "closed"
-
-    db = SessionLocal()
-    try:
-        audits = list(
-            db.query(AuditLog)
-            .filter(AuditLog.object_id == str(resource["id"]), AuditLog.action.like("resource.terminal.%"))
-            .order_by(AuditLog.id)
-        )
-        assert [item.action for item in audits] == ["resource.terminal.open", "resource.terminal.close"]
-        assert audits[0].detail == {"mode": "simulated"}
-        assert audits[1].detail["reason"] == "shell_exit"
-        assert "secret-command" not in str([item.detail for item in audits])
-        assert "hidden" not in str([item.detail for item in audits])
-    finally:
-        db.close()
 
 
 def test_terminal_rejects_invalid_token_and_visitor(client: TestClient, admin_headers: typing.Dict[str, str]):
@@ -189,14 +142,17 @@ def test_remote_terminal_uses_pty_and_forwards_io(
         connect_options.update(options)
         return connection
 
-    monkeypatch.setattr(settings, "execution_mode", "remote")
     monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
 
     with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
-        assert websocket.receive_json()["status"] == "connecting"
+        connecting = websocket.receive_json()
+        assert connecting == {
+            "type": "status",
+            "status": "connecting",
+            "message": "正在建立终端会话",
+        }
         connected = websocket.receive_json()
-        assert connected["status"] == "connected"
-        assert connected["mode"] == "remote"
+        assert connected == {"type": "status", "status": "connected", "message": "SSH 已连接"}
         assert "remote-ready" in websocket.receive_json()["data"]
         websocket.send_json({"type": "resize", "cols": 180, "rows": 52})
         websocket.send_json({"type": "input", "data": "echo ready\r"})
@@ -211,6 +167,19 @@ def test_remote_terminal_uses_pty_and_forwards_io(
     assert connection.process.sizes == [(180, 52)]
     assert connection.process.closed
     assert connection.closed
+    db = SessionLocal()
+    try:
+        audits = list(
+            db.query(AuditLog)
+            .filter(AuditLog.object_id == str(resource["id"]), AuditLog.action.like("resource.terminal.%"))
+            .order_by(AuditLog.id)
+        )
+        assert [item.action for item in audits] == ["resource.terminal.open", "resource.terminal.close"]
+        assert audits[0].detail is None
+        assert audits[1].detail["reason"] == "client_disconnected"
+        assert "echo ready" not in str([item.detail for item in audits])
+    finally:
+        db.close()
 
 
 def test_remote_terminal_reports_connection_failure(
@@ -224,7 +193,6 @@ def test_remote_terminal_reports_connection_failure(
     async def failed_connect(**_):
         raise OSError("connection refused")
 
-    monkeypatch.setattr(settings, "execution_mode", "remote")
     monkeypatch.setattr(terminal_service.asyncssh, "connect", failed_connect)
 
     with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
@@ -246,6 +214,6 @@ def test_remote_terminal_reports_connection_failure(
         )
         assert len(audits) == 1
         assert audits[0].result == "failed"
-        assert audits[0].detail == {"mode": "remote", "error_type": "OSError"}
+        assert audits[0].detail == {"error_type": "OSError"}
     finally:
         db.close()

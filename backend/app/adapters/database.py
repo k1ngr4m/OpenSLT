@@ -178,45 +178,6 @@ def _json_value(value: Any) -> Any:
     return str(value)
 
 
-def _mock_columns(plan: SqlPlan) -> typing.List[str]:
-    columns: typing.List[str] = []
-    for index, expression in enumerate(plan.statement.expressions, 1):
-        if isinstance(expression, exp.Star):
-            return ["mock_id", "mock_value", "mock_updated_at"]
-        columns.append(expression.alias_or_name or f"column_{index}")
-    return columns or ["result"]
-
-
-def simulated_select(plan: SqlPlan, row_limit: int = 8) -> typing.Dict[str, Any]:
-    columns = _mock_columns(plan)
-    seed = int(plan.fingerprint[:8], 16)
-    rows: typing.List[typing.Dict[str, Any]] = []
-    for row_index in range(1, row_limit + 1):
-        row: typing.Dict[str, Any] = {}
-        for column_index, column in enumerate(columns):
-            lowered = column.casefold()
-            if lowered == "mock_id" or lowered.endswith("_id") or lowered == "id":
-                value: Any = row_index
-            elif "time" in lowered or "date" in lowered:
-                value = f"2026-01-{row_index:02d}T09:{(seed + column_index) % 60:02d}:00"
-            else:
-                value = f"{column}_{(seed + row_index + column_index) % 97}"
-            row[column] = value
-        rows.append(row)
-    return {
-        "columns": columns,
-        "rows": rows,
-        "row_count": len(rows),
-        "truncated": False,
-        "elapsed_ms": 0,
-        "simulated": True,
-    }
-
-
-def simulated_update_rows(plan: SqlPlan) -> int:
-    return int(plan.fingerprint[:8], 16) % 5 + 1
-
-
 class MySQLAdapter:
     async def discover_databases(self, config: DatabaseDiscoveryConfig) -> typing.Tuple[typing.List[str], int]:
         ssh_connection = None
@@ -367,7 +328,6 @@ class MySQLAdapter:
             "message": "数据库连接成功" if ok else "部分或全部数据库连接失败",
             "details": details,
             "version": version,
-            "simulated": False,
         }
 
     async def select(self, resource: Resource, database_name: str, plan: SqlPlan) -> typing.Dict[str, Any]:
@@ -392,7 +352,6 @@ class MySQLAdapter:
             "row_count": len(rows),
             "truncated": truncated,
             "elapsed_ms": round((time.perf_counter() - started) * 1000),
-            "simulated": False,
         }
 
     async def preview_update(self, resource: Resource, database_name: str, plan: SqlPlan) -> int:

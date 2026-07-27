@@ -10,12 +10,11 @@ from uuid import uuid4
 import jwt
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from fastapi.responses import FileResponse, StreamingResponse
-from openpyxl import Workbook
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 from starlette.background import BackgroundTask
 
-from app.adapters.database import DatabaseDiscoveryConfig, DatabaseOperationError, filter_database_names, mysql_adapter, parse_select, parse_update, simulated_select, simulated_update_rows, validate_database
+from app.adapters.database import DatabaseDiscoveryConfig, DatabaseOperationError, mysql_adapter, parse_select, parse_update, validate_database
 from app.adapters.ssh import ssh_adapter
 from app.api.deps import admin_only, get_current_user, operators
 from app.core.config import settings
@@ -320,22 +319,7 @@ async def discover_resource_databases(
             )
     try:
         config = database_discovery_config(payload, stored)
-        if settings.execution_mode == "simulated":
-            candidates = [
-                ("information_schema",),
-                ("mysql",),
-                ("performance_schema",),
-                ("sys",),
-                ("fut_mm_config",),
-                ("fut_mm_log_data",),
-                ("fut_mm_risk_data",),
-                ("fut_mm_config",),
-            ]
-            databases, filtered_system_count = filter_database_names(candidates)
-            simulated = True
-        else:
-            databases, filtered_system_count = await mysql_adapter.discover_databases(config)
-            simulated = False
+        databases, filtered_system_count = await mysql_adapter.discover_databases(config)
     except DatabaseOperationError as exc:
         write_audit(
             db,
@@ -347,7 +331,6 @@ async def discover_resource_databases(
             result="failed",
             detail={
                 "connection_mode": payload.database_connection_mode,
-                "mode": settings.execution_mode,
                 "code": exc.code,
             },
         )
@@ -362,7 +345,6 @@ async def discover_resource_databases(
         request,
         detail={
             "connection_mode": payload.database_connection_mode,
-            "mode": settings.execution_mode,
             "count": len(databases),
             "filtered_system_count": filtered_system_count,
         },
@@ -370,7 +352,6 @@ async def discover_resource_databases(
     db.commit()
     return {
         "databases": databases,
-        "simulated": simulated,
         "filtered_system_count": filtered_system_count,
     }
 
@@ -419,20 +400,8 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
     resource = db.get(Resource, resource_id)
     if not resource or resource.is_deleted: raise not_found("资源")
     try:
-        if resource.resource_type == "database" and settings.execution_mode == "simulated":
-            result = {
-                "ok": True,
-                "message": "模拟模式连通",
-                "details": [
-                    {"database": name, "ok": True, "version": "MySQL simulated"}
-                    for name in resource.database_names or []
-                ],
-                "version": "MySQL simulated",
-                "simulated": True,
-            }
-        elif resource.resource_type == "database":
+        if resource.resource_type == "database":
             result = await mysql_adapter.health(resource)
-        elif settings.execution_mode == "simulated": result = {"ok": True, "message": "模拟模式连通", "simulated": True}
         else: result = await ssh_adapter.check(host=resource.host, port=resource.ssh_port, username=resource.username, password=decrypt_secret(resource.encrypted_password), private_key=decrypt_secret(resource.encrypted_private_key))
         resource.health_status = "healthy" if result["ok"] else "unhealthy"
     except Exception as exc:
@@ -481,7 +450,7 @@ async def list_order_configs(
         actor,
         resource_id,
         "order_config.list",
-        detail={"mode": "simulated" if result["simulated"] else "remote", "count": len(result["files"])},
+        detail={"count": len(result["files"])},
     )
     return result
 
@@ -506,7 +475,7 @@ async def read_order_config(
         actor,
         resource_id,
         "order_config.read",
-        detail={"filename": filename, "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+        detail={"filename": filename, "checksum": result["checksum"]},
     )
     return result
 
@@ -531,7 +500,7 @@ async def create_order_config(
         actor,
         resource_id,
         "order_config.create",
-        detail={"filename": result["name"], "source_filename": payload.source_name, "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+        detail={"filename": result["name"], "source_filename": payload.source_name, "checksum": result["checksum"]},
     )
     return result
 
@@ -557,7 +526,7 @@ async def update_order_config(
         actor,
         resource_id,
         "order_config.update",
-        detail={"filename": filename, "previous_checksum": payload.expected_checksum, "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+        detail={"filename": filename, "previous_checksum": payload.expected_checksum, "checksum": result["checksum"]},
     )
     return result
 
@@ -583,7 +552,7 @@ async def rename_order_config(
         actor,
         resource_id,
         "order_config.rename",
-        detail={"filename": filename, "new_filename": result["name"], "checksum": result["checksum"], "mode": "simulated" if result["simulated"] else "remote"},
+        detail={"filename": filename, "new_filename": result["name"], "checksum": result["checksum"]},
     )
     return result
 
@@ -609,7 +578,7 @@ async def delete_order_config(
         actor,
         resource_id,
         "order_config.delete",
-        detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum, "mode": settings.execution_mode},
+        detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum},
     )
     return Response(status_code=204)
 
@@ -627,7 +596,7 @@ async def list_parser_configs(
     except OrderConfigError as exc:
         write_order_config_audit(db, request, actor, resource_id, "parser_config.list", "failed", {"code": exc.code})
         raise order_config_http_error(exc) from exc
-    write_order_config_audit(db, request, actor, resource_id, "parser_config.list", detail={"mode": settings.execution_mode, "count": len(result["files"])})
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.list", detail={"count": len(result["files"])})
     return result
 
 
@@ -645,7 +614,7 @@ async def read_parser_config(
     except OrderConfigError as exc:
         write_order_config_audit(db, request, actor, resource_id, "parser_config.read", "failed", {"filename": filename, "code": exc.code})
         raise order_config_http_error(exc) from exc
-    write_order_config_audit(db, request, actor, resource_id, "parser_config.read", detail={"filename": filename, "checksum": result["checksum"], "mode": settings.execution_mode})
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.read", detail={"filename": filename, "checksum": result["checksum"]})
     return result
 
 
@@ -663,7 +632,7 @@ async def create_parser_config(
     except OrderConfigError as exc:
         write_order_config_audit(db, request, actor, resource_id, "parser_config.create", "failed", {"filename": payload.name, "source_filename": payload.source_name, "code": exc.code})
         raise order_config_http_error(exc) from exc
-    write_order_config_audit(db, request, actor, resource_id, "parser_config.create", detail={"filename": result["name"], "source_filename": payload.source_name, "checksum": result["checksum"], "mode": settings.execution_mode})
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.create", detail={"filename": result["name"], "source_filename": payload.source_name, "checksum": result["checksum"]})
     return result
 
 
@@ -682,7 +651,7 @@ async def update_parser_config(
     except OrderConfigError as exc:
         write_order_config_audit(db, request, actor, resource_id, "parser_config.update", "failed", {"filename": filename, "expected_checksum": payload.expected_checksum, "code": exc.code})
         raise order_config_http_error(exc) from exc
-    write_order_config_audit(db, request, actor, resource_id, "parser_config.update", detail={"filename": filename, "previous_checksum": payload.expected_checksum, "checksum": result["checksum"], "mode": settings.execution_mode})
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.update", detail={"filename": filename, "previous_checksum": payload.expected_checksum, "checksum": result["checksum"]})
     return result
 
 
@@ -701,7 +670,7 @@ async def rename_parser_config(
     except OrderConfigError as exc:
         write_order_config_audit(db, request, actor, resource_id, "parser_config.rename", "failed", {"filename": filename, "new_filename": payload.new_name, "expected_checksum": payload.expected_checksum, "code": exc.code})
         raise order_config_http_error(exc) from exc
-    write_order_config_audit(db, request, actor, resource_id, "parser_config.rename", detail={"filename": filename, "new_filename": result["name"], "checksum": result["checksum"], "mode": settings.execution_mode})
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.rename", detail={"filename": filename, "new_filename": result["name"], "checksum": result["checksum"]})
     return result
 
 
@@ -720,7 +689,7 @@ async def delete_parser_config(
     except OrderConfigError as exc:
         write_order_config_audit(db, request, actor, resource_id, "parser_config.delete", "failed", {"filename": filename, "expected_checksum": expected_checksum, "code": exc.code})
         raise order_config_http_error(exc) from exc
-    write_order_config_audit(db, request, actor, resource_id, "parser_config.delete", detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum, "mode": settings.execution_mode})
+    write_order_config_audit(db, request, actor, resource_id, "parser_config.delete", detail={"filename": filename, "trash_name": trash_name, "checksum": expected_checksum})
     return Response(status_code=204)
 
 
@@ -735,18 +704,14 @@ async def database_select(
     resource, database_name = database_resource(db, resource_id, payload.database_name)
     try:
         plan = parse_select(payload.sql, database_name)
-        result = (
-            simulated_select(plan)
-            if settings.execution_mode == "simulated"
-            else await mysql_adapter.select(resource, database_name, plan)
-        )
+        result = await mysql_adapter.select(resource, database_name, plan)
     except DatabaseOperationError as exc:
         write_audit(db, "database.select", "resource", resource.id, actor, request, "failed", {"database": database_name, "code": exc.code}); db.commit()
         raise database_http_error(exc) from exc
     except Exception as exc:
         write_audit(db, "database.select", "resource", resource.id, actor, request, "failed", {"database": database_name, "code": "DATABASE_OPERATION_FAILED"}); db.commit()
         raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
-    write_audit(db, "database.select", "resource", resource.id, actor, request, detail={"database": database_name, "sql_fingerprint": plan.fingerprint, "row_count": result["row_count"], "simulated": result["simulated"]}); db.commit()
+    write_audit(db, "database.select", "resource", resource.id, actor, request, detail={"database": database_name, "sql_fingerprint": plan.fingerprint, "row_count": result["row_count"]}); db.commit()
     return result
 
 
@@ -761,8 +726,7 @@ async def database_update_preview(
     resource, database_name = database_resource(db, resource_id, payload.database_name)
     try:
         plan = parse_update(payload.sql, database_name)
-        simulated = settings.execution_mode == "simulated"
-        estimated_rows = simulated_update_rows(plan) if simulated else await mysql_adapter.preview_update(resource, database_name, plan)
+        estimated_rows = await mysql_adapter.preview_update(resource, database_name, plan)
         if estimated_rows > 1_000:
             raise DatabaseOperationError("UPDATE_LIMIT_EXCEEDED", "UPDATE 预计影响超过 1000 行", 409)
     except DatabaseOperationError as exc:
@@ -780,12 +744,11 @@ async def database_update_preview(
         table_name=plan.table_name or "",
         sql_fingerprint=plan.fingerprint,
         estimated_rows=estimated_rows,
-        simulated=simulated,
         status="pending",
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
     )
     db.add(confirmation)
-    write_audit(db, "database.update_preview", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "estimated_rows": estimated_rows, "simulated": simulated})
+    write_audit(db, "database.update_preview", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "estimated_rows": estimated_rows})
     db.commit()
     return {
         "confirmation_id": confirmation.id,
@@ -793,7 +756,6 @@ async def database_update_preview(
         "table_name": plan.table_name,
         "estimated_rows": estimated_rows,
         "expires_at": confirmation.expires_at,
-        "simulated": simulated,
     }
 
 
@@ -841,11 +803,7 @@ async def database_update_execute(
         raise HTTPException(status_code=409, detail={"code": "CONFIRMATION_ALREADY_USED", "message": "更新确认已使用"})
     db.commit()
     try:
-        affected_rows = (
-            confirmation.estimated_rows
-            if confirmation.simulated
-            else await mysql_adapter.execute_update(resource, database_name, plan, confirmation.estimated_rows)
-        )
+        affected_rows = await mysql_adapter.execute_update(resource, database_name, plan, confirmation.estimated_rows)
     except DatabaseOperationError as exc:
         confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
         confirmation.status = "failed"; confirmation.completed_at = datetime.now(timezone.utc)
@@ -858,8 +816,8 @@ async def database_update_execute(
         raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
     confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
     confirmation.status = "executed"; confirmation.actual_rows = affected_rows; confirmation.completed_at = datetime.now(timezone.utc)
-    write_audit(db, "database.update_execute", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "affected_rows": affected_rows, "simulated": confirmation.simulated}); db.commit()
-    return {"affected_rows": affected_rows, "simulated": confirmation.simulated, "status": "executed"}
+    write_audit(db, "database.update_execute", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "affected_rows": affected_rows}); db.commit()
+    return {"affected_rows": affected_rows, "status": "executed"}
 
 
 @router.post("/resources/{resource_id}/database/export")
@@ -875,19 +833,8 @@ async def database_export(
         plan = parse_select(payload.sql, database_name)
     except DatabaseOperationError as exc:
         raise database_http_error(exc) from exc
-    simulated = settings.execution_mode == "simulated"
     filename = f"database-{resource.id}-{database_name}.{payload.format}"
-    write_audit(db, "database.export", "resource", resource.id, actor, request, detail={"database": database_name, "format": payload.format, "sql_fingerprint": plan.fingerprint, "simulated": simulated}); db.commit()
-    if simulated:
-        result = simulated_select(plan)
-        if payload.format == "csv":
-            output = io.StringIO(); writer = csv.writer(output); writer.writerow(result["columns"])
-            for row in result["rows"]: writer.writerow([row[column] for column in result["columns"]])
-            return StreamingResponse(iter([output.getvalue().encode("utf-8-sig")]), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{filename}"', "X-OpenSLT-Simulated": "true"})
-        output = io.BytesIO(); workbook = Workbook(); worksheet = workbook.active; worksheet.title = "Query"; worksheet.append(result["columns"])
-        for row in result["rows"]: worksheet.append([row[column] for column in result["columns"]])
-        workbook.save(output); output.seek(0)
-        return StreamingResponse(iter([output.getvalue()]), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename}"', "X-OpenSLT-Simulated": "true"})
+    write_audit(db, "database.export", "resource", resource.id, actor, request, detail={"database": database_name, "format": payload.format, "sql_fingerprint": plan.fingerprint}); db.commit()
     if payload.format == "csv":
         return StreamingResponse(mysql_adapter.iter_csv(resource, database_name, plan), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
     try:

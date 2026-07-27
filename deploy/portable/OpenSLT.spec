@@ -38,8 +38,6 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        "celery",
-        "redis",
         "pandas",
         "weasyprint",
         "pymysql",

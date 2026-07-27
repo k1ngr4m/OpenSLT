@@ -40,7 +40,7 @@ def seed_database() -> None:
 
 
 async def internal_scheduler() -> None:
-    """Run the maintenance loop used by the Redis-free portable edition."""
+    """Run queue dispatch and maintenance inside the API process."""
     loop = asyncio.get_running_loop()
     next_lock_reclaim = loop.time()
     next_timeout_check = loop.time()
@@ -80,7 +80,7 @@ async def lifespan(_: FastAPI):
     configure_logging()
     seed_database()
     scheduler_task = None
-    if settings.portable_mode or settings.enable_internal_scheduler:
+    if settings.enable_internal_scheduler:
         scheduler_task = asyncio.create_task(internal_scheduler())
         logger.info("internal_scheduler_started")
     logger.info("application_started", portable_mode=settings.portable_mode)

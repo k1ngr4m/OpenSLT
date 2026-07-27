@@ -105,41 +105,6 @@ def test_slnic_publish_rejects_invalid_sequence(client, admin_headers):
     assert published.json()["code"] == "WORKFLOW_VALIDATION_FAILED"
 
 
-def test_simulated_slnic_run_creates_downloadable_artifact(
-    client, admin_headers, monkeypatch
-):
-    async def unexpected_connect(**kwargs):
-        raise AssertionError(f"simulated mode attempted SSH: {kwargs}")
-
-    monkeypatch.setattr(workflows.asyncssh, "connect", unexpected_connect)
-    resource, _, run = create_slnic_run(client, admin_headers)
-    started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
-    assert started.status_code == 200, started.text
-    completed = None
-    for _ in range(3):
-        completed = execute_and_complete_current_step(client, admin_headers, run["id"])
-    assert completed["status"] == "completed"
-    assert [step["node_type"] for step in completed["steps"]] == [
-        "slnic_start_capture",
-        "slnic_stop_capture",
-        "slnic_merge_capture",
-    ]
-    assert all(step["result_summary"]["resource_id"] == resource["id"] for step in completed["steps"])
-    assert all(step["result_summary"]["mode"] == "simulated" for step in completed["steps"])
-    merge = completed["steps"][-1]["result_summary"]
-    assert merge["filename"] == "merge_pcap.pcapng"
-    assert merge["size"] == 28
-    assert len(merge["checksum"]) == 64
-    assert len(completed["artifacts"]) == 1
-    artifact = completed["artifacts"][0]
-    assert artifact["artifact_type"] == "packet_capture"
-    downloaded = client.get(
-        f"/api/v1/artifacts/{artifact['id']}/download", headers=admin_headers
-    )
-    assert downloaded.status_code == 200
-    assert downloaded.content[:4] == bytes.fromhex("0a0d0d0a")
-
-
 def test_remote_slnic_run_executes_fixed_commands_and_downloads(
     client, admin_headers, monkeypatch
 ):
@@ -184,15 +149,20 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
         connections.append(connection)
         return connection
 
-    monkeypatch.setattr(workflows.settings, "execution_mode", "remote")
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
-    _, _, run = create_slnic_run(client, admin_headers)
+    resource, _, run = create_slnic_run(client, admin_headers)
     started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
     assert started.status_code == 200, started.text
     completed = None
     for _ in range(3):
         completed = execute_and_complete_current_step(client, admin_headers, run["id"])
     assert completed["status"] == "completed"
+    assert [step["node_type"] for step in completed["steps"]] == [
+        "slnic_start_capture",
+        "slnic_stop_capture",
+        "slnic_merge_capture",
+    ]
+    assert all(step["result_summary"]["resource_id"] == resource["id"] for step in completed["steps"])
     assert len(connections) == 3
     assert all(connection.closed for connection in connections)
     assert connections[-1].sftp.closed is True
@@ -205,8 +175,16 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
         "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng"
     )
     merge = completed["steps"][-1]["result_summary"]
-    assert merge["mode"] == "remote"
     assert merge["size"] == len(b"remote-pcapng")
+    assert "mode" not in merge
+    assert len(completed["artifacts"]) == 1
+    artifact = completed["artifacts"][0]
+    assert artifact["artifact_type"] == "packet_capture"
+    downloaded = client.get(
+        f"/api/v1/artifacts/{artifact['id']}/download", headers=admin_headers
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"remote-pcapng"
 
 
 def test_remote_slnic_command_failure_waits_for_step_retry(client, admin_headers, monkeypatch):
@@ -223,7 +201,6 @@ def test_remote_slnic_command_failure_waits_for_step_retry(client, admin_headers
     async def fake_connect(**kwargs):
         return FailedConnection()
 
-    monkeypatch.setattr(workflows.settings, "execution_mode", "remote")
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
     _, _, run = create_slnic_run(client, admin_headers)
     started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
@@ -276,7 +253,6 @@ def test_remote_slnic_stop_failure_continues_to_merge(client, admin_headers, mon
     async def fake_connect(**kwargs):
         return FakeConnection()
 
-    monkeypatch.setattr(workflows.settings, "execution_mode", "remote")
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
     _, _, run = create_slnic_run(client, admin_headers)
 

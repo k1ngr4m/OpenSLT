@@ -6,7 +6,6 @@ import os
 import posixpath
 import re
 import shlex
-import struct
 import tempfile
 import typing
 from contextlib import asynccontextmanager, suppress
@@ -349,15 +348,6 @@ def _ssh_options(resource: Resource) -> dict:
     return options
 
 
-SIMULATED_VALUES = {
-    "ip": "127.0.0.1/24",
-    "nic_model": "Exablaze ExaNIC X25 *2",
-    "machine_model": "ATZ-308 / ACE Z690 UNIFY (MS-7D28)",
-    "os_version": "Red Hat Enterprise Linux Server release 7.9 (Maipo)",
-    "cpu_model": "13th Gen Intel(R) Core(TM) i9-13900KS",
-}
-
-
 async def capture_server(
     db: Session,
     scenario: TestScenario,
@@ -395,19 +385,15 @@ async def capture_server(
         failed = False
         connection = None
         try:
-            if settings.execution_mode == "remote":
-                connection = await asyncssh.connect(**_ssh_options(resource))
+            connection = await asyncssh.connect(**_ssh_options(resource))
             for field in target.get("fields") or []:
                 command = SERVER_COMMANDS[field]
                 try:
-                    if settings.execution_mode == "simulated":
-                        value, raw, exit_code = SIMULATED_VALUES[field], SIMULATED_VALUES[field], 0
-                    else:
-                        result = await connection.run(command, check=False)
-                        raw, exit_code = (result.stdout or result.stderr).strip(), result.exit_status
-                        value = result.stdout.strip()
-                        if exit_code != 0 or not value:
-                            raise RuntimeError(result.stderr.strip() or "命令没有返回结果")
+                    result = await connection.run(command, check=False)
+                    raw, exit_code = (result.stdout or result.stderr).strip(), result.exit_status
+                    value = result.stdout.strip()
+                    if exit_code != 0 or not value:
+                        raise RuntimeError(result.stderr.strip() or "命令没有返回结果")
                     snapshot.items.append(ConfigurationCaptureItem(
                         item_key=field, item_label=FIELD_LABELS[field], value_text=value,
                         source_reference=command, raw_output=raw[:65535], exit_code=exit_code, status="succeeded",
@@ -478,20 +464,16 @@ async def capture_database(
     db.add(snapshot)
     db.flush()
     try:
-        if settings.execution_mode == "simulated":
-            values = {key: f"SIMULATED_{key}" for key in keys}
-            source = f"{database_name}.t_global_settings"
-        else:
-            async with mysql_adapter.connection(resource, database_name) as connection:
-                def query() -> tuple[dict[str, typing.Any], str]:
-                    with connection.cursor() as cursor:
-                        cursor.execute("SHOW COLUMNS FROM `t_global_settings`")
-                        key_column, value_column = _detect_setting_columns([str(row[0]) for row in cursor.fetchall()])
-                        placeholders = ",".join(["%s"] * len(keys))
-                        sql = f"SELECT `{key_column}`, `{value_column}` FROM `t_global_settings` WHERE `{key_column}` IN ({placeholders})"
-                        cursor.execute(sql, keys)
-                        return {str(row[0]): row[1] for row in cursor.fetchall()}, f"{database_name}.t_global_settings.{key_column}/{value_column}"
-                values, source = await to_thread(query)
+        async with mysql_adapter.connection(resource, database_name) as connection:
+            def query() -> tuple[dict[str, typing.Any], str]:
+                with connection.cursor() as cursor:
+                    cursor.execute("SHOW COLUMNS FROM `t_global_settings`")
+                    key_column, value_column = _detect_setting_columns([str(row[0]) for row in cursor.fetchall()])
+                    placeholders = ",".join(["%s"] * len(keys))
+                    sql = f"SELECT `{key_column}`, `{value_column}` FROM `t_global_settings` WHERE `{key_column}` IN ({placeholders})"
+                    cursor.execute(sql, keys)
+                    return {str(row[0]): row[1] for row in cursor.fetchall()}, f"{database_name}.t_global_settings.{key_column}/{value_column}"
+            values, source = await to_thread(query)
         failed = False
         for key in keys:
             if key in values:
@@ -678,8 +660,6 @@ async def _sftp(resource: Resource):
 
 async def _write_remote_contract(resource: Resource, filename: str, source: Path) -> str:
     remote_path = posixpath.join(resource.remote_path.rstrip("/"), filename)
-    if settings.execution_mode == "simulated":
-        return remote_path
     temporary = posixpath.join(resource.remote_path.rstrip("/"), f".openslt-{uuid4().hex}.tmp")
     async with _sftp(resource) as client:
         try:
@@ -697,18 +677,6 @@ async def _export_contract_csv(
     table: str,
     target: Path,
 ) -> tuple[str, int, list[dict[str, typing.Any]]]:
-    if settings.execution_mode == "simulated":
-        quote_date = datetime.now(timezone.utc).date().isoformat()
-        rows = [
-            {"quote_date": quote_date, "symbol": f"SIM{index:04d}", "exchange": "SIM"}
-            for index in range(1, 7)
-        ]
-        with target.open("w", encoding="utf-8-sig", newline="") as output:
-            writer = csv.DictWriter(output, fieldnames=list(rows[0]))
-            writer.writeheader()
-            writer.writerows(rows)
-        return quote_date, len(rows), rows[:5]
-
     try:
         async with mysql_adapter.connection(database_resource, database_name) as connection:
             def export() -> tuple[str, int, list[dict[str, typing.Any]]]:
@@ -882,19 +850,6 @@ def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
     )
 
 
-def _write_simulated_pcapng(target: Path) -> None:
-    """Write a minimal valid little-endian pcapng section header block."""
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
-    try:
-        temporary.write_bytes(
-            struct.pack("<IIIHHqI", 0x0A0D0D0A, 28, 0x1A2B3C4D, 1, 0, -1, 28)
-        )
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
 async def _run_slnic_command(connection: typing.Any, command: str, label: str) -> None:
     result = await connection.run(command, check=False)
     if result.exit_status == 0:
@@ -922,66 +877,60 @@ async def execute_slnic_node(
     if not resource.remote_path.strip():
         raise WorkflowError("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径", 409)
 
-    mode = settings.execution_mode
-    summary = {"resource_id": resource.id, "mode": mode, "exit_code": 0}
+    summary = {"resource_id": resource.id, "exit_code": 0}
     target = _slnic_artifact_path(run, step)
-    if mode == "simulated":
-        if node.node_type != "slnic_merge_capture":
+    workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
+    prefix = f"cd {shlex.quote(workdir)} && "
+    connection = None
+    sftp = None
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
+    try:
+        connection = await asyncssh.connect(**_ssh_options(resource))
+        if node.node_type == "slnic_start_capture":
+            await _run_slnic_command(
+                connection, prefix + "./start_slnic_dump.sh", "启动 SLNIC 抓包"
+            )
             return summary
-        _write_simulated_pcapng(target)
-    else:
-        workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
-        prefix = f"cd {shlex.quote(workdir)} && "
-        connection = None
-        sftp = None
-        temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
-        try:
-            connection = await asyncssh.connect(**_ssh_options(resource))
-            if node.node_type == "slnic_start_capture":
-                await _run_slnic_command(
-                    connection, prefix + "./start_slnic_dump.sh", "启动 SLNIC 抓包"
-                )
-                return summary
-            if node.node_type == "slnic_stop_capture":
-                await _run_slnic_command(
-                    connection, prefix + "./stop_slnic_dump.sh", "关闭 SLNIC 抓包"
-                )
-                return summary
+        if node.node_type == "slnic_stop_capture":
+            await _run_slnic_command(
+                connection, prefix + "./stop_slnic_dump.sh", "关闭 SLNIC 抓包"
+            )
+            return summary
 
-            await _run_slnic_command(
-                connection, prefix + "./pcap_mergetoo slnic*", "合并 SLNIC 抓包"
-            )
-            await _run_slnic_command(
-                connection,
-                prefix
-                + "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; "
-                + "then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
-                + "test -f merge_pcap.pcap",
-                "检查合并后的 pcap 文件",
-            )
-            await _run_slnic_command(
-                connection,
-                prefix + "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
-                "转换 pcapng 文件",
-            )
-            target.parent.mkdir(parents=True, exist_ok=True)
-            sftp = await connection.start_sftp_client()
-            remote_file = posixpath.join(workdir, "merge_pcap.pcapng")
-            await sftp.get(remote_file, str(temporary))
-            temporary.replace(target)
-        except WorkflowError:
-            raise
-        except Exception as exc:
-            raise WorkflowError("SLNIC_EXECUTION_FAILED", f"SLNIC 节点执行失败：{exc}", 409) from exc
-        finally:
-            temporary.unlink(missing_ok=True)
-            if sftp:
-                with suppress(Exception):
-                    sftp.exit()
-            if connection:
-                connection.close()
-                with suppress(Exception):
-                    await connection.wait_closed()
+        await _run_slnic_command(
+            connection, prefix + "./pcap_mergetoo slnic*", "合并 SLNIC 抓包"
+        )
+        await _run_slnic_command(
+            connection,
+            prefix
+            + "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; "
+            + "then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
+            + "test -f merge_pcap.pcap",
+            "检查合并后的 pcap 文件",
+        )
+        await _run_slnic_command(
+            connection,
+            prefix + "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
+            "转换 pcapng 文件",
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        sftp = await connection.start_sftp_client()
+        remote_file = posixpath.join(workdir, "merge_pcap.pcapng")
+        await sftp.get(remote_file, str(temporary))
+        temporary.replace(target)
+    except WorkflowError:
+        raise
+    except Exception as exc:
+        raise WorkflowError("SLNIC_EXECUTION_FAILED", f"SLNIC 节点执行失败：{exc}", 409) from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+        if sftp:
+            with suppress(Exception):
+                sftp.exit()
+        if connection:
+            connection.close()
+            with suppress(Exception):
+                await connection.wait_closed()
 
     data = target.read_bytes()
     checksum = hashlib.sha256(data).hexdigest()
@@ -1027,17 +976,6 @@ async def _export_parser_table(
 ) -> int:
     if table not in PARSER_TABLES:
         raise WorkflowError("PARSER_TABLE_INVALID", f"不支持导出数据表 {table}", 400)
-    if settings.execution_mode == "simulated":
-        rows = [
-            {"id": 1, "account": "100001", "symbol": "SIM0001"},
-            {"id": 2, "account": "100001", "symbol": "SIM0002"},
-        ]
-        with target.open("w", encoding="utf-8", newline="") as output:
-            writer = csv.DictWriter(output, fieldnames=list(rows[0]))
-            writer.writeheader()
-            writer.writerows(rows)
-        return len(rows)
-
     try:
         async with mysql_adapter.connection(database_resource, database_name) as connection:
             def export() -> int:
@@ -1207,75 +1145,57 @@ async def execute_parser_node(
         for filename, source in input_files.items():
             input_checksums[filename] = hashlib.sha256(source.read_bytes()).hexdigest()
 
-        if settings.execution_mode == "simulated":
-            simulated_outputs = (
-                "write_clt_new_to_mkt.csv",
-                "write_clt_action_to_mkt.csv",
-                "write_clt_quote_action_to_mkt.csv",
-                "write_mkt_accept_to_clt.csv",
-                "write_clt_new_quote_to_mkt.csv",
-                "write_mkt_quote_accept_to_clt.csv",
-            )
-            for filename in simulated_outputs:
-                target = artifact_directory / filename
-                with target.open("w", encoding="utf-8", newline="") as output:
-                    writer = csv.writer(output)
-                    writer.writerow(["sequence", "latency_us"])
-                    writer.writerows([(1, 82.1), (2, 83.5)])
-                output_artifacts.append(_register_parser_artifact(db, run, step, target))
-            stdout = "simulated parser completed"
-        else:
-            connection = None
-            sftp = None
-            try:
-                connection = await asyncssh.connect(**_ssh_options(parser_resource))
-                sftp = await connection.start_sftp_client()
-                await sftp.makedirs(directory, exist_ok=True)
-                before = await _parser_csv_snapshot(sftp, directory)
-                for filename, source in input_files.items():
-                    await _upload_parser_input(sftp, directory, filename, source)
-                result = await connection.run(command, check=False)
-                stdout = str(result.stdout or "")
-                stderr = str(result.stderr or "")
-                if result.exit_status != 0:
-                    detail = (stderr or stdout or "远端命令没有返回错误信息").strip()[:1000]
-                    raise WorkflowError(
-                        "PARSER_COMMAND_FAILED",
-                        f"解析命令失败（退出码 {result.exit_status}）：{detail}",
-                        409,
-                    )
-                after = await _parser_csv_snapshot(sftp, directory)
-                changed = sorted(
-                    name for name, state in after.items()
-                    if name not in input_files and (name not in before or before[name] != state)
+        connection = None
+        sftp = None
+        try:
+            connection = await asyncssh.connect(**_ssh_options(parser_resource))
+            sftp = await connection.start_sftp_client()
+            await sftp.makedirs(directory, exist_ok=True)
+            before = await _parser_csv_snapshot(sftp, directory)
+            for filename, source in input_files.items():
+                await _upload_parser_input(sftp, directory, filename, source)
+            result = await connection.run(command, check=False)
+            stdout = str(result.stdout or "")
+            stderr = str(result.stderr or "")
+            if result.exit_status != 0:
+                detail = (stderr or stdout or "远端命令没有返回错误信息").strip()[:1000]
+                raise WorkflowError(
+                    "PARSER_COMMAND_FAILED",
+                    f"解析命令失败（退出码 {result.exit_status}）：{detail}",
+                    409,
                 )
-                if not changed:
-                    raise WorkflowError("PARSER_OUTPUT_MISSING", "解析成功但没有生成或更新 CSV 文件", 409)
-                for filename in changed:
-                    target = artifact_directory / filename
-                    partial = target.with_name(f".{target.name}.{uuid4().hex}.part")
-                    try:
-                        await sftp.get(posixpath.join(directory, filename), str(partial))
-                        partial.replace(target)
-                    except Exception as exc:
-                        raise WorkflowError(
-                            "PARSER_OUTPUT_DOWNLOAD_FAILED", f"下载 {filename} 失败：{exc}", 409
-                        ) from exc
-                    finally:
-                        partial.unlink(missing_ok=True)
-                    output_artifacts.append(_register_parser_artifact(db, run, step, target))
-            except WorkflowError:
-                raise
-            except Exception as exc:
-                raise WorkflowError("PARSER_EXECUTION_FAILED", f"解析节点执行失败：{exc}", 409) from exc
-            finally:
-                if sftp:
-                    with suppress(Exception):
-                        sftp.exit()
-                if connection:
-                    connection.close()
-                    with suppress(Exception):
-                        await connection.wait_closed()
+            after = await _parser_csv_snapshot(sftp, directory)
+            changed = sorted(
+                name for name, state in after.items()
+                if name not in input_files and (name not in before or before[name] != state)
+            )
+            if not changed:
+                raise WorkflowError("PARSER_OUTPUT_MISSING", "解析成功但没有生成或更新 CSV 文件", 409)
+            for filename in changed:
+                target = artifact_directory / filename
+                partial = target.with_name(f".{target.name}.{uuid4().hex}.part")
+                try:
+                    await sftp.get(posixpath.join(directory, filename), str(partial))
+                    partial.replace(target)
+                except Exception as exc:
+                    raise WorkflowError(
+                        "PARSER_OUTPUT_DOWNLOAD_FAILED", f"下载 {filename} 失败：{exc}", 409
+                    ) from exc
+                finally:
+                    partial.unlink(missing_ok=True)
+                output_artifacts.append(_register_parser_artifact(db, run, step, target))
+        except WorkflowError:
+            raise
+        except Exception as exc:
+            raise WorkflowError("PARSER_EXECUTION_FAILED", f"解析节点执行失败：{exc}", 409) from exc
+        finally:
+            if sftp:
+                with suppress(Exception):
+                    sftp.exit()
+            if connection:
+                connection.close()
+                with suppress(Exception):
+                    await connection.wait_closed()
 
     if not output_artifacts:
         raise WorkflowError("PARSER_OUTPUT_MISSING", "解析节点没有产生 CSV 产物", 409)

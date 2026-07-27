@@ -26,5 +26,4 @@ export interface OrderConfigDetail extends OrderConfigFile {
   declaration: string
   document: XmlNode
   tool: string
-  simulated: boolean
 }

@@ -186,7 +186,6 @@ class DatabaseDiscoveryRequest(BaseModel):
 
 class DatabaseDiscoveryOut(BaseModel):
     databases: typing.List[str]
-    simulated: bool
     filtered_system_count: int
 
 
@@ -232,7 +231,6 @@ class OrderConfigFileOut(BaseModel):
 class OrderConfigListOut(BaseModel):
     tool: str
     directory: str
-    simulated: bool
     files: typing.List[OrderConfigFileOut]
 
 
@@ -242,7 +240,6 @@ class OrderConfigDetailOut(OrderConfigFileOut):
     declaration: str
     document: XmlNodeOut
     tool: str
-    simulated: bool
 
 
 class DatabaseExportRequest(DatabaseSqlRequest):

@@ -43,7 +43,6 @@ async function runSelect() {
       sql: sql.value,
     })
     result.value = data
-    if (data.simulated) ElMessage.warning('当前为模拟模式，显示的是模拟数据')
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -70,9 +69,8 @@ async function previewUpdate() {
       database_name: databaseName.value,
       sql: sql.value,
     })
-    const mode = preview.simulated ? '模拟执行，不会修改真实数据。' : '真实执行将提交数据库事务。'
     const { value } = await ElMessageBox.prompt(
-      `目标：${preview.database_name}.${preview.table_name}，预计影响 ${preview.estimated_rows} 行。${mode}\n请输入资源名称“${resource.value.name}”完成第二次确认。`,
+      `目标：${preview.database_name}.${preview.table_name}，预计影响 ${preview.estimated_rows} 行。真实执行将提交数据库事务。\n请输入资源名称“${resource.value.name}”完成第二次确认。`,
       '第二次确认',
       {
         type: 'warning',
@@ -88,7 +86,7 @@ async function previewUpdate() {
       confirmation_text: value,
     })
     result.value = null
-    ElMessage.success(`${data.simulated ? '模拟' : '真实'} UPDATE 已完成，影响 ${data.affected_rows} 行`)
+    ElMessage.success(`UPDATE 已完成，影响 ${data.affected_rows} 行`)
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
   } finally {
@@ -114,7 +112,6 @@ async function exportData(format: 'csv' | 'xlsx') {
     anchor.download = `database-${resourceId.value}-${databaseName.value}.${format}`
     anchor.click()
     URL.revokeObjectURL(url)
-    if (response.headers['x-openslt-simulated'] === 'true') ElMessage.warning('已导出模拟数据')
   } catch (error) {
     ElMessage.error(errorMessage(error))
   } finally {
@@ -135,7 +132,6 @@ onMounted(load)
           <p class="muted mono">{{ resource.database_username }}@{{ resource.database_host }}:{{ resource.database_port }}</p>
         </div>
       </div>
-      <el-tag v-if="result?.simulated" type="warning" effect="dark">模拟数据</el-tag>
     </div>
 
     <div class="console-toolbar">
