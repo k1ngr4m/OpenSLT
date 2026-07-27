@@ -141,8 +141,8 @@ function nodeMeta(type: string) {
     database_config: { label: '获取数据库配置', icon: Document, tone: 'blue' },
     wiring_confirmation: { label: '接线确认', icon: Connection, tone: 'amber' },
     order_preparation: { label: '发单准备', icon: Promotion, tone: 'rose' },
-    slnic_start_capture: { label: '启动 SLNIC 节点', icon: VideoPlay, tone: 'violet' },
-    slnic_stop_capture: { label: '关闭 SLNIC 节点', icon: VideoPause, tone: 'violet' },
+    slnic_start_capture: { label: '启动 SLNIC', icon: VideoPlay, tone: 'violet' },
+    slnic_stop_capture: { label: '关闭 SLNIC', icon: VideoPause, tone: 'violet' },
     slnic_merge_capture: { label: '合并 pcapng', icon: Files, tone: 'violet' },
     parser_parse: { label: '数据解析', icon: Document, tone: 'blue' },
   }[type] || { label: type, icon: Document, tone: 'teal' }

@@ -30,7 +30,7 @@ def slnic_start_nodes() -> list[dict]:
         {
             "node_key": "slnic-start",
             "node_type": "slnic_start_capture",
-            "name": "启动 SLNIC 节点",
+            "name": "启动 SLNIC",
             "config": {},
         }
     ]
@@ -41,13 +41,13 @@ def slnic_start_stop_nodes() -> list[dict]:
         {
             "node_key": "slnic-start",
             "node_type": "slnic_start_capture",
-            "name": "启动 SLNIC 节点",
+            "name": "启动 SLNIC",
             "config": {},
         },
         {
             "node_key": "slnic-stop",
             "node_type": "slnic_stop_capture",
-            "name": "关闭 SLNIC 节点",
+            "name": "关闭 SLNIC",
             "config": {},
         },
     ]

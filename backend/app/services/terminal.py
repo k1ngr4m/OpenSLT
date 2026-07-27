@@ -26,14 +26,14 @@ from app.services.orchestration import append_log
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
 SLNIC_TERMINAL_COMMANDS = {
-    "slnic_start_capture": {"script": "./start_slnic_dump.sh", "action": "启动", "node_label": "启动 SLNIC 节点"},
-    "slnic_stop_capture": {"script": "./stop_slnic_dump.sh", "action": "关闭", "node_label": "关闭 SLNIC 节点"},
+    "slnic_start_capture": {"script": "./start_slnic_dump.sh", "action": "启动", "node_label": "启动 SLNIC"},
+    "slnic_stop_capture": {"script": "./stop_slnic_dump.sh", "action": "关闭", "node_label": "关闭 SLNIC"},
     "slnic_merge_capture": {
         "script": "./pcap_mergetoo slnic* && "
         "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
         "test -f merge_pcap.pcap && ./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
         "action": "合并",
-        "node_label": "合并 pcapng 节点",
+        "node_label": "合并 pcapng",
     },
 }
 MAX_INPUT_SIZE = 64 * 1024
