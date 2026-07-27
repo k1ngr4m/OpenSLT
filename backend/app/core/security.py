@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
 
@@ -66,11 +66,20 @@ def token_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+class CredentialSecretError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 def _fernet() -> Fernet:
     key = settings.credential_encryption_key
     if not key:
-        key = base64.urlsafe_b64encode(hashlib.sha256(settings.jwt_secret.encode()).digest()).decode()
-    return Fernet(key.encode())
+        raise CredentialSecretError("CREDENTIAL_ENCRYPTION_KEY 未配置")
+    try:
+        return Fernet(key.encode())
+    except ValueError as exc:
+        raise CredentialSecretError("CREDENTIAL_ENCRYPTION_KEY 格式不合法") from exc
 
 
 def encrypt_secret(value: typing.Union[str, None]) -> typing.Union[str, None]:
@@ -78,5 +87,9 @@ def encrypt_secret(value: typing.Union[str, None]) -> typing.Union[str, None]:
 
 
 def decrypt_secret(value: typing.Union[str, None]) -> typing.Union[str, None]:
-    return _fernet().decrypt(value.encode()).decode() if value else None
-
+    if not value:
+        return None
+    try:
+        return _fernet().decrypt(value.encode()).decode()
+    except InvalidToken as exc:
+        raise CredentialSecretError("资源凭据无法解密，请重新保存资源密码或私钥") from exc

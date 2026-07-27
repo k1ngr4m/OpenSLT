@@ -4,6 +4,7 @@ import typing
 import asyncio
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -214,3 +215,28 @@ def test_remote_terminal_reports_connection_failure(
         assert audits[0].detail == {"error_type": "OSError"}
     finally:
         db.close()
+
+
+def test_terminal_reports_invalid_stored_credentials(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+):
+    resource = create_resource(client, admin_headers, "REM-Bad-Credential")
+    token = access_token(admin_headers)
+    other_key = Fernet.generate_key()
+    db = SessionLocal()
+    try:
+        row = db.get(Resource, resource["id"])
+        row.encrypted_password = Fernet(other_key).encrypt(b"secret").decode()
+        db.commit()
+    finally:
+        db.close()
+
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        error = websocket.receive_json()
+        assert error["type"] == "error"
+        assert error["code"] == "RESOURCE_CREDENTIAL_INVALID"
+        assert "无法解密" in error["message"]
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
+        assert closed.value.code == 4512

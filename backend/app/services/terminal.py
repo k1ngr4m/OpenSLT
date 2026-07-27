@@ -14,7 +14,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from app.core.database import SessionLocal
 from app.core.logging import trace_id_ctx
-from app.core.security import decode_token, decrypt_secret
+from app.core.security import CredentialSecretError, decode_token, decrypt_secret
 from app.models import Resource, User
 from app.services.audit import write_audit
 
@@ -225,7 +225,20 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
     opened = False
     reason = "connection_failed"
     try:
-        context = _load_context(token, resource_id)
+        try:
+            context = _load_context(token, resource_id)
+        except CredentialSecretError as exc:
+            await websocket.accept()
+            await _send(
+                websocket,
+                {
+                    "type": "error",
+                    "code": "RESOURCE_CREDENTIAL_INVALID",
+                    "message": exc.message,
+                },
+            )
+            await _close(websocket, 4512)
+            return
         if context[0] is None:
             message = context[1]
             close_code = 4401 if "凭据" in message else 4403
