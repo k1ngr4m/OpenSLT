@@ -40,6 +40,12 @@ from app.services.order_configs import (
     parser_main_config_filename,
     update_symbol_csv_values,
 )
+from app.services.resource_relations import (
+    scenario_resource_ids,
+    sync_scenario_resources,
+    sync_workflow_resources,
+    workflow_resource_ids,
+)
 
 SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
 NODE_TYPES = {
@@ -114,9 +120,9 @@ def create_draft(db: Session, scenario: TestScenario, actor_id: int, resource_id
         version_no=next_version,
         status="draft",
         revision=1,
-        resource_ids=list(resource_ids),
         created_by=actor_id,
     )
+    sync_workflow_resources(draft, resource_ids)
     db.add(draft)
     db.flush()
     scenario.draft_workflow_version_id = draft.id
@@ -130,9 +136,9 @@ def clone_published_to_draft(db: Session, scenario: TestScenario, actor_id: int)
     if scenario.draft_workflow_version_id:
         return load_version(db, scenario.draft_workflow_version_id)
     if not scenario.published_workflow_version_id:
-        return create_draft(db, scenario, actor_id, scenario.default_resource_ids)
+        return create_draft(db, scenario, actor_id, scenario_resource_ids(scenario))
     published = load_version(db, scenario.published_workflow_version_id)
-    draft = create_draft(db, scenario, actor_id, published.resource_ids)
+    draft = create_draft(db, scenario, actor_id, workflow_resource_ids(published))
     copy_version_contents(db, published, draft, actor_id)
     return draft
 
@@ -153,7 +159,8 @@ def copy_version_contents(
 
 
 def resource_map(db: Session, version: ScenarioWorkflowVersion) -> dict[str, Resource]:
-    resources = list(db.scalars(select(Resource).where(Resource.id.in_(version.resource_ids))).all()) if version.resource_ids else []
+    resource_ids = workflow_resource_ids(version)
+    resources = list(db.scalars(select(Resource).where(Resource.id.in_(resource_ids))).all()) if resource_ids else []
     return {item.resource_type: item for item in resources}
 
 
@@ -277,7 +284,7 @@ def replace_draft(
         raise WorkflowError("WORKFLOW_NOT_DRAFT", "只能修改草稿工作流", 409)
     if version.revision != expected_revision:
         raise WorkflowError("WORKFLOW_REVISION_CONFLICT", "工作流已被其他用户修改，请重新加载", 409)
-    version.resource_ids = list(resource_ids)
+    sync_workflow_resources(version, resource_ids, db)
     existing = {node.node_key: node for node in version.nodes}
     incoming_keys = {item["node_key"] for item in nodes}
     for node in existing.values():
@@ -304,7 +311,7 @@ def replace_draft(
                 config=dict(item.get("config") or {}),
             ))
     version.revision += 1
-    scenario.default_resource_ids = list(resource_ids)
+    sync_scenario_resources(scenario, resource_ids, db)
     scenario.required_resource_types = sorted(resource_map(db, version))
     db.flush()
     return version
@@ -319,7 +326,7 @@ def workflow_payload(scenario: TestScenario, version: ScenarioWorkflowVersion, e
             "version_no": version.version_no,
             "status": version.status,
             "revision": version.revision,
-            "resource_ids": version.resource_ids,
+            "resource_ids": workflow_resource_ids(version),
             "published_by": version.published_by,
             "published_at": version.published_at,
             "created_at": version.created_at,
@@ -637,7 +644,7 @@ async def publish(db: Session, scenario: TestScenario, version: ScenarioWorkflow
     scenario.workflow_status = "published"
     scenario.is_enabled = True
     scenario.is_archived = False
-    scenario.default_resource_ids = list(version.resource_ids)
+    sync_scenario_resources(scenario, workflow_resource_ids(version), db)
     scenario.required_resource_types = sorted(resource_map(db, version))
     db.flush()
     return version

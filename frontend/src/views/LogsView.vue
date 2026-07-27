@@ -3,15 +3,16 @@ import { onMounted, ref } from 'vue'
 import { api, errorMessage } from '@/api/client'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import type { ApiAuditLog, ApiLog } from '@/types/api'
 const auth = useAuthStore()
 const tab = ref('logs')
-const rows = ref<any[]>([])
-const audit = ref<any[]>([])
+const rows = ref<ApiLog[]>([])
+const audit = ref<ApiAuditLog[]>([])
 const filters = ref({ log_type: '', level: '', trace_id: '', keyword: '' })
 async function load() {
   try {
-    rows.value = (await api.get('/logs', { params: filters.value })).data
-    if (auth.isAdmin) audit.value = (await api.get('/audit-logs')).data
+    rows.value = (await api.get<ApiLog[]>('/logs', { params: filters.value })).data
+    if (auth.isAdmin) audit.value = (await api.get<ApiAuditLog[]>('/audit-logs')).data
   } catch (e) { ElMessage.error(errorMessage(e)) }
 }
 async function exportAudit() {

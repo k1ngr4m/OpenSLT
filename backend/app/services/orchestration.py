@@ -19,16 +19,11 @@ from app.core.database import SessionLocal
 from app.core.logging import logger, redact
 from app.models import Artifact, AuditLog, LogRecord, Metric, Resource, ResourceLock, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, TestScenario
 from app.services.events import broker
-from app.services.workflows import (
-    SLNIC_NODE_TYPES,
-    WorkflowError,
-    capture_database,
-    capture_server,
-    collect_slnic_merge_artifact,
-    execute_slnic_node,
-    execute_parser_node,
-    prepare_order_node,
-)
+from app.services.resource_relations import run_resource_ids
+from app.services.run_state import TERMINAL_RUN_STATUSES, transition_run, transition_step
+from app.services.workflow_handlers import registry as workflow_handler_registry
+from app.services.workflow_handlers.base import WorkflowExecutionContext
+from app.services.workflows import WorkflowError, collect_slnic_merge_artifact
 
 STEPS = [
     ("precheck", "环境预检"),
@@ -43,7 +38,7 @@ STEPS = [
     ("reporting", "报告生成"),
 ]
 
-TERMINAL_STATUSES = {"completed", "precheck_failed", "execution_failed", "parse_failed", "cancelled", "timed_out"}
+TERMINAL_STATUSES = TERMINAL_RUN_STATUSES
 
 
 def _duration_ms(started_at: datetime, finished_at: datetime) -> int:
@@ -95,11 +90,12 @@ def create_workflow_steps(run: TestRun, workflow: ScenarioWorkflowVersion) -> No
 
 def acquire_locks(db: Session, run: TestRun, lease_minutes: int = 180) -> typing.Tuple[bool, typing.List[int]]:
     now = datetime.now(timezone.utc)
-    active = db.scalars(select(ResourceLock).where(and_(ResourceLock.resource_id.in_(run.resource_ids), ResourceLock.released_at.is_(None), ResourceLock.lease_expires_at > now))).all()
+    resource_ids = run_resource_ids(run)
+    active = db.scalars(select(ResourceLock).where(and_(ResourceLock.resource_id.in_(resource_ids), ResourceLock.released_at.is_(None), ResourceLock.lease_expires_at > now))).all()
     conflicts = sorted({lock.resource_id for lock in active if lock.run_id != run.id})
     if conflicts:
         return False, conflicts
-    for resource_id in run.resource_ids:
+    for resource_id in resource_ids:
         existing = db.scalar(select(ResourceLock).where(ResourceLock.resource_id == resource_id, ResourceLock.run_id == run.id, ResourceLock.released_at.is_(None)))
         if not existing:
             db.add(ResourceLock(resource_id=resource_id, run_id=run.id, lease_expires_at=now + timedelta(minutes=lease_minutes)))
@@ -118,7 +114,7 @@ def release_locks(db: Session, run_id: int, reason: str) -> int:
 
 
 def _load(db: Session, run_id: int) -> typing.Union[TestRun, None]:
-    return db.scalar(select(TestRun).where(TestRun.id == run_id).options(selectinload(TestRun.steps), selectinload(TestRun.metrics), selectinload(TestRun.artifacts), selectinload(TestRun.verdict)))
+    return db.scalar(select(TestRun).where(TestRun.id == run_id).options(selectinload(TestRun.steps), selectinload(TestRun.metrics), selectinload(TestRun.artifacts), selectinload(TestRun.verdict), selectinload(TestRun.resource_links)))
 
 
 def _step(run: TestRun, code: str) -> RunStep:
@@ -127,8 +123,8 @@ def _step(run: TestRun, code: str) -> RunStep:
 
 async def _perform_step(db: Session, run: TestRun, code: str, run_status: str, duration: float = 0.08) -> None:
     step = _step(run, code)
-    run.status = run_status
-    step.status = "running"
+    transition_run(run, run_status)
+    transition_step(step, "running")
     step.started_at = datetime.now(timezone.utc)
     started_clock = time.perf_counter()
     append_log(db, run, f"{code}.started", f"{step.name}开始", step=step)
@@ -138,7 +134,7 @@ async def _perform_step(db: Session, run: TestRun, code: str, run_status: str, d
     db.refresh(run)
     if run.status == "cancelled":
         raise asyncio.CancelledError
-    step.status = "succeeded"
+    transition_step(step, "succeeded")
     step.progress = 100
     step.finished_at = datetime.now(timezone.utc)
     step.duration_ms = int((time.perf_counter() - started_clock) * 1000)
@@ -180,12 +176,12 @@ async def start_run(run_id: int) -> None:
             return
         acquired, conflicts = acquire_locks(db, run)
         if not acquired:
-            run.status = "resource_queue"
+            transition_run(run, "resource_queue")
             run.queue_reason = f"资源被占用: {conflicts}"
             append_log(db, run, "run.queued", run.queue_reason, level="WARNING")
             db.commit()
             return
-        run.status = "precheck"
+        transition_run(run, "precheck")
         run.started_at = run.started_at or datetime.now(timezone.utc)
         run.queue_reason = None
         append_log(db, run, "run.started", "测速运行已启动")
@@ -194,12 +190,12 @@ async def start_run(run_id: int) -> None:
             await _perform_step(db, run, "precheck", "precheck")
         wiring = _step(run, "wiring_confirmation")
         if wiring.status == "succeeded":
-            run.status = "awaiting_wiring"
+            transition_run(run, "awaiting_wiring")
             db.commit()
             await continue_after_wiring(run.id)
             return
-        wiring.status = "waiting"
-        run.status = "awaiting_wiring"
+        transition_step(wiring, "waiting")
+        transition_run(run, "awaiting_wiring")
         append_log(db, run, "wiring.waiting", "请完成机房接线并在页面确认", step=wiring)
         db.commit()
         broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
@@ -207,7 +203,7 @@ async def start_run(run_id: int) -> None:
         logger.exception("run_start_failed", run_id=run_id)
         run = _load(db, run_id)
         if run:
-            run.status = "precheck_failed"
+            transition_run(run, "precheck_failed")
             run.error_code = "PRECHECK_FAILED"
             run.error_message = redact(str(exc))
             run.finished_at = datetime.now(timezone.utc)
@@ -229,7 +225,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
                 return
             acquired, conflicts = acquire_locks(db, run)
             if not acquired:
-                run.status = "resource_queue"
+                transition_run(run, "resource_queue")
                 run.queue_reason = f"资源被占用: {conflicts}"
                 append_log(db, run, "run.queued", run.queue_reason, level="WARNING")
                 db.commit()
@@ -237,10 +233,10 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             run.started_at = run.started_at or datetime.now(timezone.utc)
             run.queue_reason = None
             if run.steps:
-                run.status = "awaiting_step_start"
+                transition_run(run, "awaiting_step_start")
                 append_log(db, run, "run.started", "工作流已启动，等待手动开始第一个节点")
             else:
-                run.status = "completed"
+                transition_run(run, "completed")
                 run.progress = 100
                 run.finished_at = datetime.now(timezone.utc)
                 release_locks(db, run.id, "completed")
@@ -258,7 +254,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
         if not workflow or not scenario:
             raise WorkflowError("WORKFLOW_NOT_FOUND", "运行关联的工作流不存在", 409)
         nodes = {node.id: node for node in db.scalars(select(ScenarioWorkflowNode).where(ScenarioWorkflowNode.workflow_version_id == workflow.id)).all()}
-        resources = list(db.scalars(select(Resource).where(Resource.id.in_(run.resource_ids))).all())
+        resources = list(db.scalars(select(Resource).where(Resource.id.in_(run_resource_ids(run)))).all())
         run_resources = {item.resource_type: item for item in resources}
         total = max(1, len(run.steps))
         for step in run.steps:
@@ -267,51 +263,22 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             node = nodes.get(step.workflow_node_id)
             if not node:
                 raise WorkflowError("WORKFLOW_NODE_NOT_FOUND", f"节点 {step.name} 不存在", 409)
-            if node.node_type == "wiring_confirmation":
-                step.result_summary = {
-                    "diagram": (node.config or {}).get("diagram", "placeholder"),
-                    "confirmed": False,
-                }
-            elif node.node_type == "server_config":
-                snapshots = await capture_server(db, scenario, workflow, node, scope="run", actor_id=run.created_by, run_id=run.id, run_step_id=step.id, run_resources=run_resources)
-                failed = [item for item in snapshots if item.status == "failed"]
-                step.result_summary = {"snapshot_ids": [item.id for item in snapshots], "sources": len(snapshots), "failed": len(failed)}
-                if failed:
-                    raise WorkflowError("CONFIG_CAPTURE_FAILED", "服务器配置采集不完整", 409)
-            elif node.node_type == "database_config":
-                snapshots = await capture_database(db, scenario, workflow, node, scope="run", actor_id=run.created_by, run_id=run.id, run_step_id=step.id, run_resources=run_resources)
-                failed = [item for item in snapshots if item.status == "failed"]
-                step.result_summary = {"snapshot_ids": [item.id for item in snapshots], "sources": len(snapshots), "failed": len(failed)}
-                if failed:
-                    raise WorkflowError("CONFIG_CAPTURE_FAILED", "数据库配置采集不完整", 409)
-            elif node.node_type == "order_preparation":
-                step.result_summary = await prepare_order_node(db, workflow, node, run_resources)
-            elif node.node_type in SLNIC_NODE_TYPES:
-                step.result_summary = await execute_slnic_node(db, run, step, node, run_resources)
-            elif node.node_type == "parser_parse":
-                step.result_summary = await execute_parser_node(db, run, step, node, run_resources)
-                append_log(
-                    db,
-                    run,
-                    "parser.completed",
-                    "数据解析完成",
-                    step=step,
-                    source="parser",
-                    detail={
-                        "command": step.result_summary.get("command"),
-                        "exit_code": step.result_summary.get("exit_code"),
-                        "duration_ms": step.result_summary.get("duration_ms"),
-                        "output_files": step.result_summary.get("output_files"),
-                    },
-                    log_type="remote_command",
-                )
-            else:
-                raise WorkflowError("WORKFLOW_NODE_UNSUPPORTED", f"不支持节点类型 {node.node_type}", 409)
+            context = WorkflowExecutionContext(
+                db=db,
+                run=run,
+                step=step,
+                node=node,
+                scenario=scenario,
+                workflow=workflow,
+                resources=run_resources,
+                append_log=append_log,
+            )
+            step.result_summary = await workflow_handler_registry.execute(node.node_type, context)
             executed_at = datetime.now(timezone.utc)
-            step.status = "waiting"
+            transition_step(step, "waiting")
             step.progress = 100
             step.duration_ms = _duration_ms(step.started_at, executed_at)
-            run.status = "awaiting_step_completion"
+            transition_run(run, "awaiting_step_completion")
             run.progress = int((step.position - 1) * 100 / total)
             append_log(db, run, "workflow.step_executed", f"{step.name}执行结束，等待手动完成", step=step)
             db.commit()
@@ -326,12 +293,12 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
         if run:
             failed = next((step for step in run.steps if step.status == "running"), None)
             if failed:
-                failed.status = "failed"
+                transition_step(failed, "failed")
                 failed.error_message = redact(str(exc))
                 failed.finished_at = datetime.now(timezone.utc)
                 started_at = failed.started_at or failed.finished_at
                 failed.duration_ms = _duration_ms(started_at, failed.finished_at)
-                run.status = "awaiting_step_retry"
+                transition_run(run, "awaiting_step_retry")
                 run.error_code = None
                 run.error_message = None
                 run.finished_at = None
@@ -345,7 +312,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
                     detail={"error_code": getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED")},
                 )
             else:
-                run.status = "execution_failed"
+                transition_run(run, "execution_failed")
                 run.error_code = getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED")
                 run.error_message = redact(str(exc))
                 run.finished_at = datetime.now(timezone.utc)
@@ -375,12 +342,12 @@ def begin_workflow_step(
         raise WorkflowError("INVALID_TRANSITION", "当前节点状态不能执行此操作", 409)
     if retry:
         current.retry_count += 1
-    current.status = "running"
+    transition_step(current, "running")
     current.progress = 0
     current.error_message = None
     current.finished_at = None
     current.started_at = datetime.now(timezone.utc)
-    run.status = "running"
+    transition_run(run, "running")
     run.error_code = None
     run.error_message = None
     append_log(
@@ -410,7 +377,7 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
         and not (step.result_summary or {}).get("artifact_id")
     ):
         slnic_resource = db.scalar(select(Resource).where(
-            Resource.id.in_(run.resource_ids),
+            Resource.id.in_(run_resource_ids(run)),
             Resource.resource_type == "slnic",
         ))
         if not slnic_resource:
@@ -421,7 +388,7 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
             **artifact_summary,
         }
         db.expire(run, ["artifacts"])
-    step.status = "succeeded"
+    transition_step(step, "succeeded")
     step.progress = 100
     step.finished_at = now
     if step.node_type == "wiring_confirmation":
@@ -434,10 +401,10 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
     run.progress = int(step.position * 100 / max(1, len(run.steps)))
     next_step = next((item for item in run.steps if item.status != "succeeded"), None)
     if next_step:
-        run.status = "awaiting_step_start"
+        transition_run(run, "awaiting_step_start")
         append_log(db, run, "workflow.step_completed", f"{step.name}已完成", step=step)
     else:
-        run.status = "completed"
+        transition_run(run, "completed")
         run.progress = 100
         run.finished_at = now
         release_locks(db, run.id, "completed")
@@ -457,7 +424,7 @@ async def continue_after_wiring(run_id: int) -> None:
         if not run or run.status != "awaiting_wiring":
             return
         wiring = _step(run, "wiring_confirmation")
-        wiring.status = "succeeded"; wiring.progress = 100; wiring.started_at = wiring.started_at or datetime.now(timezone.utc); wiring.finished_at = datetime.now(timezone.utc); wiring.duration_ms = 0
+        transition_step(wiring, "succeeded"); wiring.progress = 100; wiring.started_at = wiring.started_at or datetime.now(timezone.utc); wiring.finished_at = datetime.now(timezone.utc); wiring.duration_ms = 0
         append_log(db, run, "wiring.confirmed", "人工接线已确认", step=wiring)
         db.commit()
         phases = [
@@ -477,8 +444,8 @@ async def continue_after_wiring(run_id: int) -> None:
             if code == "statistics":
                 _calculate_metrics(db, run); db.commit()
         review = _step(run, "manual_review")
-        review.status = "waiting"
-        run.status = "awaiting_review"
+        transition_step(review, "waiting")
+        transition_run(run, "awaiting_review")
         run.progress = 90
         append_log(db, run, "review.waiting", "自动分析完成，等待人工复核", step=review)
         db.commit()
@@ -491,8 +458,8 @@ async def continue_after_wiring(run_id: int) -> None:
         if run:
             failed_step = next((step for step in run.steps if step.status == "running"), None)
             if failed_step:
-                failed_step.status = "failed"; failed_step.error_message = redact(str(exc)); failed_step.finished_at = datetime.now(timezone.utc)
-            run.status = "parse_failed" if failed_step and failed_step.code == "coco_parse" else "execution_failed"
+                transition_step(failed_step, "failed"); failed_step.error_message = redact(str(exc)); failed_step.finished_at = datetime.now(timezone.utc)
+            transition_run(run, "parse_failed" if failed_step and failed_step.code == "coco_parse" else "execution_failed")
             run.error_code = "EXECUTION_FAILED"; run.error_message = redact(str(exc)); run.finished_at = datetime.now(timezone.utc)
             append_log(db, run, "run.failed", str(exc), level="ERROR", step=failed_step)
             release_locks(db, run.id, run.status)
@@ -504,11 +471,11 @@ async def continue_after_wiring(run_id: int) -> None:
 def cancel_run(db: Session, run: TestRun, reason: str = "user_cancelled") -> None:
     if run.status in TERMINAL_STATUSES:
         return
-    run.status = "cancelled"
+    transition_run(run, "cancelled")
     run.finished_at = datetime.now(timezone.utc)
     for step in run.steps:
         if step.status in {"running", "waiting"}:
-            step.status = "cancelled"; step.finished_at = datetime.now(timezone.utc)
+            transition_step(step, "cancelled"); step.finished_at = datetime.now(timezone.utc)
     append_log(db, run, "run.cancelled", "运行已取消，安全清理已触发", level="WARNING", detail={"reason": reason})
     release_locks(db, run.id, reason)
     db.commit()

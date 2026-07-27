@@ -7,18 +7,23 @@ import { api, errorMessage } from '@/api/client'
 import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
 import { resourceText } from '@/utils/status'
+import type { ApiResource } from '@/types/api'
 
 const route = useRoute()
 const router = useRouter()
-const resource = ref<any>(null)
+const resource = ref<ApiResource | null>(null)
 const terminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
 const activeWorkspace = ref<'terminal' | 'configs'>('terminal')
 const resourceId = computed(() => Number(route.params.id))
 const terminalSubtitle = computed(() => resource.value ? `${resourceText[resource.value.resource_type]} · ${resource.value.username}@${resource.value.host}:${resource.value.ssh_port}` : '')
+const configResourceType = computed<'order' | 'parser' | null>(() => {
+  const type = resource.value?.resource_type
+  return type === 'order' || type === 'parser' ? type : null
+})
 
 async function loadResource() {
-  const { data } = await api.get('/resources')
-  resource.value = data.find((item: any) => item.id === resourceId.value)
+  const { data } = await api.get<ApiResource[]>('/resources')
+  resource.value = data.find(item => item.id === resourceId.value) || null
   if (!resource.value || !['rem', 'market', 'order', 'slnic', 'parser'].includes(resource.value.resource_type)) {
     ElMessage.error('资源不存在或不支持操作台')
     await router.replace('/resources')
@@ -57,7 +62,7 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-    <div v-if="['order', 'parser'].includes(resource?.resource_type)" class="workspace-switch">
+    <div v-if="configResourceType" class="workspace-switch">
       <el-radio-group :model-value="activeWorkspace" @change="value => switchWorkspace(value as 'terminal' | 'configs')">
         <el-radio-button value="terminal">SSH 终端</el-radio-button>
         <el-radio-button value="configs">配置文件</el-radio-button>
@@ -75,7 +80,7 @@ onMounted(async () => {
         :min-height="420"
       />
     </div>
-    <OrderConfigPanel v-if="['order', 'parser'].includes(resource?.resource_type)" v-show="activeWorkspace === 'configs'" :resource-id="resourceId" :active="activeWorkspace === 'configs'" :resource-type="resource.resource_type" />
+    <OrderConfigPanel v-if="configResourceType" v-show="activeWorkspace === 'configs'" :resource-id="resourceId" :active="activeWorkspace === 'configs'" :resource-type="configResourceType" />
   </div>
 </template>
 

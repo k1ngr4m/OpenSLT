@@ -411,7 +411,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     async def fake_connect(**kwargs):
         return connection
 
-    monkeypatch.setattr(orchestration, "execute_slnic_node", fake_slnic)
+    monkeypatch.setattr(workflows, "execute_slnic_node", fake_slnic)
     monkeypatch.setattr(workflows, "_export_parser_table", fake_export)
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
 

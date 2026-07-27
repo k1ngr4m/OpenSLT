@@ -66,7 +66,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 20
+    assert len(model_table_names) == 23
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -110,7 +110,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0002"
+        ).scalar_one() == "0003"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -139,7 +139,7 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 21
+    assert len(created_tables) == 24
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
@@ -156,7 +156,11 @@ def test_expected_migration_revisions_remain() -> None:
         for path in (REPOSITORY_ROOT / "backend" / "migrations" / "versions").glob("*.py")
         if path.name != "__init__.py"
     }
-    assert revision_files == {"0001_initial.py", "0002_remove_simulated_mode.py"}
+    assert revision_files == {
+        "0001_initial.py",
+        "0002_remove_simulated_mode.py",
+        "0003_normalize_resource_relations.py",
+    }
 
 
 def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
@@ -183,5 +187,60 @@ def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
         }
         assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
         assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
-            "0002",
+            "0003",
         )
+
+
+def test_resource_relation_migration_backfills_legacy_json_in_order(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy-resources.sqlite3"
+    _alembic(database_path, "upgrade", "0002")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO t_users (id, username, display_name, password_hash, role, is_active, created_at, updated_at) "
+            "VALUES (1, 'admin', 'Admin', 'hash', 'admin', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        for resource_id, resource_type in ((10, "rem"), (20, "market")):
+            connection.execute(
+                "INSERT INTO t_resources "
+                "(id, name, resource_type, business_code, host, ssh_port, username, auth_type, "
+                "remote_path, capabilities, version_info, notes, is_enabled, is_deleted, health_status, "
+                "database_tls_enabled, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'fut_mm', '127.0.0.1', 22, 'tester', 'password', '', '{}', '', '', 1, 0, 'unknown', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                (resource_id, f"resource-{resource_id}", resource_type),
+            )
+        connection.execute(
+            "INSERT INTO t_test_plans "
+            "(id, name, business_code, description, default_resource_ids, config_version, is_enabled, created_by, created_at, updated_at) "
+            "VALUES (1, 'plan', 'fut_mm', '', '[]', '1.0', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO t_test_scenarios "
+            "(id, plan_id, name, scenario_type, config_version, expected_artifacts, default_resource_ids, "
+            "required_resource_types, is_enabled, workflow_status, is_archived, created_at, updated_at) "
+            "VALUES (1, 1, 'scenario', 'order', '1.0', '[]', '[20, 10]', '[\"market\", \"rem\"]', 1, 'draft', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO t_scenario_workflow_versions "
+            "(id, scenario_id, version_no, status, revision, resource_ids, created_by, created_at, updated_at) "
+            "VALUES (1, 1, 1, 'published', 1, '[10, 20]', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.execute(
+            "INSERT INTO t_test_runs "
+            "(id, run_number, plan_id, scenario_id, workflow_version_id, business_code, status, progress, "
+            "resource_ids, config_snapshot, trace_id, created_by, logs_complete, created_at, updated_at) "
+            "VALUES (1, 'R1', 1, 1, 1, 'fut_mm', 'draft', 0, '[20, 10]', '{}', 'trace', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "0003")
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT resource_id, position FROM t_scenario_resources ORDER BY position"
+        ).fetchall() == [(20, 1), (10, 2)]
+        assert connection.execute(
+            "SELECT resource_id, position FROM t_workflow_version_resources ORDER BY position"
+        ).fetchall() == [(10, 1), (20, 2)]
+        assert connection.execute(
+            "SELECT resource_id, position FROM t_run_resources ORDER BY position"
+        ).fetchall() == [(20, 1), (10, 2)]

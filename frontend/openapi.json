@@ -1,0 +1,6180 @@
+{
+  "components": {
+    "schemas": {
+      "ArtifactOut": {
+        "properties": {
+          "artifact_type": {
+            "title": "Artifact Type",
+            "type": "string"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_immutable": {
+            "title": "Is Immutable",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "step_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Id"
+          }
+        },
+        "required": [
+          "id",
+          "step_id",
+          "artifact_type",
+          "name",
+          "content_type",
+          "size",
+          "checksum",
+          "is_immutable",
+          "created_at"
+        ],
+        "title": "ArtifactOut",
+        "type": "object"
+      },
+      "AuditOut": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "object_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Object Id"
+          },
+          "object_type": {
+            "title": "Object Type",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result",
+            "type": "string"
+          },
+          "source_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ip"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "actor_id",
+          "action",
+          "object_type",
+          "object_id",
+          "result",
+          "source_ip",
+          "trace_id",
+          "detail",
+          "created_at"
+        ],
+        "title": "AuditOut",
+        "type": "object"
+      },
+      "CaptureItemOut": {
+        "properties": {
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "exit_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "item_label": {
+            "title": "Item Label",
+            "type": "string"
+          },
+          "raw_output": {
+            "title": "Raw Output",
+            "type": "string"
+          },
+          "source_reference": {
+            "title": "Source Reference",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "value_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Text"
+          }
+        },
+        "required": [
+          "id",
+          "item_key",
+          "item_label",
+          "value_text",
+          "source_reference",
+          "raw_output",
+          "exit_code",
+          "status",
+          "error_message"
+        ],
+        "title": "CaptureItemOut",
+        "type": "object"
+      },
+      "CaptureSnapshotOut": {
+        "properties": {
+          "attempt": {
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "database_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Name"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaptureItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "integer"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "source_type": {
+            "title": "Source Type",
+            "type": "string"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "source_type",
+          "resource_id",
+          "database_name",
+          "status",
+          "attempt",
+          "error_message",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "CaptureSnapshotOut",
+        "type": "object"
+      },
+      "ContractDataFetchRequest": {
+        "properties": {
+          "contract_types": {
+            "items": {
+              "enum": [
+                "futures",
+                "options"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Contract Types",
+            "type": "array"
+          },
+          "database_name": {
+            "title": "Database Name",
+            "type": "string"
+          },
+          "database_resource_id": {
+            "title": "Database Resource Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "database_resource_id",
+          "database_name",
+          "contract_types"
+        ],
+        "title": "ContractDataFetchRequest",
+        "type": "object"
+      },
+      "ContractDataFileOut": {
+        "properties": {
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "contract_type": {
+            "title": "Contract Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "database_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Name"
+          },
+          "database_resource_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Resource Id"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "order_resource_id": {
+            "title": "Order Resource Id",
+            "type": "integer"
+          },
+          "preview_rows": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Preview Rows",
+            "type": "array"
+          },
+          "quote_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Date"
+          },
+          "remote_path": {
+            "title": "Remote Path",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "scenario_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Id"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "source_table": {
+            "title": "Source Table",
+            "type": "string"
+          },
+          "workflow_node_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Node Id"
+          }
+        },
+        "required": [
+          "id",
+          "scenario_id",
+          "workflow_node_id",
+          "order_resource_id",
+          "database_resource_id",
+          "database_name",
+          "contract_type",
+          "source_table",
+          "filename",
+          "remote_path",
+          "quote_date",
+          "row_count",
+          "size",
+          "checksum",
+          "preview_rows",
+          "created_at"
+        ],
+        "title": "ContractDataFileOut",
+        "type": "object"
+      },
+      "DatabaseDiscoveryOut": {
+        "properties": {
+          "databases": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Databases",
+            "type": "array"
+          },
+          "filtered_system_count": {
+            "title": "Filtered System Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "databases",
+          "filtered_system_count"
+        ],
+        "title": "DatabaseDiscoveryOut",
+        "type": "object"
+      },
+      "DatabaseDiscoveryRequest": {
+        "properties": {
+          "auth_type": {
+            "default": "password",
+            "enum": [
+              "password",
+              "private_key"
+            ],
+            "title": "Auth Type",
+            "type": "string"
+          },
+          "database_connection_mode": {
+            "default": "direct",
+            "enum": [
+              "direct",
+              "ssh_tunnel"
+            ],
+            "title": "Database Connection Mode",
+            "type": "string"
+          },
+          "database_host": {
+            "title": "Database Host",
+            "type": "string"
+          },
+          "database_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Password"
+          },
+          "database_port": {
+            "default": 3306,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Database Port",
+            "type": "integer"
+          },
+          "database_tls_enabled": {
+            "default": false,
+            "title": "Database Tls Enabled",
+            "type": "boolean"
+          },
+          "database_username": {
+            "title": "Database Username",
+            "type": "string"
+          },
+          "host": {
+            "default": "",
+            "title": "Host",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "private_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Key"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "ssh_port": {
+            "default": 22,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Ssh Port",
+            "type": "integer"
+          },
+          "username": {
+            "default": "",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database_host",
+          "database_username"
+        ],
+        "title": "DatabaseDiscoveryRequest",
+        "type": "object"
+      },
+      "DatabaseExportRequest": {
+        "properties": {
+          "database_name": {
+            "title": "Database Name",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "csv",
+              "xlsx"
+            ],
+            "title": "Format",
+            "type": "string"
+          },
+          "sql": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database_name",
+          "sql",
+          "format"
+        ],
+        "title": "DatabaseExportRequest",
+        "type": "object"
+      },
+      "DatabaseSqlRequest": {
+        "properties": {
+          "database_name": {
+            "title": "Database Name",
+            "type": "string"
+          },
+          "sql": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database_name",
+          "sql"
+        ],
+        "title": "DatabaseSqlRequest",
+        "type": "object"
+      },
+      "DatabaseUpdateExecuteRequest": {
+        "properties": {
+          "confirmation_id": {
+            "title": "Confirmation Id",
+            "type": "string"
+          },
+          "confirmation_text": {
+            "title": "Confirmation Text",
+            "type": "string"
+          },
+          "database_name": {
+            "title": "Database Name",
+            "type": "string"
+          },
+          "sql": {
+            "maxLength": 100000,
+            "minLength": 1,
+            "title": "Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "database_name",
+          "sql",
+          "confirmation_id",
+          "confirmation_text"
+        ],
+        "title": "DatabaseUpdateExecuteRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LogOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "object"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_redacted": {
+            "title": "Is Redacted",
+            "type": "boolean"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "log_type": {
+            "title": "Log Type",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "step_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Id"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "log_type",
+          "level",
+          "event",
+          "message",
+          "trace_id",
+          "user_id",
+          "run_id",
+          "step_id",
+          "source",
+          "detail",
+          "is_redacted",
+          "created_at"
+        ],
+        "title": "LogOut",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "MetricOut": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sample_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Count"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "value",
+          "unit",
+          "sample_count",
+          "detail"
+        ],
+        "title": "MetricOut",
+        "type": "object"
+      },
+      "OrderConfigCreate": {
+        "properties": {
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source_name"
+        ],
+        "title": "OrderConfigCreate",
+        "type": "object"
+      },
+      "OrderConfigDetailOut": {
+        "properties": {
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "declaration": {
+            "title": "Declaration",
+            "type": "string"
+          },
+          "document": {
+            "$ref": "#/components/schemas/XmlNodeOut"
+          },
+          "modified_at": {
+            "format": "date-time",
+            "title": "Modified At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "modified_at",
+          "checksum",
+          "content",
+          "declaration",
+          "document",
+          "tool"
+        ],
+        "title": "OrderConfigDetailOut",
+        "type": "object"
+      },
+      "OrderConfigFileOut": {
+        "properties": {
+          "modified_at": {
+            "format": "date-time",
+            "title": "Modified At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "modified_at"
+        ],
+        "title": "OrderConfigFileOut",
+        "type": "object"
+      },
+      "OrderConfigListOut": {
+        "properties": {
+          "directory": {
+            "title": "Directory",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/OrderConfigFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "tool": {
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool",
+          "directory",
+          "files"
+        ],
+        "title": "OrderConfigListOut",
+        "type": "object"
+      },
+      "OrderConfigRename": {
+        "properties": {
+          "expected_checksum": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Checksum",
+            "type": "string"
+          },
+          "new_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "New Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name",
+          "expected_checksum"
+        ],
+        "title": "OrderConfigRename",
+        "type": "object"
+      },
+      "OrderConfigUpdate": {
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "expected_checksum": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Checksum",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "expected_checksum"
+        ],
+        "title": "OrderConfigUpdate",
+        "type": "object"
+      },
+      "PlanOut": {
+        "properties": {
+          "business_code": {
+            "title": "Business Code",
+            "type": "string"
+          },
+          "config_version": {
+            "title": "Config Version",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "integer"
+          },
+          "default_resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Default Resource Ids",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "business_code",
+          "description",
+          "default_resource_ids",
+          "config_version",
+          "is_enabled",
+          "created_by",
+          "created_at"
+        ],
+        "title": "PlanOut",
+        "type": "object"
+      },
+      "PlanWrite": {
+        "properties": {
+          "business_code": {
+            "enum": [
+              "fut_mm",
+              "rem_two",
+              "rem_two_mm"
+            ],
+            "title": "Business Code",
+            "type": "string"
+          },
+          "config_version": {
+            "default": "1.0",
+            "title": "Config Version",
+            "type": "string"
+          },
+          "default_resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Default Resource Ids",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "is_enabled": {
+            "default": true,
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "business_code"
+        ],
+        "title": "PlanWrite",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "ResourceOut": {
+        "properties": {
+          "auth_type": {
+            "title": "Auth Type",
+            "type": "string"
+          },
+          "business_code": {
+            "title": "Business Code",
+            "type": "string"
+          },
+          "capabilities": {
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "database_connection_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Connection Mode"
+          },
+          "database_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Engine"
+          },
+          "database_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Host"
+          },
+          "database_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Names"
+          },
+          "database_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Port"
+          },
+          "database_tls_enabled": {
+            "title": "Database Tls Enabled",
+            "type": "boolean"
+          },
+          "database_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Username"
+          },
+          "has_database_password": {
+            "title": "Has Database Password",
+            "type": "boolean"
+          },
+          "health_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health Checked At"
+          },
+          "health_status": {
+            "title": "Health Status",
+            "type": "string"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "remote_path": {
+            "title": "Remote Path",
+            "type": "string"
+          },
+          "resource_type": {
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "ssh_port": {
+            "title": "Ssh Port",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          },
+          "version_info": {
+            "title": "Version Info",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "resource_type",
+          "business_code",
+          "host",
+          "ssh_port",
+          "username",
+          "auth_type",
+          "database_engine",
+          "database_connection_mode",
+          "database_host",
+          "database_port",
+          "database_names",
+          "database_username",
+          "database_tls_enabled",
+          "has_database_password",
+          "remote_path",
+          "capabilities",
+          "version_info",
+          "notes",
+          "is_enabled",
+          "health_status",
+          "health_checked_at",
+          "created_at"
+        ],
+        "title": "ResourceOut",
+        "type": "object"
+      },
+      "ResourceWrite": {
+        "properties": {
+          "auth_type": {
+            "default": "password",
+            "enum": [
+              "password",
+              "private_key"
+            ],
+            "title": "Auth Type",
+            "type": "string"
+          },
+          "business_code": {
+            "enum": [
+              "fut_mm",
+              "rem_two",
+              "rem_two_mm"
+            ],
+            "title": "Business Code",
+            "type": "string"
+          },
+          "capabilities": {
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "database_connection_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "direct",
+                  "ssh_tunnel"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Connection Mode"
+          },
+          "database_engine": {
+            "anyOf": [
+              {
+                "const": "mysql",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Engine"
+          },
+          "database_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Host"
+          },
+          "database_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Names"
+          },
+          "database_password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Password"
+          },
+          "database_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Port"
+          },
+          "database_tls_enabled": {
+            "default": false,
+            "title": "Database Tls Enabled",
+            "type": "boolean"
+          },
+          "database_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Username"
+          },
+          "host": {
+            "default": "",
+            "title": "Host",
+            "type": "string"
+          },
+          "is_enabled": {
+            "default": true,
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "private_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Key"
+          },
+          "remote_path": {
+            "default": "",
+            "title": "Remote Path",
+            "type": "string"
+          },
+          "resource_type": {
+            "enum": [
+              "rem",
+              "market",
+              "order",
+              "slnic",
+              "capture",
+              "coco",
+              "parser",
+              "database"
+            ],
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "ssh_port": {
+            "default": 22,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Ssh Port",
+            "type": "integer"
+          },
+          "username": {
+            "default": "",
+            "title": "Username",
+            "type": "string"
+          },
+          "version_info": {
+            "default": "",
+            "title": "Version Info",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "resource_type",
+          "business_code"
+        ],
+        "title": "ResourceWrite",
+        "type": "object"
+      },
+      "RunCreate": {
+        "properties": {
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "integer"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "title": "Resource Ids",
+            "type": "array"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_id",
+          "scenario_id",
+          "resource_ids"
+        ],
+        "title": "RunCreate",
+        "type": "object"
+      },
+      "RunOut": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactOut"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "business_code": {
+            "title": "Business Code",
+            "type": "string"
+          },
+          "config_snapshot": {
+            "title": "Config Snapshot",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "logs_complete": {
+            "title": "Logs Complete",
+            "type": "boolean"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricOut"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "paused_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused From"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "integer"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "queue_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Reason"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Resource Ids",
+            "type": "array"
+          },
+          "run_number": {
+            "title": "Run Number",
+            "type": "string"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RunStatus"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepOut"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "timeout_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timeout At"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerdictOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflow_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version Id"
+          }
+        },
+        "required": [
+          "id",
+          "run_number",
+          "plan_id",
+          "scenario_id",
+          "workflow_version_id",
+          "business_code",
+          "status",
+          "progress",
+          "resource_ids",
+          "config_snapshot",
+          "trace_id",
+          "created_by",
+          "started_at",
+          "finished_at",
+          "timeout_at",
+          "error_code",
+          "error_message",
+          "queue_reason",
+          "paused_from",
+          "logs_complete",
+          "created_at"
+        ],
+        "title": "RunOut",
+        "type": "object"
+      },
+      "RunStatus": {
+        "enum": [
+          "draft",
+          "resource_queue",
+          "precheck",
+          "awaiting_wiring",
+          "capture_validation",
+          "environment_start",
+          "order_execution",
+          "collection",
+          "coco_parse",
+          "statistics",
+          "awaiting_review",
+          "awaiting_step_start",
+          "running",
+          "awaiting_step_completion",
+          "awaiting_step_retry",
+          "paused",
+          "completed",
+          "precheck_failed",
+          "execution_failed",
+          "parse_failed",
+          "cancelled",
+          "timed_out"
+        ],
+        "title": "RunStatus",
+        "type": "string"
+      },
+      "ScenarioOut": {
+        "properties": {
+          "config_version": {
+            "title": "Config Version",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "default_resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Default Resource Ids",
+            "type": "array"
+          },
+          "draft_workflow_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Workflow Version Id"
+          },
+          "expected_artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Expected Artifacts",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_archived": {
+            "title": "Is Archived",
+            "type": "boolean"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "integer"
+          },
+          "published_workflow_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Workflow Version Id"
+          },
+          "required_resource_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Resource Types",
+            "type": "array"
+          },
+          "scenario_type": {
+            "title": "Scenario Type",
+            "type": "string"
+          },
+          "workflow_status": {
+            "title": "Workflow Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "plan_id",
+          "name",
+          "scenario_type",
+          "config_version",
+          "expected_artifacts",
+          "default_resource_ids",
+          "required_resource_types",
+          "is_enabled",
+          "workflow_status",
+          "draft_workflow_version_id",
+          "published_workflow_version_id",
+          "is_archived",
+          "created_at"
+        ],
+        "title": "ScenarioOut",
+        "type": "object"
+      },
+      "ScenarioWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config_version": {
+            "default": "1.0",
+            "title": "Config Version",
+            "type": "string"
+          },
+          "default_resource_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Resource Ids"
+          },
+          "expected_artifacts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Expected Artifacts",
+            "type": "array"
+          },
+          "is_enabled": {
+            "default": true,
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "plan_id": {
+            "title": "Plan Id",
+            "type": "integer"
+          },
+          "required_resource_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Resource Types",
+            "type": "array"
+          },
+          "scenario_type": {
+            "title": "Scenario Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plan_id",
+          "name",
+          "scenario_type"
+        ],
+        "title": "ScenarioWrite",
+        "type": "object"
+      },
+      "StepOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "config_snapshot": {
+            "title": "Config Snapshot",
+            "type": "object"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_retries": {
+            "title": "Max Retries",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "progress": {
+            "title": "Progress",
+            "type": "integer"
+          },
+          "result_summary": {
+            "title": "Result Summary",
+            "type": "object"
+          },
+          "retry_count": {
+            "title": "Retry Count",
+            "type": "integer"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/StepStatus"
+          },
+          "workflow_node_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Node Id"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "workflow_node_id",
+          "node_type",
+          "config_snapshot",
+          "result_summary",
+          "position",
+          "status",
+          "progress",
+          "retry_count",
+          "max_retries",
+          "started_at",
+          "finished_at",
+          "duration_ms",
+          "error_message"
+        ],
+        "title": "StepOut",
+        "type": "object"
+      },
+      "StepStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "waiting",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "StepStatus",
+        "type": "string"
+      },
+      "TokenPair": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in"
+        ],
+        "title": "TokenPair",
+        "type": "object"
+      },
+      "UserCreate": {
+        "properties": {
+          "display_name": {
+            "default": "",
+            "maxLength": 128,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "type": "string"
+          },
+          "role": {
+            "default": "visitor",
+            "enum": [
+              "admin",
+              "tester",
+              "visitor"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "maxLength": 64,
+            "minLength": 3,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "UserCreate",
+        "type": "object"
+      },
+      "UserOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "display_name",
+          "role",
+          "is_active",
+          "last_login_at",
+          "created_at"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "UserUpdate": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 8,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "tester",
+                  "visitor"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "title": "UserUpdate",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerdictOut": {
+        "properties": {
+          "final_result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Result"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "issue_description": {
+            "title": "Issue Description",
+            "type": "string"
+          },
+          "notes": {
+            "title": "Notes",
+            "type": "string"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          }
+        },
+        "required": [
+          "id",
+          "final_result",
+          "issue_description",
+          "notes",
+          "reviewed_by",
+          "reviewed_at"
+        ],
+        "title": "VerdictOut",
+        "type": "object"
+      },
+      "VerdictWrite": {
+        "properties": {
+          "final_result": {
+            "enum": [
+              "passed",
+              "failed",
+              "conditional"
+            ],
+            "title": "Final Result",
+            "type": "string"
+          },
+          "issue_description": {
+            "default": "",
+            "title": "Issue Description",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          }
+        },
+        "required": [
+          "final_result"
+        ],
+        "title": "VerdictWrite",
+        "type": "object"
+      },
+      "WorkflowDocumentOut": {
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/WorkflowVersionOut"
+          },
+          "published_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Version Id"
+          },
+          "scenario": {
+            "$ref": "#/components/schemas/ScenarioOut"
+          },
+          "validation_errors": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Validation Errors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scenario",
+          "draft",
+          "published_version_id"
+        ],
+        "title": "WorkflowDocumentOut",
+        "type": "object"
+      },
+      "WorkflowDocumentWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowNodeWrite"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "title": "Resource Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_revision",
+          "resource_ids"
+        ],
+        "title": "WorkflowDocumentWrite",
+        "type": "object"
+      },
+      "WorkflowNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "enum": [
+              "server_config",
+              "database_config",
+              "wiring_confirmation",
+              "order_preparation",
+              "slnic_start_capture",
+              "slnic_stop_capture",
+              "slnic_merge_capture",
+              "parser_parse"
+            ],
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node_key",
+          "node_type",
+          "name",
+          "id",
+          "position"
+        ],
+        "title": "WorkflowNodeOut",
+        "type": "object"
+      },
+      "WorkflowNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "title": "Config",
+            "type": "object"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "enum": [
+              "server_config",
+              "database_config",
+              "wiring_confirmation",
+              "order_preparation",
+              "slnic_start_capture",
+              "slnic_stop_capture",
+              "slnic_merge_capture",
+              "parser_parse"
+            ],
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "node_type",
+          "name"
+        ],
+        "title": "WorkflowNodeWrite",
+        "type": "object"
+      },
+      "WorkflowVersionOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowNodeOut"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "published_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published By"
+          },
+          "resource_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Resource Ids",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "scenario_id": {
+            "title": "Scenario Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version_no": {
+            "title": "Version No",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "scenario_id",
+          "version_no",
+          "status",
+          "revision",
+          "resource_ids",
+          "published_by",
+          "published_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkflowVersionOut",
+        "type": "object"
+      },
+      "XmlAttributeOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "XmlAttributeOut",
+        "type": "object"
+      },
+      "XmlNodeOut": {
+        "properties": {
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/XmlAttributeOut"
+            },
+            "title": "Attributes",
+            "type": "array"
+          },
+          "children": {
+            "items": {
+              "$ref": "#/components/schemas/XmlNodeOut"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "type": {
+            "enum": [
+              "element",
+              "text",
+              "comment",
+              "cdata",
+              "processing_instruction"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "XmlNodeOut",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "OpenSLT",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/artifacts/{artifact_id}/download": {
+      "get": {
+        "operationId": "download_artifact_api_v1_artifacts__artifact_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "title": "Artifact Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Artifact"
+      }
+    },
+    "/api/v1/audit-logs": {
+      "get": {
+        "operationId": "list_audit_logs_api_v1_audit_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "object_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Object Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditOut"
+                  },
+                  "title": "Response List Audit Logs Api V1 Audit Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Audit Logs"
+      }
+    },
+    "/api/v1/audit-logs/export": {
+      "get": {
+        "operationId": "export_audit_logs_api_v1_audit_logs_export_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Audit Logs"
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout_api_v1_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Logout"
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me"
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh"
+      }
+    },
+    "/api/v1/business-types": {
+      "get": {
+        "operationId": "list_business_types_api_v1_business_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "title": "Response List Business Types Api V1 Business Types Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Business Types"
+      }
+    },
+    "/api/v1/logs": {
+      "get": {
+        "operationId": "query_logs_api_v1_logs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "log_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Log Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trace Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LogOut"
+                  },
+                  "title": "Response Query Logs Api V1 Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Logs"
+      }
+    },
+    "/api/v1/plans": {
+      "get": {
+        "operationId": "list_plans_api_v1_plans_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "business_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Business Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanOut"
+                  },
+                  "title": "Response List Plans Api V1 Plans Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Plans"
+      },
+      "post": {
+        "operationId": "create_plan_api_v1_plans_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Plan"
+      }
+    },
+    "/api/v1/plans/{plan_id}": {
+      "delete": {
+        "operationId": "delete_plan_api_v1_plans__plan_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Plan"
+      },
+      "put": {
+        "operationId": "update_plan_api_v1_plans__plan_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Plan"
+      }
+    },
+    "/api/v1/plans/{plan_id}/copy": {
+      "post": {
+        "operationId": "copy_plan_api_v1_plans__plan_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "plan_id",
+            "required": true,
+            "schema": {
+              "title": "Plan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Copy Plan"
+      }
+    },
+    "/api/v1/resources": {
+      "get": {
+        "operationId": "list_resources_api_v1_resources_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "business_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Business Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResourceOut"
+                  },
+                  "title": "Response List Resources Api V1 Resources Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Resources"
+      },
+      "post": {
+        "operationId": "create_resource_api_v1_resources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Resource"
+      }
+    },
+    "/api/v1/resources/database/discover": {
+      "post": {
+        "operationId": "discover_resource_databases_api_v1_resources_database_discover_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseDiscoveryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discover Resource Databases"
+      }
+    },
+    "/api/v1/resources/{resource_id}": {
+      "delete": {
+        "operationId": "delete_resource_api_v1_resources__resource_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Resource"
+      },
+      "put": {
+        "operationId": "update_resource_api_v1_resources__resource_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Resource"
+      }
+    },
+    "/api/v1/resources/{resource_id}/database/export": {
+      "post": {
+        "operationId": "database_export_api_v1_resources__resource_id__database_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Database Export"
+      }
+    },
+    "/api/v1/resources/{resource_id}/database/select": {
+      "post": {
+        "operationId": "database_select_api_v1_resources__resource_id__database_select_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseSqlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Database Select Api V1 Resources  Resource Id  Database Select Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Database Select"
+      }
+    },
+    "/api/v1/resources/{resource_id}/database/update-execute": {
+      "post": {
+        "operationId": "database_update_execute_api_v1_resources__resource_id__database_update_execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseUpdateExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Database Update Execute Api V1 Resources  Resource Id  Database Update Execute Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Database Update Execute"
+      }
+    },
+    "/api/v1/resources/{resource_id}/database/update-preview": {
+      "post": {
+        "operationId": "database_update_preview_api_v1_resources__resource_id__database_update_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseSqlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Database Update Preview Api V1 Resources  Resource Id  Database Update Preview Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Database Update Preview"
+      }
+    },
+    "/api/v1/resources/{resource_id}/health": {
+      "post": {
+        "operationId": "check_resource_api_v1_resources__resource_id__health_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Check Resource Api V1 Resources  Resource Id  Health Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Check Resource"
+      }
+    },
+    "/api/v1/resources/{resource_id}/order-configs": {
+      "get": {
+        "operationId": "list_order_configs_api_v1_resources__resource_id__order_configs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Order Configs"
+      },
+      "post": {
+        "operationId": "create_order_config_api_v1_resources__resource_id__order_configs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfigCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Order Config"
+      }
+    },
+    "/api/v1/resources/{resource_id}/order-configs/{filename}": {
+      "delete": {
+        "operationId": "delete_order_config_api_v1_resources__resource_id__order_configs__filename__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_checksum",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Expected Checksum",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Order Config"
+      },
+      "get": {
+        "operationId": "read_order_config_api_v1_resources__resource_id__order_configs__filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Order Config"
+      },
+      "patch": {
+        "operationId": "rename_order_config_api_v1_resources__resource_id__order_configs__filename__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfigRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Order Config"
+      },
+      "put": {
+        "operationId": "update_order_config_api_v1_resources__resource_id__order_configs__filename__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Order Config"
+      }
+    },
+    "/api/v1/resources/{resource_id}/parser-configs": {
+      "get": {
+        "operationId": "list_parser_configs_api_v1_resources__resource_id__parser_configs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Parser Configs"
+      },
+      "post": {
+        "operationId": "create_parser_config_api_v1_resources__resource_id__parser_configs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfigCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Parser Config"
+      }
+    },
+    "/api/v1/resources/{resource_id}/parser-configs/{filename}": {
+      "delete": {
+        "operationId": "delete_parser_config_api_v1_resources__resource_id__parser_configs__filename__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_checksum",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-f]{64}$",
+              "title": "Expected Checksum",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Parser Config"
+      },
+      "get": {
+        "operationId": "read_parser_config_api_v1_resources__resource_id__parser_configs__filename__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Parser Config"
+      },
+      "patch": {
+        "operationId": "rename_parser_config_api_v1_resources__resource_id__parser_configs__filename__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfigRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Parser Config"
+      },
+      "put": {
+        "operationId": "update_parser_config_api_v1_resources__resource_id__parser_configs__filename__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "title": "Filename",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderConfigDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Parser Config"
+      }
+    },
+    "/api/v1/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "business_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Business Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conclusion",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conclusion"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunOut"
+                  },
+                  "title": "Response List Runs Api V1 Runs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Runs"
+      },
+      "post": {
+        "operationId": "create_run_api_v1_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Run"
+      }
+    },
+    "/api/v1/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Run"
+      }
+    },
+    "/api/v1/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "run_cancel_api_v1_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Cancel"
+      }
+    },
+    "/api/v1/runs/{run_id}/confirm-wiring": {
+      "post": {
+        "operationId": "confirm_wiring_api_v1_runs__run_id__confirm_wiring_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Wiring"
+      }
+    },
+    "/api/v1/runs/{run_id}/logs": {
+      "get": {
+        "operationId": "list_run_logs_api_v1_runs__run_id__logs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LogOut"
+                  },
+                  "title": "Response List Run Logs Api V1 Runs  Run Id  Logs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Run Logs"
+      }
+    },
+    "/api/v1/runs/{run_id}/pause": {
+      "post": {
+        "operationId": "run_pause_api_v1_runs__run_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Pause"
+      }
+    },
+    "/api/v1/runs/{run_id}/reports": {
+      "post": {
+        "operationId": "regenerate_reports_api_v1_runs__run_id__reports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ArtifactOut"
+                  },
+                  "title": "Response Regenerate Reports Api V1 Runs  Run Id  Reports Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Regenerate Reports"
+      }
+    },
+    "/api/v1/runs/{run_id}/resume": {
+      "post": {
+        "operationId": "run_resume_api_v1_runs__run_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Resume"
+      }
+    },
+    "/api/v1/runs/{run_id}/retry": {
+      "post": {
+        "operationId": "run_retry_api_v1_runs__run_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Retry"
+      }
+    },
+    "/api/v1/runs/{run_id}/start": {
+      "post": {
+        "operationId": "run_start_api_v1_runs__run_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Start"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/capture-snapshots": {
+      "get": {
+        "operationId": "list_run_step_capture_snapshots_api_v1_runs__run_id__steps__step_id__capture_snapshots_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CaptureSnapshotOut"
+                  },
+                  "title": "Response List Run Step Capture Snapshots Api V1 Runs  Run Id  Steps  Step Id  Capture Snapshots Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Run Step Capture Snapshots"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/complete": {
+      "post": {
+        "operationId": "complete_run_step_api_v1_runs__run_id__steps__step_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/confirm": {
+      "post": {
+        "operationId": "confirm_run_step_api_v1_runs__run_id__steps__step_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/retry": {
+      "post": {
+        "operationId": "retry_run_step_api_v1_runs__run_id__steps__step_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/start": {
+      "post": {
+        "operationId": "start_run_step_api_v1_runs__run_id__steps__step_id__start_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Start Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/verdict": {
+      "post": {
+        "operationId": "submit_verdict_api_v1_runs__run_id__verdict_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerdictWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerdictOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Submit Verdict"
+      }
+    },
+    "/api/v1/scenarios": {
+      "get": {
+        "operationId": "list_scenarios_api_v1_scenarios_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "plan_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Plan Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScenarioOut"
+                  },
+                  "title": "Response List Scenarios Api V1 Scenarios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scenarios"
+      },
+      "post": {
+        "operationId": "create_scenario_api_v1_scenarios_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Scenario"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}": {
+      "delete": {
+        "operationId": "delete_scenario_api_v1_scenarios__scenario_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Scenario"
+      },
+      "put": {
+        "operationId": "update_scenario_api_v1_scenarios__scenario_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScenarioWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Scenario"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/copy": {
+      "post": {
+        "operationId": "copy_scenario_api_v1_scenarios__scenario_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScenarioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Copy Scenario"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow": {
+      "get": {
+        "operationId": "get_scenario_workflow_api_v1_scenarios__scenario_id__workflow_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scenario Workflow"
+      },
+      "put": {
+        "operationId": "save_scenario_workflow_api_v1_scenarios__scenario_id__workflow_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowDocumentWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Scenario Workflow"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/draft": {
+      "post": {
+        "operationId": "ensure_workflow_draft_api_v1_scenarios__scenario_id__workflow_draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ensure Workflow Draft"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files": {
+      "get": {
+        "operationId": "list_contract_files_api_v1_scenarios__scenario_id__workflow_nodes__node_key__contract_files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_key",
+            "required": true,
+            "schema": {
+              "title": "Node Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContractDataFileOut"
+                  },
+                  "title": "Response List Contract Files Api V1 Scenarios  Scenario Id  Workflow Nodes  Node Key  Contract Files Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Contract Files"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files/fetch": {
+      "post": {
+        "operationId": "create_contract_files_api_v1_scenarios__scenario_id__workflow_nodes__node_key__contract_files_fetch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_key",
+            "required": true,
+            "schema": {
+              "title": "Node Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContractDataFetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContractDataFileOut"
+                  },
+                  "title": "Response Create Contract Files Api V1 Scenarios  Scenario Id  Workflow Nodes  Node Key  Contract Files Fetch Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Contract Files"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/nodes/{node_key}/preview": {
+      "post": {
+        "operationId": "preview_workflow_node_api_v1_scenarios__scenario_id__workflow_nodes__node_key__preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_key",
+            "required": true,
+            "schema": {
+              "title": "Node Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CaptureSnapshotOut"
+                  },
+                  "title": "Response Preview Workflow Node Api V1 Scenarios  Scenario Id  Workflow Nodes  Node Key  Preview Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Workflow Node"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/publish": {
+      "post": {
+        "operationId": "publish_scenario_workflow_api_v1_scenarios__scenario_id__workflow_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Publish Scenario Workflow"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/versions": {
+      "get": {
+        "operationId": "list_workflow_versions_api_v1_scenarios__scenario_id__workflow_versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowVersionOut"
+                  },
+                  "title": "Response List Workflow Versions Api V1 Scenarios  Scenario Id  Workflow Versions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Workflow Versions"
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "operationId": "list_users_api_v1_users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserOut"
+                  },
+                  "title": "Response List Users Api V1 Users Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Users"
+      },
+      "post": {
+        "operationId": "create_user_api_v1_users_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create User"
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "patch": {
+        "operationId": "update_user_api_v1_users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update User"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    }
+  }
+}

@@ -10,6 +10,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config vite.config.ts",
+    "generate:api": "node scripts/generate-api-types.mjs",
     "build": "vue-tsc -b && vite build --config vite.config.ts",
     "preview": "vite preview --config vite.config.ts"
   },
@@ -26,6 +27,7 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "@vitejs/plugin-vue": "^5.2.1",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.7.2",
     "vite": "^6.0.5",
     "vue-tsc": "^2.2.0"

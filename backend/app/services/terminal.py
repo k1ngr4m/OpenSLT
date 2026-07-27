@@ -22,20 +22,13 @@ from app.models import Resource, RunStep, ScenarioWorkflowNode, ScenarioWorkflow
 from app.services.audit import write_audit
 from app.services.events import broker
 from app.services.orchestration import append_log
+from app.services.resource_relations import run_resource_ids
+from app.services.run_state import transition_run, transition_step
+from app.services.workflow_handlers import registry as workflow_handler_registry
+from app.services.workflow_handlers.slnic import SLNIC_TERMINAL_COMMANDS
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
-SLNIC_TERMINAL_COMMANDS = {
-    "slnic_start_capture": {"script": "./start_slnic_dump.sh", "action": "启动", "node_label": "启动 SLNIC"},
-    "slnic_stop_capture": {"script": "./stop_slnic_dump.sh", "action": "关闭", "node_label": "关闭 SLNIC"},
-    "slnic_merge_capture": {
-        "script": "./pcap_mergetoo slnic* && "
-        "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
-        "test -f merge_pcap.pcap && ./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
-        "action": "合并",
-        "node_label": "合并 pcapng",
-    },
-}
 MAX_INPUT_SIZE = 64 * 1024
 MIN_COLUMNS = 20
 MAX_COLUMNS = 300
@@ -184,10 +177,10 @@ def _validate_terminal_step(
     parsed_run_id, parsed_step_id, error = _parse_workflow_command_ids(run_id, step_id)
     if error:
         return None, None, False, error
-    run = db.get(TestRun, parsed_run_id, options=[selectinload(TestRun.steps)])
+    run = db.get(TestRun, parsed_run_id, options=[selectinload(TestRun.steps), selectinload(TestRun.resource_links)])
     if not run:
         return None, None, False, _workflow_command_error("RUN_NOT_FOUND", "运行不存在")
-    if resource.id not in run.resource_ids:
+    if resource.id not in run_resource_ids(run):
         return None, None, False, _workflow_command_error("INVALID_RESOURCE", "当前资源不属于该运行")
     current = next((item for item in run.steps if item.status != "succeeded"), None)
     step = next((item for item in run.steps if item.id == parsed_step_id), None)
@@ -225,7 +218,7 @@ def _dispatch_slnic_terminal_command(
     command = f"cd {shlex.quote(workdir)} && {command_meta['script']}"
     if retrying:
         step.retry_count += 1
-    step.status = "waiting"
+    transition_step(step, "waiting")
     step.progress = 100
     step.started_at = now
     step.finished_at = None
@@ -240,7 +233,7 @@ def _dispatch_slnic_terminal_command(
         "dispatched_by": actor_id,
         "dispatched_at": now.isoformat(),
     }
-    run.status = "awaiting_step_completion"
+    transition_run(run, "awaiting_step_completion")
     run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
     run.error_code = None
     run.error_message = None
@@ -297,7 +290,7 @@ async def _dispatch_order_preparation_command(
     node = db.get(ScenarioWorkflowNode, step.workflow_node_id)
     if not workflow or not node or node.workflow_version_id != workflow.id:
         return None, _workflow_command_error("WORKFLOW_NODE_NOT_FOUND", "发单节点不存在")
-    resources = list(db.scalars(select(Resource).where(Resource.id.in_(run.resource_ids))).all())
+    resources = list(db.scalars(select(Resource).where(Resource.id.in_(run_resource_ids(run)))).all())
     run_resources = {item.resource_type: item for item in resources}
     order_resource = run_resources.get("order")
     if not order_resource or order_resource.id != resource.id:
@@ -306,13 +299,13 @@ async def _dispatch_order_preparation_command(
     now = datetime.now(timezone.utc)
     if retrying:
         step.retry_count += 1
-    step.status = "running"
+    transition_step(step, "running")
     step.progress = 0
     step.started_at = now
     step.finished_at = None
     step.duration_ms = None
     step.error_message = None
-    run.status = "running"
+    transition_run(run, "running")
     run.error_code = None
     run.error_message = None
     append_log(
@@ -334,12 +327,12 @@ async def _dispatch_order_preparation_command(
         failed_at = datetime.now(timezone.utc)
         message = getattr(exc, "message", str(exc))
         code = getattr(exc, "code", "ORDER_PREPARATION_FAILED")
-        step.status = "failed"
+        transition_step(step, "failed")
         step.progress = 0
         step.error_message = message
         step.finished_at = failed_at
         step.duration_ms = _duration_ms(step.started_at, failed_at)
-        run.status = "awaiting_step_retry"
+        transition_run(run, "awaiting_step_retry")
         run.error_code = None
         run.error_message = None
         run.finished_at = None
@@ -358,7 +351,7 @@ async def _dispatch_order_preparation_command(
         return None, _workflow_command_error(code, message)
 
     dispatched_at = datetime.now(timezone.utc)
-    step.status = "waiting"
+    transition_step(step, "waiting")
     step.progress = 100
     step.finished_at = None
     step.duration_ms = _duration_ms(step.started_at, dispatched_at)
@@ -374,7 +367,7 @@ async def _dispatch_order_preparation_command(
         "dispatched_at": dispatched_at.isoformat(),
         "process_started": True,
     }
-    run.status = "awaiting_step_completion"
+    transition_run(run, "awaiting_step_completion")
     run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
     append_log(
         db,
@@ -417,7 +410,9 @@ async def _dispatch_workflow_step_command(
         )
         if error or not run or not step:
             return None, error or _workflow_command_error("INVALID_WORKFLOW_STEP", "运行步骤无效")
-        if step.node_type in SLNIC_TERMINAL_COMMANDS:
+        handler = workflow_handler_registry.find(step.node_type)
+        terminal_kind = handler.terminal_kind if handler else None
+        if terminal_kind == "slnic":
             return _dispatch_slnic_terminal_command(
                 db=db,
                 actor_id=actor_id,
@@ -426,7 +421,7 @@ async def _dispatch_workflow_step_command(
                 step=step,
                 retrying=retrying,
             )
-        if step.node_type == "order_preparation":
+        if terminal_kind == "order":
             return await _dispatch_order_preparation_command(
                 db=db,
                 actor_id=actor_id,

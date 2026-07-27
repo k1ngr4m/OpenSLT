@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.services.run_state import RunStatus, StepStatus
+
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -424,7 +426,7 @@ class StepOut(ORMModel):
     config_snapshot: typing.Dict[str, Any]
     result_summary: typing.Dict[str, Any]
     position: int
-    status: str
+    status: StepStatus
     progress: int
     retry_count: int
     max_retries: int
@@ -471,7 +473,7 @@ class RunOut(ORMModel):
     scenario_id: int
     workflow_version_id: typing.Union[int, None]
     business_code: str
-    status: str
+    status: RunStatus
     progress: int
     resource_ids: typing.List[int]
     config_snapshot: typing.Dict[str, Any]

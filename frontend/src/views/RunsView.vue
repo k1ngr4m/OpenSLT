@@ -3,13 +3,15 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import type { ApiPlan, ApiResource, ApiScenario } from '@/types/api'
+import type { RunDetail } from '@/types/run'
 import { businessText, statusText, statusType, resourceText } from '@/utils/status'
 
 const auth = useAuthStore()
-const runs = ref<any[]>([])
-const plans = ref<any[]>([])
-const scenarios = ref<any[]>([])
-const resources = ref<any[]>([])
+const runs = ref<RunDetail[]>([])
+const plans = ref<ApiPlan[]>([])
+const scenarios = ref<ApiScenario[]>([])
+const resources = ref<ApiResource[]>([])
 const dialog = ref(false)
 const form = reactive({ plan_id: 0, scenario_id: 0 })
 const resourceSelections = reactive<Record<string, number | null>>({})
@@ -21,10 +23,10 @@ const canCreate = computed(() => Boolean(form.scenario_id && requiredTypes.value
 
 async function load() {
   ;[runs.value, plans.value, scenarios.value, resources.value] = await Promise.all([
-    api.get('/runs').then(response => response.data),
-    api.get('/plans').then(response => response.data),
-    api.get('/scenarios').then(response => response.data),
-    api.get('/resources').then(response => response.data),
+    api.get<RunDetail[]>('/runs').then(response => response.data),
+    api.get<ApiPlan[]>('/plans').then(response => response.data),
+    api.get<ApiScenario[]>('/scenarios').then(response => response.data),
+    api.get<ApiResource[]>('/resources').then(response => response.data),
   ])
 }
 
@@ -65,7 +67,7 @@ function resourceOptions(type: string) {
   )
 }
 
-function resourceOptionLabel(resource: any) {
+function resourceOptionLabel(resource: ApiResource) {
   const location = resource.resource_type === 'database'
     ? `${resource.database_host || ''}:${resource.database_port || ''}`
     : resource.host

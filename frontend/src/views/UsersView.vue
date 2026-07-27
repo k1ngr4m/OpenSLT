@@ -2,13 +2,14 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { api, errorMessage } from '@/api/client'
-const rows = ref<any[]>([])
+import type { ApiUser, ApiUserCreate } from '@/types/api'
+const rows = ref<ApiUser[]>([])
 const dialog = ref(false)
 const editing = ref<number | null>(null)
-const form = reactive<any>({ username: '', display_name: '', password: '', role: 'visitor', is_active: true })
+const form = reactive<ApiUserCreate & { is_active: boolean }>({ username: '', display_name: '', password: '', role: 'visitor', is_active: true })
 const roleText: Record<string, string> = { admin: '管理员', tester: '测试人员', visitor: '访客' }
-async function load() { rows.value = (await api.get('/users')).data }
-function open(row?: any) { Object.assign(form, { username: '', display_name: '', password: '', role: 'visitor', is_active: true }, row || {}); form.password = ''; editing.value = row?.id || null; dialog.value = true }
+async function load() { rows.value = (await api.get<ApiUser[]>('/users')).data }
+function open(row?: ApiUser) { Object.assign(form, { username: '', display_name: '', password: '', role: 'visitor', is_active: true }, row || {}); form.password = ''; editing.value = row?.id || null; dialog.value = true }
 async function save() { try { if (editing.value) { const data = { display_name: form.display_name, role: form.role, is_active: form.is_active, ...(form.password ? { password: form.password } : {}) }; await api.patch(`/users/${editing.value}`, data) } else await api.post('/users', form); ElMessage.success('用户已保存'); dialog.value = false; load() } catch (e) { ElMessage.error(errorMessage(e)) } }
 onMounted(load)
 </script>

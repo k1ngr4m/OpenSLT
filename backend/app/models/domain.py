@@ -150,6 +150,11 @@ class TestScenario(TimestampMixin, Base):
         cascade="all, delete-orphan",
         foreign_keys="ScenarioWorkflowVersion.scenario_id",
     )
+    resource_links: Mapped[typing.List['ScenarioResource']] = relationship(
+        back_populates="scenario",
+        cascade="all, delete-orphan",
+        order_by="ScenarioResource.position",
+    )
 
 
 class ScenarioWorkflowVersion(TimestampMixin, Base):
@@ -169,6 +174,11 @@ class ScenarioWorkflowVersion(TimestampMixin, Base):
     )
     nodes: Mapped[typing.List['ScenarioWorkflowNode']] = relationship(
         back_populates="workflow_version", cascade="all, delete-orphan", order_by="ScenarioWorkflowNode.position"
+    )
+    resource_links: Mapped[typing.List['WorkflowVersionResource']] = relationship(
+        back_populates="workflow_version",
+        cascade="all, delete-orphan",
+        order_by="WorkflowVersionResource.position",
     )
 
 
@@ -215,6 +225,54 @@ class TestRun(TimestampMixin, Base):
     metrics: Mapped[typing.List['Metric']] = relationship(back_populates="run", cascade="all, delete-orphan")
     verdict: Mapped["Verdict | None"] = relationship(back_populates="run", cascade="all, delete-orphan", uselist=False)
     locks: Mapped[typing.List['ResourceLock']] = relationship(back_populates="run")
+    resource_links: Mapped[typing.List['RunResource']] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="RunResource.position",
+    )
+
+
+class ScenarioResource(Base):
+    __tablename__ = "t_scenario_resources"
+    __table_args__ = (
+        UniqueConstraint("scenario_id", "resource_id", name="uq_scenario_resource"),
+        UniqueConstraint("scenario_id", "position", name="uq_scenario_resource_position"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(
+        ForeignKey("t_test_scenarios.id", ondelete="CASCADE"), index=True
+    )
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    scenario: Mapped[TestScenario] = relationship(back_populates="resource_links")
+
+
+class WorkflowVersionResource(Base):
+    __tablename__ = "t_workflow_version_resources"
+    __table_args__ = (
+        UniqueConstraint("workflow_version_id", "resource_id", name="uq_workflow_version_resource"),
+        UniqueConstraint("workflow_version_id", "position", name="uq_workflow_version_resource_position"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workflow_version_id: Mapped[int] = mapped_column(
+        ForeignKey("t_scenario_workflow_versions.id", ondelete="CASCADE"), index=True
+    )
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    workflow_version: Mapped[ScenarioWorkflowVersion] = relationship(back_populates="resource_links")
+
+
+class RunResource(Base):
+    __tablename__ = "t_run_resources"
+    __table_args__ = (
+        UniqueConstraint("run_id", "resource_id", name="uq_run_resource"),
+        UniqueConstraint("run_id", "position", name="uq_run_resource_position"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
+    resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    run: Mapped[TestRun] = relationship(back_populates="resource_links")
 
 
 class RunStep(Base):

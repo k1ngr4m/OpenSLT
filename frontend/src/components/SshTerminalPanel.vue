@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { Connection, RefreshRight, VideoPause } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { JsonMap } from '@/types/run'
 
 type TerminalState = 'idle' | 'connecting' | 'connected' | 'closed' | 'error'
 
@@ -29,9 +30,9 @@ const props = withDefaults(defineProps<{
 })
 
 const emit = defineEmits<{
-  status: [message: any]
+  status: [message: JsonMap]
   error: [message: string]
-  workflowCommand: [message: any]
+  workflowCommand: [message: JsonMap]
 }>()
 
 const terminalHost = ref<HTMLElement | null>(null)
