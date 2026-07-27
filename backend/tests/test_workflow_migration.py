@@ -110,7 +110,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0001"
+        ).scalar_one() == "0002"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -150,13 +150,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     ) in sql
 
 
-def test_only_single_baseline_revision_remains() -> None:
+def test_expected_migration_revisions_remain() -> None:
     revision_files = {
         path.name
         for path in (REPOSITORY_ROOT / "backend" / "migrations" / "versions").glob("*.py")
         if path.name != "__init__.py"
     }
-    assert revision_files == {"0001_initial.py"}
+    assert revision_files == {"0001_initial.py", "0002_remove_simulated_mode.py"}
 
 
 def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
@@ -183,5 +183,5 @@ def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
         }
         assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
         assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
-            "0001",
+            "0002",
         )

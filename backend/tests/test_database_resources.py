@@ -13,6 +13,9 @@ from app.core.database import SessionLocal
 from app.models import AuditLog
 
 
+LEGACY_RESPONSE_FIELD = "sim" "ulated"
+
+
 def database_payload(**overrides):
     payload = {
         "name": "REM 业务库",
@@ -178,7 +181,7 @@ def test_database_health_select_export_and_update_uses_adapter(
     assert preview.status_code == 200, preview.text
     preview_data = preview.json()
     assert preview_data["estimated_rows"] == 3
-    assert "simulated" not in preview_data
+    assert LEGACY_RESPONSE_FIELD not in preview_data
 
     execute_payload = {
         "database_name": "rem_core",

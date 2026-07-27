@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.core.database import SessionLocal
 from app.models import ConfigurationCaptureSnapshot, ResourceLock
 from app.core.logging import redact
+from app.services import workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -10,7 +13,27 @@ def node(key: str, node_type: str, name: str, config: dict) -> dict:
     return {"node_key": key, "node_type": node_type, "name": name, "config": config}
 
 
-def test_complete_dynamic_workflow(client, admin_headers):
+class FakeCaptureConnection:
+    async def run(self, command, check=False):
+        assert check is False
+        if "ip -o -4 addr show" in command:
+            return SimpleNamespace(exit_status=0, stdout="10.0.0.1/24\n", stderr="")
+        if "lscpu" in command:
+            return SimpleNamespace(exit_status=0, stdout="CPU(s): 32\n", stderr="")
+        return SimpleNamespace(exit_status=0, stdout="captured\n", stderr="")
+
+    def close(self):
+        return None
+
+    async def wait_closed(self):
+        return None
+
+
+def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
+    async def fake_connect(**_options):
+        return FakeCaptureConnection()
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
     resource = create_resource(client, admin_headers, "REM-01")
     plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
     publish_workflow(client, admin_headers, scenario, [resource["id"]], [

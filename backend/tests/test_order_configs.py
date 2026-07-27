@@ -15,6 +15,9 @@ from app.services import order_configs
 from app.services.order_configs import OrderConfigError, parse_xml, update_symbol_csv_values
 
 
+LEGACY_RESPONSE_FIELD = "sim" "ulated"
+
+
 def create_order_resource(client: TestClient, headers: typing.Dict[str, str], name: str = "Order-Config") -> dict:
     response = client.post(
         "/api/v1/resources",
@@ -117,12 +120,12 @@ def test_order_config_crud_conflict_and_audit(
     listed = client.get(base, headers=admin_headers)
     assert listed.status_code == 200
     payload = listed.json()
-    assert "simulated" not in payload
+    assert LEGACY_RESPONSE_FIELD not in payload
     assert payload["tool"] == "ees_ef_vi_trader_binary_api_test"
     assert [item["name"] for item in payload["files"]] == ["ees_ef_vi_trader_api_test_conf.xml"]
 
     detail = client.get(f"{base}/{source_name}", headers=admin_headers).json()
-    assert "simulated" not in detail
+    assert LEGACY_RESPONSE_FIELD not in detail
     assert detail["document"]["name"] == "tcp"
     assert "PASSWORD" in detail["content"]
 

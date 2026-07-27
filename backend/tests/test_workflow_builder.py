@@ -1,11 +1,149 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import asyncssh
 
 from app.core.database import SessionLocal
 from app.models import ContractDataFile
+from app.services import order_configs
 from app.services import workflows
 from conftest import create_plan_scenario, create_resource
+
+
+ORDER_XML = '''<?xml version="1.0" encoding="utf-8"?>
+<tcp>
+  <group_new_order id="new_order" disp="NEW_ORDER"><price disp="PRICE" value="1495.0000" /></group_new_order>
+</tcp>'''
+
+
+class FakeRemoteFile:
+    def __init__(self, sftp: "FakeSFTP", path: str) -> None:
+        self.sftp = sftp
+        self.path = path
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def read(self, _: int) -> str:
+        return self.sftp.files[self.path]["content"]
+
+    async def write(self, content: str) -> int:
+        self.sftp.files[self.path] = {
+            "content": content,
+            "permissions": 0o600,
+            "mtime": 1_700_000_100,
+            "type": asyncssh.FILEXFER_TYPE_REGULAR,
+        }
+        return len(content)
+
+
+class FakeSFTP:
+    def __init__(self, directory: str) -> None:
+        self.files = {
+            f"{directory}/ees_ef_vi_trader_api_test_conf.xml": {
+                "content": ORDER_XML,
+                "permissions": 0o744,
+                "mtime": 1_700_000_000,
+                "type": asyncssh.FILEXFER_TYPE_REGULAR,
+            }
+        }
+        self.directories = set()
+
+    async def scandir(self, path: str):
+        for full_path, item in list(self.files.items()):
+            if full_path.rsplit("/", 1)[0] != path:
+                continue
+            yield SimpleNamespace(
+                filename=full_path.rsplit("/", 1)[1],
+                attrs=asyncssh.SFTPAttrs(
+                    type=item["type"],
+                    size=len(item["content"].encode()),
+                    permissions=item["permissions"],
+                    mtime=item["mtime"],
+                ),
+            )
+
+    async def lstat(self, path: str):
+        if path not in self.files:
+            raise asyncssh.SFTPNoSuchFile("missing")
+        item = self.files[path]
+        return asyncssh.SFTPAttrs(
+            type=item["type"],
+            size=len(item["content"].encode()),
+            permissions=item["permissions"],
+            mtime=item["mtime"],
+        )
+
+    def open(self, path: str, mode: str, **_):
+        return FakeRemoteFile(self, path)
+
+    async def exists(self, path: str) -> bool:
+        return path in self.files
+
+    async def setstat(self, path: str, attrs):
+        self.files[path]["permissions"] = attrs.permissions
+
+    async def rename(self, old: str, new: str):
+        self.files[new] = self.files.pop(old)
+
+    async def posix_rename(self, old: str, new: str):
+        self.files[new] = self.files.pop(old)
+
+    async def put(self, local_path: str, remote_path: str):
+        self.files[remote_path] = {
+            "content": Path(local_path).read_text(encoding="utf-8-sig"),
+            "permissions": 0o600,
+            "mtime": 1_700_000_200,
+            "type": asyncssh.FILEXFER_TYPE_REGULAR,
+        }
+
+    async def remove(self, path: str):
+        if path not in self.files:
+            raise asyncssh.SFTPNoSuchFile("missing")
+        del self.files[path]
+
+    async def makedirs(self, path: str, exist_ok: bool = False):
+        self.directories.add(path)
+
+    def exit(self):
+        return None
+
+
+class FakeConnection:
+    def __init__(self, sftp: FakeSFTP) -> None:
+        self.sftp = sftp
+
+    async def start_sftp_client(self):
+        return self.sftp
+
+    def close(self):
+        return None
+
+    async def wait_closed(self):
+        return None
+
+
+class FakeCaptureConnection:
+    def __init__(self, fail_cpu: bool = False) -> None:
+        self.fail_cpu = fail_cpu
+
+    async def run(self, command, check=False):
+        if "lscpu" in command and self.fail_cpu:
+            return SimpleNamespace(exit_status=1, stdout="", stderr="cpu read failed")
+        if "ip -o -4 addr show" in command:
+            return SimpleNamespace(exit_status=0, stdout="10.0.0.1/24\n", stderr="")
+        return SimpleNamespace(exit_status=0, stdout="captured\n", stderr="")
+
+    def close(self):
+        return None
+
+    async def wait_closed(self):
+        return None
 
 
 def create_order_resource(client, headers) -> dict:
@@ -36,7 +174,11 @@ def create_database_resource(client, headers) -> dict:
     return response.json()
 
 
-def test_workflow_draft_revision_preview_and_publish(client, admin_headers):
+def test_workflow_draft_revision_preview_and_publish(client, admin_headers, monkeypatch):
+    async def fake_connect(**_options):
+        return FakeCaptureConnection()
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
     rem = create_resource(client, admin_headers, "REM-01")
     _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
     document = client.get(f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers).json()
@@ -91,9 +233,31 @@ def test_publish_rejects_incomplete_order_node(client, admin_headers):
     assert published.json()["code"] == "WORKFLOW_VALIDATION_FAILED"
 
 
-def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers):
+def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers, monkeypatch):
     order = create_order_resource(client, admin_headers)
     database = create_database_resource(client, admin_headers)
+    sftp = FakeSFTP(order["remote_path"])
+
+    async def fake_connect(**_options):
+        return FakeConnection(sftp)
+
+    async def fake_export_contract_csv(database_resource, database_name, table, target):
+        quote_date = "2026-07-20"
+        rows = [
+            {"quote_date": quote_date, "symbol": f"TEST{index:04d}", "exchange": "SIM"}
+            for index in range(1, 7)
+        ]
+        target.write_text(
+            "quote_date,symbol,exchange\n"
+            + "\n".join(f"{row['quote_date']},{row['symbol']},{row['exchange']}" for row in rows)
+            + "\n",
+            encoding="utf-8-sig",
+        )
+        return quote_date, len(rows), rows[:5]
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflows, "_export_contract_csv", fake_export_contract_csv)
     plan, scenario = create_plan_scenario(
         client, admin_headers, resource_ids=[database["id"], order["id"]]
     )
@@ -295,8 +459,13 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
         "resource_ids": [rem["id"]], "timeout_minutes": 30,
     }).json()
 
-    cpu_value = workflows.SIMULATED_VALUES["cpu_model"]
-    monkeypatch.delitem(workflows.SIMULATED_VALUES, "cpu_model")
+    attempts = {"count": 0}
+
+    async def fake_connect(**_options):
+        attempts["count"] += 1
+        return FakeCaptureConnection(fail_cpu=attempts["count"] == 1)
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
     assert client.post(f"/api/v1/runs/{created['id']}/start", headers=admin_headers).status_code == 200
     step_id = created["steps"][0]["id"]
     assert client.post(
@@ -307,7 +476,6 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
     assert failed["status"] == "awaiting_step_retry"
     assert failed["steps"][0]["result_summary"] == {"snapshot_ids": [1], "sources": 1, "failed": 1}
 
-    monkeypatch.setitem(workflows.SIMULATED_VALUES, "cpu_model", cpu_value)
     retried = client.post(f"/api/v1/runs/{created['id']}/retry", headers=admin_headers)
     assert retried.status_code == 200, retried.text
     waiting = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()

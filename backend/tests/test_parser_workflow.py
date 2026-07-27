@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import asyncssh
+
 from app.models import Artifact
+from app.services import order_configs
 from app.services import orchestration, workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
@@ -19,6 +22,104 @@ PARSER_TOOLS = [
     "hwshfe_1414_2.0",
     "mg11",
 ]
+
+
+class FakeRemoteFile:
+    def __init__(self, sftp: "FakeConfigSFTP", path: str) -> None:
+        self.sftp = sftp
+        self.path = path
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def read(self, _: int) -> str:
+        return self.sftp.files[self.path]["content"]
+
+    async def write(self, content: str) -> int:
+        self.sftp.files[self.path] = {
+            "content": content,
+            "permissions": 0o600,
+            "mtime": 1_700_000_100,
+            "type": asyncssh.FILEXFER_TYPE_REGULAR,
+        }
+        return len(content)
+
+
+class FakeConfigSFTP:
+    def __init__(self) -> None:
+        self.files = {}
+        self.directories = set()
+
+    async def makedirs(self, path: str, exist_ok: bool = False):
+        self.directories.add(path)
+
+    async def exists(self, path: str) -> bool:
+        return path in self.files
+
+    def open(self, path: str, mode: str, **_):
+        return FakeRemoteFile(self, path)
+
+    async def scandir(self, path: str):
+        for full_path, item in list(self.files.items()):
+            if full_path.rsplit("/", 1)[0] != path:
+                continue
+            yield SimpleNamespace(
+                filename=full_path.rsplit("/", 1)[1],
+                attrs=asyncssh.SFTPAttrs(
+                    type=item["type"],
+                    size=len(item["content"].encode()),
+                    permissions=item["permissions"],
+                    mtime=item["mtime"],
+                ),
+            )
+
+    async def lstat(self, path: str):
+        if path not in self.files:
+            raise asyncssh.SFTPNoSuchFile("missing")
+        item = self.files[path]
+        return asyncssh.SFTPAttrs(
+            type=item["type"],
+            size=len(item["content"].encode()),
+            permissions=item["permissions"],
+            mtime=item["mtime"],
+        )
+
+    async def setstat(self, path: str, attrs):
+        self.files[path]["permissions"] = attrs.permissions
+
+    async def rename(self, old: str, new: str):
+        self.files[new] = self.files.pop(old)
+
+    async def posix_rename(self, old: str, new: str):
+        self.files[new] = self.files.pop(old)
+
+    async def remove(self, path: str):
+        if path not in self.files:
+            raise asyncssh.SFTPNoSuchFile("missing")
+        del self.files[path]
+
+    def exit(self):
+        return None
+
+    async def wait_closed(self):
+        return None
+
+
+class FakeConfigConnection:
+    def __init__(self, sftp: FakeConfigSFTP) -> None:
+        self.sftp = sftp
+
+    async def start_sftp_client(self):
+        return self.sftp
+
+    def close(self):
+        return None
+
+    async def wait_closed(self):
+        return None
 
 
 def create_parser_resource(client, headers, tool="soft_cffex_speed_analysis_v2", business_code="fut_mm"):
@@ -89,8 +190,14 @@ def test_parser_tools_are_available_to_every_business(client, admin_headers):
         assert resource["capabilities"]["parser_config_filename"] == expected_config
 
 
-def test_parser_config_defaults_and_crud(client, admin_headers):
+def test_parser_config_defaults_and_crud(client, admin_headers, monkeypatch):
     resource = create_parser_resource(client, admin_headers)
+    sftp = FakeConfigSFTP()
+
+    async def fake_connect(**_options):
+        return FakeConfigConnection(sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
     base = f"/api/v1/resources/{resource['id']}/parser-configs"
     listed = client.get(base, headers=admin_headers)
     assert listed.status_code == 200, listed.text
@@ -122,41 +229,6 @@ def test_parser_config_defaults_and_crud(client, admin_headers):
     assert deleted.status_code == 204
 
 
-def test_simulated_parser_workflow_archives_all_csv_outputs(client, admin_headers):
-    slnic = create_resource(client, admin_headers, "SLNIC-Parser", resource_type="slnic")
-    database = create_database_resource(client, admin_headers)
-    parser = create_parser_resource(client, admin_headers)
-    plan, scenario = create_plan_scenario(
-        client, admin_headers, resource_ids=[slnic["id"], database["id"], parser["id"]]
-    )
-    publish_workflow(
-        client, admin_headers, scenario,
-        [slnic["id"], database["id"], parser["id"]], parser_nodes(),
-    )
-    created = client.post("/api/v1/runs", headers=admin_headers, json={
-        "plan_id": plan["id"], "scenario_id": scenario["id"],
-        "resource_ids": [slnic["id"], database["id"], parser["id"]],
-        "timeout_minutes": 30,
-    })
-    assert created.status_code == 201, created.text
-    run_id = created.json()["id"]
-    started = client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers)
-    assert started.status_code == 200, started.text
-    run = complete_workflow(client, admin_headers, run_id)
-    assert run["status"] == "completed"
-    parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
-    assert parse_step["result_summary"]["table_rows"] == {
-        "t_fut_orders": 2, "t_fut_quotes": 2, "t_fut_arbi_orders": 2,
-    }
-    parsed = [item for item in run["artifacts"] if item["artifact_type"] == "parsed_csv"]
-    assert len(parsed) == 6
-    assert set(parse_step["result_summary"]["artifact_ids"]) == {item["id"] for item in parsed}
-    for artifact in parsed:
-        downloaded = client.get(f"/api/v1/artifacts/{artifact['id']}/download", headers=admin_headers)
-        assert downloaded.status_code == 200
-        assert downloaded.headers["content-type"].startswith("text/csv")
-
-
 def test_parser_publish_rejects_missing_merge(client, admin_headers):
     database = create_database_resource(client, admin_headers)
     parser = create_parser_resource(client, admin_headers)
@@ -178,6 +250,12 @@ def test_parser_publish_rejects_missing_merge(client, admin_headers):
 def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     client, admin_headers, monkeypatch
 ):
+    config_sftp = FakeConfigSFTP()
+
+    async def fake_config_connect(**_options):
+        return FakeConfigConnection(config_sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_config_connect)
     slnic = create_resource(client, admin_headers, "SLNIC-Remote-Parser", resource_type="slnic")
     database = create_database_resource(client, admin_headers)
     parser = create_parser_resource(client, admin_headers)
@@ -191,7 +269,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
     async def fake_slnic(db, run, step, node, run_resources):
         if node.node_type != "slnic_merge_capture":
-            return {"mode": "remote", "exit_code": 0}
+            return {"exit_code": 0}
         target = workflows._slnic_artifact_path(run, step)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"remote-pcapng")
@@ -202,7 +280,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
         )
         db.add(artifact)
         db.flush()
-        return {"mode": "remote", "exit_code": 0, "artifact_id": artifact.id}
+        return {"exit_code": 0, "artifact_id": artifact.id}
 
     async def fake_export(database_resource, database_name, table, target):
         target.write_text("id,account\n1,100001\n", encoding="utf-8")
@@ -279,7 +357,6 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     monkeypatch.setattr(orchestration, "execute_slnic_node", fake_slnic)
     monkeypatch.setattr(workflows, "_export_parser_table", fake_export)
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
-    monkeypatch.setattr(workflows.settings, "execution_mode", "remote")
 
     created = client.post("/api/v1/runs", headers=admin_headers, json={
         "plan_id": plan["id"], "scenario_id": scenario["id"],
