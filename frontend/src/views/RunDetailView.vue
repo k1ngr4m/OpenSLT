@@ -184,9 +184,9 @@ const selectedStepId = ref<number | null>(null)
 const manualStepSelection = ref(false)
 const logScope = ref<LogScope>('all')
 const captureStates = reactive<Record<number, CaptureState>>({})
-const slnicTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
+const workflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
 const terminalCommandPendingStepId = ref<number | null>(null)
-const queuedSlnicTerminalCommand = ref<{ stepId: number; operation: 'start' | 'retry' } | null>(null)
+const queuedTerminalCommand = ref<{ stepId: number; operation: 'start' | 'retry' } | null>(null)
 const contractPreviewDialog = ref(false)
 const contractPreviewFile = ref<ContractFilePreview | null>(null)
 const contractPreviewLoading = ref(false)
@@ -209,10 +209,22 @@ const slnicResource = computed<RunResourceSnapshot | null>(() => {
   if (!Array.isArray(resources)) return null
   return (resources.find((resource: JsonMap) => resource.type === 'slnic') as RunResourceSnapshot) || null
 })
-const showSlnicStartTerminal = computed(() => selectedStep.value?.node_type === 'slnic_start_capture')
-const slnicTerminalSubtitle = computed(() => {
-  if (!slnicResource.value) return ''
-  return [resourceText.slnic, slnicResource.value.host, slnicResource.value.version].filter(Boolean).join(' · ')
+const orderResource = computed<RunResourceSnapshot | null>(() => {
+  const resources = run.value?.config_snapshot?.resources
+  if (!Array.isArray(resources)) return null
+  return (resources.find((resource: JsonMap) => resource.type === 'order') as RunResourceSnapshot) || null
+})
+const showWorkflowTerminal = computed(() => ['slnic_start_capture', 'order_preparation'].includes(selectedStep.value?.node_type || ''))
+const workflowTerminalResource = computed(() => selectedStep.value?.node_type === 'order_preparation' ? orderResource.value : slnicResource.value)
+const workflowTerminalResourceText = computed(() => selectedStep.value?.node_type === 'order_preparation' ? resourceText.order : resourceText.slnic)
+const workflowTerminalTitle = computed(() => selectedStep.value?.node_type === 'order_preparation' ? '发单 SSH 终端' : 'SLNIC SSH 终端')
+const workflowTerminalDescription = computed(() => selectedStep.value?.node_type === 'order_preparation'
+  ? '点击顶部“开始”后，会先完成 XML/合约准备，再把发单命令下发到这个终端。'
+  : '点击顶部“开始”后，启动脚本会在这个终端中下发。')
+const workflowTerminalSubtitle = computed(() => {
+  const resource = workflowTerminalResource.value
+  if (!resource) return ''
+  return [workflowTerminalResourceText.value, resource.host, resource.version].filter(Boolean).join(' · ')
 })
 const selectedConfig = computed(() => selectedStep.value?.config_snapshot || {})
 const selectedResult = computed(() => selectedStep.value?.result_summary || {})
@@ -324,6 +336,10 @@ const resultRows = computed<InfoRow[]>(() => {
       { label: 'XML 文件', value: result.xml_filename || '-' },
       { label: '读取合约 CSV', value: result.read_symbol_csv ? '是' : '否' },
       { label: '网卡接口', value: result.network_interface || '-' },
+      { label: '执行模式', value: result.mode === 'terminal' ? 'SSH 终端' : '后端准备' },
+      { label: '资源', value: result.resource_name || (result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
+      { label: '发单命令', value: result.command || result.generated_command || '-', mono: true },
+      { label: '下发时间', value: formatDate(result.dispatched_at) },
       { label: '进程状态', value: result.process_started ? '已启动' : '未启动' },
     ]
   }
@@ -522,8 +538,8 @@ async function cancel() {
 async function stepAction(step: RunStep, operation: 'start' | 'complete' | 'retry') {
   actingStepId.value = step.id
   try {
-    if (step.node_type === 'slnic_start_capture' && ['start', 'retry'].includes(operation)) {
-      await runSlnicStartInTerminal(step, operation as 'start' | 'retry')
+    if (['slnic_start_capture', 'order_preparation'].includes(step.node_type) && ['start', 'retry'].includes(operation)) {
+      await runWorkflowStepInTerminal(step, operation as 'start' | 'retry')
       return
     }
     await api.post(`/runs/${runId}/steps/${step.id}/${operation}`)
@@ -537,62 +553,62 @@ async function stepAction(step: RunStep, operation: 'start' | 'complete' | 'retr
   }
 }
 
-async function runSlnicStartInTerminal(step: RunStep, operation: 'start' | 'retry') {
+async function runWorkflowStepInTerminal(step: RunStep, operation: 'start' | 'retry') {
   manualStepSelection.value = false
   selectedStepId.value = step.id
   active.value = 'detail'
   await nextTick()
-  const panel = slnicTerminalPanel.value
-  if (!slnicResource.value || !panel) {
-    throw new Error('未找到 SLNIC SSH 终端，请检查运行资源配置')
+  const panel = workflowTerminalPanel.value
+  if (!workflowTerminalResource.value || !panel) {
+    throw new Error(`未找到${workflowTerminalTitle.value}，请检查运行资源配置`)
   }
   if (!panel.connected) {
-    queuedSlnicTerminalCommand.value = { stepId: step.id, operation }
+    queuedTerminalCommand.value = { stepId: step.id, operation }
     terminalCommandPendingStepId.value = step.id
     if (!panel.connecting) panel.connect()
-    ElMessage.info('SLNIC SSH 终端连接中，连接成功后会自动下发启动指令')
+    ElMessage.info(`${workflowTerminalTitle.value}连接中，连接成功后会自动下发指令`)
     return
   }
   terminalCommandPendingStepId.value = step.id
   const sent = panel.sendWorkflowStepCommand({ run_id: runId, step_id: step.id, operation })
   if (!sent) {
     terminalCommandPendingStepId.value = null
-    throw new Error('SLNIC SSH 终端未连接，无法下发启动指令')
+    throw new Error(`${workflowTerminalTitle.value}未连接，无法下发指令`)
   }
 }
 
-function dispatchQueuedSlnicTerminalCommand() {
-  const queued = queuedSlnicTerminalCommand.value
-  const panel = slnicTerminalPanel.value
+function dispatchQueuedTerminalCommand() {
+  const queued = queuedTerminalCommand.value
+  const panel = workflowTerminalPanel.value
   if (!queued || !panel?.connected) return
   const sent = panel.sendWorkflowStepCommand({ run_id: runId, step_id: queued.stepId, operation: queued.operation })
   if (!sent) {
-    ElMessage.error('SLNIC SSH 终端未连接，无法下发启动指令')
+    ElMessage.error(`${workflowTerminalTitle.value}未连接，无法下发指令`)
     terminalCommandPendingStepId.value = null
   }
-  queuedSlnicTerminalCommand.value = null
+  queuedTerminalCommand.value = null
 }
 
-function handleSlnicTerminalStatus(message: JsonMap) {
-  if (message.status === 'connected') dispatchQueuedSlnicTerminalCommand()
+function handleWorkflowTerminalStatus(message: JsonMap) {
+  if (message.status === 'connected') dispatchQueuedTerminalCommand()
 }
 
-function handleSlnicTerminalError(message: string) {
-  if (queuedSlnicTerminalCommand.value) {
+function handleWorkflowTerminalError(message: string) {
+  if (queuedTerminalCommand.value) {
     ElMessage.error(message)
-    queuedSlnicTerminalCommand.value = null
+    queuedTerminalCommand.value = null
     terminalCommandPendingStepId.value = null
   }
 }
 
-function handleSlnicWorkflowCommand(message: JsonMap) {
+function handleWorkflowTerminalCommand(message: JsonMap) {
   if (message.status === 'dispatched') {
-    ElMessage.success('SLNIC 启动指令已在终端中下发')
+    ElMessage.success(`${workflowTerminalTitle.value}指令已在终端中下发`)
     setTimeout(load, 300)
   } else if (message.status === 'failed') {
-    ElMessage.error(message.message || 'SLNIC 启动指令下发失败')
+    ElMessage.error(message.message || `${workflowTerminalTitle.value}指令下发失败`)
   }
-  queuedSlnicTerminalCommand.value = null
+  queuedTerminalCommand.value = null
   terminalCommandPendingStepId.value = null
   actingStepId.value = null
 }
@@ -835,27 +851,27 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <section v-if="showSlnicStartTerminal" class="detail-section slnic-terminal-section">
+              <section v-if="showWorkflowTerminal" class="detail-section workflow-terminal-section">
                 <div class="section-heading">
                   <div>
-                    <h3>SLNIC SSH 终端</h3>
-                    <p class="muted">点击顶部“开始”后，启动脚本会在这个终端中下发。</p>
+                    <h3>{{ workflowTerminalTitle }}</h3>
+                    <p class="muted">{{ workflowTerminalDescription }}</p>
                   </div>
-                  <el-tag v-if="slnicResource" type="success" effect="plain">{{ slnicResource.name }}</el-tag>
+                  <el-tag v-if="workflowTerminalResource" type="success" effect="plain">{{ workflowTerminalResource.name }}</el-tag>
                 </div>
                 <SshTerminalPanel
-                  v-if="slnicResource"
-                  ref="slnicTerminalPanel"
-                  :resource-id="slnicResource.id"
-                  :title="slnicResource.name"
-                  :subtitle="slnicTerminalSubtitle"
-                  :active="showSlnicStartTerminal"
+                  v-if="workflowTerminalResource"
+                  ref="workflowTerminalPanel"
+                  :resource-id="workflowTerminalResource.id"
+                  :title="workflowTerminalResource.name"
+                  :subtitle="workflowTerminalSubtitle"
+                  :active="showWorkflowTerminal"
                   :min-height="320"
-                  @status="handleSlnicTerminalStatus"
-                  @error="handleSlnicTerminalError"
-                  @workflow-command="handleSlnicWorkflowCommand"
+                  @status="handleWorkflowTerminalStatus"
+                  @error="handleWorkflowTerminalError"
+                  @workflow-command="handleWorkflowTerminalCommand"
                 />
-                <div v-else class="empty-line">当前运行没有 SLNIC 资源，无法加载 SSH 终端</div>
+                <div v-else class="empty-line">当前运行没有{{ workflowTerminalResourceText }}，无法加载 SSH 终端</div>
               </section>
 
               <div v-if="selectedStep.node_type === 'wiring_confirmation'" class="wiring-run">
@@ -1106,7 +1122,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.run-detail-page{background:#f3f6f8;min-height:100vh}.run-header{align-items:flex-start}.summary{display:grid;grid-template-columns:180px minmax(260px,1fr) minmax(260px,1.2fr) 180px;gap:28px;padding:18px 22px;margin-bottom:16px}.summary p{margin:10px 0 0}.trace{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.workflow-strip{padding:18px 20px;margin-top:16px}.workflow-strip-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.workflow-strip-head strong{font-size:16px;margin-right:10px}.workflow-scroller{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:thin}.flow-step{position:relative;display:flex;align-items:center;gap:10px;min-width:218px;max-width:260px;padding:12px 16px;border:1px solid #dfe7ef;border-radius:8px;background:#fff;color:#263445;text-align:left;cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s,transform .2s}.flow-step:hover{transform:translateY(-1px);border-color:#9fc8ff;box-shadow:0 8px 20px rgba(44,92,145,.08)}.flow-step:active{transform:translateY(0)}.flow-step:focus-visible{outline:2px solid #409eff;outline-offset:2px}.flow-step:after{content:'';position:absolute;right:-11px;top:50%;width:10px;height:1px;background:#cbd6e2}.flow-step:last-child:after{display:none}.flow-step.is-selected{border-color:#409eff;background:#f3f8ff;box-shadow:0 0 0 2px rgba(64,158,255,.12)}.flow-step.is-current .flow-name:after{content:'当前';margin-left:8px;color:#409eff;font-size:11px;font-weight:600}.flow-step.is-danger{border-color:#ffc3c3;background:#fff7f7}.flow-step.is-success .flow-index{background:#e7f8ef;color:#24935a}.flow-step.is-danger .flow-index{background:#ffe6e6;color:#cf2f2f}.flow-step.is-running .flow-index,.flow-step.is-waiting .flow-index{background:#fff4dd;color:#b36b00}.flow-index{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:8px;background:#eef5ff;color:#347fcf;font-weight:700}.flow-body{min-width:0}.flow-name{display:block;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.flow-meta{display:block;margin-top:5px;color:#7b8794;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.workbench{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;margin-top:16px;align-items:start}.main-card{padding:0 20px 20px;min-height:620px}.node-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:10px 0 18px;border-bottom:1px solid #edf1f5}.node-title h2{font-size:22px;margin:4px 0 6px}.eyebrow{margin:0;color:#409eff;font-size:12px;font-weight:700}.detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.info-tile{min-height:76px;padding:12px;border-radius:8px;background:#f7fafc;border:1px solid #edf1f5}.info-tile span{display:block;font-size:12px}.info-tile strong{display:block;margin-top:8px;color:#223041;font-size:14px;word-break:break-word}.detail-section{padding:18px 0;border-top:1px solid #edf1f5}.detail-section:first-of-type{border-top:0}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.section-heading h3{margin:0 0 6px}.section-heading p{margin:0}.slnic-terminal-section{padding:18px;margin:4px 0 18px;border:1px solid #dce8f4;border-radius:10px;background:linear-gradient(180deg,#fbfdff,#f7fafc)}.detail-section h3{margin:0 0 14px;font-size:16px}.info-list{display:grid;grid-template-columns:140px minmax(0,1fr);gap:12px 18px;margin:0;font-size:13px}.info-list dt{color:#7b8794}.info-list dd{margin:0;color:#263445;word-break:break-word}.empty-line{padding:14px;border-radius:8px;background:#f7fafc;color:#7b8794}.json-fold{margin-top:14px}.json-fold summary{cursor:pointer;color:#409eff;font-size:13px}.json-fold pre{max-height:260px;overflow:auto;margin:10px 0 0;padding:12px;border-radius:8px;background:#111827;color:#d1d5db;font:12px/1.6 "Cascadia Code",Consolas,monospace}.wiring-run{display:grid;grid-template-columns:1fr minmax(90px,.7fr) 1fr minmax(90px,.7fr) 1fr;align-items:center;gap:12px;padding:16px;margin:10px 0 4px;border-radius:8px;background:#f8fbfa;border:1px solid #e3efeb}.wiring-device{min-height:76px;border:1px solid #9bc8bd;border-left:4px solid #269a82;border-radius:8px;background:#f3faf8;display:flex;flex-direction:column;align-items:center;justify-content:center}.wiring-device.market{border-color:#b7c9dd;border-left-color:#4f83b2;background:#f5f8fc}.wiring-device.order{border-color:#d9bd84;border-left-color:#bd842f;background:#fffaf1}.wiring-device span,.wiring-cable span{font-size:11px;color:#75848c;margin-top:4px}.wiring-cable{display:flex;align-items:center;gap:5px;text-align:center}.wiring-cable i{height:2px;flex:1;background:#94aaa5;position:relative}.wiring-cable i:first-child:before,.wiring-cable i:last-child:after{content:'';position:absolute;top:-3px;width:8px;height:8px;border-radius:50%;background:#269a82}.wiring-cable i:first-child:before{left:0}.wiring-cable i:last-child:after{right:0}.mini-table{display:grid;gap:8px;margin-top:12px}.mini-row{display:grid;grid-template-columns:minmax(140px,1fr) 90px minmax(160px,1.4fr);gap:12px;padding:10px 12px;border-radius:8px;background:#f7fafc;color:#263445;font-size:12px}.mini-table.two-col .mini-row{grid-template-columns:1fr 120px}.file-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.file-chips span{padding:6px 9px;border-radius:6px;background:#eef5ff;color:#347fcf;font-size:12px}.artifact-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.action-section .step-actions{display:flex;align-items:center;gap:10px;min-height:32px}.compact-snapshot{background:#fbfcfd;margin:6px -4px 0;padding:18px;border-radius:8px}.log-panel{position:sticky;top:16px;padding:18px;min-height:620px}.log-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.log-panel h2{margin:0 0 6px;font-size:18px}.log-panel p{margin:0}.log-filters{display:flex;align-items:center;gap:8px;margin-bottom:12px}.run-log-view{height:540px;overflow:auto;padding:12px;border-radius:8px;background:#111827;color:#d1d5db;font:12px/1.65 "Cascadia Code",Consolas,monospace}.log-line{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}.log-line:last-child{border-bottom:0}.log-line p{margin:4px 0 0;word-break:break-word}.log-line.is-error p{color:#fecaca}.log-meta{display:flex;gap:8px;flex-wrap:wrap;color:#8fa3b8;font-size:11px}.log-empty{padding:24px 0;text-align:center;color:#8fa3b8}.verdict{padding:16px;background:#f7faf9;border-radius:8px;margin-top:14px}.mono{font-variant-numeric:tabular-nums}@media(max-width:1250px){.summary{grid-template-columns:160px minmax(240px,1fr) minmax(220px,1fr) 150px;gap:18px}.workbench{grid-template-columns:minmax(0,1fr) 340px}.detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.wiring-run{grid-template-columns:1fr 70px 1fr 70px 1fr}.wiring-cable span{display:none}.flow-step{min-width:200px}.log-panel{padding:16px}.run-log-view{height:520px}}@media(max-width:1120px){.workbench{grid-template-columns:minmax(0,1fr) 320px}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.summary{grid-template-columns:150px minmax(220px,1fr) minmax(200px,1fr) 130px}.mini-row{grid-template-columns:minmax(120px,1fr) 80px minmax(120px,1.1fr)}}
+.run-detail-page{background:#f3f6f8;min-height:100vh}.run-header{align-items:flex-start}.summary{display:grid;grid-template-columns:180px minmax(260px,1fr) minmax(260px,1.2fr) 180px;gap:28px;padding:18px 22px;margin-bottom:16px}.summary p{margin:10px 0 0}.trace{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.workflow-strip{padding:18px 20px;margin-top:16px}.workflow-strip-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.workflow-strip-head strong{font-size:16px;margin-right:10px}.workflow-scroller{display:flex;gap:10px;overflow-x:auto;padding:4px 2px 8px;scrollbar-width:thin}.flow-step{position:relative;display:flex;align-items:center;gap:10px;min-width:218px;max-width:260px;padding:12px 16px;border:1px solid #dfe7ef;border-radius:8px;background:#fff;color:#263445;text-align:left;cursor:pointer;transition:background .2s,border-color .2s,box-shadow .2s,transform .2s}.flow-step:hover{transform:translateY(-1px);border-color:#9fc8ff;box-shadow:0 8px 20px rgba(44,92,145,.08)}.flow-step:active{transform:translateY(0)}.flow-step:focus-visible{outline:2px solid #409eff;outline-offset:2px}.flow-step:after{content:'';position:absolute;right:-11px;top:50%;width:10px;height:1px;background:#cbd6e2}.flow-step:last-child:after{display:none}.flow-step.is-selected{border-color:#409eff;background:#f3f8ff;box-shadow:0 0 0 2px rgba(64,158,255,.12)}.flow-step.is-current .flow-name:after{content:'当前';margin-left:8px;color:#409eff;font-size:11px;font-weight:600}.flow-step.is-danger{border-color:#ffc3c3;background:#fff7f7}.flow-step.is-success .flow-index{background:#e7f8ef;color:#24935a}.flow-step.is-danger .flow-index{background:#ffe6e6;color:#cf2f2f}.flow-step.is-running .flow-index,.flow-step.is-waiting .flow-index{background:#fff4dd;color:#b36b00}.flow-index{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:8px;background:#eef5ff;color:#347fcf;font-weight:700}.flow-body{min-width:0}.flow-name{display:block;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.flow-meta{display:block;margin-top:5px;color:#7b8794;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.workbench{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;margin-top:16px;align-items:start}.main-card{padding:0 20px 20px;min-height:620px}.node-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:10px 0 18px;border-bottom:1px solid #edf1f5}.node-title h2{font-size:22px;margin:4px 0 6px}.eyebrow{margin:0;color:#409eff;font-size:12px;font-weight:700}.detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.info-tile{min-height:76px;padding:12px;border-radius:8px;background:#f7fafc;border:1px solid #edf1f5}.info-tile span{display:block;font-size:12px}.info-tile strong{display:block;margin-top:8px;color:#223041;font-size:14px;word-break:break-word}.detail-section{padding:18px 0;border-top:1px solid #edf1f5}.detail-section:first-of-type{border-top:0}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}.section-heading h3{margin:0 0 6px}.section-heading p{margin:0}.workflow-terminal-section{padding:18px;margin:4px 0 18px;border:1px solid #dce8f4;border-radius:10px;background:linear-gradient(180deg,#fbfdff,#f7fafc)}.detail-section h3{margin:0 0 14px;font-size:16px}.info-list{display:grid;grid-template-columns:140px minmax(0,1fr);gap:12px 18px;margin:0;font-size:13px}.info-list dt{color:#7b8794}.info-list dd{margin:0;color:#263445;word-break:break-word}.empty-line{padding:14px;border-radius:8px;background:#f7fafc;color:#7b8794}.json-fold{margin-top:14px}.json-fold summary{cursor:pointer;color:#409eff;font-size:13px}.json-fold pre{max-height:260px;overflow:auto;margin:10px 0 0;padding:12px;border-radius:8px;background:#111827;color:#d1d5db;font:12px/1.6 "Cascadia Code",Consolas,monospace}.wiring-run{display:grid;grid-template-columns:1fr minmax(90px,.7fr) 1fr minmax(90px,.7fr) 1fr;align-items:center;gap:12px;padding:16px;margin:10px 0 4px;border-radius:8px;background:#f8fbfa;border:1px solid #e3efeb}.wiring-device{min-height:76px;border:1px solid #9bc8bd;border-left:4px solid #269a82;border-radius:8px;background:#f3faf8;display:flex;flex-direction:column;align-items:center;justify-content:center}.wiring-device.market{border-color:#b7c9dd;border-left-color:#4f83b2;background:#f5f8fc}.wiring-device.order{border-color:#d9bd84;border-left-color:#bd842f;background:#fffaf1}.wiring-device span,.wiring-cable span{font-size:11px;color:#75848c;margin-top:4px}.wiring-cable{display:flex;align-items:center;gap:5px;text-align:center}.wiring-cable i{height:2px;flex:1;background:#94aaa5;position:relative}.wiring-cable i:first-child:before,.wiring-cable i:last-child:after{content:'';position:absolute;top:-3px;width:8px;height:8px;border-radius:50%;background:#269a82}.wiring-cable i:first-child:before{left:0}.wiring-cable i:last-child:after{right:0}.mini-table{display:grid;gap:8px;margin-top:12px}.mini-row{display:grid;grid-template-columns:minmax(140px,1fr) 90px minmax(160px,1.4fr);gap:12px;padding:10px 12px;border-radius:8px;background:#f7fafc;color:#263445;font-size:12px}.mini-table.two-col .mini-row{grid-template-columns:1fr 120px}.file-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.file-chips span{padding:6px 9px;border-radius:6px;background:#eef5ff;color:#347fcf;font-size:12px}.artifact-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.action-section .step-actions{display:flex;align-items:center;gap:10px;min-height:32px}.compact-snapshot{background:#fbfcfd;margin:6px -4px 0;padding:18px;border-radius:8px}.log-panel{position:sticky;top:16px;padding:18px;min-height:620px}.log-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.log-panel h2{margin:0 0 6px;font-size:18px}.log-panel p{margin:0}.log-filters{display:flex;align-items:center;gap:8px;margin-bottom:12px}.run-log-view{height:540px;overflow:auto;padding:12px;border-radius:8px;background:#111827;color:#d1d5db;font:12px/1.65 "Cascadia Code",Consolas,monospace}.log-line{padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08)}.log-line:last-child{border-bottom:0}.log-line p{margin:4px 0 0;word-break:break-word}.log-line.is-error p{color:#fecaca}.log-meta{display:flex;gap:8px;flex-wrap:wrap;color:#8fa3b8;font-size:11px}.log-empty{padding:24px 0;text-align:center;color:#8fa3b8}.verdict{padding:16px;background:#f7faf9;border-radius:8px;margin-top:14px}.mono{font-variant-numeric:tabular-nums}@media(max-width:1250px){.summary{grid-template-columns:160px minmax(240px,1fr) minmax(220px,1fr) 150px;gap:18px}.workbench{grid-template-columns:minmax(0,1fr) 340px}.detail-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.wiring-run{grid-template-columns:1fr 70px 1fr 70px 1fr}.wiring-cable span{display:none}.flow-step{min-width:200px}.log-panel{padding:16px}.run-log-view{height:520px}}@media(max-width:1120px){.workbench{grid-template-columns:minmax(0,1fr) 320px}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.summary{grid-template-columns:150px minmax(220px,1fr) minmax(200px,1fr) 130px}.mini-row{grid-template-columns:minmax(120px,1fr) 80px minmax(120px,1.1fr)}}
 .capture-detail-block{margin-top:18px;padding:16px;border-radius:8px;background:#fbfcfd;border:1px solid #edf1f5}.capture-title{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}.capture-title h4{margin:0;font-size:15px}.capture-snapshot-list{display:grid;gap:14px}.capture-snapshot{padding:14px;border-radius:8px;background:#fff;border:1px solid #e6edf4}.capture-snapshot-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}.capture-snapshot-head strong,.capture-snapshot-head span{display:block}.capture-snapshot-head .muted{font-size:12px;margin-top:4px}.capture-key{margin:4px 0 0;font-size:11px}.capture-value{white-space:pre-wrap;word-break:break-word;line-height:1.55}.raw-output-fold{margin-top:8px}.raw-output-fold summary{cursor:pointer;color:#409eff;font-size:12px}.raw-output-fold pre{max-height:180px;overflow:auto;margin:8px 0 0;padding:10px;border-radius:6px;background:#111827;color:#d1d5db;font:12px/1.6 "Cascadia Code",Consolas,monospace}
 .contract-file-list{display:grid;gap:10px;margin-top:16px}.contract-file-title{display:flex;align-items:baseline;gap:10px}.contract-file-title h4{margin:0;font-size:15px}.contract-file-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid #e6edf4;border-radius:8px;background:#fbfdff}.contract-file-main{min-width:0;display:grid;gap:4px}.contract-file-main strong{color:#2f83e6;word-break:break-all}.contract-file-main span{font-size:12px}.contract-preview-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 14px;color:#7b8794;font-size:12px}.contract-preview-body{min-height:180px}
 </style>

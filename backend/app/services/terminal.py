@@ -12,12 +12,13 @@ from uuid import uuid4
 import asyncssh
 import jwt
 from fastapi import WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import SessionLocal
 from app.core.logging import trace_id_ctx
 from app.core.security import CredentialSecretError, decode_token, decrypt_secret
-from app.models import Resource, TestRun, User
+from app.models import Resource, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, User
 from app.services.audit import write_audit
 from app.services.events import broker
 from app.services.orchestration import append_log
@@ -146,7 +147,245 @@ def _workflow_command_error(code: str, message: str) -> dict:
     return {"type": "workflow_command", "status": "failed", "code": code, "message": message}
 
 
+def _duration_ms(started_at: typing.Union[datetime, None], finished_at: datetime) -> int:
+    if not started_at:
+        return 0
+    return max(0, int((finished_at - started_at).total_seconds() * 1000))
+
+
+def _parse_workflow_command_ids(run_id: object, step_id: object) -> typing.Tuple[typing.Union[int, None], typing.Union[int, None], typing.Union[dict, None]]:
+    try:
+        return int(run_id), int(step_id), None  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None, None, _workflow_command_error("INVALID_WORKFLOW_STEP", "运行或节点参数无效")
+
+
+def _validate_terminal_step(
+    db,
+    *,
+    resource: TerminalResource,
+    run_id: object,
+    step_id: object,
+    operation: object,
+) -> typing.Tuple[typing.Union[TestRun, None], typing.Union[RunStep, None], bool, typing.Union[dict, None]]:
+    if operation not in {"start", "retry"}:
+        return None, None, False, _workflow_command_error("INVALID_OPERATION", "仅支持启动或重试当前节点")
+    parsed_run_id, parsed_step_id, error = _parse_workflow_command_ids(run_id, step_id)
+    if error:
+        return None, None, False, error
+    run = db.get(TestRun, parsed_run_id, options=[selectinload(TestRun.steps)])
+    if not run:
+        return None, None, False, _workflow_command_error("RUN_NOT_FOUND", "运行不存在")
+    if resource.id not in run.resource_ids:
+        return None, None, False, _workflow_command_error("INVALID_RESOURCE", "当前资源不属于该运行")
+    current = next((item for item in run.steps if item.status != "succeeded"), None)
+    step = next((item for item in run.steps if item.id == parsed_step_id), None)
+    if not current or not step or current.id != step.id:
+        return None, None, False, _workflow_command_error("INVALID_WORKFLOW_STEP", "只能操作当前节点")
+
+    retrying = operation == "retry"
+    expected_run_status = "awaiting_step_retry" if retrying else "awaiting_step_start"
+    expected_step_status = "failed" if retrying else "pending"
+    if run.status != expected_run_status or step.status != expected_step_status:
+        return None, None, False, _workflow_command_error("INVALID_TRANSITION", "当前状态不能通过终端执行该节点")
+    return run, step, retrying, None
+
+
 def _dispatch_slnic_start_command(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run: TestRun,
+    step,
+    retrying: bool,
+) -> typing.Tuple[typing.Union[str, None], dict]:
+    if resource.resource_type != "slnic":
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是 SLNIC 资源")
+    if step.node_type != "slnic_start_capture":
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不是启动 SLNIC 节点")
+    if not resource.remote_path.strip():
+        return None, _workflow_command_error("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径")
+
+    now = datetime.now(timezone.utc)
+    workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
+    command = f"cd {shlex.quote(workdir)} && ./start_slnic_dump.sh"
+    if retrying:
+        step.retry_count += 1
+    step.status = "waiting"
+    step.progress = 100
+    step.started_at = now
+    step.finished_at = None
+    step.duration_ms = 0
+    step.error_message = None
+    step.result_summary = {
+        "resource_id": resource.id,
+        "resource_name": resource.name,
+        "command": command,
+        "mode": "terminal",
+        "exit_code": None,
+        "dispatched_by": actor_id,
+        "dispatched_at": now.isoformat(),
+    }
+    run.status = "awaiting_step_completion"
+    run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
+    run.error_code = None
+    run.error_message = None
+    append_log(
+        db,
+        run,
+        "workflow.step_retried" if retrying else "workflow.step_started",
+        f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发启动指令",
+        step=step,
+        source="terminal",
+        detail={"retry_count": step.retry_count, "mode": "terminal"},
+    )
+    append_log(
+        db,
+        run,
+        "workflow.step_executed",
+        f"{step.name}启动指令已在终端下发，等待手动完成",
+        step=step,
+        source="terminal",
+        detail={"command": command, "resource_id": resource.id, "mode": "terminal"},
+        log_type="remote_command",
+    )
+    db.commit()
+    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+    return command, {
+        "type": "workflow_command",
+        "status": "dispatched",
+        "command": command,
+        "run_id": run.id,
+        "step_id": step.id,
+        "resource_id": resource.id,
+    }
+
+
+async def _dispatch_order_preparation_command(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run: TestRun,
+    step,
+    retrying: bool,
+) -> typing.Tuple[typing.Union[str, None], dict]:
+    from app.services.workflows import WorkflowError, prepare_order_node
+
+    if resource.resource_type != "order":
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是发单资源")
+    if step.node_type != "order_preparation":
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不是发单准备节点")
+    if not run.workflow_version_id or not step.workflow_node_id:
+        return None, _workflow_command_error("WORKFLOW_NOT_FOUND", "运行关联的工作流不存在")
+
+    workflow = db.get(ScenarioWorkflowVersion, run.workflow_version_id)
+    node = db.get(ScenarioWorkflowNode, step.workflow_node_id)
+    if not workflow or not node or node.workflow_version_id != workflow.id:
+        return None, _workflow_command_error("WORKFLOW_NODE_NOT_FOUND", "发单节点不存在")
+    resources = list(db.scalars(select(Resource).where(Resource.id.in_(run.resource_ids))).all())
+    run_resources = {item.resource_type: item for item in resources}
+    order_resource = run_resources.get("order")
+    if not order_resource or order_resource.id != resource.id:
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前发单资源不属于该运行")
+
+    now = datetime.now(timezone.utc)
+    if retrying:
+        step.retry_count += 1
+    step.status = "running"
+    step.progress = 0
+    step.started_at = now
+    step.finished_at = None
+    step.duration_ms = None
+    step.error_message = None
+    run.status = "running"
+    run.error_code = None
+    run.error_message = None
+    append_log(
+        db,
+        run,
+        "workflow.step_retried" if retrying else "workflow.step_started",
+        f"{step.name}{'重试' if retrying else '开始'}，正在准备终端发单命令",
+        step=step,
+        source="terminal",
+        detail={"retry_count": step.retry_count, "mode": "terminal"},
+    )
+    db.flush()
+    try:
+        summary = await prepare_order_node(db, workflow, node, run_resources)
+        command = str(summary.get("generated_command") or "").strip()
+        if not command:
+            raise WorkflowError("ORDER_COMMAND_EMPTY", "发单命令为空", 409)
+    except Exception as exc:
+        failed_at = datetime.now(timezone.utc)
+        message = getattr(exc, "message", str(exc))
+        code = getattr(exc, "code", "ORDER_PREPARATION_FAILED")
+        step.status = "failed"
+        step.progress = 0
+        step.error_message = message
+        step.finished_at = failed_at
+        step.duration_ms = _duration_ms(step.started_at, failed_at)
+        run.status = "awaiting_step_retry"
+        run.error_code = None
+        run.error_message = None
+        run.finished_at = None
+        append_log(
+            db,
+            run,
+            "workflow.step_failed",
+            message,
+            level="ERROR",
+            step=step,
+            source="terminal",
+            detail={"error_code": code, "mode": "terminal"},
+        )
+        db.commit()
+        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+        return None, _workflow_command_error(code, message)
+
+    dispatched_at = datetime.now(timezone.utc)
+    step.status = "waiting"
+    step.progress = 100
+    step.finished_at = None
+    step.duration_ms = _duration_ms(step.started_at, dispatched_at)
+    step.error_message = None
+    step.result_summary = {
+        **summary,
+        "mode": "terminal",
+        "resource_id": resource.id,
+        "resource_name": resource.name,
+        "command": command,
+        "exit_code": None,
+        "dispatched_by": actor_id,
+        "dispatched_at": dispatched_at.isoformat(),
+        "process_started": True,
+    }
+    run.status = "awaiting_step_completion"
+    run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
+    append_log(
+        db,
+        run,
+        "workflow.step_executed",
+        f"{step.name}发单命令已在终端下发，等待手动完成",
+        step=step,
+        source="terminal",
+        detail={"command": command, "resource_id": resource.id, "mode": "terminal"},
+        log_type="remote_command",
+    )
+    db.commit()
+    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+    return command, {
+        "type": "workflow_command",
+        "status": "dispatched",
+        "command": command,
+        "run_id": run.id,
+        "step_id": step.id,
+        "resource_id": resource.id,
+    }
+
+
+async def _dispatch_workflow_step_command(
     *,
     actor_id: int,
     resource: TerminalResource,
@@ -154,91 +393,36 @@ def _dispatch_slnic_start_command(
     step_id: object,
     operation: object,
 ) -> typing.Tuple[typing.Union[str, None], dict]:
-    if operation not in {"start", "retry"}:
-        return None, _workflow_command_error("INVALID_OPERATION", "仅支持启动或重试 SLNIC 启动节点")
-    try:
-        parsed_run_id = int(run_id)  # type: ignore[arg-type]
-        parsed_step_id = int(step_id)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "运行或节点参数无效")
-    if resource.resource_type != "slnic":
-        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是 SLNIC 资源")
-    if not resource.remote_path.strip():
-        return None, _workflow_command_error("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径")
-
     db = SessionLocal()
     try:
-        run = db.get(TestRun, parsed_run_id, options=[selectinload(TestRun.steps)])
-        if not run:
-            return None, _workflow_command_error("RUN_NOT_FOUND", "运行不存在")
-        if resource.id not in run.resource_ids:
-            return None, _workflow_command_error("INVALID_RESOURCE", "当前 SLNIC 资源不属于该运行")
-        current = next((item for item in run.steps if item.status != "succeeded"), None)
-        step = next((item for item in run.steps if item.id == parsed_step_id), None)
-        if not current or not step or current.id != step.id:
-            return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "只能操作当前节点")
-        if step.node_type != "slnic_start_capture":
-            return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不是启动 SLNIC 节点")
-
-        retrying = operation == "retry"
-        expected_run_status = "awaiting_step_retry" if retrying else "awaiting_step_start"
-        expected_step_status = "failed" if retrying else "pending"
-        if run.status != expected_run_status or step.status != expected_step_status:
-            return None, _workflow_command_error("INVALID_TRANSITION", "当前状态不能通过终端执行该节点")
-
-        now = datetime.now(timezone.utc)
-        workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
-        command = f"cd {shlex.quote(workdir)} && ./start_slnic_dump.sh"
-        if retrying:
-            step.retry_count += 1
-        step.status = "waiting"
-        step.progress = 100
-        step.started_at = now
-        step.finished_at = None
-        step.duration_ms = 0
-        step.error_message = None
-        step.result_summary = {
-            "resource_id": resource.id,
-            "resource_name": resource.name,
-            "command": command,
-            "mode": "terminal",
-            "exit_code": None,
-            "dispatched_by": actor_id,
-            "dispatched_at": now.isoformat(),
-        }
-        run.status = "awaiting_step_completion"
-        run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
-        run.error_code = None
-        run.error_message = None
-        append_log(
+        run, step, retrying, error = _validate_terminal_step(
             db,
-            run,
-            "workflow.step_retried" if retrying else "workflow.step_started",
-            f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发启动指令",
-            step=step,
-            source="terminal",
-            detail={"retry_count": step.retry_count, "mode": "terminal"},
+            resource=resource,
+            run_id=run_id,
+            step_id=step_id,
+            operation=operation,
         )
-        append_log(
-            db,
-            run,
-            "workflow.step_executed",
-            f"{step.name}启动指令已在终端下发，等待手动完成",
-            step=step,
-            source="terminal",
-            detail={"command": command, "resource_id": resource.id, "mode": "terminal"},
-            log_type="remote_command",
-        )
-        db.commit()
-        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
-        return command, {
-            "type": "workflow_command",
-            "status": "dispatched",
-            "command": command,
-            "run_id": run.id,
-            "step_id": step.id,
-            "resource_id": resource.id,
-        }
+        if error or not run or not step:
+            return None, error or _workflow_command_error("INVALID_WORKFLOW_STEP", "运行步骤无效")
+        if step.node_type == "slnic_start_capture":
+            return _dispatch_slnic_start_command(
+                db=db,
+                actor_id=actor_id,
+                resource=resource,
+                run=run,
+                step=step,
+                retrying=retrying,
+            )
+        if step.node_type == "order_preparation":
+            return await _dispatch_order_preparation_command(
+                db=db,
+                actor_id=actor_id,
+                resource=resource,
+                run=run,
+                step=step,
+                retrying=retrying,
+            )
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不支持终端执行")
     finally:
         db.close()
 
@@ -267,7 +451,7 @@ async def _receive_remote(
             rows = _clamp(message.get("rows"), MIN_ROWS, MAX_ROWS, 32)
             process.change_terminal_size(columns, rows)
         elif message_type == "workflow_step_command":
-            command, response = _dispatch_slnic_start_command(
+            command, response = await _dispatch_workflow_step_command(
                 actor_id=actor_id,
                 resource=resource,
                 run_id=message.get("run_id"),

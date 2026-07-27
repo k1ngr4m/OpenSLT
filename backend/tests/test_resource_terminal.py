@@ -10,7 +10,9 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.database import SessionLocal
 from app.models import AuditLog, Resource
+from app.services import order_configs
 from app.services import terminal as terminal_service
+from app.services import workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -33,10 +35,62 @@ def slnic_start_nodes() -> list[dict]:
     ]
 
 
+def order_start_nodes() -> list[dict]:
+    return [
+        {
+            "node_key": "order-start",
+            "node_type": "order_preparation",
+            "name": "发单准备",
+            "config": {"xml_filename": "order.xml", "network_interface": "p4p1", "read_symbol_csv": 0},
+        }
+    ]
+
+
+ORDER_XML = '''<?xml version="1.0" encoding="utf-8"?>
+<tcp>
+  <group_new_order id="new_order" disp="NEW_ORDER"><price disp="PRICE" value="1495.0000" /></group_new_order>
+  <read_symbol_csv value="0" />
+</tcp>'''
+
+
 def create_slnic_start_run(client: TestClient, headers: typing.Dict[str, str]) -> tuple[dict, dict]:
     resource = create_resource(client, headers, "SLNIC-Terminal", resource_type="slnic")
     plan, scenario = create_plan_scenario(client, headers, required_types=["slnic"], resource_ids=[resource["id"]])
     publish_workflow(client, headers, scenario, [resource["id"]], slnic_start_nodes())
+    created = client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": [resource["id"]],
+            "timeout_minutes": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    started = client.post(f"/api/v1/runs/{created.json()['id']}/start", headers=headers)
+    assert started.status_code == 200, started.text
+    return resource, client.get(f"/api/v1/runs/{created.json()['id']}", headers=headers).json()
+
+
+def create_order_start_run(client: TestClient, headers: typing.Dict[str, str], monkeypatch: pytest.MonkeyPatch) -> tuple[dict, dict]:
+    async def fake_read_order_config(_resource: Resource, filename: str):
+        declaration, document = order_configs.parse_xml(ORDER_XML)
+        return {
+            "name": filename,
+            "size": len(ORDER_XML.encode()),
+            "modified_at": None,
+            "checksum": order_configs.checksum(ORDER_XML),
+            "content": ORDER_XML,
+            "declaration": declaration,
+            "document": document,
+            "tool": "ees_ef_vi_trader_binary_api_test",
+        }
+
+    monkeypatch.setattr(workflows.order_config_service, "read", fake_read_order_config)
+    resource = create_resource(client, headers, "Order-Terminal", resource_type="order")
+    plan, scenario = create_plan_scenario(client, headers, required_types=["order"], resource_ids=[resource["id"]])
+    publish_workflow(client, headers, scenario, [resource["id"]], order_start_nodes())
     created = client.post(
         "/api/v1/runs",
         headers=headers,
@@ -291,6 +345,106 @@ def test_terminal_workflow_command_rejects_wrong_resource(
     unchanged = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
     assert unchanged["status"] == "awaiting_step_start"
     assert unchanged["steps"][0]["status"] == "pending"
+
+
+def test_terminal_workflow_command_dispatches_order_command_after_preparation(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    token = access_token(admin_headers)
+    connection = FakeConnection()
+
+    async def fake_connect(**_):
+        return connection
+
+    async def fake_prepare_order_node(*_):
+        return {
+            "prepared": True,
+            "xml_filename": "order.xml",
+            "xml_checksum": "abc123",
+            "read_symbol_csv": 0,
+            "network_interface": "p4p1",
+            "contract_files": [],
+            "generated_command": "cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml",
+            "process_started": False,
+        }
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflows, "prepare_order_node", fake_prepare_order_node)
+
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": step["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["type"] == "workflow_command"
+        assert response["status"] == "dispatched"
+        assert response["command"] == "cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml"
+
+    assert connection.process.stdin.writes == ["cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml\r"]
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_completion"
+    updated_step = updated["steps"][0]
+    assert updated_step["status"] == "waiting"
+    assert updated_step["result_summary"]["mode"] == "terminal"
+    assert updated_step["result_summary"]["resource_id"] == resource["id"]
+    assert updated_step["result_summary"]["resource_name"] == resource["name"]
+    assert updated_step["result_summary"]["command"] == "cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml"
+    assert updated_step["result_summary"]["process_started"] is True
+
+
+def test_terminal_workflow_command_marks_order_preparation_failure_retryable(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    token = access_token(admin_headers)
+    connection = FakeConnection()
+
+    async def fake_connect(**_):
+        return connection
+
+    async def failed_prepare_order_node(*_):
+        raise workflows.WorkflowError("ORDER_CONFIG_CHANGED", "XML 配置校验值与发布版本不一致", 409)
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflows, "prepare_order_node", failed_prepare_order_node)
+
+    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run["id"],
+                "step_id": step["id"],
+                "operation": "start",
+            }
+        )
+        response = websocket.receive_json()
+        assert response["type"] == "workflow_command"
+        assert response["status"] == "failed"
+        assert response["code"] == "ORDER_CONFIG_CHANGED"
+
+    assert connection.process.stdin.writes == []
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_retry"
+    assert updated["steps"][0]["status"] == "failed"
+    assert updated["steps"][0]["error_message"] == "XML 配置校验值与发布版本不一致"
 
 
 def test_remote_terminal_reports_connection_failure(
