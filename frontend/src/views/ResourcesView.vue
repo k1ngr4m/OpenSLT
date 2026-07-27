@@ -390,7 +390,7 @@ onMounted(load)
           <el-col v-if="form.resource_type === 'market'" :span="24">
             <el-form-item label="市场环境" required>
               <el-select v-model="form.market_environment" placeholder="请选择模拟市场环境" style="width:100%" @change="setMarketDefaultPath">
-                <el-option v-for="item in marketEnvironments" :key="item.value" :label="`${item.label} - 前置端口${item.frontendPorts}${item.fensPorts ? `，FENS端口${item.fensPorts}` : '，无FENS'}`" :value="item.value" />
+                <el-option v-for="item in marketEnvironments" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>

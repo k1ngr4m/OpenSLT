@@ -17,7 +17,7 @@ from app.api.router import router
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import configure_logging, logger, trace_id_ctx
-from app.core.security import hash_password
+from app.core.security import CredentialSecretError, hash_password
 from app.models import BusinessType, User
 from app.services.orchestration import (
     archive_and_clean_logs,
@@ -120,6 +120,19 @@ async def validation_error(request: Request, exc: RequestValidationError):
         serialized.pop("ctx", None)
         details.append(serialized)
     return JSONResponse(status_code=422, content={"code": "VALIDATION_ERROR", "message": "请求参数校验失败", "details": details, "trace_id": trace_id_ctx.get()})
+
+
+@app.exception_handler(CredentialSecretError)
+async def credential_secret_error(request: Request, exc: CredentialSecretError):
+    logger.error("credential_secret_error", path=request.url.path, message=exc.message)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "RESOURCE_CREDENTIAL_ERROR",
+            "message": exc.message,
+            "trace_id": trace_id_ctx.get(),
+        },
+    )
 
 
 @app.get("/health")

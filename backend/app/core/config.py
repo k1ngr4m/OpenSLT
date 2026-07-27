@@ -7,6 +7,7 @@ import os
 import secrets
 import sys
 
+from cryptography.fernet import Fernet
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
             database_path = self.database_url[len("sqlite:///") :]
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         self.jwt_secret = _load_or_create_jwt_secret(self.jwt_secret, self.artifact_root)
+        self.credential_encryption_key = _load_or_create_credential_encryption_key(
+            self.credential_encryption_key,
+            self.artifact_root,
+        )
         return self
 
 
@@ -72,6 +77,49 @@ def _load_or_create_jwt_secret(configured: typing.Union[str, None], artifact_roo
         else:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 handle.write(value)
+    try:
+        secret_path.chmod(0o600)
+    except OSError:
+        pass
+    return value
+
+
+def _load_or_create_credential_encryption_key(
+    configured: typing.Union[str, None],
+    artifact_root: Path,
+) -> str:
+    if configured and configured.strip():
+        value = configured.strip()
+        try:
+            Fernet(value.encode())
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "CREDENTIAL_ENCRYPTION_KEY 必须是 Fernet.generate_key() 生成的合法密钥"
+            ) from exc
+        return value
+
+    secret_path = artifact_root.expanduser().resolve().parent / "secrets" / "credential_encryption_key"
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        value = secret_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        value = ""
+    if not value:
+        value = Fernet.generate_key().decode()
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        try:
+            descriptor = os.open(secret_path, flags, 0o600)
+        except FileExistsError:
+            value = secret_path.read_text(encoding="utf-8").strip()
+        else:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(value)
+    try:
+        Fernet(value.encode())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"持久化的资源凭据加密密钥格式不合法：{secret_path}"
+        ) from exc
     try:
         secret_path.chmod(0o600)
     except OSError:
