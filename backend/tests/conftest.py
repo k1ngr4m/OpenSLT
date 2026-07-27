@@ -7,7 +7,6 @@ from pathlib import Path
 os.environ["DATABASE_URL"] = "sqlite:///./backend/data/test-openslt.sqlite3"
 os.environ["ARTIFACT_ROOT"] = "./backend/data/test-artifacts"
 os.environ["ENABLE_INTERNAL_SCHEDULER"] = "false"
-os.environ["JWT_SECRET"] = "test-secret-that-is-long-enough-for-openslt"
 os.environ["CREDENTIAL_ENCRYPTION_KEY"] = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 
 import pytest

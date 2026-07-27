@@ -3,6 +3,8 @@ from __future__ import annotations
 import typing
 from functools import lru_cache
 from pathlib import Path
+import os
+import secrets
 import sys
 
 from pydantic import Field, model_validator
@@ -16,7 +18,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_v1_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./backend/data/openslt.sqlite3"
-    jwt_secret: str = "development-only-secret-change-me-please"
+    jwt_secret: typing.Union[str, None] = None
     jwt_algorithm: str = "HS256"
     jwt_access_minutes: int = 30
     jwt_refresh_days: int = 7
@@ -46,7 +48,35 @@ class Settings(BaseSettings):
         if self.database_url.startswith("sqlite:///"):
             database_path = self.database_url[len("sqlite:///") :]
             Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+        self.jwt_secret = _load_or_create_jwt_secret(self.jwt_secret, self.artifact_root)
         return self
+
+
+def _load_or_create_jwt_secret(configured: typing.Union[str, None], artifact_root: Path) -> str:
+    if configured and configured.strip():
+        return configured.strip()
+
+    secret_path = artifact_root.expanduser().resolve().parent / "secrets" / "jwt_secret"
+    secret_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        value = secret_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        value = ""
+    if not value:
+        value = secrets.token_urlsafe(48)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        try:
+            descriptor = os.open(secret_path, flags, 0o600)
+        except FileExistsError:
+            value = secret_path.read_text(encoding="utf-8").strip()
+        else:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(value)
+    try:
+        secret_path.chmod(0o600)
+    except OSError:
+        pass
+    return value
 
 
 @lru_cache

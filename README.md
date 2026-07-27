@@ -80,7 +80,7 @@ HOST=127.0.0.1
 PORT=8000
 ```
 
-任务调度默认由 FastAPI 进程内置循环承担，不需要外部消息队列或独立任务进程。生产环境建议使用 MySQL 8、独立非 root 用户和随机生成的 `JWT_SECRET`、`CREDENTIAL_ENCRYPTION_KEY`。请在资源管理中配置并验证 REM、模拟市场、发单工具、SLNIC、解析工具和 MySQL 资源后再运行自动化任务。
+任务调度默认由 FastAPI 进程内置循环承担，不需要外部消息队列或独立任务进程。生产环境建议使用 MySQL 8、独立非 root 用户和独立的 `CREDENTIAL_ENCRYPTION_KEY`。JWT 签名密钥会在数据目录下自动生成并持久保存。请在资源管理中配置并验证 REM、模拟市场、发单工具、SLNIC、解析工具和 MySQL 资源后再运行自动化任务。
 
 当 `DATABASE_URL` 指向 MySQL 时，启动和在线迁移会自动创建尚不存在的目标数据库，再执行 Alembic 建表。首次启动使用的 MySQL 账号需要具备 `CREATE` 权限；数据库创建完成后可按生产安全策略收紧权限。
 

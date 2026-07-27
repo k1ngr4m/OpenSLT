@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import secrets
 import socket
 import sys
 import threading
@@ -42,7 +41,6 @@ def ensure_portable_environment(root: Path) -> None:
                     "HOST=127.0.0.1",
                     "PORT=8765",
                     "OPEN_BROWSER=true",
-                    f"JWT_SECRET={secrets.token_urlsafe(48)}",
                     f"CREDENTIAL_ENCRYPTION_KEY={Fernet.generate_key().decode()}",
                     "INITIAL_ADMIN_USERNAME=admin",
                     "INITIAL_ADMIN_PASSWORD=shengli123",
