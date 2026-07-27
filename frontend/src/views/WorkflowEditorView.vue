@@ -31,6 +31,7 @@ const previewing = ref(false)
 const orderConfigs = ref<any[]>([])
 const contractFiles = ref<any[]>([])
 const fetchingContracts = ref(false)
+let contractFilesRequestId = 0
 const globalKeySearch = ref('')
 const resourceTypes = Object.keys(resourceText)
 const slnicNodeTypes = new Set(['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'])
@@ -329,25 +330,36 @@ function suggestTradingDatabase() {
   markDirty()
 }
 
-async function loadContractFiles() {
-  if (!selectedNode.value || selectedNode.value.node_type !== 'order_preparation') { contractFiles.value = []; return }
-  try { contractFiles.value = (await api.get(`/scenarios/${scenarioId}/workflow/nodes/${selectedNode.value.node_key}/contract-files`)).data }
-  catch { contractFiles.value = [] }
+async function loadContractFiles(throwOnError = false) {
+  const requestId = ++contractFilesRequestId
+  const node = selectedNode.value
+  if (!node || node.node_type !== 'order_preparation') { contractFiles.value = []; return }
+  const nodeKey = node.node_key
+  try {
+    const response = await api.get(`/scenarios/${scenarioId}/workflow/nodes/${nodeKey}/contract-files`)
+    if (requestId === contractFilesRequestId && selectedNode.value?.node_key === nodeKey) contractFiles.value = response.data
+  } catch (error) {
+    if (requestId !== contractFilesRequestId || selectedNode.value?.node_key !== nodeKey) return
+    if (!throwOnError) contractFiles.value = []
+    else throw error
+  }
 }
 
 async function fetchContracts(contractTypes: string[]) {
   const database = selectedResourceMap.value.database
+  const nodeKey = selectedNode.value?.node_key
   const databaseName = selectedNode.value?.config.trading_database_name
-  if (!database || !databaseName) { ElMessage.warning('请先确认交易数据库'); return }
+  if (!database || !nodeKey || !databaseName) { ElMessage.warning('请先确认交易数据库'); return }
   fetchingContracts.value = true
   try {
     await saveWorkflow(true)
-    const response = await api.post(`/scenarios/${scenarioId}/workflow/nodes/${selectedKey.value}/contract-files/fetch`, {
+    const response = await api.post(`/scenarios/${scenarioId}/workflow/nodes/${nodeKey}/contract-files/fetch`, {
       database_resource_id: database.id, database_name: databaseName, contract_types: contractTypes,
     })
-    contractFiles.value = [...response.data, ...contractFiles.value]
-    selectedNode.value!.config.contract_file_ids = [...new Set([...(selectedNode.value!.config.contract_file_ids || []), ...response.data.map((item: any) => item.id)])]
+    const orderNode = nodes.value.find(item => item.node_key === nodeKey)
+    if (orderNode) orderNode.config.contract_file_ids = [...new Set([...(orderNode.config.contract_file_ids || []), ...response.data.map((item: any) => item.id)])]
     dirty.value = true
+    if (selectedKey.value === nodeKey) await loadContractFiles(true)
     ElMessage.success('最新交易日合约数据已生成并归档')
   } catch (error) { ElMessage.error(errorMessage(error)) }
   finally { fetchingContracts.value = false }
