@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { RefreshRight } from '@element-plus/icons-vue'
+import { RefreshRight, Search } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
@@ -13,10 +13,21 @@ const rows = ref<any[]>([])
 const dialog = ref(false)
 const editing = ref<number | null>(null)
 const loading = ref(false)
+const listLoading = ref(false)
+const listError = ref('')
 const databaseStep = ref(1)
 const databaseOptions = ref<{ name: string; missing: boolean }[]>([])
 const discoveringDatabases = ref(false)
 const discoveryError = ref('')
+const filters = reactive({ keyword: '', type: '', business: '', health: '' })
+const filteredRows = computed(() => rows.value.filter(row => {
+  const query = filters.keyword.trim().toLowerCase()
+  const text = `${row.name} ${connectionText(row)}`.toLowerCase()
+  return (!query || text.includes(query))
+    && (!filters.type || row.resource_type === filters.type)
+    && (!filters.business || row.business_code === filters.business)
+    && (!filters.health || row.health_status === filters.health)
+}))
 
 const marketEnvironments = [
   { value: 'cffex_2_0', label: '中金所2.0标准模拟市场', frontendPorts: '5110-5141', fensPorts: '5142-5145', defaultPath: '/home/user0/rem_mkt/cffex_2.0' },
@@ -68,7 +79,17 @@ const selectedDatabaseSummary = computed(() => form.database_names.length
   ? `已选择 ${form.database_names.length} 个数据库`
   : '尚未选择数据库')
 
-async function load() { rows.value = (await api.get('/resources')).data }
+async function load() {
+  listLoading.value = true
+  listError.value = ''
+  try {
+    rows.value = (await api.get('/resources')).data
+  } catch (error) {
+    listError.value = errorMessage(error)
+  } finally {
+    listLoading.value = false
+  }
+}
 
 function setMarketDefaultPath(value: string) {
   const selected = marketEnvironments.find(item => item.value === value)
@@ -330,14 +351,28 @@ onMounted(load)
   <div class="page">
     <div class="page-header">
       <div>
+        <span class="page-kicker">基础设施</span>
         <h1 class="page-title">资源管理</h1>
-        <p class="muted"></p>
+        <p class="muted">集中管理测试服务器、数据库、发单、抓包与解析资源</p>
       </div>
       <el-button v-if="auth.isAdmin" type="primary" @click="open()">新增资源</el-button>
     </div>
 
-    <div class="card">
-      <el-table :data="rows">
+    <el-alert v-if="listError" type="error" :closable="false" show-icon class="load-alert">
+      <template #title><span>资源数据加载失败：{{ listError }}</span><el-button link type="danger" @click="load">重试</el-button></template>
+    </el-alert>
+
+    <div class="filter-bar resource-filters">
+      <el-input v-model="filters.keyword" clearable :prefix-icon="Search" placeholder="搜索名称或连接地址" class="keyword-filter" />
+      <el-select v-model="filters.type" clearable placeholder="全部类型"><el-option v-for="(label,value) in resourceText" :key="value" :label="label" :value="value" /></el-select>
+      <el-select v-model="filters.business" clearable placeholder="全部业务"><el-option v-for="(label,value) in businessText" :key="value" :label="label" :value="value" /></el-select>
+      <el-select v-model="filters.health" clearable placeholder="全部健康状态"><el-option label="健康" value="healthy" /><el-option label="异常" value="unhealthy" /><el-option label="未知" value="unknown" /></el-select>
+      <span class="filter-count">{{ filteredRows.length }} / {{ rows.length }} 条</span>
+      <el-button text @click="Object.assign(filters,{keyword:'',type:'',business:'',health:''})">重置</el-button>
+    </div>
+
+    <div class="card resource-table">
+      <el-table v-loading="listLoading" :data="filteredRows" empty-text="没有符合条件的资源">
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column label="类型" width="120">
           <template #default="scope">{{ resourceText[scope.row.resource_type] || scope.row.resource_type }}</template>
@@ -351,12 +386,12 @@ onMounted(load)
         <el-table-column label="健康" width="110">
           <template #default="scope">
             <el-tag :type="scope.row.health_status === 'healthy' ? 'success' : scope.row.health_status === 'unhealthy' ? 'danger' : 'info'" effect="plain">
-              {{ scope.row.health_status }}
+              {{ scope.row.health_status === 'healthy' ? '健康' : scope.row.health_status === 'unhealthy' ? '异常' : '未知' }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="启用" width="90">
-          <template #default="scope"><el-tag :type="scope.row.is_enabled ? 'success' : 'info'">{{ scope.row.is_enabled ? '是' : '否' }}</el-tag></template>
+          <template #default="scope"><el-tag :type="scope.row.is_enabled ? 'success' : 'info'" effect="plain">{{ scope.row.is_enabled ? '已启用' : '已停用' }}</el-tag></template>
         </el-table-column>
         <el-table-column label="操作" width="320" fixed="right">
           <template #default="scope">
@@ -372,7 +407,7 @@ onMounted(load)
       </el-table>
     </div>
 
-    <el-dialog v-model="dialog" :title="editing ? '编辑资源' : '新增资源'" width="820px">
+    <el-drawer v-model="dialog" :title="editing ? '编辑资源' : '新增资源'" size="720px" destroy-on-close>
       <el-steps v-if="form.resource_type === 'database'" :active="databaseStep - 1" align-center finish-status="success" class="database-steps">
         <el-step title="连接配置" description="填写 MySQL 与可选跳板机信息" />
         <el-step title="选择数据库" description="读取当前账号可见的业务数据库" />
@@ -496,10 +531,10 @@ onMounted(load)
         </template>
         <el-button v-else type="primary" :loading="loading" @click="save">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
 <style scoped>
-.database-steps{margin:-4px 0 22px;padding:0 80px}.database-selection-step{min-height:330px;padding:6px 18px 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;background:#f5f8fa;border:1px solid #e3e9ef;border-radius:6px}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:#83909b;font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:#334250;font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:#7f8b96;font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:#a33a4c;font-size:12px}.mono{font-family:Cascadia Code,Consolas,monospace}
+.resource-filters>.el-select{width:160px}.keyword-filter{width:300px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.resource-table{overflow:hidden}.resource-table :deep(.mono){font-size:11px}.database-steps{margin:-4px 0 22px;padding:0 40px}.database-selection-step{min-height:330px;padding:6px 0 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-subtle)}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:var(--ui-text-tertiary);font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:var(--ui-text-primary);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:var(--ui-text-secondary);font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:var(--ui-danger);font-size:12px}@media(max-width:767px){.resource-filters>*{width:100%!important}.filter-count{margin-left:0}.database-steps{padding:0}.database-selection-meta,.database-discovery-error{margin-left:0}}
 </style>

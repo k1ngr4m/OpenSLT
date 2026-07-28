@@ -12,6 +12,9 @@ const router = useRouter()
 const plans = ref<any[]>([])
 const scenarios = ref<any[]>([])
 const resources = ref<any[]>([])
+const activePlans = ref<number[]>([])
+const listLoading = ref(false)
+const listError = ref('')
 const planDialog = ref(false)
 const scenarioDialog = ref(false)
 const planEdit = ref<number | null>(null)
@@ -29,11 +32,20 @@ function resetResourceSelections() {
 }
 
 async function load() {
-  ;[plans.value, scenarios.value, resources.value] = await Promise.all([
-    api.get('/plans').then(response => response.data),
-    api.get('/scenarios').then(response => response.data),
-    api.get('/resources').then(response => response.data),
-  ])
+  listLoading.value = true
+  listError.value = ''
+  try {
+    ;[plans.value, scenarios.value, resources.value] = await Promise.all([
+      api.get('/plans').then(response => response.data),
+      api.get('/scenarios').then(response => response.data),
+      api.get('/resources').then(response => response.data),
+    ])
+    if (!activePlans.value.length && plans.value.length) activePlans.value = [plans.value[0].id]
+  } catch (error) {
+    listError.value = errorMessage(error)
+  } finally {
+    listLoading.value = false
+  }
 }
 
 function openPlan(row?: any) {
@@ -179,10 +191,13 @@ onMounted(load)
 <template>
   <div class="page">
     <div class="page-header">
-      <div><h1 class="page-title">方案与场景</h1><p class="muted">版本化配置测速流程，历史运行保存独立快照</p></div>
+      <div><span class="page-kicker">流程配置</span><h1 class="page-title">方案与场景</h1><p class="muted">版本化配置测速流程，历史运行保存独立快照</p></div>
       <el-button v-if="auth.canOperate" type="primary" @click="openPlan()">新增方案</el-button>
     </div>
-    <el-collapse class="plans">
+    <el-alert v-if="listError" type="error" :closable="false" show-icon class="load-alert">
+      <template #title><span>方案数据加载失败：{{ listError }}</span><el-button link type="danger" @click="load">重试</el-button></template>
+    </el-alert>
+    <el-collapse v-model="activePlans" v-loading="listLoading" class="plans">
       <el-collapse-item v-for="p in plans" :key="p.id" :name="p.id">
         <template #title>
           <div class="plan-head">
@@ -203,6 +218,7 @@ onMounted(load)
         </el-table>
       </el-collapse-item>
     </el-collapse>
+    <div v-if="!listLoading && !listError && !plans.length" class="card empty-state"><div><strong>尚无测速方案</strong><span>先创建方案，再为方案添加场景和工作流。</span><br><el-button v-if="auth.canOperate" type="primary" class="empty-action" @click="openPlan()">创建首个方案</el-button></div></div>
 
     <el-dialog v-model="planDialog" :title="planEdit ? '编辑方案' : '新增方案'" width="600px">
       <el-form label-width="90px">
@@ -239,5 +255,6 @@ onMounted(load)
 </template>
 
 <style scoped>
-.plans{border:0}.plans :deep(.el-collapse-item){background:#fff;border:1px solid #e5eaf0;border-radius:8px;margin-bottom:12px;padding:0 18px}.plan-head{width:100%;display:flex;align-items:center;justify-content:space-between;padding-right:16px}.plan-head strong{font-size:16px;margin-right:12px}.plan-head .el-tag{margin-right:10px}.tag{margin:2px 5px 2px 0}.resource-heading{display:flex;align-items:baseline;gap:12px;margin:2px 0 14px;padding-bottom:10px;border-bottom:1px solid #e5eaf0}.resource-heading .muted{font-size:12px}
+.plans{min-height:100px}
+.plans{border:0}.plans :deep(.el-collapse-item){overflow:hidden;margin-bottom:12px;padding:0 18px;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:#fff;transition:border-color var(--ui-transition),box-shadow var(--ui-transition)}.plans :deep(.el-collapse-item:hover){border-color:var(--ui-border-strong)}.plans :deep(.el-collapse-item__header){height:58px;border-bottom:0}.plans :deep(.el-collapse-item__wrap){border-bottom:0}.plans :deep(.el-collapse-item__content){padding-bottom:18px}.plan-head{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;padding-right:16px}.plan-head>div:first-child{display:flex;align-items:center;min-width:0}.plan-head strong{overflow:hidden;margin-right:12px;font-size:15px;text-overflow:ellipsis;white-space:nowrap}.plan-head .el-tag{margin-right:10px}.plan-head .muted{font-size:11px}.tag{margin:2px 5px 2px 0}.resource-heading{display:flex;align-items:baseline;gap:12px;margin:2px 0 14px;padding-bottom:10px;border-bottom:1px solid var(--ui-border)}.resource-heading .muted{font-size:12px}.empty-action{margin-top:18px}@media(max-width:767px){.plans :deep(.el-collapse-item){padding-inline:12px}.plan-head{align-items:flex-start;flex-direction:column;padding:10px 14px 10px 0}.plan-head>div:last-child{display:flex;flex-wrap:wrap}.plans :deep(.el-collapse-item__header){height:auto;min-height:58px}}
 </style>

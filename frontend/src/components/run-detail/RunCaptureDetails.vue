@@ -62,5 +62,11 @@ defineProps<{
 </template>
 
 <style scoped>
-.capture-detail-block{margin-top:18px;padding:16px;border-radius:8px;background:#fbfcfd;border:1px solid #edf1f5}.capture-title{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}.capture-title h4{margin:0;font-size:15px}.capture-snapshot-list{display:grid;gap:14px}.capture-snapshot{padding:14px;border-radius:8px;background:#fff;border:1px solid #e6edf4}.capture-snapshot-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}.capture-snapshot-head strong,.capture-snapshot-head span{display:block}.capture-snapshot-head .muted{font-size:12px;margin-top:4px}.capture-key{margin:4px 0 0;font-size:11px}.capture-value{white-space:pre-wrap;word-break:break-word;line-height:1.55}.raw-output-fold{margin-top:8px}.raw-output-fold summary{cursor:pointer;color:#409eff;font-size:12px}.raw-output-fold pre{max-height:180px;overflow:auto;margin:8px 0 0;padding:10px;border-radius:6px;background:#111827;color:#d1d5db;font:12px/1.6 "Cascadia Code",Consolas,monospace}.empty-line{padding:14px;border-radius:8px;background:#f7fafc;color:#7b8794}
+.capture-detail-block{margin-top:18px;padding:16px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface-subtle)}
+.capture-title{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}.capture-title h4{margin:0;font-size:15px}
+.capture-snapshot-list{display:grid;gap:14px}.capture-snapshot{padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface)}
+.capture-snapshot-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.capture-snapshot-head strong,.capture-snapshot-head span{display:block}.capture-snapshot-head .muted{margin-top:4px;font-size:12px}
+.capture-key{margin:4px 0 0;font-size:11px}.capture-value{line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.raw-output-fold{margin-top:8px}.raw-output-fold summary{color:var(--ui-primary);font-size:12px;cursor:pointer}.raw-output-fold pre{max-height:180px;overflow:auto;margin:8px 0 0;padding:10px;border-radius:6px;background:var(--ui-terminal);color:#d1dde0;font:12px/1.6 "Cascadia Code",Consolas,monospace}
+.empty-line{padding:14px;border-radius:8px;color:var(--ui-text-tertiary);background:var(--ui-surface)}
 </style>

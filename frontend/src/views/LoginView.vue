@@ -27,12 +27,20 @@ async function submit() {
 <template>
   <main class="login">
     <section class="hero" aria-labelledby="platform-title">
-      <h1 id="platform-title"><span>盛立自动化</span><span>测试平台</span></h1>
+      <div class="hero-copy">
+        <p class="hero-kicker">OpenSLT 测速控制台</p>
+        <h1 id="platform-title"><span>让复杂测速链路</span><span>保持清晰、可控、可追溯</span></h1>
+        <p class="hero-description">统一管理测速资源、运行流程、实时日志和结果归档。</p>
+        <div class="capability-list" aria-label="平台能力">
+          <span>资源预检</span><i></i><span>人工确认</span><i></i><span>自动执行</span><i></i><span>结果复核</span>
+        </div>
+      </div>
     </section>
 
     <section class="panel">
       <div class="form">
         <div class="logo" aria-hidden="true">SL</div>
+        <span class="form-kicker">内部系统</span>
         <h2>登录 OpenSLT</h2>
         <p class="muted">使用管理员分配的账号进入平台</p>
         <el-form label-position="top" @submit.prevent="submit">
@@ -55,7 +63,7 @@ async function submit() {
             class="submit"
             @click="submit"
           >
-            安全登录
+            登录
           </el-button>
         </el-form>
         <p class="notice">初始账号登录后请立即修改默认密码</p>
@@ -76,11 +84,11 @@ async function submit() {
   position: relative;
   isolation: isolate;
   display: grid;
-  place-items: center;
+  place-items: center start;
   overflow: hidden;
   padding: clamp(3rem, 7vw, 7rem);
   color: #fff;
-  background: #073f40;
+  background: #0b3639;
 }
 
 .hero::before,
@@ -101,24 +109,17 @@ async function submit() {
   mask-image: linear-gradient(to bottom right, transparent 8%, #000 62%, transparent 96%);
 }
 
-.hero::after {
-  width: min(48vw, 42rem);
-  aspect-ratio: 1;
-  right: -24%;
-  bottom: -42%;
-  border: 1px solid rgba(114, 225, 205, 0.2);
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 6rem rgba(114, 225, 205, 0.025),
-    0 0 0 12rem rgba(114, 225, 205, 0.02);
-}
+.hero::after{right:6%;bottom:8%;width:42%;height:1px;background:linear-gradient(90deg,transparent,rgba(111,218,199,.36),transparent);box-shadow:0 -80px 0 rgba(111,218,199,.08),0 -160px 0 rgba(111,218,199,.05)}
+
+.hero-copy{max-width:46rem}
+.hero-kicker{margin:0 0 24px;color:#71dac7;font-size:12px;font-weight:650;letter-spacing:.14em}
 
 .hero h1 {
   margin: 0;
-  font-size: clamp(3rem, 5.3vw, 5.75rem);
-  font-weight: 700;
-  line-height: 1.16;
-  letter-spacing: 0;
+  font-size: clamp(2.65rem, 4.4vw, 4.7rem);
+  font-weight: 650;
+  line-height: 1.14;
+  letter-spacing: -.045em;
   text-wrap: balance;
   text-shadow: 0 0.12em 0 rgba(1, 31, 32, 0.24);
 }
@@ -127,6 +128,9 @@ async function submit() {
   display: block;
   white-space: nowrap;
 }
+
+.hero-description{max-width:38rem;margin:24px 0 0;color:#b8d2d4;font-size:16px;line-height:1.7}
+.capability-list{display:flex;align-items:center;gap:12px;margin-top:46px;color:#d7e8e9;font-size:11px;font-weight:550}.capability-list i{width:32px;height:1px;background:#527b7e}
 
 .panel {
   display: grid;
@@ -137,6 +141,8 @@ async function submit() {
 .form {
   width: min(100%, 22.5rem);
 }
+
+.form-kicker{display:block;margin-top:22px;color:var(--ui-primary);font-size:11px;font-weight:650;letter-spacing:.1em}
 
 .logo {
   width: 3rem;
@@ -150,7 +156,7 @@ async function submit() {
 }
 
 .form h2 {
-  margin: 1.5rem 0 0.5rem;
+  margin: .4rem 0 0.5rem;
   font-size: 1.75rem;
 }
 
@@ -163,6 +169,8 @@ async function submit() {
   background: #0d8c78;
   border-color: #0d8c78;
 }
+
+.submit:hover{background:var(--ui-primary-hover);border-color:var(--ui-primary-hover)}
 
 .notice {
   margin-top: 1.5rem;
@@ -185,6 +193,8 @@ async function submit() {
     place-items: end start;
     padding: 2.5rem 1.5rem;
   }
+
+  .hero-description,.capability-list{display:none}
 
   .hero h1 {
     font-size: clamp(2.5rem, 12vw, 4.25rem);

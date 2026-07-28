@@ -57,6 +57,7 @@ onMounted(async () => {
       <div class="terminal-title">
         <el-button :icon="ArrowLeft" circle plain aria-label="返回资源管理" @click="router.push('/resources')" />
         <div>
+          <span class="page-kicker">远端资源操作台</span>
           <h1 class="page-title">{{ resource?.name || '资源操作台' }}</h1>
           <p v-if="resource" class="muted mono">{{ resourceText[resource.resource_type] }} · {{ resource.username }}@{{ resource.host }}:{{ resource.ssh_port }}</p>
         </div>
@@ -85,5 +86,5 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.terminal-header{align-items:flex-start}.terminal-title{display:flex;align-items:center;gap:14px}.workspace-switch{display:flex;align-items:center;gap:12px;margin:-4px 0 14px}.workspace-note{color:#7f8c97;font-size:12px}.mono{font-family:Cascadia Code,Consolas,monospace}
+.terminal-page{max-width:1600px}.terminal-header{align-items:flex-start}.terminal-title{display:flex;align-items:center;gap:14px}.terminal-title .page-kicker{margin-bottom:0}.workspace-switch{display:flex;align-items:center;gap:12px;margin:-4px 0 14px;padding:8px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface-subtle)}.workspace-note{color:var(--ui-text-secondary);font-size:11px}.terminal-workspace{padding:14px;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:var(--ui-surface)}@media(max-width:767px){.workspace-switch{align-items:flex-start;flex-direction:column}.terminal-workspace{padding:8px}}
 </style>

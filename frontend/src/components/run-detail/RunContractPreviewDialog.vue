@@ -40,5 +40,5 @@ const columns = computed(() => Object.keys(rows.value[0] || {}))
 </template>
 
 <style scoped>
-.contract-preview-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 14px;color:#7b8794;font-size:12px}.contract-preview-body{min-height:180px}
+.contract-preview-meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-4px 0 14px;color:var(--ui-text-tertiary);font-size:12px}.contract-preview-body{min-height:180px}
 </style>

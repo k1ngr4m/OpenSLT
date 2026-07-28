@@ -9,6 +9,7 @@ import RunContractPreviewDialog from '@/components/run-detail/RunContractPreview
 import RunLogPanel from '@/components/run-detail/RunLogPanel.vue'
 import RunWorkflowStrip from '@/components/run-detail/RunWorkflowStrip.vue'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { useRunActions } from '@/composables/useRunActions'
 import { useRunLifecycle } from '@/composables/useRunLifecycle'
 import { useRunStepPresentation } from '@/composables/useRunStepPresentation'
@@ -23,7 +24,7 @@ import type {
   RunStep,
 } from '@/types/run'
 import { formatBytes, formatDate, nodeTypeText, normalizeContractFile, prettyJson } from '@/utils/runDetail'
-import { businessText, resourceText, statusText, statusType } from '@/utils/status'
+import { businessText, resourceText } from '@/utils/status'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -241,7 +242,7 @@ watch(
     <div class="page-header run-header">
       <div>
         <el-button link @click="$router.push('/runs')">← 返回运行列表</el-button>
-        <h1 class="page-title mono">{{ run.run_number }}</h1>
+        <div class="run-title-line"><h1 class="page-title mono">{{ run.run_number }}</h1><StatusBadge :status="run.status" show-raw /></div>
         <p class="muted">{{ businessText[run.business_code] }} · {{ run.config_snapshot?.plan?.name }} / {{ run.config_snapshot?.scenario?.name }}</p>
       </div>
       <div v-if="auth.canOperate" class="toolbar">
@@ -273,7 +274,7 @@ watch(
     </div>
 
     <section class="summary card" aria-label="运行摘要">
-      <div><span class="muted">当前状态</span><p><el-tag size="large" :type="statusType(run.status)">{{ statusText[run.status] || run.status }}</el-tag></p></div>
+      <div><span class="muted">当前状态</span><p><StatusBadge :status="run.status" show-raw /></p></div>
       <div><span class="muted">总体进度</span><el-progress :percentage="run.progress" :stroke-width="12" /></div>
       <div><span class="muted">Trace ID</span><p class="mono trace">{{ run.trace_id }}</p></div>
       <div><span class="muted">日志完整性</span><p>{{ run.logs_complete ? '完整' : '已降级，待补传' }}</p></div>
@@ -302,7 +303,7 @@ watch(
                   <h2>{{ selectedStep.position }}. {{ selectedStep.name }}</h2>
                   <p class="muted">{{ nodeTypeText[selectedStep.node_type] || selectedStep.node_type }}</p>
                 </div>
-                <el-tag size="large" :type="statusType(selectedStep.status)">{{ statusText[selectedStep.status] || selectedStep.status }}</el-tag>
+                <StatusBadge :status="selectedStep.status" show-raw />
               </div>
 
               <div class="detail-grid">

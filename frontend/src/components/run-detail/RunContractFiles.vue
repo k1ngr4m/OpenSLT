@@ -34,5 +34,5 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
-.contract-file-list{display:grid;gap:10px;margin-top:16px}.contract-file-title{display:flex;align-items:baseline;gap:10px}.contract-file-title h4{margin:0;font-size:15px}.contract-file-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid #e6edf4;border-radius:8px;background:#fbfdff}.contract-file-main{min-width:0;display:grid;gap:4px}.contract-file-main strong{color:#2f83e6;word-break:break-all}.contract-file-main span{font-size:12px}
+.contract-file-list{display:grid;gap:10px;margin-top:16px}.contract-file-title{display:flex;align-items:baseline;gap:10px}.contract-file-title h4{margin:0;font-size:15px}.contract-file-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface-subtle)}.contract-file-main{display:grid;min-width:0;gap:4px}.contract-file-main strong{color:var(--ui-primary);word-break:break-all}.contract-file-main span{font-size:12px}
 </style>
