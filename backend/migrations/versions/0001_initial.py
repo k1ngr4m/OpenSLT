@@ -57,6 +57,19 @@ INDEXES = (
     ("ix_t_database_update_confirmations_resource_id", "t_database_update_confirmations", ["resource_id"], False, {}),
     ("ix_t_database_update_confirmations_sql_fingerprint", "t_database_update_confirmations", ["sql_fingerprint"], False, {}),
     ("ix_t_database_update_confirmations_status", "t_database_update_confirmations", ["status"], False, {}),
+    ("ix_durable_task_dispatch", "t_durable_tasks", ["status", "available_at", "lease_expires_at"], False, {}),
+    ("ix_t_durable_tasks_available_at", "t_durable_tasks", ["available_at"], False, {}),
+    (
+        "ix_t_durable_tasks_idempotency_key",
+        "t_durable_tasks",
+        ["idempotency_key"],
+        True,
+        {"mysql_length": 191},
+    ),
+    ("ix_t_durable_tasks_lease_expires_at", "t_durable_tasks", ["lease_expires_at"], False, {}),
+    ("ix_t_durable_tasks_locked_by", "t_durable_tasks", ["locked_by"], False, {}),
+    ("ix_t_durable_tasks_status", "t_durable_tasks", ["status"], False, {}),
+    ("ix_t_durable_tasks_task_type", "t_durable_tasks", ["task_type"], False, {}),
     ("ix_t_log_records_run_created", "t_log_records", ["run_id", "created_at"], False, {}),
     ("ix_t_log_records_trace_created", "t_log_records", ["trace_id", "created_at"], False, {}),
     ("ix_t_log_records_created_at", "t_log_records", ["created_at"], False, {}),
@@ -77,8 +90,19 @@ INDEXES = (
     ("ix_t_resources_business_code", "t_resources", ["business_code"], False, {}),
     ("ix_t_resources_name", "t_resources", ["name"], False, {}),
     ("ix_t_resources_resource_type", "t_resources", ["resource_type"], False, {}),
+    ("ix_t_plan_resources_plan_id", "t_plan_resources", ["plan_id"], False, {}),
+    ("ix_t_plan_resources_resource_id", "t_plan_resources", ["resource_id"], False, {}),
+    ("ix_t_run_resources_resource_id", "t_run_resources", ["resource_id"], False, {}),
+    ("ix_t_run_resources_run_id", "t_run_resources", ["run_id"], False, {}),
+    ("ix_run_status_transition_created", "t_run_status_transitions", ["run_id", "created_at"], False, {}),
+    ("ix_t_run_status_transitions_actor_id", "t_run_status_transitions", ["actor_id"], False, {}),
+    ("ix_t_run_status_transitions_created_at", "t_run_status_transitions", ["created_at"], False, {}),
+    ("ix_t_run_status_transitions_run_id", "t_run_status_transitions", ["run_id"], False, {}),
+    ("ix_t_run_status_transitions_source", "t_run_status_transitions", ["source"], False, {}),
     ("ix_t_run_steps_run_id", "t_run_steps", ["run_id"], False, {}),
     ("ix_t_run_steps_workflow_node_id", "t_run_steps", ["workflow_node_id"], False, {}),
+    ("ix_t_scenario_resources_resource_id", "t_scenario_resources", ["resource_id"], False, {}),
+    ("ix_t_scenario_resources_scenario_id", "t_scenario_resources", ["scenario_id"], False, {}),
     ("ix_t_scenario_workflow_nodes_node_type", "t_scenario_workflow_nodes", ["node_type"], False, {}),
     ("ix_t_scenario_workflow_nodes_workflow_version_id", "t_scenario_workflow_nodes", ["workflow_version_id"], False, {}),
     ("ix_t_scenario_workflow_versions_created_by", "t_scenario_workflow_versions", ["created_by"], False, {}),
@@ -100,6 +124,34 @@ INDEXES = (
     ("ix_t_test_scenarios_workflow_status", "t_test_scenarios", ["workflow_status"], False, {}),
     ("ix_t_users_role", "t_users", ["role"], False, {}),
     ("ix_t_users_username", "t_users", ["username"], True, {}),
+    (
+        "ix_t_workflow_node_contract_files_contract_file_id",
+        "t_workflow_node_contract_files",
+        ["contract_file_id"],
+        False,
+        {},
+    ),
+    (
+        "ix_t_workflow_node_contract_files_workflow_node_id",
+        "t_workflow_node_contract_files",
+        ["workflow_node_id"],
+        False,
+        {},
+    ),
+    (
+        "ix_t_workflow_version_resources_resource_id",
+        "t_workflow_version_resources",
+        ["resource_id"],
+        False,
+        {},
+    ),
+    (
+        "ix_t_workflow_version_resources_workflow_version_id",
+        "t_workflow_version_resources",
+        ["workflow_version_id"],
+        False,
+        {},
+    ),
 )
 
 
@@ -124,6 +176,13 @@ TABLES_IN_CREATION_ORDER = (
     "t_verdicts",
     "t_resource_locks",
     "t_audit_logs",
+    "t_plan_resources",
+    "t_scenario_resources",
+    "t_workflow_version_resources",
+    "t_run_resources",
+    "t_workflow_node_contract_files",
+    "t_run_status_transitions",
+    "t_durable_tasks",
 )
 
 
@@ -176,6 +235,11 @@ def upgrade() -> None:
         sa.Column("database_tls_enabled", sa.Boolean(), nullable=False),
         sa.Column("remote_path", sa.String(512), nullable=False),
         sa.Column("capabilities", JSONText(), nullable=False),
+        sa.Column("trade_ip", sa.String(45)),
+        sa.Column("trade_tcp_port", sa.Integer()),
+        sa.Column("trade_udp_port", sa.Integer()),
+        sa.Column("query_ip", sa.String(45)),
+        sa.Column("query_port", sa.Integer()),
         sa.Column("version_info", sa.String(255), nullable=False),
         sa.Column("notes", sa.Text(), nullable=False),
         sa.Column("is_enabled", sa.Boolean(), nullable=False),
@@ -206,7 +270,6 @@ def upgrade() -> None:
         sa.Column("sql_fingerprint", sa.String(64), nullable=False),
         sa.Column("estimated_rows", sa.Integer(), nullable=False),
         sa.Column("actual_rows", sa.Integer()),
-        sa.Column("simulated", sa.Boolean(), nullable=False),
         sa.Column("status", sa.String(32), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -326,6 +389,7 @@ def upgrade() -> None:
         sa.Column("workflow_version_id", sa.Integer()),
         sa.Column("business_code", sa.String(32), nullable=False),
         sa.Column("status", sa.String(40), nullable=False),
+        sa.Column("status_version", sa.Integer(), nullable=False),
         sa.Column("progress", sa.Integer(), nullable=False),
         sa.Column("resource_ids", JSONText(), nullable=False),
         sa.Column("config_snapshot", JSONText(), nullable=False),
@@ -524,6 +588,109 @@ def upgrade() -> None:
         sa.Column("detail", JSONText(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["actor_id"], ["t_users.id"]),
+    )
+    op.create_table(
+        "t_plan_resources",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("plan_id", sa.Integer(), nullable=False),
+        sa.Column("resource_id", sa.Integer(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["plan_id"], ["t_test_plans.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"]),
+        sa.UniqueConstraint("plan_id", "resource_id", name="uq_plan_resource"),
+        sa.UniqueConstraint("plan_id", "position", name="uq_plan_resource_position"),
+    )
+    op.create_table(
+        "t_scenario_resources",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("scenario_id", sa.Integer(), nullable=False),
+        sa.Column("resource_id", sa.Integer(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["scenario_id"], ["t_test_scenarios.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"]),
+        sa.UniqueConstraint("scenario_id", "resource_id", name="uq_scenario_resource"),
+        sa.UniqueConstraint("scenario_id", "position", name="uq_scenario_resource_position"),
+    )
+    op.create_table(
+        "t_workflow_version_resources",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("workflow_version_id", sa.Integer(), nullable=False),
+        sa.Column("resource_id", sa.Integer(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["workflow_version_id"], ["t_scenario_workflow_versions.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"]),
+        sa.UniqueConstraint(
+            "workflow_version_id", "resource_id", name="uq_workflow_version_resource"
+        ),
+        sa.UniqueConstraint(
+            "workflow_version_id", "position", name="uq_workflow_version_resource_position"
+        ),
+    )
+    op.create_table(
+        "t_run_resources",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("run_id", sa.Integer(), nullable=False),
+        sa.Column("resource_id", sa.Integer(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(["run_id"], ["t_test_runs.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"]),
+        sa.UniqueConstraint("run_id", "resource_id", name="uq_run_resource"),
+        sa.UniqueConstraint("run_id", "position", name="uq_run_resource_position"),
+    )
+    op.create_table(
+        "t_workflow_node_contract_files",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("workflow_node_id", sa.Integer(), nullable=False),
+        sa.Column("contract_file_id", sa.Integer(), nullable=False),
+        sa.Column("position", sa.Integer(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["workflow_node_id"], ["t_scenario_workflow_nodes.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["contract_file_id"], ["t_contract_data_files.id"], ondelete="CASCADE"
+        ),
+        sa.UniqueConstraint(
+            "workflow_node_id", "contract_file_id", name="uq_workflow_node_contract_file"
+        ),
+        sa.UniqueConstraint(
+            "workflow_node_id", "position", name="uq_workflow_node_contract_position"
+        ),
+    )
+    op.create_table(
+        "t_run_status_transitions",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("run_id", sa.Integer(), nullable=False),
+        sa.Column("from_status", sa.String(40), nullable=False),
+        sa.Column("to_status", sa.String(40), nullable=False),
+        sa.Column("status_version", sa.Integer(), nullable=False),
+        sa.Column("source", sa.String(64), nullable=False),
+        sa.Column("actor_id", sa.Integer()),
+        sa.Column("reason", sa.Text()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["run_id"], ["t_test_runs.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["actor_id"], ["t_users.id"], ondelete="SET NULL"),
+        sa.UniqueConstraint(
+            "run_id", "status_version", name="uq_run_status_transition_version"
+        ),
+    )
+    op.create_table(
+        "t_durable_tasks",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("task_type", sa.String(64), nullable=False),
+        sa.Column("payload", JSONText(), nullable=False),
+        sa.Column("idempotency_key", sa.String(255), nullable=False),
+        sa.Column("status", sa.String(24), nullable=False),
+        sa.Column("attempts", sa.Integer(), nullable=False),
+        sa.Column("max_attempts", sa.Integer(), nullable=False),
+        sa.Column("available_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True)),
+        sa.Column("locked_by", sa.String(128)),
+        sa.Column("last_error", sa.Text()),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True)),
+        sa.Column("finished_at", sa.DateTime(timezone=True)),
     )
 
     for name, table_name, columns, unique, options in INDEXES:
