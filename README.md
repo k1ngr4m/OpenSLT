@@ -100,6 +100,9 @@ RHEL 7.9 x86_64 无互联网环境的制包、安装、网络和验收步骤见
 [`deploy/offline/README-OFFLINE.md`](deploy/offline/README-OFFLINE.md)。离线部署不要直接运行
 会访问 PyPI/npm registry 的 `deploy/scripts/install.sh`。
 
+外网一键制包入口为 `deploy/offline/make-offline-package.sh`；生成的压缩包内提供
+`configure.sh` 和 `start.sh`，分别用于内网环境初始化和正式服务启动。
+
 ## 验证
 
 ```powershell

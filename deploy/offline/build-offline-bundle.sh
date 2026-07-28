@@ -170,9 +170,11 @@ if [[ -n "$RPM_DIR" ]]; then
 fi
 
 cp -p "$SCRIPT_DIR/install-offline.sh" "$STAGING/install.sh"
+cp -p "$SCRIPT_DIR/configure-intranet-host.sh" "$STAGING/configure.sh"
+cp -p "$SCRIPT_DIR/start-production.sh" "$STAGING/start.sh"
 cp -p "$SCRIPT_DIR/openslt.env.example" "$STAGING/openslt.env.example"
 cp -p "$SCRIPT_DIR/README-OFFLINE.md" "$STAGING/README-OFFLINE.md"
-chmod 0755 "$STAGING/install.sh"
+chmod 0755 "$STAGING/install.sh" "$STAGING/configure.sh" "$STAGING/start.sh"
 
 printf '%s\n' "$VERSION" >"$STAGING/VERSION"
 (
@@ -184,7 +186,10 @@ printf '%s\n' "$VERSION" >"$STAGING/VERSION"
 
 ARCHIVE="$OUTPUT_DIR/$BUNDLE_NAME.tar.gz"
 tar -C "$BUILD_ROOT" -czf "$ARCHIVE" "$BUNDLE_NAME"
-sha256sum "$ARCHIVE" >"$ARCHIVE.sha256"
+(
+    cd "$OUTPUT_DIR"
+    sha256sum "$BUNDLE_NAME.tar.gz" >"$BUNDLE_NAME.tar.gz.sha256"
+)
 
 printf '[OpenSLT] Offline bundle created: %s\n' "$ARCHIVE"
 printf '[OpenSLT] Archive checksum: %s.sha256\n' "$ARCHIVE"

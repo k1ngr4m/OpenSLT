@@ -15,6 +15,7 @@ from app.schemas import CaptureSnapshotOut, ContractDataFetchRequest, ContractDa
 from app.services.audit import write_audit
 from app.services.resource_relations import node_contract_file_ids
 from app.services.workflows import WorkflowError, clone_published_to_draft, fetch_contract_files, load_version, preview_node, publish, replace_draft, validate_structure, workflow_payload
+from app.services.workflow_contracts import scan_remote_contract_files
 
 router = APIRouter()
 
@@ -97,6 +98,28 @@ async def publish_scenario_workflow(scenario_id: int, request: Request, actor: U
 def list_contract_files(scenario_id: int, node_key: str, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ContractDataFile]:
     node = db.scalar(select(ScenarioWorkflowNode).join(ScenarioWorkflowVersion).where(ScenarioWorkflowVersion.scenario_id == scenario_id, ScenarioWorkflowNode.node_key == node_key).order_by(ScenarioWorkflowVersion.version_no.desc()))
     if not node: raise not_found("节点")
+    referenced_ids = node_contract_file_ids(node)
+    criteria = [ContractDataFile.workflow_node_id == node.id]
+    if referenced_ids:
+        criteria.append(ContractDataFile.id.in_(referenced_ids))
+    return list(db.scalars(
+        select(ContractDataFile).where(or_(*criteria)).order_by(ContractDataFile.id.desc())
+    ).all())
+
+
+@router.post("/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files/scan", response_model=typing.List[ContractDataFileOut])
+async def scan_contract_files(scenario_id: int, node_key: str, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> list[ContractDataFile]:
+    scenario = db.get(TestScenario, scenario_id)
+    if not scenario or not scenario.draft_workflow_version_id: raise not_found("工作流草稿")
+    version = load_version(db, scenario.draft_workflow_version_id)
+    node = next((item for item in version.nodes if item.node_key == node_key), None)
+    if not node: raise not_found("节点")
+    try:
+        await scan_remote_contract_files(db, scenario, version, node, actor.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    write_audit(db, "workflow.contract_scan", "workflow_node", node.id, actor, request)
+    db.commit()
     referenced_ids = node_contract_file_ids(node)
     criteria = [ContractDataFile.workflow_node_id == node.id]
     if referenced_ids:

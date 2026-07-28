@@ -10,6 +10,43 @@
 `deploy/scripts/install.sh`。这两个脚本面向开发或在线环境，会尝试访问 PyPI 和
 npm registry。
 
+## 一键流程
+
+准备好最新 `frontend/dist` 后，在外网 RHEL 7.9 仓库根目录执行：
+
+```bash
+chmod +x deploy/offline/*.sh
+deploy/offline/make-offline-package.sh --version 0.1.0
+```
+
+将生成的 `.tar.gz` 和 `.tar.gz.sha256` 传入内网并校验、解压。首次部署执行：
+
+```bash
+sha256sum -c openslt-offline-rhel7-x86_64-0.1.0.tar.gz.sha256
+tar -xzf openslt-offline-rhel7-x86_64-0.1.0.tar.gz
+cd openslt-offline-rhel7-x86_64-0.1.0
+chmod +x configure.sh start.sh
+./configure.sh
+./start.sh
+```
+
+`configure.sh` 负责安装离线 RPM、配置 MariaDB、创建应用数据库和随机生产密钥，
+已存在的 `/etc/openslt/openslt.env` 不会被覆盖。`start.sh` 负责应用安装、Alembic
+迁移、systemd/Nginx 配置和健康检查；重复启动同一版本时不会重建虚拟环境，使用新
+版本压缩包时会自动升级。首次登录密码保存在仅 root 可读的
+`/etc/openslt/initial-admin-password`，修改密码后应删除该文件。
+
+如果 MariaDB root 已设置密码且 `/root/.my.cnf` 不可用，请准备权限为 `0600` 的
+MySQL client defaults 文件：
+
+```ini
+[client]
+user=root
+password=数据库管理密码
+```
+
+然后使用 `./configure.sh --mysql-defaults-file /安全路径/root.cnf`。
+
 ## 1. 准备前端产物
 
 RHEL 7.9 的 glibc 2.17 无法直接运行大多数官方 Node.js 20 Linux 发行包。请在
@@ -32,7 +69,8 @@ npm --prefix frontend run build
 - RHEL 7 基础源、MariaDB 5.5.68 及 Red Hat Software Collections。
 - 提供 RHEL 7 x86_64 包的 Nginx 软件源。
 
-安装制包工具后收集依赖闭包：
+推荐直接使用前述 `make-offline-package.sh`。如需分步排查，可先安装制包工具并
+手工收集依赖闭包：
 
 ```bash
 yum install -y yum-utils createrepo
@@ -49,7 +87,8 @@ Nginx，可以编辑一份清单副本并通过 `--package-file` 指定，但不
 
 ## 3. 制作应用离线包
 
-在外网 RHEL 7.9 制包机的仓库根目录执行：
+一键脚本已包含以下过程。如需分步执行，可在外网 RHEL 7.9 制包机的仓库根目录
+运行：
 
 ```bash
 chmod +x deploy/offline/build-offline-bundle.sh
@@ -83,7 +122,8 @@ tar -xzf openslt-offline-rhel7-x86_64-0.1.0.tar.gz
 
 ## 4. 准备 MariaDB 5.5.68
 
-进入内网解压后的离线包，先只安装 RPM，然后启动 MariaDB 并完成安全初始化：
+`configure.sh` 会自动完成本节配置，包括首次安装时为 MariaDB root 生成随机密码
+并保存到 `/root/.my.cnf`。如需分步排查，可先只安装 RPM，然后启动 MariaDB：
 
 ```bash
 chmod +x install.sh
@@ -92,7 +132,7 @@ systemctl enable --now mariadb
 mysql_secure_installation
 ```
 
-在 `/etc/my.cnf.d/server.cnf` 的 `[mysqld]` 段确认以下设置并重启 MariaDB：
+在 `/etc/my.cnf.d/openslt.cnf` 的 `[mysqld]` 段确认以下设置并重启 MariaDB：
 
 ```ini
 [mysqld]

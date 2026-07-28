@@ -37,14 +37,11 @@ const statisticsScripts = ref<any[]>([])
 const loadingStatisticsScripts = ref(false)
 const contractFiles = ref<any[]>([])
 const fetchingContracts = ref(false)
+const scanningContracts = ref(false)
 let contractFilesRequestId = 0
 const globalKeySearch = ref('')
 const resourceTypes = Object.keys(resourceText)
 const slnicNodeTypes = new Set(['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'])
-const ORDER_ACTIONS = [
-  'new_order', 'new_order_simple', 'new_quote', 'new_quote_simple',
-  'new_arbi_order', 'new_arbi_order_simple', 'cxl_order', 'stop_order',
-]
 const nodeCategories = [
   { title: '获取配置', types: ['server_config', 'database_config'] },
   { title: '流程准备', types: ['wiring_confirmation'] },
@@ -86,10 +83,6 @@ const allGlobalKeysSelected = computed(() => {
 const selectedPlan = computed(() => plans.value.find(item => item.id === scenario.value?.plan_id))
 const selectedResources = computed(() => resourceTypes.map(type => resources.value.find(item => item.id === resourceSelections[type])).filter(Boolean))
 const selectedResourceMap = computed(() => Object.fromEntries(selectedResources.value.map(item => [item.resource_type, item])))
-const availableOrderActions = computed(() => {
-  const configured = selectedResourceMap.value.order?.capabilities?.order_actions
-  return Array.isArray(configured) && configured.length ? configured : ORDER_ACTIONS
-})
 const wiringPreview = computed(() => buildWiringSnapshot(
   selectedPlan.value?.business_code || '',
   selectedResourceMap.value.rem,
@@ -126,9 +119,6 @@ function applyDocument(data: any) {
   const preferredKey = selectedKey.value
   documentData.value = data
   nodes.value = JSON.parse(JSON.stringify(data.draft.nodes || []))
-  for (const node of nodes.value) {
-    if (node.node_type === 'order_preparation' && !node.config.order_action) node.config.order_action = 'new_order'
-  }
   for (const type of resourceTypes) resourceSelections[type] = null
   for (const id of data.draft.resource_ids || []) {
     const resource = resources.value.find(item => item.id === id)
@@ -194,7 +184,7 @@ function nodeDescription(type: string) {
     server_config: '通过 SSH 采集软硬件信息',
     database_config: '读取 t_global_settings',
     wiring_confirmation: '阻断流程并等待机房确认',
-    order_preparation: '启动发单工具并发送所选动作',
+    order_preparation: '启动发单工具，运行时按需发单',
     slnic_start_capture: '调用脚本开始四路抓包',
     slnic_stop_capture: '调用脚本结束抓包',
     slnic_merge_capture: '合并并转换为单一 pcapng 产物',
@@ -219,7 +209,7 @@ function defaultNode(type: string): WorkflowNode {
   if (type === 'server_config') return { node_key: key, position: 0, node_type: type, name: '获取服务器配置', config: { targets: [] } }
   if (type === 'database_config') return { node_key: key, position: 0, node_type: type, name: '获取数据库配置', config: { database_name: '', keys: [] } }
   if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'resource' } }
-  if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [], order_action: 'new_order' } }
+  if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return {
     node_key: key,
     position: 0,
@@ -505,19 +495,31 @@ function suggestTradingDatabase() {
   markDirty()
 }
 
-async function loadContractFiles(throwOnError = false) {
+async function loadContractFiles(throwOnError = false, scanRemote = editable.value) {
   const requestId = ++contractFilesRequestId
   const node = selectedNode.value
   if (!node || node.node_type !== 'order_preparation') { contractFiles.value = []; return }
   const nodeKey = node.node_key
+  scanningContracts.value = scanRemote
   try {
-    const response = await api.get(`/scenarios/${scenarioId}/workflow/nodes/${nodeKey}/contract-files`)
+    const response = scanRemote
+      ? await api.post(`/scenarios/${scenarioId}/workflow/nodes/${nodeKey}/contract-files/scan`)
+      : await api.get(`/scenarios/${scenarioId}/workflow/nodes/${nodeKey}/contract-files`)
     if (requestId === contractFilesRequestId && selectedNode.value?.node_key === nodeKey) contractFiles.value = response.data
   } catch (error) {
     if (requestId !== contractFilesRequestId || selectedNode.value?.node_key !== nodeKey) return
     if (!throwOnError) contractFiles.value = []
     else throw error
+  } finally {
+    if (requestId === contractFilesRequestId) scanningContracts.value = false
   }
+}
+
+async function refreshContractFiles() {
+  try {
+    await loadContractFiles(true, true)
+    ElMessage.success('已刷新发单目录中的 CSV 文件')
+  } catch (error) { ElMessage.error(errorMessage(error)) }
 }
 
 async function fetchContracts(contractTypes: string[]) {
@@ -571,7 +573,7 @@ onMounted(load)
     <header class="workflow-header">
       <div class="header-left">
         <el-button text circle :icon="ArrowLeft" aria-label="返回方案与场景" @click="router.push('/plans')" />
-        <div><div class="title-line"><h1>{{ scenario?.name || '工作流设置' }}</h1><el-tag size="small" :type="draft?.status === 'published' ? 'success' : 'warning'">{{ draft?.status === 'published' ? '已发布' : '草稿' }}</el-tag><span v-if="dirty" class="dirty-mark">有未保存修改</span></div><p>线性主流程 · v{{ draft?.version_no || 1 }} · 修订 {{ draft?.revision || 1 }}</p></div>
+        <div><div class="title-line"><h1>{{ scenario?.name || '工作流设置' }}</h1><el-tag size="small" :type="draft?.status === 'published' ? 'success' : 'warning'">{{ draft?.status === 'published' ? '已发布' : '草稿' }}</el-tag><span v-if="dirty" class="dirty-mark">有未保存修改</span></div><p>主流程 · v{{ draft?.version_no || 1 }} · 修订 {{ draft?.revision || 1 }}</p></div>
       </div>
       <div class="header-actions">
         <template v-if="editable"><el-button :loading="saving" @click="saveWorkflow()">保存草稿</el-button><el-button type="primary" :loading="publishing" :icon="Check" @click="publishWorkflow">发布并启用</el-button></template>
@@ -639,14 +641,14 @@ onMounted(load)
           </template>
 
           <template v-else-if="selectedNode.node_type === 'order_preparation'">
-            <label class="field required"><span>发单动作</span><el-select v-model="selectedNode.config.order_action" :disabled="!editable || !selectedResourceMap.order" @change="markDirty"><el-option v-for="action in availableOrderActions" :key="action" :label="action" :value="action" /></el-select><small>运行时启动工具后，由操作员通过动作按钮发送一次。</small></label>
             <label class="field required"><span>XML 配置</span><el-select v-model="selectedNode.config.xml_filename" :disabled="!editable || !selectedResourceMap.order" filterable @change="selectXml"><el-option v-for="file in orderConfigs" :key="file.name" :label="file.name" :value="file.name" /></el-select></label>
-            <label class="field"><span>网卡接口</span><el-input v-model="selectedNode.config.network_interface" :disabled="!editable" placeholder="例如 p4p1" maxlength="15" @input="markDirty" /><small>运行时安全生成 ZF_ATTR，不接受完整 Shell 命令。</small></label>
+            <label class="field"><span>网卡接口</span><el-input v-model="selectedNode.config.network_interface" :disabled="!editable" placeholder="例如 p4p1" maxlength="15" @input="markDirty" /><small>运行时安全生成 ZF_ATTR。</small></label>
             <el-alert :title="selectedNode.config.read_symbol_csv ? 'XML 需要合约 CSV' : 'XML 未启用 read_symbol_csv'" :type="selectedNode.config.read_symbol_csv ? 'warning' : 'info'" :closable="false" show-icon />
             <template v-if="selectedNode.config.read_symbol_csv">
               <label class="field"><span>交易数据库</span><el-select v-model="selectedNode.config.trading_database_name" :disabled="!editable" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>根据前置 *_config 自动建议为 *_trading_data，并由你确认。</small></label>
-              <div class="contract-toolbar"><strong>合约数据</strong><div><el-button size="small" :loading="fetchingContracts" :disabled="!editable" @click="fetchContracts(['futures'])">获取期货</el-button><el-button size="small" :loading="fetchingContracts" :disabled="!editable" @click="fetchContracts(['options'])">获取期权</el-button></div></div>
-              <el-checkbox-group v-model="selectedNode.config.contract_file_ids" class="contract-list" :disabled="!editable" @change="markDirty"><el-checkbox v-for="file in contractFiles" :key="file.id" :label="file.id"><span><strong>{{ file.filename }}</strong><small>{{ file.contract_type === 'futures' ? '期货' : '期权' }} · {{ file.quote_date }} · {{ file.row_count }} 条</small></span></el-checkbox></el-checkbox-group>
+              <div class="contract-toolbar"><strong>合约数据</strong><div><el-button size="small" :icon="Refresh" :loading="scanningContracts" :disabled="!editable || fetchingContracts" circle aria-label="刷新目录 CSV" @click="refreshContractFiles" /><el-button size="small" :loading="fetchingContracts" :disabled="!editable || scanningContracts" @click="fetchContracts(['futures'])">获取期货</el-button><el-button size="small" :loading="fetchingContracts" :disabled="!editable || scanningContracts" @click="fetchContracts(['options'])">获取期权</el-button></div></div>
+              <el-checkbox-group v-if="contractFiles.length" v-model="selectedNode.config.contract_file_ids" class="contract-list" :disabled="!editable" @change="markDirty"><el-checkbox v-for="file in contractFiles" :key="file.id" :label="file.id"><span><strong>{{ file.filename }}</strong><small>{{ file.contract_type === 'futures' ? '期货' : file.contract_type === 'options' ? '期权' : '未识别类型' }} · {{ file.quote_date || '无交易日' }} · {{ file.row_count }} 条 · {{ file.database_resource_id ? '数据库生成' : '目录已有' }}</small></span></el-checkbox></el-checkbox-group>
+              <div v-else v-loading="scanningContracts" class="contract-empty">发单工具目录下暂无 CSV 文件</div>
               <el-collapse v-if="selectedContractFiles.length" class="contract-previews">
                 <el-collapse-item v-for="file in selectedContractFiles" :key="file.id" :name="file.id">
                   <template #title><span class="contract-preview-title"><strong>{{ file.contract_type === 'futures' ? '期货' : '期权' }}</strong><small>{{ file.quote_date }} · {{ file.row_count }} 条</small></span></template>
@@ -745,6 +747,7 @@ onMounted(load)
 <style scoped>
 .workflow-page{min-height:calc(100vh - 58px);background:#edf2f4;color:#1d2c34}.workflow-header{height:78px;padding:0 20px;background:#fff;border-bottom:1px solid #dce4e8;display:flex;align-items:center;justify-content:space-between}.header-left,.title-line,.header-actions,.property-title,.contract-toolbar{display:flex;align-items:center}.header-left{gap:10px}.header-left h1{font-size:18px;margin:0}.title-line{gap:9px}.header-left p{margin:5px 0 0;color:#7c8991;font-size:12px}.dirty-mark{font-size:12px;color:#b7791f}.header-actions{gap:9px}.editor-grid{display:grid;grid-template-columns:240px minmax(430px,1fr) 390px;height:calc(100vh - 136px);min-height:660px}.resource-panel,.property-panel{background:#fff;overflow:auto}.resource-panel{border-right:1px solid #dce4e8;padding:18px}.property-panel{border-left:1px solid #dce4e8;padding:20px}.panel-heading strong,.panel-heading small,.property-title strong,.property-title small{display:block}.panel-heading small,.property-title small{color:#81909a;font-size:11px;margin-top:4px}.resource-fields{display:grid;gap:13px;margin-top:20px}.resource-fields label,.field{display:grid;gap:6px}.resource-fields label>span,.field>span{font-size:12px;font-weight:600;color:#52616a}.resource-note{margin-top:22px;padding:12px;border-radius:8px;background:#edf7f4;color:#37675b}.resource-note strong,.resource-note span{display:block}.resource-note span{font-size:11px;line-height:1.6;margin-top:5px}.workflow-canvas{overflow:auto;padding:18px 28px 60px;background-color:#f4f7f8;background-image:radial-gradient(#d7e0e4 1px,transparent 1px);background-size:22px 22px}.canvas-intro{display:flex;align-items:baseline;justify-content:space-between;color:#71808a;font-size:12px}.canvas-intro strong{font-size:14px;color:#34444d}.flow-column{width:360px;margin:22px auto;display:flex;flex-direction:column;align-items:center}.add-point{width:30px;height:30px;border:1px solid #cbd7dc;border-radius:7px;background:#fff;color:#268b77;display:grid;place-items:center;cursor:pointer;box-shadow:0 3px 10px rgba(34,61,72,.08)}.flow-node{width:360px;min-height:108px;padding:15px;background:#fff;border:1px solid #d9e2e6;border-left:4px solid #48a895;border-radius:10px;display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:12px;align-items:start;box-shadow:0 8px 24px rgba(35,58,68,.08);cursor:pointer}.flow-node.selected{border-color:#22a68e;box-shadow:0 0 0 3px rgba(34,166,142,.13),0 10px 28px rgba(35,58,68,.1)}.flow-node.blue{border-left-color:#4f8fbd}.flow-node.amber{border-left-color:#d29b42}.flow-node.rose{border-left-color:#bd6b78}.node-icon{width:36px;height:36px;border-radius:8px;background:#e1f3ee;color:#248b76;display:grid;place-items:center;flex:0 0 auto}.node-icon.blue{background:#e7f0f7;color:#3f7ca7}.node-icon.amber{background:#f8eedc;color:#a77525}.node-icon.rose{background:#f7e7ea;color:#a65361}.node-copy>span,.node-copy>strong,.node-copy>small{display:block}.node-copy>span{font-size:10px;color:#8a98a0}.node-copy>strong{font-size:14px;margin-top:5px}.node-copy>small{font-size:11px;color:#71808a;margin-top:8px}.node-actions{display:flex;flex-direction:column;opacity:.25}.flow-node:hover .node-actions,.flow-node.selected .node-actions{opacity:1}.node-actions :deep(.el-button){margin:0}.flow-link{height:54px;display:flex;flex-direction:column;align-items:center}.flow-link>span{height:24px;border-left:2px solid #ccd7dc}.flow-link .add-point{width:28px;height:28px}.flow-empty,.property-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#87949c}.flow-empty{width:360px;height:180px;margin-top:14px;border:1px dashed #bccbd1;border-radius:12px;background:rgba(255,255,255,.7)}.flow-empty :deep(svg),.property-empty :deep(svg){width:30px;height:30px}.flow-empty strong,.property-empty strong{color:#52616a;margin-top:12px}.flow-empty span,.property-empty span{font-size:12px;margin-top:5px}.flow-end{color:#87949c;font-size:11px;display:flex;flex-direction:column;align-items:center}.flow-end span{height:18px;border-left:2px solid #ccd7dc}.property-title{gap:10px;padding-bottom:16px;border-bottom:1px solid #e4eaed}.property-panel .field{margin-top:17px}.field small{color:#829099;font-size:11px;line-height:1.5}.required>span:after{content:' *';color:#d04b5d}.section-label{font-size:12px;font-weight:700;color:#46565f;margin:20px 0 10px}.target-box{padding:12px;margin-bottom:10px;border:1px solid #e0e7ea;border-radius:8px}.target-box.disabled{background:#f6f8f9}.target-box :deep(.el-checkbox__label) strong,.target-box :deep(.el-checkbox__label) small{display:block}.target-box :deep(.el-checkbox__label) small{font-size:10px;color:#8a979f}.target-box :deep(.el-checkbox-group){display:grid;grid-template-columns:1fr 1fr;margin:10px 0 0 24px}.key-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;margin-bottom:8px}.key-toolbar :deep(.el-button){min-width:64px;margin:0}.key-grid{max-height:310px;overflow:auto;padding:10px;border:1px solid #e0e7ea;border-radius:8px}.key-options{display:grid;grid-template-columns:1fr}.key-options :deep(.el-checkbox){margin-right:0}.key-options :deep(.el-checkbox__label){font:11px/1.4 Cascadia Code,Consolas,monospace}.key-grid-empty{min-height:72px;display:grid;place-items:center;color:#87949c;font-size:11px}.wiring-placeholder{margin-top:20px;min-height:260px;border:1px dashed #d6b56e;border-radius:10px;background:repeating-linear-gradient(45deg,#fffaf0,#fffaf0 10px,#fdf6e8 10px,#fdf6e8 20px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:#9a762d;padding:24px}.wiring-placeholder :deep(svg){width:44px;height:44px}.wiring-placeholder strong{margin-top:14px}.wiring-placeholder span{font-size:12px;line-height:1.6;margin-top:7px;max-width:240px}.contract-toolbar{justify-content:space-between;margin-top:18px}.contract-list{display:grid;margin-top:10px;border:1px solid #e0e7ea;border-radius:8px;max-height:200px;overflow:auto}.contract-list :deep(.el-checkbox){height:auto;margin:0;padding:10px;border-bottom:1px solid #edf1f3}.contract-list :deep(.el-checkbox:last-child){border-bottom:0}.contract-list strong,.contract-list small{display:block}.contract-list small{font-size:10px;color:#85929a;margin-top:3px}.preview-results{margin-top:22px}.snapshot{border:1px solid #e0e7ea;border-radius:8px;margin-bottom:10px;padding:11px}.snapshot>div{display:flex;justify-content:space-between;align-items:center}.snapshot dl{display:grid;grid-template-columns:120px 1fr;margin:10px 0 0;font-size:11px}.snapshot dt,.snapshot dd{padding:5px 0;border-top:1px solid #edf1f3}.snapshot dt{color:#77858e}.snapshot dd{margin:0;word-break:break-word}.snapshot dd.failed{color:#c74d5d}.property-empty{height:100%}.node-picker{display:grid;gap:10px}.node-picker button{width:100%;display:flex;align-items:center;gap:12px;padding:14px;border:1px solid #dfe6ea;border-radius:9px;background:#fff;text-align:left;cursor:pointer}.node-picker button:hover{border-color:#55aa98;background:#f2f9f7}.node-picker strong,.node-picker small{display:block}.node-picker small{margin-top:5px;color:#7c8a93;font-size:11px}.teal{--node-tone:#48a895}@media(max-width:1250px){.editor-grid{grid-template-columns:210px minmax(410px,1fr) 340px}.flow-node,.flow-empty{width:330px}.flow-column{width:330px}}
 .flow-node,.flow-empty,.wiring-placeholder,.node-picker button{border-radius:8px}.wiring-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:20px 0 10px}.wiring-editor-heading strong,.wiring-editor-heading span{display:block}.wiring-editor-heading span{max-width:240px;margin-top:4px;color:var(--ui-text-tertiary);font-size:11px;line-height:1.45}.wiring-editor-heading+.el-alert{margin-bottom:10px}.contract-previews{margin-top:12px}.contract-preview-title{display:flex;align-items:center;gap:8px;min-width:0}.contract-preview-title small{color:#7d8a92}.checksum{display:grid;gap:4px;margin-bottom:10px}.checksum span{font-size:10px;color:#7d8a92}.checksum code{font-size:10px;line-height:1.5;overflow-wrap:anywhere;color:#34444d}.snapshot dl{grid-template-columns:minmax(0,1fr) minmax(96px,35%);column-gap:12px}.snapshot dt,.snapshot dd{min-width:0;line-height:1.45;overflow-wrap:anywhere}.snapshot dt{font-family:Cascadia Code,Consolas,monospace;font-size:10px}.snapshot dd{font-variant-numeric:tabular-nums}@media(max-width:1250px){.editor-grid{grid-template-columns:180px minmax(320px,1fr) 300px}.resource-panel{padding:12px}.property-panel{padding:14px}.workflow-canvas{padding:16px 12px 48px}.flow-column,.flow-node,.flow-empty{width:290px}}
+.contract-empty{min-height:96px;margin-top:10px;border:1px dashed #ccd8dd;border-radius:8px;display:grid;place-items:center;color:#829099;font-size:11px}
 .flow-node.violet{border-left-color:#7669b5}.node-icon.violet{background:#eeebf8;color:#6556a5}.node-catalog{display:grid;gap:22px}.node-category h3{margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid #e6ebee;color:#697780;font-size:12px;font-weight:600}.slnic-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 14px}.slnic-summary>div{padding:11px;border:1px solid #e3e0ef;border-radius:8px;background:#f8f7fc}.slnic-summary .wide{grid-column:1/-1}.slnic-summary span,.slnic-summary strong,.slnic-summary code{display:block}.slnic-summary span{font-size:10px;color:#7f8991}.slnic-summary strong,.slnic-summary code{margin-top:5px;font-size:12px;overflow-wrap:anywhere}.slnic-commands{display:grid;gap:7px}.slnic-commands code{padding:10px;border-radius:7px;background:#242632;color:#d9e6df;font-size:11px;line-height:1.45;overflow-wrap:anywhere}.slnic-note{color:#7c8991;font-size:11px;line-height:1.6}
 
 /* Professional console theme and compact-window fallback */

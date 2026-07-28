@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import os
 import posixpath
 import re
@@ -26,6 +27,9 @@ from app.services.resource_relations import node_config_with_relations, node_con
 from app.services.workflow_capture import _ssh_options
 from app.services.workflow_core import CONTRACT_TABLES, INTERFACE_PATTERN, WorkflowError, resource_map
 from app.workflow_node_configs import OrderPreparationConfig, parse_node_config
+
+
+MAX_CONTRACT_CSV_BYTES = 50 * 1024 * 1024
 
 def parse_read_symbol_csv(document: dict) -> int:
     matches: list[str] = []
@@ -72,6 +76,122 @@ async def _write_remote_contract(resource: Resource, filename: str, source: Path
             with suppress(asyncssh.SFTPError):
                 await client.remove(temporary)
     return remote_path
+
+
+def _contract_type_from_filename(filename: str) -> tuple[str, str]:
+    stem = Path(filename).stem.casefold()
+    if stem.startswith("t_close_report_opt") or re.search(r"(?:^|[_-])opt(?:[_-]|$)", stem):
+        return "options", "t_close_report_opt"
+    if stem.startswith("t_close_report") or re.search(r"(?:^|[_-])fut(?:[_-]|$)", stem):
+        return "futures", "t_close_report"
+    return "unknown", Path(filename).stem
+
+
+def _inspect_contract_csv(path: Path, filename: str) -> tuple[str | None, int, list[dict[str, typing.Any]]]:
+    data = path.read_bytes()
+    content: str | None = None
+    for encoding in ("utf-8-sig", "gb18030"):
+        try:
+            content = data.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if content is None:
+        raise WorkflowError("CONTRACT_CSV_ENCODING_INVALID", f"合约文件 {filename} 不是 UTF-8 或 GB18030 编码", 409)
+    try:
+        reader = csv.DictReader(io.StringIO(content, newline=""))
+        row_count = 0
+        quote_date: str | None = None
+        preview_rows: list[dict[str, typing.Any]] = []
+        for raw_row in reader:
+            row = {str(key or ""): value for key, value in raw_row.items()}
+            if quote_date is None:
+                quote_date = next(
+                    (str(value) for key, value in row.items() if key.casefold() == "quote_date" and value),
+                    None,
+                )
+            if len(preview_rows) < 5:
+                preview_rows.append(row)
+            row_count += 1
+    except csv.Error as exc:
+        raise WorkflowError("CONTRACT_CSV_INVALID", f"合约文件 {filename} 格式错误：{exc}", 409) from exc
+    return quote_date, row_count, preview_rows
+
+
+async def scan_remote_contract_files(
+    db: Session,
+    scenario: TestScenario,
+    version: ScenarioWorkflowVersion,
+    node: ScenarioWorkflowNode,
+    actor_id: int,
+) -> list[ContractDataFile]:
+    if node.node_type != "order_preparation":
+        raise WorkflowError("ORDER_NODE_REQUIRED", "只有发单节点可以扫描合约数据", 400)
+    order_resource = resource_map(db, version).get("order")
+    if not order_resource:
+        raise WorkflowError("ORDER_RESOURCE_REQUIRED", "场景资源池缺少发单工具", 409)
+
+    archive_dir = settings.artifact_root / "workflows" / str(scenario.id) / str(version.id) / node.node_key / "contracts"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    discovered: list[ContractDataFile] = []
+    async with _sftp(order_resource) as client:
+        async for entry in client.scandir(order_resource.remote_path.rstrip("/")):
+            filename = str(entry.filename or "")
+            if not filename.casefold().endswith(".csv"):
+                continue
+            if entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR:
+                continue
+            size = int(entry.attrs.size or 0)
+            if size > MAX_CONTRACT_CSV_BYTES:
+                raise WorkflowError("CONTRACT_CSV_TOO_LARGE", f"合约文件 {filename} 超过 50 MiB", 409)
+            remote_path = posixpath.join(order_resource.remote_path.rstrip("/"), filename)
+            handle, temporary_name = tempfile.mkstemp(
+                prefix=".openslt-contract-scan-", suffix=".csv", dir=str(archive_dir)
+            )
+            os.close(handle)
+            temporary = Path(temporary_name)
+            try:
+                await client.get(remote_path, str(temporary))
+                data = temporary.read_bytes()
+                checksum = hashlib.sha256(data).hexdigest()
+                existing = db.scalar(select(ContractDataFile).where(
+                    ContractDataFile.workflow_node_id == node.id,
+                    ContractDataFile.filename == filename,
+                    ContractDataFile.checksum == checksum,
+                ))
+                if existing:
+                    discovered.append(existing)
+                    continue
+                quote_date, row_count, preview_rows = _inspect_contract_csv(temporary, filename)
+                archive_path = archive_dir / filename
+                if archive_path.exists() and hashlib.sha256(archive_path.read_bytes()).hexdigest() != checksum:
+                    archive_path = archive_dir / f"{Path(filename).stem}_{checksum[:8]}.csv"
+                temporary.replace(archive_path)
+                contract_type, source_table = _contract_type_from_filename(filename)
+                item = ContractDataFile(
+                    scenario_id=scenario.id,
+                    workflow_node_id=node.id,
+                    order_resource_id=order_resource.id,
+                    database_resource_id=None,
+                    database_name=None,
+                    contract_type=contract_type,
+                    source_table=source_table,
+                    filename=filename,
+                    remote_path=remote_path,
+                    archive_path=str(archive_path),
+                    quote_date=quote_date,
+                    row_count=row_count,
+                    size=len(data),
+                    checksum=checksum,
+                    preview_rows=preview_rows,
+                    created_by=actor_id,
+                )
+                db.add(item)
+                db.flush()
+                discovered.append(item)
+            finally:
+                temporary.unlink(missing_ok=True)
+    return discovered
 
 
 async def _export_contract_csv(
