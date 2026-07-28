@@ -33,7 +33,10 @@ def admin_headers(client: TestClient) -> typing.Dict[str, str]:
 
 
 def create_resource(client: TestClient, headers: typing.Dict[str, str], name: str, resource_type: str = "rem") -> dict:
-    response = client.post("/api/v1/resources", headers=headers, json={"name": name, "resource_type": resource_type, "business_code": "fut_mm", "host": "127.0.0.1", "ssh_port": 22, "username": "tester", "auth_type": "password", "password": "secret", "remote_path": "/tmp/openslt", "capabilities": {}, "version_info": "test", "notes": "", "is_enabled": True})
+    payload = {"name": name, "resource_type": resource_type, "business_code": "fut_mm", "host": "127.0.0.1", "ssh_port": 22, "username": "tester", "auth_type": "password", "password": "secret", "remote_path": "/tmp/openslt", "capabilities": {}, "version_info": "test", "notes": "", "is_enabled": True}
+    if resource_type == "rem":
+        payload.update({"trade_ip": "127.0.0.2", "trade_tcp_port": 10001, "trade_udp_port": 10002, "query_ip": "127.0.0.3", "query_port": 10003})
+    response = client.post("/api/v1/resources", headers=headers, json=payload)
     assert response.status_code == 201, response.text
     return response.json()
 

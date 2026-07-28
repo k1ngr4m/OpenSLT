@@ -3,6 +3,7 @@ from __future__ import annotations
 import typing
 import re
 from datetime import datetime
+from ipaddress import IPv4Address
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -19,7 +20,6 @@ from app.workflow_node_configs import (
     SlnicStopConfig,
     WiringConfirmationConfig,
 )
-from app.wiring_profiles import RemWiringProfile
 
 
 class ORMModel(BaseModel):
@@ -99,15 +99,30 @@ class ResourceWrite(BaseModel):
     database_tls_enabled: bool = False
     remote_path: str = ""
     capabilities: typing.Dict[str, Any] = Field(default_factory=dict)
-    wiring_profile: typing.Union[RemWiringProfile, None] = None
+    trade_ip: typing.Union[IPv4Address, None] = None
+    trade_tcp_port: typing.Union[int, None] = Field(default=None, ge=1, le=65535)
+    trade_udp_port: typing.Union[int, None] = Field(default=None, ge=1, le=65535)
+    query_ip: typing.Union[IPv4Address, None] = None
+    query_port: typing.Union[int, None] = Field(default=None, ge=1, le=65535)
     version_info: str = ""
     notes: str = ""
     is_enabled: bool = True
 
     @model_validator(mode="after")
     def validate_connection(self) -> "ResourceWrite":
-        if self.resource_type != "rem":
-            self.wiring_profile = None
+        if self.resource_type == "rem":
+            rem_config = (
+                self.trade_ip, self.trade_tcp_port, self.trade_udp_port,
+                self.query_ip, self.query_port,
+            )
+            if any(value is None for value in rem_config):
+                raise ValueError("REM 交易与查询配置不能为空")
+        else:
+            self.trade_ip = None
+            self.trade_tcp_port = None
+            self.trade_udp_port = None
+            self.query_ip = None
+            self.query_port = None
         if self.resource_type != "database":
             if not self.host.strip() or not self.username.strip():
                 raise ValueError("SSH 地址和用户名不能为空")
@@ -165,7 +180,11 @@ class ResourceOut(ORMModel):
     has_database_password: bool
     remote_path: str
     capabilities: typing.Dict[str, Any]
-    wiring_profile: typing.Union[RemWiringProfile, None]
+    trade_ip: typing.Union[IPv4Address, None]
+    trade_tcp_port: typing.Union[int, None]
+    trade_udp_port: typing.Union[int, None]
+    query_ip: typing.Union[IPv4Address, None]
+    query_port: typing.Union[int, None]
     version_info: str
     notes: str
     is_enabled: bool

@@ -1,44 +1,42 @@
 from __future__ import annotations
 
 import copy
-import typing
 
 from fastapi.testclient import TestClient
 
 from conftest import create_plan_scenario
 
 
-def wiring_profile(client_ip: str = "180.1.1.101", market_ip: str = "10.1.51.101") -> dict:
-    return {
-        "client_switch_label": "180段交换机（客户端）",
-        "market_switch_label": "51段交换机（市场端）",
-        "client_interface": {"name": "enp101s0d1", "ip_address": client_ip},
-        "market_interface": {"name": "enp23s0", "ip_address": market_ip},
-    }
+REM_CONFIG = {
+    "trade_ip": "180.1.1.101",
+    "trade_tcp_port": 10001,
+    "trade_udp_port": 10002,
+    "query_ip": "180.1.1.102",
+    "query_port": 10003,
+}
 
 
-def resource_payload(
-    name: str,
-    resource_type: str,
-    *,
-    profile: typing.Optional[dict] = None,
-) -> dict:
-    return {
+def resource_payload(name: str, resource_type: str, **overrides) -> dict:
+    hosts = {"rem": "10.1.51.8", "market": "10.1.51.101", "slnic": "10.1.51.210"}
+    payload = {
         "name": name,
         "resource_type": resource_type,
         "business_code": "fut_mm",
-        "host": "10.1.51.8" if resource_type == "rem" else "10.1.51.210",
+        "host": hosts[resource_type],
         "ssh_port": 22,
         "username": "tester",
         "auth_type": "password",
         "password": "secret",
         "remote_path": "/tmp/openslt",
         "capabilities": {},
-        "wiring_profile": profile,
         "version_info": "test",
         "notes": "",
         "is_enabled": True,
     }
+    if resource_type == "rem":
+        payload.update(REM_CONFIG)
+    payload.update(overrides)
+    return payload
 
 
 def create_resource(client: TestClient, headers: dict[str, str], payload: dict) -> dict:
@@ -71,60 +69,67 @@ def save_wiring_workflow(
     assert saved.status_code == 200, saved.text
 
 
-def test_rem_wiring_profile_round_trip_and_validation(client: TestClient, admin_headers: dict[str, str]) -> None:
-    rem = create_resource(client, admin_headers, resource_payload("REM-01", "rem", profile=wiring_profile()))
-    assert rem["wiring_profile"]["client_interface"] == {
-        "name": "enp101s0d1",
-        "ip_address": "180.1.1.101",
-    }
+def test_rem_more_config_round_trip_and_validation(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    rem = create_resource(client, admin_headers, resource_payload("REM-01", "rem"))
+    assert {key: rem[key] for key in REM_CONFIG} == REM_CONFIG
 
-    invalid = resource_payload("REM-invalid", "rem", profile=wiring_profile(client_ip="10.1.1.999"))
-    response = client.post("/api/v1/resources", headers=admin_headers, json=invalid)
+    missing = resource_payload("REM-missing", "rem")
+    del missing["query_port"]
+    response = client.post("/api/v1/resources", headers=admin_headers, json=missing)
     assert response.status_code == 422
 
-    slnic_payload = resource_payload("SLNIC-01", "slnic", profile=wiring_profile())
-    slnic = create_resource(client, admin_headers, slnic_payload)
-    assert slnic["wiring_profile"] is None
-
-
-def test_resource_wiring_publish_validation(client: TestClient, admin_headers: dict[str, str]) -> None:
-    rem = create_resource(client, admin_headers, resource_payload("REM-missing", "rem"))
-    slnic = create_resource(client, admin_headers, resource_payload("SLNIC-01", "slnic"))
-    _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"], slnic["id"]])
-    save_wiring_workflow(client, admin_headers, scenario, [rem["id"], slnic["id"]])
-
-    response = client.post(f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers)
+    invalid_ip = resource_payload("REM-invalid-ip", "rem", trade_ip="10.1.1.999")
+    response = client.post("/api/v1/resources", headers=admin_headers, json=invalid_ip)
     assert response.status_code == 422
-    assert response.json()["code"] == "WORKFLOW_VALIDATION_FAILED"
-    assert any(item["field"] == "wiring_profile" for item in response.json()["errors"])
+
+    invalid_port = resource_payload("REM-invalid-port", "rem", trade_tcp_port=65536)
+    response = client.post("/api/v1/resources", headers=admin_headers, json=invalid_port)
+    assert response.status_code == 422
+
+    slnic = create_resource(
+        client,
+        admin_headers,
+        resource_payload("SLNIC-01", "slnic", **REM_CONFIG),
+    )
+    assert all(slnic[key] is None for key in REM_CONFIG)
 
 
-def test_resource_wiring_requires_slnic(client: TestClient, admin_headers: dict[str, str]) -> None:
-    rem = create_resource(client, admin_headers, resource_payload("REM-01", "rem", profile=wiring_profile()))
+def test_resource_wiring_requires_market_and_slnic(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    rem = create_resource(client, admin_headers, resource_payload("REM-01", "rem"))
     _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
     save_wiring_workflow(client, admin_headers, scenario, [rem["id"]])
 
-    response = client.post(f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers)
-    assert response.status_code == 422
-    assert any("SLNIC" in item["message"] for item in response.json()["errors"])
-
-
-def test_run_snapshots_replacement_wiring_profile(client: TestClient, admin_headers: dict[str, str]) -> None:
-    default_rem = create_resource(client, admin_headers, resource_payload("REM-default", "rem", profile=wiring_profile()))
-    replacement_payload = resource_payload(
-        "REM-replacement",
-        "rem",
-        profile=wiring_profile(client_ip="180.1.1.188", market_ip="10.1.51.188"),
+    response = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers
     )
+    assert response.status_code == 422
+    messages = [item["message"] for item in response.json()["errors"]]
+    assert any("模拟市场" in message for message in messages)
+    assert any("SLNIC" in message for message in messages)
+
+
+def test_run_snapshots_selected_resource_ips(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    default_rem = create_resource(client, admin_headers, resource_payload("REM-default", "rem"))
+    replacement_payload = resource_payload("REM-replacement", "rem", trade_ip="180.1.1.188")
     replacement_rem = create_resource(client, admin_headers, replacement_payload)
+    market = create_resource(client, admin_headers, resource_payload("Market-01", "market"))
     slnic = create_resource(client, admin_headers, resource_payload("SLNIC-01", "slnic"))
+    default_ids = [default_rem["id"], market["id"], slnic["id"]]
     plan, scenario = create_plan_scenario(
         client,
         admin_headers,
-        resource_ids=[default_rem["id"], slnic["id"]],
+        resource_ids=default_ids,
     )
-    save_wiring_workflow(client, admin_headers, scenario, [default_rem["id"], slnic["id"]])
-    published = client.post(f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers)
+    save_wiring_workflow(client, admin_headers, scenario, default_ids)
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers
+    )
     assert published.status_code == 200, published.text
 
     created = client.post(
@@ -133,14 +138,25 @@ def test_run_snapshots_replacement_wiring_profile(client: TestClient, admin_head
         json={
             "plan_id": plan["id"],
             "scenario_id": scenario["id"],
-            "resource_ids": [replacement_rem["id"], slnic["id"]],
+            "resource_ids": [replacement_rem["id"], market["id"], slnic["id"]],
         },
     )
     assert created.status_code == 201, created.text
     run = created.json()
     snapshot = run["steps"][0]["config_snapshot"]["wiring_snapshot"]
+    assert snapshot["schema_version"] == 2
     assert snapshot["rem"]["id"] == replacement_rem["id"]
-    assert snapshot["client_interface"]["ip_address"] == "180.1.1.188"
+    assert snapshot["client_interface"] == {
+        "name": "enp101s0d1",
+        "ip_address": "180.1.1.188",
+    }
+    assert snapshot["market"] == {
+        "id": market["id"],
+        "name": "Market-01",
+        "host": "10.1.51.101",
+    }
+    assert snapshot["market_interface"]["ip_address"] == "10.1.51.101"
+    assert snapshot["slnic"]["host"] == "10.1.51.210"
     assert snapshot["slnic_ports"] == [
         {"port": 0, "side": "client", "direction": "uplink", "label": "客户端上行"},
         {"port": 1, "side": "market", "direction": "uplink", "label": "市场上行"},
@@ -149,9 +165,14 @@ def test_run_snapshots_replacement_wiring_profile(client: TestClient, admin_head
     ]
 
     changed_payload = copy.deepcopy(replacement_payload)
-    changed_payload["wiring_profile"]["client_interface"]["ip_address"] = "180.1.1.199"
-    updated = client.put(f"/api/v1/resources/{replacement_rem['id']}", headers=admin_headers, json=changed_payload)
+    changed_payload["trade_ip"] = "180.1.1.199"
+    updated = client.put(
+        f"/api/v1/resources/{replacement_rem['id']}",
+        headers=admin_headers,
+        json=changed_payload,
+    )
     assert updated.status_code == 200, updated.text
 
     reloaded = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
-    assert reloaded["steps"][0]["config_snapshot"]["wiring_snapshot"]["client_interface"]["ip_address"] == "180.1.1.188"
+    frozen = reloaded["steps"][0]["config_snapshot"]["wiring_snapshot"]
+    assert frozen["client_interface"]["ip_address"] == "180.1.1.188"

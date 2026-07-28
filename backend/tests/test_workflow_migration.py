@@ -110,7 +110,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0007"
+        ).scalar_one() == "0008"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -188,7 +188,7 @@ def test_durable_task_migration_resumes_after_non_transactional_ddl_failure(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0007"
+        ).scalar_one() == "0008"
     engine.dispose()
 
 
@@ -206,7 +206,42 @@ def test_expected_migration_revisions_remain() -> None:
         "0005_run_state_governance.py",
         "0006_durable_tasks.py",
         "0007_resource_wiring_profile.py",
+        "0008_rem_more_config.py",
     }
+
+
+def test_rem_more_config_migration_preserves_existing_resources(tmp_path: Path) -> None:
+    database_path = tmp_path / "existing-rem.sqlite3"
+    _alembic(database_path, "upgrade", "0007")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO t_resources (
+                name, resource_type, business_code, host, ssh_port, username, auth_type,
+                database_tls_enabled, remote_path, capabilities, wiring_profile,
+                version_info, notes, is_enabled, is_deleted, health_status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "Existing REM", "rem", "fut_mm", "10.1.51.8", 22, "root", "password",
+                False, "/home/user0/rem_mm", "{}", '{"client_interface": {}}',
+                "", "legacy", True, False, "unknown",
+                "2026-01-01 00:00:00", "2026-01-01 00:00:00",
+            ),
+        )
+
+    _alembic(database_path, "upgrade", "head")
+    with sqlite3.connect(database_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(t_resources)")}
+        assert "wiring_profile" not in columns
+        assert {"trade_ip", "trade_tcp_port", "trade_udp_port", "query_ip", "query_port"} <= columns
+        row = connection.execute(
+            """
+            SELECT name, trade_ip, trade_tcp_port, trade_udp_port, query_ip, query_port
+            FROM t_resources
+            """
+        ).fetchone()
+        assert row == ("Existing REM", None, None, None, None, None)
 
 
 def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
@@ -233,7 +268,7 @@ def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
         }
         assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
         assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
-            "0007",
+            "0008",
         )
 
 

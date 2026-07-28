@@ -80,12 +80,15 @@ const selectedResourceMap = computed(() => Object.fromEntries(selectedResources.
 const wiringPreview = computed(() => buildWiringSnapshot(
   selectedPlan.value?.business_code || '',
   selectedResourceMap.value.rem,
+  selectedResourceMap.value.market,
   selectedResourceMap.value.slnic,
 ))
 const wiringValidationMessage = computed(() => {
   if (!selectedResourceMap.value.rem) return '场景资源池尚未绑定 REM 柜台'
+  if (!selectedResourceMap.value.market) return '场景资源池尚未绑定模拟市场'
   if (!selectedResourceMap.value.slnic) return '场景资源池尚未绑定 SLNIC 节点'
-  if (!selectedResourceMap.value.rem.wiring_profile) return '所选 REM 尚未配置接线接口和 IP'
+  if (!selectedResourceMap.value.rem.trade_ip) return '所选 REM 尚未配置交易 IP'
+  if (!wiringPreview.value) return '模拟市场或 SLNIC 的 Linux 地址不是有效 IPv4 地址'
   return ''
 })
 const selectedContractFiles = computed(() => {

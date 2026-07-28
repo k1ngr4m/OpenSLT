@@ -1483,15 +1483,6 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
-        /** RemWiringProfile */
-        RemWiringProfile: {
-            client_interface: components["schemas"]["WiringInterface"];
-            /** Client Switch Label */
-            client_switch_label: string;
-            market_interface: components["schemas"]["WiringInterface"];
-            /** Market Switch Label */
-            market_switch_label: string;
-        };
         /** ResourceOut */
         ResourceOut: {
             /** Auth Type */
@@ -1535,17 +1526,26 @@ export interface components {
             name: string;
             /** Notes */
             notes: string;
+            /** Query Ip */
+            query_ip: string | null;
+            /** Query Port */
+            query_port: number | null;
             /** Remote Path */
             remote_path: string;
             /** Resource Type */
             resource_type: string;
             /** Ssh Port */
             ssh_port: number;
+            /** Trade Ip */
+            trade_ip: string | null;
+            /** Trade Tcp Port */
+            trade_tcp_port: number | null;
+            /** Trade Udp Port */
+            trade_udp_port: number | null;
             /** Username */
             username: string;
             /** Version Info */
             version_info: string;
-            wiring_profile: components["schemas"]["RemWiringProfile"] | null;
         };
         /** ResourceWrite */
         ResourceWrite: {
@@ -1602,6 +1602,10 @@ export interface components {
             password?: string | null;
             /** Private Key */
             private_key?: string | null;
+            /** Query Ip */
+            query_ip?: string | null;
+            /** Query Port */
+            query_port?: number | null;
             /**
              * Remote Path
              * @default
@@ -1617,6 +1621,12 @@ export interface components {
              * @default 22
              */
             ssh_port: number;
+            /** Trade Ip */
+            trade_ip?: string | null;
+            /** Trade Tcp Port */
+            trade_tcp_port?: number | null;
+            /** Trade Udp Port */
+            trade_udp_port?: number | null;
             /**
              * Username
              * @default
@@ -1627,7 +1637,6 @@ export interface components {
              * @default
              */
             version_info: string;
-            wiring_profile?: components["schemas"]["RemWiringProfile"] | null;
         };
         /** RunCreate */
         RunCreate: {
@@ -2104,16 +2113,6 @@ export interface components {
              * @enum {string}
              */
             node_type: "wiring_confirmation";
-        };
-        /** WiringInterface */
-        WiringInterface: {
-            /**
-             * Ip Address
-             * Format: ipv4
-             */
-            ip_address: string;
-            /** Name */
-            name: string;
         };
         /** WorkflowDocumentOut */
         WorkflowDocumentOut: {

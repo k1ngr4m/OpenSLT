@@ -219,6 +219,11 @@ def test_order_config_security_and_role_boundary(client: TestClient, admin_heade
             "username": "tester",
             "password": "secret",
             "remote_path": "/tmp/rem",
+            "trade_ip": "127.0.0.2",
+            "trade_tcp_port": 10001,
+            "trade_udp_port": 10002,
+            "query_ip": "127.0.0.3",
+            "query_port": 10003,
         },
     ).json()
     response = client.get(f"/api/v1/resources/{wrong_type['id']}/order-configs", headers=admin_headers)

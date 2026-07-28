@@ -1,47 +1,33 @@
 from __future__ import annotations
 
-import typing
 from ipaddress import IPv4Address
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-
-class WiringInterface(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=64)
-    ip_address: IPv4Address
-
-    @field_validator("name")
-    @classmethod
-    def strip_name(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("接口名称不能为空")
-        return value
-
-
-class RemWiringProfile(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    client_switch_label: str = Field(min_length=1, max_length=128)
-    market_switch_label: str = Field(min_length=1, max_length=128)
-    client_interface: WiringInterface
-    market_interface: WiringInterface
-
-    @field_validator("client_switch_label", "market_switch_label")
-    @classmethod
-    def strip_label(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("交换机标签不能为空")
-        return value
 
 
 BUSINESS_TOPOLOGY = {
-    "fut_mm": ("soft_core", "软核"),
-    "rem_two": ("hard_core_nf11", "NF11"),
-    "rem_two_mm": ("hard_core_mg11", "MG11"),
+    "fut_mm": {
+        "topology_kind": "soft_core",
+        "model_label": "软核",
+        "client_switch_label": "180段交换机（客户端）",
+        "market_switch_label": "51段交换机（市场端）",
+        "client_interface": "enp101s0d1",
+        "market_interface": "enp23s0",
+    },
+    "rem_two": {
+        "topology_kind": "hard_core_nf11",
+        "model_label": "NF11",
+        "client_switch_label": "51段交换机（客户端）",
+        "market_switch_label": "51段交换机（市场端）",
+        "client_interface": "1(mac0)",
+        "market_interface": "2(mac1)",
+    },
+    "rem_two_mm": {
+        "topology_kind": "hard_core_mg11",
+        "model_label": "MG11",
+        "client_switch_label": "51段交换机（客户端）",
+        "market_switch_label": "51段交换机（市场端）",
+        "client_interface": "1(mac0)",
+        "market_interface": "2(mac1)",
+    },
 }
 
 SLNIC_PORT_MAPPING = [
@@ -52,24 +38,23 @@ SLNIC_PORT_MAPPING = [
 ]
 
 
-def parse_wiring_profile(value: typing.Any) -> RemWiringProfile:
-    return RemWiringProfile.model_validate(value)
-
-
-def build_wiring_snapshot(rem: typing.Any, slnic: typing.Any, business_code: str) -> dict[str, typing.Any]:
-    profile = parse_wiring_profile(rem.wiring_profile)
-    topology_kind, model_label = BUSINESS_TOPOLOGY[business_code]
+def build_wiring_snapshot(rem, market, slnic, business_code: str) -> dict:
+    preset = BUSINESS_TOPOLOGY[business_code]
+    client_ip = str(IPv4Address(rem.trade_ip))
+    market_ip = str(IPv4Address(market.host))
+    slnic_ip = str(IPv4Address(slnic.host))
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "business_code": business_code,
-        "topology_kind": topology_kind,
-        "model_label": model_label,
-        "client_switch_label": profile.client_switch_label,
-        "market_switch_label": profile.market_switch_label,
-        "client_interface": profile.client_interface.model_dump(mode="json"),
-        "market_interface": profile.market_interface.model_dump(mode="json"),
+        "topology_kind": preset["topology_kind"],
+        "model_label": preset["model_label"],
+        "client_switch_label": preset["client_switch_label"],
+        "market_switch_label": preset["market_switch_label"],
+        "client_interface": {"name": preset["client_interface"], "ip_address": client_ip},
+        "market_interface": {"name": preset["market_interface"], "ip_address": market_ip},
         "auxiliary_interfaces": [] if business_code == "fut_mm" else ["3(mac2)", "4(mac3)"],
         "rem": {"id": rem.id, "name": rem.name, "host": rem.host},
-        "slnic": {"id": slnic.id, "name": slnic.name, "host": slnic.host},
+        "market": {"id": market.id, "name": market.name, "host": market_ip},
+        "slnic": {"id": slnic.id, "name": slnic.name, "host": slnic_ip},
         "slnic_ports": list(SLNIC_PORT_MAPPING),
     }

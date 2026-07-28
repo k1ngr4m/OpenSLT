@@ -1420,37 +1420,6 @@
         "title": "RefreshRequest",
         "type": "object"
       },
-      "RemWiringProfile": {
-        "additionalProperties": false,
-        "properties": {
-          "client_interface": {
-            "$ref": "#/components/schemas/WiringInterface"
-          },
-          "client_switch_label": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Client Switch Label",
-            "type": "string"
-          },
-          "market_interface": {
-            "$ref": "#/components/schemas/WiringInterface"
-          },
-          "market_switch_label": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Market Switch Label",
-            "type": "string"
-          }
-        },
-        "required": [
-          "client_switch_label",
-          "market_switch_label",
-          "client_interface",
-          "market_interface"
-        ],
-        "title": "RemWiringProfile",
-        "type": "object"
-      },
       "ResourceOut": {
         "properties": {
           "auth_type": {
@@ -1583,6 +1552,29 @@
             "title": "Notes",
             "type": "string"
           },
+          "query_ip": {
+            "anyOf": [
+              {
+                "format": "ipv4",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Ip"
+          },
+          "query_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Port"
+          },
           "remote_path": {
             "title": "Remote Path",
             "type": "string"
@@ -1595,6 +1587,40 @@
             "title": "Ssh Port",
             "type": "integer"
           },
+          "trade_ip": {
+            "anyOf": [
+              {
+                "format": "ipv4",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Ip"
+          },
+          "trade_tcp_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Tcp Port"
+          },
+          "trade_udp_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Udp Port"
+          },
           "username": {
             "title": "Username",
             "type": "string"
@@ -1602,16 +1628,6 @@
           "version_info": {
             "title": "Version Info",
             "type": "string"
-          },
-          "wiring_profile": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RemWiringProfile"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -1633,7 +1649,11 @@
           "has_database_password",
           "remote_path",
           "capabilities",
-          "wiring_profile",
+          "trade_ip",
+          "trade_tcp_port",
+          "trade_udp_port",
+          "query_ip",
+          "query_port",
           "version_info",
           "notes",
           "is_enabled",
@@ -1801,6 +1821,31 @@
             ],
             "title": "Private Key"
           },
+          "query_ip": {
+            "anyOf": [
+              {
+                "format": "ipv4",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Ip"
+          },
+          "query_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query Port"
+          },
           "remote_path": {
             "default": "",
             "title": "Remote Path",
@@ -1827,6 +1872,44 @@
             "title": "Ssh Port",
             "type": "integer"
           },
+          "trade_ip": {
+            "anyOf": [
+              {
+                "format": "ipv4",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Ip"
+          },
+          "trade_tcp_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Tcp Port"
+          },
+          "trade_udp_port": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Udp Port"
+          },
           "username": {
             "default": "",
             "title": "Username",
@@ -1836,16 +1919,6 @@
             "default": "",
             "title": "Version Info",
             "type": "string"
-          },
-          "wiring_profile": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RemWiringProfile"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": [
@@ -3244,28 +3317,6 @@
           "node_type"
         ],
         "title": "WiringConfirmationNodeWrite",
-        "type": "object"
-      },
-      "WiringInterface": {
-        "additionalProperties": false,
-        "properties": {
-          "ip_address": {
-            "format": "ipv4",
-            "title": "Ip Address",
-            "type": "string"
-          },
-          "name": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "ip_address"
-        ],
-        "title": "WiringInterface",
         "type": "object"
       },
       "WorkflowDocumentOut": {

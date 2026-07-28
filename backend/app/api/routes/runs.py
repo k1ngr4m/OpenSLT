@@ -47,7 +47,42 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
         extra = sorted(set(provided_types) - required_types)
         raise HTTPException(status_code=400, detail={"code": "RESOURCE_SET_MISMATCH", "message": f"运行资源类型与场景不一致，缺少: {missing}，多余: {extra}"})
     node_snapshots = workflow_nodes_snapshot(db, workflow)
-    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "workflow": {"id": workflow.id, "version_no": workflow.version_no, "nodes": node_snapshots}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "business_code": resource.business_code, "host": resource.host, "version": resource.version_info, "wiring_profile": resource.wiring_profile if resource.resource_type == "rem" else None} for resource in resources]}
+    resource_snapshots = []
+    for resource in resources:
+        is_rem = resource.resource_type == "rem"
+        resource_snapshots.append({
+            "id": resource.id,
+            "name": resource.name,
+            "type": resource.resource_type,
+            "business_code": resource.business_code,
+            "host": resource.host,
+            "version": resource.version_info,
+            "trade_ip": resource.trade_ip if is_rem else None,
+            "trade_tcp_port": resource.trade_tcp_port if is_rem else None,
+            "trade_udp_port": resource.trade_udp_port if is_rem else None,
+            "query_ip": resource.query_ip if is_rem else None,
+            "query_port": resource.query_port if is_rem else None,
+        })
+    snapshot = {
+        "plan": {
+            "id": plan.id,
+            "name": plan.name,
+            "business_code": plan.business_code,
+            "config_version": plan.config_version,
+        },
+        "scenario": {
+            "id": scenario.id,
+            "name": scenario.name,
+            "scenario_type": scenario.scenario_type,
+            "config_version": scenario.config_version,
+        },
+        "workflow": {
+            "id": workflow.id,
+            "version_no": workflow.version_no,
+            "nodes": node_snapshots,
+        },
+        "resources": resource_snapshots,
+    }
     timeout_at = (
         beijing_now() + timedelta(minutes=payload.timeout_minutes)
         if payload.timeout_minutes is not None
@@ -63,12 +98,18 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
         if step.node_type == "wiring_confirmation" and step.config_snapshot.get("diagram") == "resource":
             try:
                 step.config_snapshot["wiring_snapshot"] = build_wiring_snapshot(
-                    resources_by_type["rem"], resources_by_type["slnic"], plan.business_code
+                    resources_by_type["rem"],
+                    resources_by_type["market"],
+                    resources_by_type["slnic"],
+                    plan.business_code,
                 )
             except (KeyError, ValueError) as exc:
                 raise HTTPException(
                     status_code=409,
-                    detail={"code": "WIRING_PROFILE_INVALID", "message": "REM 或 SLNIC 接线配置不完整，请先更新资源"},
+                    detail={
+                        "code": "WIRING_RESOURCE_INVALID",
+                        "message": "REM、模拟市场或 SLNIC 接线配置不完整，请先更新资源",
+                    },
                 ) from exc
     db.add(run); db.flush(); write_audit(db, "run.create", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 

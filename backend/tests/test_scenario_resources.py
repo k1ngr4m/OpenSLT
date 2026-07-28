@@ -24,7 +24,7 @@ def create_plan(client: TestClient, headers: typing.Dict[str, str], business_cod
 
 
 def resource_payload(name: str, resource_type: str, *, business_code: str = "fut_mm", is_enabled: bool = True) -> dict:
-    return {
+    payload = {
         "name": name,
         "resource_type": resource_type,
         "business_code": business_code,
@@ -39,6 +39,15 @@ def resource_payload(name: str, resource_type: str, *, business_code: str = "fut
         "notes": "",
         "is_enabled": is_enabled,
     }
+    if resource_type == "rem":
+        payload.update({
+            "trade_ip": "127.0.0.2",
+            "trade_tcp_port": 10001,
+            "trade_udp_port": 10002,
+            "query_ip": "127.0.0.3",
+            "query_port": 10003,
+        })
+    return payload
 
 
 def scenario_payload(plan_id: int, resource_ids: typing.List[int]) -> dict:

@@ -6,10 +6,8 @@
   align-items: flex-start;
 }
 
-.run-header > div:first-child > .el-button {
-  min-height: 28px;
-  margin: -5px 0 3px;
-  padding-left: 0;
+.run-back-button {
+  margin: -5px 0 8px;
 }
 
 .run-title-line {

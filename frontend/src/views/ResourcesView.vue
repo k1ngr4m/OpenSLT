@@ -6,7 +6,6 @@ import { RefreshRight, Search } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
-import { fillWiringPreset, wiringProfileComplete } from '@/utils/wiring'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -73,8 +72,9 @@ const empty = () => ({
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
   database_password: '', database_tls_enabled: false,
+  trade_ip: '', trade_tcp_port: null, trade_udp_port: null,
+  query_ip: '', query_port: null,
   remote_path: '', capabilities: {}, version_info: '', notes: '', is_enabled: true,
-  wiring_profile: fillWiringPreset(null, 'fut_mm'),
 })
 const form = reactive<any>(empty())
 const selectedDatabaseSummary = computed(() => form.database_names.length
@@ -102,13 +102,8 @@ function setRemDefaultPath(value: string) {
   if (form.resource_type === 'rem' && remDefaultPaths[value]) form.remote_path = remDefaultPaths[value]
 }
 
-function fillRemWiringProfile(value: string) {
-  if (form.resource_type === 'rem') form.wiring_profile = fillWiringPreset(form.wiring_profile, value)
-}
-
 function handleBusinessChange(value: string) {
   setRemDefaultPath(value)
-  fillRemWiringProfile(value)
 }
 
 function setOrderToolDefaultPath(value: string) {
@@ -132,7 +127,6 @@ function handleResourceTypeChange(value: string) {
   discoveryError.value = ''
   if (value === 'rem') {
     setRemDefaultPath(form.business_code)
-    fillRemWiringProfile(form.business_code)
   }
   else if (value === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
   else if (value === 'order') {
@@ -156,7 +150,6 @@ function open(row?: any) {
   form.slnic_model = row?.capabilities?.slnic_model || slnicModels.find(item => item.path === row?.remote_path)?.value || ''
   form.parser_tool = row?.capabilities?.parser_tool || parserTools.find(item => `/home/user0/${item}` === row?.remote_path) || ''
   form.database_names = [...(row?.database_names || [])]
-  if (form.resource_type === 'rem') fillRemWiringProfile(form.business_code)
   if (!form.remote_path) {
     if (form.resource_type === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
     else if (form.resource_type === 'order' && form.order_tool) setOrderToolDefaultPath(form.order_tool)
@@ -239,8 +232,14 @@ function backToDatabaseConnection() {
 }
 
 async function save() {
-  if (form.resource_type === 'rem' && !wiringProfileComplete(form.wiring_profile)) {
-    ElMessage.warning('请补全 REM 接线配置')
+  if (form.resource_type === 'rem' && ![
+    form.trade_ip,
+    form.trade_tcp_port,
+    form.trade_udp_port,
+    form.query_ip,
+    form.query_port,
+  ].every(value => value !== '' && value !== null && value !== undefined)) {
+    ElMessage.warning('请补全 REM 更多配置')
     return
   }
   if (form.resource_type === 'market' && !form.market_environment) {
@@ -308,7 +307,6 @@ async function save() {
       for (const key of ['parser_tool', 'parser_binary', 'parser_config_filename']) delete capabilities[key]
     }
     payload.capabilities = capabilities
-    payload.wiring_profile = form.resource_type === 'rem' ? form.wiring_profile : null
     if (form.resource_type !== 'database') {
       Object.assign(payload, {
         database_engine: null,
@@ -519,21 +517,21 @@ onMounted(load)
 
           <template v-if="form.resource_type === 'rem'">
             <el-col :span="24">
-              <div class="wiring-form-heading">
-                <div><strong>接线配置</strong><span>用于工作流中的动态接线确认图</span></div>
-                <el-button text type="primary" @click="fillRemWiringProfile(form.business_code)">补全业务预设</el-button>
+              <div class="more-config-heading">
+                <div><strong>更多配置</strong><span>REM 交易、查询与运行参数</span></div>
               </div>
             </el-col>
-            <el-col :span="12"><el-form-item label="客户端交换机" required><el-input v-model="form.wiring_profile.client_switch_label" maxlength="128" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="市场端交换机" required><el-input v-model="form.wiring_profile.market_switch_label" maxlength="128" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="客户端接口" required><el-input v-model="form.wiring_profile.client_interface.name" maxlength="64" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="客户端 IP" required><el-input v-model="form.wiring_profile.client_interface.ip_address" class="mono" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="市场端接口" required><el-input v-model="form.wiring_profile.market_interface.name" maxlength="64" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="市场端 IP" required><el-input v-model="form.wiring_profile.market_interface.ip_address" class="mono" /></el-form-item></el-col>
+            <el-col :span="12" :xs="24"><el-form-item label="交易 IP" label-width="128px" required><el-input v-model="form.trade_ip" class="mono" /></el-form-item></el-col>
+            <el-col :span="12" :xs="24"><el-form-item label="交易 TCP 端口" label-width="128px" required><el-input-number v-model="form.trade_tcp_port" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="12" :xs="24"><el-form-item label="交易 UDP 端口" label-width="128px" required><el-input-number v-model="form.trade_udp_port" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="12" :xs="24"><el-form-item label="查询 IP" label-width="128px" required><el-input v-model="form.query_ip" class="mono" /></el-form-item></el-col>
+            <el-col :span="12" :xs="24"><el-form-item label="查询端口" label-width="128px" required><el-input-number v-model="form.query_port" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="24"><el-form-item label="远端路径"><el-input v-model="form.remote_path" /></el-form-item></el-col>
+            <el-col :span="24"><el-form-item label="备注"><el-input v-model="form.notes" type="textarea" /></el-form-item></el-col>
           </template>
 
-          <el-col v-if="form.resource_type !== 'database'" :span="24"><el-form-item label="远端路径"><el-input v-model="form.remote_path" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="备注"><el-input v-model="form.notes" type="textarea" /></el-form-item></el-col>
+          <el-col v-if="!['database', 'rem'].includes(form.resource_type)" :span="24"><el-form-item label="远端路径"><el-input v-model="form.remote_path" /></el-form-item></el-col>
+          <el-col v-if="form.resource_type !== 'rem'" :span="24"><el-form-item label="备注"><el-input v-model="form.notes" type="textarea" /></el-form-item></el-col>
         </el-row>
 
         <section v-if="form.resource_type === 'database' && databaseStep === 2" class="database-selection-step">
@@ -571,5 +569,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.resource-filters>.el-select{width:160px}.keyword-filter{width:300px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.resource-table{overflow:hidden}.resource-table :deep(.mono){font-size:11px}.wiring-form-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 18px;padding:12px 0 9px;border-bottom:1px solid var(--ui-border)}.wiring-form-heading strong,.wiring-form-heading span{display:block}.wiring-form-heading strong{font-size:13px}.wiring-form-heading span{margin-top:3px;color:var(--ui-text-tertiary);font-size:11px}.database-steps{margin:-4px 0 22px;padding:0 40px}.database-selection-step{min-height:330px;padding:6px 0 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-subtle)}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:var(--ui-text-tertiary);font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:var(--ui-text-primary);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:var(--ui-text-secondary);font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:var(--ui-danger);font-size:12px}@media(max-width:767px){.resource-filters>*{width:100%!important}.filter-count{margin-left:0}.database-steps{padding:0}.database-selection-meta,.database-discovery-error{margin-left:0}.wiring-form-heading{align-items:flex-start}}
+.resource-filters>.el-select{width:160px}.keyword-filter{width:300px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.resource-table{overflow:hidden}.resource-table :deep(.mono){font-size:11px}.more-config-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 18px;padding:12px 0 9px;border-bottom:1px solid var(--ui-border)}.more-config-heading strong,.more-config-heading span{display:block}.more-config-heading strong{font-size:13px}.more-config-heading span{margin-top:3px;color:var(--ui-text-tertiary);font-size:11px}.database-steps{margin:-4px 0 22px;padding:0 40px}.database-selection-step{min-height:330px;padding:6px 0 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-subtle)}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:var(--ui-text-tertiary);font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:var(--ui-text-primary);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:var(--ui-text-secondary);font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:var(--ui-danger);font-size:12px}@media(max-width:767px){.resource-filters>*{width:100%!important}.filter-count{margin-left:0}.database-steps{padding:0}.database-selection-meta,.database-discovery-error{margin-left:0}.more-config-heading{align-items:flex-start}}
 </style>

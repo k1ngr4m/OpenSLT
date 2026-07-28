@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { CircleCheck, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheck, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import RunCaptureDetails from '@/components/run-detail/RunCaptureDetails.vue'
 import RunContractFiles from '@/components/run-detail/RunContractFiles.vue'
@@ -247,7 +247,16 @@ watch(
   <main v-if="run" class="page run-detail-page">
     <div class="page-header run-header">
       <div>
-        <el-button link @click="$router.push('/runs')">← 返回运行列表</el-button>
+        <el-tooltip content="返回运行列表" placement="right">
+          <el-button
+            class="run-back-button"
+            :icon="ArrowLeft"
+            circle
+            plain
+            aria-label="返回运行列表"
+            @click="$router.push('/runs')"
+          />
+        </el-tooltip>
         <div class="run-title-line"><h1 class="page-title mono">{{ run.run_number }}</h1><StatusBadge :status="run.status" show-raw /></div>
         <p class="muted">{{ businessText[run.business_code] }} · {{ run.config_snapshot?.plan?.name }} / {{ run.config_snapshot?.scenario?.name }}</p>
       </div>

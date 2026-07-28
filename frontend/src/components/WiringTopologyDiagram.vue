@@ -10,7 +10,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   snapshot: null,
   compact: false,
-  emptyMessage: '请先绑定 REM 与 SLNIC，并补全 REM 接线配置',
+  emptyMessage: '请先绑定 REM、模拟市场与 SLNIC，并补全资源 IP 配置',
 })
 
 const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '')

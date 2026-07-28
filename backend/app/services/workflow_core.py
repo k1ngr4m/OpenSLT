@@ -186,16 +186,25 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
         elif node.node_type == "wiring_confirmation":
             if str(config.get("diagram") or "placeholder") == "resource":
                 rem_resource = resources.get("rem")
+                market_resource = resources.get("market")
                 slnic_resource = resources.get("slnic")
                 if not rem_resource:
                     errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定 REM 柜台"})
+                if not market_resource:
+                    errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定模拟市场"})
                 if not slnic_resource:
                     errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定 SLNIC 节点"})
-                if rem_resource and slnic_resource:
+                if rem_resource and market_resource and slnic_resource:
                     try:
-                        build_wiring_snapshot(rem_resource, slnic_resource, scenario.plan.business_code)
+                        build_wiring_snapshot(
+                            rem_resource, market_resource, slnic_resource, scenario.plan.business_code
+                        )
                     except (KeyError, ValueError):
-                        errors.append({**prefix, "field": "wiring_profile", "message": "REM 接线配置不完整或 IP 格式无效"})
+                        errors.append({
+                            **prefix,
+                            "field": "resource",
+                            "message": "REM、模拟市场或 SLNIC 的接线 IP 配置无效",
+                        })
         elif node.node_type == "order_preparation":
             if "order" not in resources:
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少发单工具资源"})
