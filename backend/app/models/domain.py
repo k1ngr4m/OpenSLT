@@ -278,11 +278,17 @@ class DurableTask(Base):
     __tablename__ = "t_durable_tasks"
     __table_args__ = (
         Index("ix_durable_task_dispatch", "status", "available_at", "lease_expires_at"),
+        Index(
+            "ix_t_durable_tasks_idempotency_key",
+            "idempotency_key",
+            unique=True,
+            mysql_length=191,
+        ),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     task_type: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
-    idempotency_key: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)

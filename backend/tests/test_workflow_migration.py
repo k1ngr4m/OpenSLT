@@ -144,10 +144,52 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
     assert "filename(120), checksum(64)" in sql
+    assert "idempotency_key(191)" in sql
     assert (
         "ALTER TABLE t_test_scenarios ADD CONSTRAINT "
         "fk_test_scenarios_draft_workflow_version_id"
     ) in sql
+
+
+def test_durable_task_migration_resumes_after_non_transactional_ddl_failure(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "partial-durable-task.sqlite3"
+    _alembic(database_path, "upgrade", "0005")
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE t_durable_tasks (
+                id INTEGER NOT NULL PRIMARY KEY,
+                task_type VARCHAR(64) NOT NULL,
+                payload TEXT NOT NULL,
+                idempotency_key VARCHAR(255) NOT NULL,
+                status VARCHAR(24) NOT NULL,
+                attempts INTEGER NOT NULL,
+                max_attempts INTEGER NOT NULL,
+                available_at DATETIME NOT NULL,
+                lease_expires_at DATETIME,
+                locked_by VARCHAR(128),
+                last_error TEXT,
+                created_at DATETIME NOT NULL,
+                started_at DATETIME,
+                finished_at DATETIME
+            );
+            CREATE INDEX ix_t_durable_tasks_task_type
+                ON t_durable_tasks (task_type);
+            """
+        )
+
+    _alembic(database_path, "upgrade", "head")
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    indexes = {item["name"] for item in inspector.get_indexes("t_durable_tasks")}
+    assert indexes == {index.name for index in Base.metadata.tables["t_durable_tasks"].indexes}
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            f"SELECT version_num FROM {VERSION_TABLE}"
+        ).scalar_one() == "0007"
+    engine.dispose()
 
 
 def test_expected_migration_revisions_remain() -> None:
