@@ -96,6 +96,10 @@ npm --prefix frontend run build
 
 FastAPI 会在检测到 `frontend/dist` 后托管 Web SPA。Nginx 和 systemd API 的部署示例位于 `deploy/`。
 
+RHEL 7.9 x86_64 无互联网环境的制包、安装、网络和验收步骤见
+[`deploy/offline/README-OFFLINE.md`](deploy/offline/README-OFFLINE.md)。离线部署不要直接运行
+会访问 PyPI/npm registry 的 `deploy/scripts/install.sh`。
+
 ## 验证
 
 ```powershell

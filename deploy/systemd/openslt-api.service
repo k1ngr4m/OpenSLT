@@ -1,6 +1,6 @@
 [Unit]
 Description=OpenSLT FastAPI service
-After=network.target mysql.service
+After=network.target mysqld.service
 [Service]
 Type=simple
 User=openslt
