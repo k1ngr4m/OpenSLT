@@ -85,7 +85,9 @@ onBeforeUnmount(() => {
   <div class="shell">
     <aside class="sidebar" :class="sidebarClass">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">SL</div>
+        <div class="brand-mark" aria-hidden="true">
+          <img src="/assets/global.logo.jpg" alt="" />
+        </div>
         <div v-show="!collapsed || isMobile" class="brand-copy">
           <strong>OpenSLT</strong>
           <small>自动化测速平台</small>
@@ -176,7 +178,8 @@ onBeforeUnmount(() => {
 .sidebar{position:sticky;z-index:30;top:0;display:flex;flex:0 0 224px;flex-direction:column;width:224px;height:100dvh;color:#d9e7e8;background:var(--ui-sidebar);transition:width var(--ui-transition),flex-basis var(--ui-transition),transform var(--ui-transition)}
 .sidebar.is-collapsed{flex-basis:64px;width:64px}
 .brand{display:flex;flex:0 0 64px;align-items:center;gap:11px;padding:0 16px;border-bottom:1px solid rgba(184,218,219,.14)}
-.brand-mark{display:grid;flex:0 0 34px;width:34px;height:34px;place-items:center;border:1px solid rgba(153,236,220,.24);border-radius:8px;color:#082e2a;background:#28b59e;font-size:13px;font-weight:800;letter-spacing:-.04em;box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.brand-mark{display:grid;flex:0 0 34px;width:34px;height:34px;place-items:center;overflow:hidden;border:1px solid rgba(153,236,220,.24);border-radius:8px;background:#102f34;box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
+.brand-mark img{display:block;width:100%;height:100%;object-fit:cover}
 .brand-copy,.account-copy{min-width:0}
 .brand-copy strong,.brand-copy small,.account-copy strong,.account-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand-copy strong{color:#f4fbfb;font-size:15px;font-weight:650;letter-spacing:-.02em}
