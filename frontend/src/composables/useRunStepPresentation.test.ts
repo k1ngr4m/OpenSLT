@@ -57,4 +57,24 @@ describe('useRunStepPresentation contract preview', () => {
       preview_rows: [{ symbol: 'IF' }],
     })
   })
+
+  it('does not expose checksums in node configuration rows', () => {
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const cases: Array<[RunStep['node_type'], Record<string, unknown>]> = [
+      ['order_preparation', { xml_filename: 'order.xml', xml_checksum: 'order-checksum' }],
+      ['parser_parse', {
+        config_xml_filename: 'config.xml', config_xml_checksum: 'config-checksum',
+        instance_xml_filename: 'instance.xml', instance_xml_checksum: 'instance-checksum',
+        analysis_xml_filename: 'analysis.xml', analysis_xml_checksum: 'analysis-checksum',
+      }],
+      ['data_statistics', { script_filename: 'statistics.py', script_checksum: 'script-checksum' }],
+    ]
+
+    for (const [nodeType, configSnapshot] of cases) {
+      const step = { ...orderStep(), node_type: nodeType, config_snapshot: configSnapshot }
+      const presentation = useRunStepPresentation(run, computed(() => step), {})
+      expect(presentation.configRows.value.every(row => !row.label.includes('校验') && !row.label.includes('SHA'))).toBe(true)
+      expect(presentation.configRows.value.every(row => !String(row.value ?? '').includes('checksum'))).toBe(true)
+    }
+  })
 })

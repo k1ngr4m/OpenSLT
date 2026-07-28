@@ -709,7 +709,6 @@ onMounted(load)
               <el-select v-model="selectedNode.config.script_filename" :loading="loadingStatisticsScripts" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectStatisticsScript(String(value || ''))">
                 <el-option v-for="script in statisticsScripts" :key="script.name" :label="script.executable ? script.name : `${script.name}（不可执行）`" :value="script.name" :disabled="!script.executable" />
               </el-select>
-              <small class="mono">SHA-256 {{ selectedNode.config.script_checksum || '未固化' }}</small>
             </label>
             <label class="field required">
               <span>异常大值上限（ns）</span>

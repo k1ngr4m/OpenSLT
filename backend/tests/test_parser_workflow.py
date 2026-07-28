@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -402,6 +403,46 @@ async def test_parser_runtime_xml_fallback_and_checksum_validation(monkeypatch):
     assert changed.value.code == "PARSER_CONFIG_CHANGED"
 
 
+@pytest.mark.asyncio
+async def test_parser_table_export_allows_empty_table(monkeypatch, tmp_path):
+    class FakeCursor:
+        description = (("id",), ("latency_ns",))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, statement):
+            assert statement == "SELECT * FROM `t_fut_orders`"
+
+        def fetchmany(self, _size):
+            return []
+
+    class FakeConnection:
+        def cursor(self, _cursor_type):
+            return FakeCursor()
+
+    @asynccontextmanager
+    async def fake_connection(_resource, database_name):
+        assert database_name == "fut_mm_trading_data"
+        yield FakeConnection()
+
+    monkeypatch.setattr(workflows.mysql_adapter, "connection", fake_connection)
+    target = tmp_path / "t_fut_orders.csv"
+
+    row_count = await workflows._export_parser_table(
+        SimpleNamespace(),
+        "fut_mm_trading_data",
+        "t_fut_orders",
+        target,
+    )
+
+    assert row_count == 0
+    assert target.read_text(encoding="utf-8") == "id,latency_ns\n"
+
+
 def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     client, admin_headers, monkeypatch
 ):
@@ -442,6 +483,9 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
     async def fake_export(database_resource, database_name, table, target):
         export_calls.append(table)
+        if table == "t_fut_orders":
+            target.write_text("id,account\n", encoding="utf-8")
+            return 0
         target.write_text("id,account\n1,100001\n", encoding="utf-8")
         return 1
 
@@ -561,6 +605,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     )
     assert refreshed_export.status_code == 200, refreshed_export.text
     assert refreshed_export.json()["artifact_id"] == first_export.json()["artifact_id"]
+    assert refreshed_export.json()["row_count"] == 0
     invalid_export = client.post(
         export_url,
         headers=admin_headers,
@@ -594,6 +639,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
     exports = parse_step["result_summary"]["parser_input_exports"]
     assert exports["t_fut_orders"]["source"] == "manual"
+    assert exports["t_fut_orders"]["row_count"] == 0
     assert exports["t_fut_quotes"]["source"] == "auto"
     late_export = client.post(
         export_url,

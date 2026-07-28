@@ -240,8 +240,6 @@ async def _export_parser_table(
         raise WorkflowError(
             "PARSER_DATABASE_EXPORT_FAILED", f"导出 {table} 失败：{exc}", 409
         ) from exc
-    if not row_count:
-        raise WorkflowError("PARSER_TABLE_EMPTY", f"数据表 {table} 没有可导出的记录", 409)
     return row_count
 
 
@@ -558,11 +556,12 @@ async def execute_parser_node(
                     source="auto",
                 )
                 if append_log_callback:
+                    row_count = int(exported.get("row_count") or 0)
                     append_log_callback(
                         db,
                         run,
-                        "parser.table_exported",
-                        f"已自动导出 {table}",
+                        "parser.table_skipped" if row_count == 0 else "parser.table_exported",
+                        f"{table} 没有记录，已跳过" if row_count == 0 else f"已自动导出 {table}",
                         step=step,
                         source="parser",
                         detail={key: exported[key] for key in ("table", "artifact_id", "row_count", "checksum", "source")},

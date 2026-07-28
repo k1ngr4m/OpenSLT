@@ -233,7 +233,16 @@ async def export_run_parser_table(
             actor_id=actor.id,
         )
         detail = {key: result[key] for key in ("table", "artifact_id", "row_count", "checksum", "source")}
-        append_log(db, run, "parser.table_exported", f"已获取 {payload.table}.csv", step=step, source="user", detail=detail)
+        empty = int(result.get("row_count") or 0) == 0
+        append_log(
+            db,
+            run,
+            "parser.table_skipped" if empty else "parser.table_exported",
+            f"{payload.table} 没有记录，已跳过" if empty else f"已获取 {payload.table}.csv",
+            step=step,
+            source="user",
+            detail=detail,
+        )
         write_audit(db, "run.parser_table_export", "run_step", step.id, actor, request, detail={"run_id": run.id, **detail})
         db.commit()
         return result

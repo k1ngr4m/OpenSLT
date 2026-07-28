@@ -88,7 +88,6 @@ export function useRunStepPresentation(
       const rows: InfoRow[] = [
         { label: '发单动作', value: stringValue(config.order_action, 'new_order'), mono: true },
         { label: 'XML 文件', value: stringValue(config.xml_filename) },
-        { label: 'XML 校验', value: stringValue(config.xml_checksum), mono: true },
         { label: '读取合约 CSV', value: orderReadSymbolCsvEnabled.value ? '是' : '否' },
         { label: '交易库', value: stringValue(config.trading_database_name) },
         { label: '网卡接口', value: stringValue(config.network_interface) },
@@ -102,18 +101,14 @@ export function useRunStepPresentation(
       return [
         { label: '数据库', value: stringValue(config.database_name) },
         { label: 'config.xml', value: stringValue(config.config_xml_filename, 'config.xml') },
-        { label: 'config.xml 校验', value: stringValue(config.config_xml_checksum), mono: true },
         { label: 'instance.xml', value: stringValue(config.instance_xml_filename, 'instance.xml') },
-        { label: 'instance.xml 校验', value: stringValue(config.instance_xml_checksum), mono: true },
         { label: '分析主配置', value: stringValue(config.analysis_xml_filename) },
-        { label: '分析配置校验', value: stringValue(config.analysis_xml_checksum), mono: true },
       ]
     }
     if (step.node_type === 'data_statistics') {
       return [
         { label: '前置解析节点', value: stringValue(config.parser_node_key), mono: true },
         { label: '统计脚本', value: stringValue(config.script_filename), mono: true },
-        { label: '脚本校验', value: stringValue(config.script_checksum), mono: true },
         { label: '异常大值上限', value: `${optionalNumber(config.max_latency_ns) ?? 999999999} ns` },
       ]
     }
