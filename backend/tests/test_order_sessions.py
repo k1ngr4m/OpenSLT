@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import types
 
 import pytest
@@ -61,7 +62,15 @@ async def test_launch_order_session_uses_safe_tmux_command(monkeypatch):
         "cd /tmp/tool && ./binary order.xml",
     )
     assert result["tmux_session"] == "openslt-order-r12-s34"
-    assert any("tmux new-session" in command for command in connection.commands)
+    launch = next(command for command in connection.commands if command.startswith("tmux new-session"))
+    assert shlex.split(launch) == [
+        "tmux",
+        "new-session",
+        "-d",
+        "-s",
+        "openslt-order-r12-s34",
+        "/bin/sh -lc 'cd /tmp/tool && ./binary order.xml'",
+    ]
     assert all("; rm" not in command for command in connection.commands)
 
 

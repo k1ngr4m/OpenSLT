@@ -69,9 +69,10 @@ async def launch_order_session(
             await connection.run("tmux kill-session -t %s" % shlex.quote(session), check=False)
             exists = await connection.run("tmux has-session -t %s 2>/dev/null" % shlex.quote(session), check=False)
         if exists.exit_status != 0:
-            launch = "tmux new-session -d -s %s -- /bin/sh -lc %s" % (
+            shell_command = "/bin/sh -lc %s" % shlex.quote(generated_command)
+            launch = "tmux new-session -d -s %s %s" % (
                 shlex.quote(session),
-                shlex.quote(generated_command),
+                shlex.quote(shell_command),
             )
             await _run(connection, launch, "ORDER_SESSION_START_FAILED", "启动发单 tmux 会话失败")
         return {
