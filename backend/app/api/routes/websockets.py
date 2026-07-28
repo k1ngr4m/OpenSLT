@@ -8,7 +8,7 @@ from app.core.database import SessionLocal
 from app.core.security import decode_token
 from app.models import User
 from app.services.events import broker
-from app.services.terminal import handle_resource_terminal
+from app.services.terminal import handle_order_workflow_terminal, handle_resource_terminal
 
 router = APIRouter()
 
@@ -33,3 +33,7 @@ async def run_events(websocket: WebSocket, run_id: int, token: str = Query(...))
 async def resource_terminal(websocket: WebSocket, resource_id: int, token: str = Query(...)) -> None:
     await handle_resource_terminal(websocket, resource_id, token)
 
+
+@router.websocket("/ws/runs/{run_id}/steps/{step_id}/order-terminal")
+async def order_workflow_terminal(websocket: WebSocket, run_id: int, step_id: int, token: str = Query(...)) -> None:
+    await handle_order_workflow_terminal(websocket, run_id, step_id, token)

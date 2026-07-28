@@ -95,6 +95,14 @@ def test_rem_more_config_round_trip_and_validation(
     )
     assert all(slnic[key] is None for key in REM_CONFIG)
 
+    market = create_resource(
+        client,
+        admin_headers,
+        resource_payload("Market-empty-ips", "market", trade_ip="", query_ip=""),
+    )
+    assert market["trade_ip"] is None
+    assert market["query_ip"] is None
+
 
 def test_resource_wiring_requires_market_and_slnic(
     client: TestClient, admin_headers: dict[str, str]

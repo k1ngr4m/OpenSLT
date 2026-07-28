@@ -21,12 +21,16 @@ const props = withDefaults(defineProps<{
   active?: boolean
   autoConnect?: boolean
   minHeight?: number
+  socketPath?: string
+  readOnly?: boolean
 }>(), {
   title: 'SSH 终端',
   subtitle: '',
   active: true,
   autoConnect: true,
   minHeight: 360,
+  socketPath: '',
+  readOnly: false,
 })
 
 const emit = defineEmits<{
@@ -100,7 +104,7 @@ function setupTerminal() {
   instance.open(terminalHost.value)
   terminalInstance.value = instance
   fitAddon.value = addon
-  instance.onData(data => send({ type: 'input', data }))
+  instance.onData(data => { if (!props.readOnly) send({ type: 'input', data }) })
   terminalResizeObserver = new ResizeObserver(scheduleSyncSize)
   terminalResizeObserver.observe(terminalHost.value)
   nextTick(() => { syncSize(); instance.focus() })
@@ -109,7 +113,8 @@ function setupTerminal() {
 function websocketUrl() {
   const token = localStorage.getItem('access_token') || ''
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${location.host}/api/v1/ws/resources/${props.resourceId}/terminal?token=${encodeURIComponent(token)}`
+  const path = props.socketPath || `/ws/resources/${props.resourceId}/terminal`
+  return `${protocol}//${location.host}/api/v1${path}?token=${encodeURIComponent(token)}`
 }
 
 function connect() {
@@ -208,9 +213,9 @@ function sendWorkflowStepCommand(payload: WorkflowCommandPayload) {
 function handleResize() { scheduleSyncSize() }
 
 watch(
-  () => [props.active, props.resourceId, props.autoConnect] as const,
-  ([active, resourceId, autoConnect], [_oldActive, oldResourceId]) => {
-    if (resourceId !== oldResourceId && socket.value) disconnect()
+  () => [props.active, props.resourceId, props.autoConnect, props.socketPath] as const,
+  ([active, resourceId, autoConnect, socketPath], [_oldActive, oldResourceId, _oldAutoConnect, oldSocketPath]) => {
+    if ((resourceId !== oldResourceId || socketPath !== oldSocketPath) && socket.value) disconnect()
     if (active && autoConnect && resourceId && !socket.value && state.value !== 'connecting') {
       nextTick(connect)
     }

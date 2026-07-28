@@ -86,6 +86,7 @@ export function useRunStepPresentation(
     }
     if (step.node_type === 'order_preparation') {
       const rows: InfoRow[] = [
+        { label: '发单动作', value: stringValue(config.order_action, 'new_order'), mono: true },
         { label: 'XML 文件', value: stringValue(config.xml_filename) },
         { label: 'XML 校验', value: stringValue(config.xml_checksum), mono: true },
         { label: '读取合约 CSV', value: orderReadSymbolCsvEnabled.value ? '是' : '否' },
@@ -141,6 +142,10 @@ export function useRunStepPresentation(
         { label: '发单命令', value: stringValue(result.command, stringValue(result.generated_command)), mono: true },
         { label: '下发时间', value: formatDate(optionalString(result.dispatched_at)) },
         { label: '进程状态', value: result.process_started ? '已启动' : '未启动' },
+        { label: 'tmux 会话', value: stringValue(result.tmux_session), mono: true },
+        { label: '会话状态', value: stringValue(result.session_status) },
+        { label: '动作状态', value: stringValue(result.order_action_status) },
+        { label: '发单动作', value: stringValue(result.order_action, stringValue(selectedConfig.value.order_action, 'new_order')), mono: true },
       ]
     }
     if (step.node_type.startsWith('slnic_')) {

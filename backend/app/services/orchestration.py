@@ -376,13 +376,18 @@ def begin_workflow_step(
     return current
 
 
-def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
+async def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
     if not run.workflow_version_id or run.status != "awaiting_step_completion":
         raise WorkflowError("INVALID_TRANSITION", "当前运行没有待完成的节点", 409)
     step = next((item for item in run.steps if item.id == step_id), None)
     current = next((item for item in run.steps if item.status != "succeeded"), None)
     if not step or not current or current.id != step.id or step.status != "waiting":
         raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
+    if (
+        step.node_type == "order_preparation"
+        and (step.result_summary or {}).get("order_action_status") != "dispatched"
+    ):
+        raise WorkflowError("ORDER_ACTION_REQUIRED", "请先发送发单动作，再完成节点", 409)
     now = beijing_now()
     if (
         step.node_type == "slnic_merge_capture"
@@ -395,7 +400,7 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
         ))
         if not slnic_resource:
             raise WorkflowError("SLNIC_RESOURCE_REQUIRED", "运行资源缺少已启用的 SLNIC 节点", 409)
-        artifact_summary = asyncio.run(collect_slnic_merge_artifact(db, run, step, slnic_resource))
+        artifact_summary = await collect_slnic_merge_artifact(db, run, step, slnic_resource)
         step.result_summary = {
             **(step.result_summary or {}),
             **artifact_summary,
@@ -426,8 +431,8 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
     broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
 
 
-def confirm_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
-    complete_workflow_step(db, run, step_id, actor_id)
+async def confirm_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: int) -> None:
+    await complete_workflow_step(db, run, step_id, actor_id)
 
 
 async def continue_after_wiring(run_id: int) -> None:
@@ -528,6 +533,7 @@ def expire_timed_out_runs(db: Session) -> int:
             .order_by(TestRun.timeout_at, TestRun.id)
         ).all()
     )
+    cleanup_steps: list[tuple[int, int]] = []
     for run in runs:
         transition_run(
             run,
@@ -539,6 +545,8 @@ def expire_timed_out_runs(db: Session) -> int:
         run.error_code = "RUN_TIMED_OUT"
         run.error_message = "运行超过设定时限"
         for step in run.steps:
+            if step.node_type == "order_preparation" and (step.result_summary or {}).get("process_started"):
+                cleanup_steps.append((run.id, step.id))
             if step.status in {"pending", "running", "waiting", "failed"}:
                 transition_step(step, "cancelled")
                 step.finished_at = step.finished_at or now
@@ -556,6 +564,16 @@ def expire_timed_out_runs(db: Session) -> int:
             run.id,
             {"type": "status", "status": run.status, "progress": run.progress},
         )
+    if cleanup_steps:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop:
+            from app.services.order_sessions import cleanup_order_step_by_ids
+
+            for run_id, step_id in cleanup_steps:
+                loop.create_task(cleanup_order_step_by_ids(run_id, step_id))
     return len(runs)
 
 

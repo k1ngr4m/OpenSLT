@@ -16,6 +16,7 @@ from app.core.time import beijing_now
 from app.models import BusinessType, PlanResource, Resource, ResourceLock, RunResource, ScenarioResource, User, WorkflowVersionResource
 from app.schemas import ResourceOut, ResourceWrite
 from app.services.audit import write_audit
+from app.services.order_sessions import ssh_options
 
 router = APIRouter()
 
@@ -80,7 +81,24 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
     try:
         if resource.resource_type == "database":
             result = await mysql_adapter.health(resource)
-        else: result = await ssh_adapter.check(host=resource.host, port=resource.ssh_port, username=resource.username, password=decrypt_secret(resource.encrypted_password), private_key=decrypt_secret(resource.encrypted_private_key))
+        else:
+            result = await ssh_adapter.check(host=resource.host, port=resource.ssh_port, username=resource.username, password=decrypt_secret(resource.encrypted_password), private_key=decrypt_secret(resource.encrypted_private_key))
+            if result["ok"] and resource.resource_type == "order":
+                import asyncssh
+                import posixpath
+                import shlex
+
+                binary = str((resource.capabilities or {}).get("order_tool") or "").strip()
+                command = (
+                    "command -v tmux >/dev/null 2>&1 && test -d {workdir} && test -x {binary}"
+                ).format(
+                    workdir=shlex.quote(resource.remote_path),
+                    binary=shlex.quote(posixpath.join(resource.remote_path, binary)),
+                )
+                async with asyncssh.connect(**ssh_options(resource)) as connection:
+                    checked = await connection.run(command, check=False)
+                if checked.exit_status != 0:
+                    result = {"ok": False, "message": "发单资源缺少 tmux、工作目录或可执行程序"}
         resource.health_status = "healthy" if result["ok"] else "unhealthy"
     except Exception as exc:
         result = {"ok": False, "message": str(exc)}; resource.health_status = "unhealthy"

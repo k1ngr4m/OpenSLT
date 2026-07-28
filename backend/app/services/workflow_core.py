@@ -19,6 +19,7 @@ from app.services.resource_relations import (
     workflow_resource_ids,
 )
 from app.wiring_profiles import build_wiring_snapshot
+from app.workflow_node_configs import ORDER_ACTIONS
 
 SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
 NODE_TYPES = {
@@ -206,8 +207,13 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                             "message": "REM、模拟市场或 SLNIC 的接线 IP 配置无效",
                         })
         elif node.node_type == "order_preparation":
-            if "order" not in resources:
+            order_resource = resources.get("order")
+            if not order_resource:
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少发单工具资源"})
+            else:
+                supported_actions = (order_resource.capabilities or {}).get("order_actions") or ORDER_ACTIONS
+                if config.get("order_action", "new_order") not in supported_actions:
+                    errors.append({**prefix, "field": "order_action", "message": "发单资源不支持所选动作"})
             if not str(config.get("xml_filename") or "").strip():
                 errors.append({**prefix, "field": "xml_filename", "message": "XML 配置为必填项"})
             interface = str(config.get("network_interface") or "")

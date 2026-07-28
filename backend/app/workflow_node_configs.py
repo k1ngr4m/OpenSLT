@@ -6,6 +6,28 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
 
+ORDER_ACTIONS = (
+    "new_order",
+    "new_order_simple",
+    "new_quote",
+    "new_quote_simple",
+    "new_arbi_order",
+    "new_arbi_order_simple",
+    "cxl_order",
+    "stop_order",
+)
+OrderAction = Literal[
+    "new_order",
+    "new_order_simple",
+    "new_quote",
+    "new_quote_simple",
+    "new_arbi_order",
+    "new_arbi_order_simple",
+    "cxl_order",
+    "stop_order",
+]
+
+
 class WorkflowNodeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -38,6 +60,7 @@ class OrderPreparationConfig(WorkflowNodeConfig):
     database_node_key: str = ""
     trading_database_name: str = ""
     contract_file_ids: typing.List[int] = Field(default_factory=list)
+    order_action: OrderAction = "new_order"
 
 
 class SlnicStartConfig(WorkflowNodeConfig):

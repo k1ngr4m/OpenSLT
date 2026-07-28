@@ -237,6 +237,7 @@ async def prepare_order_node(
         "xml_checksum": detail["checksum"],
         "read_symbol_csv": read_csv,
         "network_interface": interface or None,
+        "order_action": config.order_action,
         "contract_files": file_summaries,
         "generated_command": " && ".join(command_parts),
         "process_started": False,

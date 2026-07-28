@@ -6,11 +6,12 @@ from datetime import datetime
 from ipaddress import IPv4Address
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Annotated
 
 from app.services.run_state import RunStatus, StepStatus
 from app.workflow_node_configs import (
+    ORDER_ACTIONS,
     DatabaseConfig,
     OrderPreparationConfig,
     ParserConfig,
@@ -108,6 +109,13 @@ class ResourceWrite(BaseModel):
     notes: str = ""
     is_enabled: bool = True
 
+    @field_validator("trade_ip", "query_ip", mode="before")
+    @classmethod
+    def normalize_optional_ip(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @model_validator(mode="after")
     def validate_connection(self) -> "ResourceWrite":
         if self.resource_type == "rem":
@@ -126,6 +134,20 @@ class ResourceWrite(BaseModel):
         if self.resource_type != "database":
             if not self.host.strip() or not self.username.strip():
                 raise ValueError("SSH 地址和用户名不能为空")
+            if self.resource_type == "order":
+                configured_actions = self.capabilities.get("order_actions")
+                if configured_actions is None:
+                    configured_actions = list(ORDER_ACTIONS)
+                if (
+                    not isinstance(configured_actions, list)
+                    or not configured_actions
+                    or any(action not in ORDER_ACTIONS for action in configured_actions)
+                ):
+                    raise ValueError("发单动作能力配置无效")
+                self.capabilities = {
+                    **self.capabilities,
+                    "order_actions": list(dict.fromkeys(configured_actions)),
+                }
             if self.resource_type == "parser":
                 tool = str(self.capabilities.get("parser_tool") or "").strip()
                 if tool not in PARSER_TOOLS:

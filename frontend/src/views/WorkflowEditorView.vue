@@ -36,6 +36,10 @@ let contractFilesRequestId = 0
 const globalKeySearch = ref('')
 const resourceTypes = Object.keys(resourceText)
 const slnicNodeTypes = new Set(['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'])
+const ORDER_ACTIONS = [
+  'new_order', 'new_order_simple', 'new_quote', 'new_quote_simple',
+  'new_arbi_order', 'new_arbi_order_simple', 'cxl_order', 'stop_order',
+]
 const nodeCategories = [
   { title: '获取配置', types: ['server_config', 'database_config'] },
   { title: '流程准备', types: ['wiring_confirmation'] },
@@ -77,6 +81,10 @@ const allGlobalKeysSelected = computed(() => {
 const selectedPlan = computed(() => plans.value.find(item => item.id === scenario.value?.plan_id))
 const selectedResources = computed(() => resourceTypes.map(type => resources.value.find(item => item.id === resourceSelections[type])).filter(Boolean))
 const selectedResourceMap = computed(() => Object.fromEntries(selectedResources.value.map(item => [item.resource_type, item])))
+const availableOrderActions = computed(() => {
+  const configured = selectedResourceMap.value.order?.capabilities?.order_actions
+  return Array.isArray(configured) && configured.length ? configured : ORDER_ACTIONS
+})
 const wiringPreview = computed(() => buildWiringSnapshot(
   selectedPlan.value?.business_code || '',
   selectedResourceMap.value.rem,
@@ -104,6 +112,9 @@ function applyDocument(data: any) {
   const preferredKey = selectedKey.value
   documentData.value = data
   nodes.value = JSON.parse(JSON.stringify(data.draft.nodes || []))
+  for (const node of nodes.value) {
+    if (node.node_type === 'order_preparation' && !node.config.order_action) node.config.order_action = 'new_order'
+  }
   for (const type of resourceTypes) resourceSelections[type] = null
   for (const id of data.draft.resource_ids || []) {
     const resource = resources.value.find(item => item.id === id)
@@ -155,7 +166,7 @@ function nodeMeta(type: string) {
     server_config: { label: '获取服务器配置', icon: Tickets, tone: 'teal' },
     database_config: { label: '获取数据库配置', icon: Document, tone: 'blue' },
     wiring_confirmation: { label: '接线确认', icon: Connection, tone: 'amber' },
-    order_preparation: { label: '发单准备', icon: Promotion, tone: 'rose' },
+    order_preparation: { label: '发单执行', icon: Promotion, tone: 'rose' },
     slnic_start_capture: { label: '启动 SLNIC', icon: VideoPlay, tone: 'violet' },
     slnic_stop_capture: { label: '关闭 SLNIC', icon: VideoPause, tone: 'violet' },
     slnic_merge_capture: { label: '合并 pcapng', icon: Files, tone: 'violet' },
@@ -168,7 +179,7 @@ function nodeDescription(type: string) {
     server_config: '通过 SSH 采集软硬件信息',
     database_config: '读取 t_global_settings',
     wiring_confirmation: '阻断流程并等待机房确认',
-    order_preparation: '校验 XML、网卡和合约文件',
+    order_preparation: '启动发单工具并发送所选动作',
     slnic_start_capture: '调用脚本开始四路抓包',
     slnic_stop_capture: '调用脚本结束抓包',
     slnic_merge_capture: '合并并转换为单一 pcapng 产物',
@@ -192,7 +203,7 @@ function defaultNode(type: string): WorkflowNode {
   if (type === 'server_config') return { node_key: key, position: 0, node_type: type, name: '获取服务器配置', config: { targets: [] } }
   if (type === 'database_config') return { node_key: key, position: 0, node_type: type, name: '获取数据库配置', config: { database_name: '', keys: [] } }
   if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'resource' } }
-  if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单准备', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [] } }
+  if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [], order_action: 'new_order' } }
   if (type === 'parser_parse') return { node_key: key, position: 0, node_type: type, name: '数据解析', config: { database_name: '' } }
   return { node_key: key, position: 0, node_type: type as WorkflowNodeType, name: nodeMeta(type).label, config: {} }
 }
@@ -470,6 +481,7 @@ onMounted(load)
           </template>
 
           <template v-else-if="selectedNode.node_type === 'order_preparation'">
+            <label class="field required"><span>发单动作</span><el-select v-model="selectedNode.config.order_action" :disabled="!editable || !selectedResourceMap.order" @change="markDirty"><el-option v-for="action in availableOrderActions" :key="action" :label="action" :value="action" /></el-select><small>运行时启动工具后，由操作员通过动作按钮发送一次。</small></label>
             <label class="field required"><span>XML 配置</span><el-select v-model="selectedNode.config.xml_filename" :disabled="!editable || !selectedResourceMap.order" filterable @change="selectXml"><el-option v-for="file in orderConfigs" :key="file.name" :label="file.name" :value="file.name" /></el-select></label>
             <label class="field"><span>网卡接口</span><el-input v-model="selectedNode.config.network_interface" :disabled="!editable" placeholder="例如 p4p1" maxlength="15" @input="markDirty" /><small>运行时安全生成 ZF_ATTR，不接受完整 Shell 命令。</small></label>
             <el-alert :title="selectedNode.config.read_symbol_csv ? 'XML 需要合约 CSV' : 'XML 未启用 read_symbol_csv'" :type="selectedNode.config.read_symbol_csv ? 'warning' : 'info'" :closable="false" show-icon />

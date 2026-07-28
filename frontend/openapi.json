@@ -1117,6 +1117,21 @@
             "title": "Network Interface",
             "type": "string"
           },
+          "order_action": {
+            "default": "new_order",
+            "enum": [
+              "new_order",
+              "new_order_simple",
+              "new_quote",
+              "new_quote_simple",
+              "new_arbi_order",
+              "new_arbi_order_simple",
+              "cxl_order",
+              "stop_order"
+            ],
+            "title": "Order Action",
+            "type": "string"
+          },
           "read_symbol_csv": {
             "default": 0,
             "enum": [
@@ -6159,6 +6174,112 @@
           }
         ],
         "summary": "Confirm Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/order-action": {
+      "post": {
+        "operationId": "dispatch_order_action_api_v1_runs__run_id__steps__step_id__order_action_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Dispatch Order Action"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/order-action/confirm": {
+      "post": {
+        "operationId": "confirm_order_action_api_v1_runs__run_id__steps__step_id__order_action_confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Order Action"
       }
     },
     "/api/v1/runs/{run_id}/steps/{step_id}/retry": {

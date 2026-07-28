@@ -48,7 +48,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   )
   const workflowTerminalDescription = computed(() => {
     if (selectedStep.value?.node_type === 'order_preparation') {
-      return '点击顶部“开始”后，会先完成 XML/合约准备，再把发单命令下发到这个终端。'
+      return '点击顶部“开始”后，系统会在远端 tmux 中启动发单程序；确认程序就绪后使用下方动作按钮。终端支持刷新和重连。'
     }
     if (selectedStep.value?.node_type === 'slnic_stop_capture') {
       return '点击顶部“开始”后，关闭抓包脚本会在这个终端中下发。'
@@ -97,7 +97,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
 
   async function runWorkflowStepInTerminal(step: RunStep, operation: 'start' | 'retry') {
     const kind = terminalKindForStep(step)
-    if (!kind) throw new Error('当前节点不支持 SSH 终端执行')
+    if (!kind || kind === 'order') throw new Error('当前节点不支持通过交互终端启动')
     manualStepSelection.value = false
     selectedStepId.value = step.id
     active.value = 'detail'

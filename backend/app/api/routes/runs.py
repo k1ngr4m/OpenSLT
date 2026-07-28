@@ -18,7 +18,9 @@ from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, RunCreate, RunO
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
-from app.services.orchestration import begin_workflow_step, cancel_run, complete_workflow_step, create_workflow_steps, confirm_workflow_step, release_locks
+from app.services.orchestration import append_log, begin_workflow_step, cancel_run, complete_workflow_step, create_workflow_steps, confirm_workflow_step, release_locks
+from app.services.order_sessions import cleanup_order_session, order_session_name, send_order_action, supported_order_actions
+from app.services.resource_relations import run_resource_ids
 from app.services.reports import generate_reports
 from app.services.resource_relations import sync_run_resources
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
@@ -162,10 +164,10 @@ async def confirm_wiring(run_id: int, request: Request, actor: User = Depends(op
 
 
 @router.post("/runs/{run_id}/steps/{step_id}/confirm", response_model=RunOut)
-def confirm_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+async def confirm_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
     try:
-        confirm_workflow_step(db, run, step_id, actor.id)
+        await confirm_workflow_step(db, run, step_id, actor.id)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
     write_audit(db, "run.step_confirm", "run_step", step_id, actor, request, detail={"run_id": run.id}); db.commit(); return load_run(db, run.id)
@@ -182,11 +184,105 @@ async def start_run_step(run_id: int, step_id: int, request: Request, actor: Use
     write_audit(db, "run.step_start", "run_step", step.id, actor, request, detail={"run_id": run.id}); db.commit(); schedule_task(task.id); return load_run(db, run.id)
 
 
-@router.post("/runs/{run_id}/steps/{step_id}/complete", response_model=RunOut)
-def complete_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+def _order_step_resource(db: Session, run: TestRun, step_id: int) -> typing.Tuple[typing.Any, Resource]:
+    step = next((item for item in run.steps if item.id == step_id), None)
+    if not step or step.node_type != "order_preparation":
+        raise WorkflowError("ORDER_NODE_REQUIRED", "当前节点不是发单节点", 409)
+    resource = db.scalar(select(Resource).where(
+        Resource.id.in_(run_resource_ids(run)),
+        Resource.resource_type == "order",
+    ))
+    if not resource:
+        raise WorkflowError("ORDER_RESOURCE_REQUIRED", "运行资源缺少发单工具", 409)
+    return step, resource
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/order-action", response_model=RunOut)
+async def dispatch_order_action(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
     try:
-        complete_workflow_step(db, run, step_id, actor.id)
+        step, resource = _order_step_resource(db, run, step_id)
+        if run.status != "awaiting_step_completion" or step.status != "waiting":
+            raise WorkflowError("INVALID_TRANSITION", "当前发单节点不能发送动作", 409)
+        summary = dict(step.result_summary or {})
+        status = str(summary.get("order_action_status") or "pending")
+        if status != "pending":
+            raise WorkflowError("ORDER_ACTION_ALREADY_SENT", "发单动作已发送或结果待确认，不能重复发送", 409)
+        action = str((step.config_snapshot or {}).get("order_action") or "new_order")
+        if action not in supported_order_actions(resource):
+            raise WorkflowError("ORDER_ACTION_UNSUPPORTED", "发单资源不支持动作 %s" % action, 409)
+        session = str(summary.get("tmux_session") or order_session_name(run.id, step.id))
+        summary.update({
+            "order_action": action,
+            "order_action_status": "dispatching",
+            "action_dispatched_by": actor.id,
+            "action_dispatch_started_at": beijing_now().isoformat(),
+        })
+        step.result_summary = summary
+        db.commit()
+        try:
+            await send_order_action(resource, session, action)
+        except WorkflowError as exc:
+            run = load_run(db, run_id)
+            step = next(item for item in run.steps if item.id == step_id)
+            step.result_summary = {
+                **(step.result_summary or {}),
+                "order_action_status": "unknown",
+                "order_action_error": exc.message,
+            }
+            append_log(db, run, "order.action_unknown", "发单动作发送结果不确定，请查看终端后确认", level="WARNING", step=step, source="terminal", detail={"action": action})
+            db.commit()
+            raise
+        run = load_run(db, run_id)
+        step = next(item for item in run.steps if item.id == step_id)
+        dispatched_at = beijing_now()
+        step.result_summary = {
+            **(step.result_summary or {}),
+            "order_action_status": "dispatched",
+            "action_dispatched_at": dispatched_at.isoformat(),
+        }
+        append_log(db, run, "order.action_dispatched", "已发送发单动作 %s" % action, step=step, source="terminal", detail={"action": action, "tmux_session": session})
+        write_audit(db, "run.order_action", "run_step", step.id, actor, request, detail={"run_id": run.id, "action": action})
+        db.commit()
+        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+        return load_run(db, run.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/order-action/confirm", response_model=RunOut)
+def confirm_order_action(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    run = load_run(db, run_id)
+    try:
+        step, _resource = _order_step_resource(db, run, step_id)
+        if (step.result_summary or {}).get("order_action_status") not in {"unknown", "dispatching"}:
+            raise WorkflowError("ORDER_ACTION_CONFIRM_INVALID", "只有发送结果不确定的动作可以人工确认", 409)
+        now = beijing_now()
+        step.result_summary = {
+            **(step.result_summary or {}),
+            "order_action_status": "dispatched",
+            "action_confirmed_by": actor.id,
+            "action_confirmed_at": now.isoformat(),
+        }
+        append_log(db, run, "order.action_confirmed", "操作员确认发单动作已发送", step=step, source="user")
+        write_audit(db, "run.order_action_confirm", "run_step", step.id, actor, request, detail={"run_id": run.id})
+        db.commit()
+        return load_run(db, run.id)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/complete", response_model=RunOut)
+async def complete_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    run = load_run(db, run_id)
+    try:
+        step = next((item for item in run.steps if item.id == step_id), None)
+        if step and step.node_type == "order_preparation" and (step.result_summary or {}).get("order_action_status") == "dispatched":
+            _step, resource = _order_step_resource(db, run, step_id)
+            session = str((step.result_summary or {}).get("tmux_session") or order_session_name(run.id, step.id))
+            await cleanup_order_session(resource, session)
+            step.result_summary = {**(step.result_summary or {}), "session_status": "closed"}
+        await complete_workflow_step(db, run, step_id, actor.id)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
     write_audit(db, "run.step_complete", "run_step", step_id, actor, request, detail={"run_id": run.id}); db.commit(); return load_run(db, run.id)
@@ -204,9 +300,19 @@ async def retry_run_step(run_id: int, step_id: int, request: Request, actor: Use
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut)
-def run_cancel(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+async def run_cancel(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
     if run.status in TERMINAL_RUN_STATUSES: raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "运行已结束"})
+    for step in run.steps:
+        if step.node_type != "order_preparation" or not (step.result_summary or {}).get("process_started"):
+            continue
+        try:
+            _step, resource = _order_step_resource(db, run, step.id)
+            session = str((step.result_summary or {}).get("tmux_session") or order_session_name(run.id, step.id))
+            await cleanup_order_session(resource, session)
+            step.result_summary = {**(step.result_summary or {}), "session_status": "closed"}
+        except WorkflowError as exc:
+            step.result_summary = {**(step.result_summary or {}), "session_status": "cleanup_failed", "session_error": exc.message}
     cancel_run(db, run, actor_id=actor.id); write_audit(db, "run.cancel", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 
 

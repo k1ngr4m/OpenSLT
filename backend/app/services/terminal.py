@@ -24,6 +24,7 @@ from app.services.audit import write_audit
 from app.services.events import broker
 from app.services.orchestration import append_log
 from app.services.resource_relations import run_resource_ids
+from app.services.order_sessions import order_session_name
 from app.services.run_state import transition_run, transition_step
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.slnic import SLNIC_TERMINAL_COMMANDS
@@ -601,3 +602,138 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
                 detail={"duration_ms": duration_ms, "reason": reason},
             )
         trace_id_ctx.reset(trace_token)
+
+
+def _load_order_terminal_context(
+    token: str,
+    run_id: int,
+    step_id: int,
+) -> typing.Union[typing.Tuple[int, TerminalResource, str], typing.Tuple[None, str]]:
+    try:
+        payload = decode_token(token, "access")
+        actor_id = int(payload["sub"])
+    except (jwt.InvalidTokenError, ValueError, KeyError):
+        return None, "登录凭据无效或已过期"
+    db = SessionLocal()
+    try:
+        actor = db.get(User, actor_id)
+        run = db.get(TestRun, run_id, options=[selectinload(TestRun.steps), selectinload(TestRun.resource_links)])
+        if not actor or not actor.is_active:
+            return None, "登录凭据无效或已过期"
+        if actor.role not in {"admin", "tester"}:
+            return None, "当前用户无权使用资源操作台"
+        if not run:
+            return None, "运行不存在"
+        step = next((item for item in run.steps if item.id == step_id), None)
+        if not step or step.node_type != "order_preparation":
+            return None, "发单节点不存在"
+        resource = db.scalar(select(Resource).where(
+            Resource.id.in_(run_resource_ids(run)),
+            Resource.resource_type == "order",
+            Resource.is_deleted.is_(False),
+            Resource.is_enabled.is_(True),
+        ))
+        if not resource:
+            return None, "运行缺少可用的发单资源"
+        session = str((step.result_summary or {}).get("tmux_session") or order_session_name(run.id, step.id))
+        return actor.id, TerminalResource(
+            id=resource.id,
+            name=resource.name,
+            resource_type=resource.resource_type,
+            host=resource.host,
+            port=resource.ssh_port,
+            username=resource.username,
+            password=decrypt_secret(resource.encrypted_password),
+            private_key=decrypt_secret(resource.encrypted_private_key),
+            remote_path=resource.remote_path,
+        ), session
+    finally:
+        db.close()
+
+
+async def _receive_read_only(websocket: WebSocket, process: asyncssh.SSHClientProcess) -> str:
+    while True:
+        try:
+            message = await websocket.receive_json()
+        except (WebSocketDisconnect, RuntimeError):
+            return "client_disconnected"
+        if message.get("type") == "resize":
+            columns = _clamp(message.get("cols"), MIN_COLUMNS, MAX_COLUMNS, 120)
+            rows = _clamp(message.get("rows"), MIN_ROWS, MAX_ROWS, 32)
+            process.change_terminal_size(columns, rows)
+        else:
+            await _send(websocket, {"type": "error", "code": "TERMINAL_READ_ONLY", "message": "工作流发单终端为只读，请使用发单动作按钮"})
+
+
+async def handle_order_workflow_terminal(
+    websocket: WebSocket,
+    run_id: int,
+    step_id: int,
+    token: str,
+) -> None:
+    context = _load_order_terminal_context(token, run_id, step_id)
+    if context[0] is None:
+        await _close(websocket, 4403)
+        return
+    actor_id, resource, session = typing.cast(typing.Tuple[int, TerminalResource, str], context)
+    await websocket.accept()
+    await _send(websocket, {"type": "status", "status": "connecting", "message": "正在连接发单 tmux 会话"})
+    options: typing.Dict[str, object] = {
+        "host": resource.host,
+        "port": resource.port,
+        "username": resource.username,
+        "known_hosts": None,
+        "connect_timeout": 15,
+        "keepalive_interval": 30,
+        "keepalive_count_max": 3,
+    }
+    if resource.password:
+        options["password"] = resource.password
+    if resource.private_key:
+        options["client_keys"] = [asyncssh.import_private_key(resource.private_key)]
+    connection = None
+    process = None
+    try:
+        connection = await asyncssh.connect(**options)
+        exists = await connection.run("tmux has-session -t %s 2>/dev/null" % shlex.quote(session), check=False)
+        if exists.exit_status != 0:
+            await _send(websocket, {"type": "error", "code": "ORDER_SESSION_NOT_STARTED", "message": "发单会话尚未启动或已经结束"})
+            await _close(websocket, 4513)
+            return
+        captured = await connection.run(
+            "tmux capture-pane -p -S -5000 -t %s" % shlex.quote(session),
+            check=False,
+        )
+        await _send(websocket, {"type": "status", "status": "connected", "message": "已连接发单 tmux 会话（只读）"})
+        if captured.stdout:
+            await _send(websocket, {"type": "output", "data": captured.stdout})
+        _audit(websocket, actor_id, resource.id, "resource.order_terminal.open", detail={"run_id": run_id, "step_id": step_id})
+        process = await connection.create_process(
+            "tmux attach-session -r -t %s" % shlex.quote(session),
+            term_type="xterm-256color",
+            term_size=(120, 32),
+            encoding="utf-8",
+            errors="replace",
+        )
+        receiver = asyncio.create_task(_receive_read_only(websocket, process))
+        sender = asyncio.create_task(_send_remote_output(websocket, process))
+        done, pending = await asyncio.wait({receiver, sender}, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:
+            task.cancel()
+        for task in pending:
+            with suppress(asyncio.CancelledError):
+                await task
+        if done:
+            next(iter(done)).result()
+    except Exception as exc:
+        await _send(websocket, {"type": "error", "code": "ORDER_TERMINAL_FAILED", "message": "发单终端连接失败：%s" % exc})
+        await _close(websocket, 4511)
+    finally:
+        if process:
+            process.close()
+            with suppress(Exception):
+                await process.wait_closed()
+        if connection:
+            connection.close()
+            with suppress(Exception):
+                await connection.wait_closed()

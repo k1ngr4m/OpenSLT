@@ -646,6 +646,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/steps/{step_id}/order-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dispatch Order Action */
+        post: operations["dispatch_order_action_api_v1_runs__run_id__steps__step_id__order_action_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/steps/{step_id}/order-action/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Order Action */
+        post: operations["confirm_order_action_api_v1_runs__run_id__steps__step_id__order_action_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/steps/{step_id}/retry": {
         parameters: {
             query?: never;
@@ -1337,6 +1371,12 @@ export interface components {
              * @default
              */
             network_interface: string;
+            /**
+             * Order Action
+             * @default new_order
+             * @enum {string}
+             */
+            order_action: "new_order" | "new_order_simple" | "new_quote" | "new_quote_simple" | "new_arbi_order" | "new_arbi_order_simple" | "cxl_order" | "stop_order";
             /**
              * Read Symbol Csv
              * @default 0
@@ -3759,6 +3799,70 @@ export interface operations {
         };
     };
     confirm_run_step_api_v1_runs__run_id__steps__step_id__confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dispatch_order_action_api_v1_runs__run_id__steps__step_id__order_action_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_order_action_api_v1_runs__run_id__steps__step_id__order_action_confirm_post: {
         parameters: {
             query?: never;
             header?: never;

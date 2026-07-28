@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, CircleCheck, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import RunCaptureDetails from '@/components/run-detail/RunCaptureDetails.vue'
@@ -103,6 +104,53 @@ const {
   showRawResult,
   summaryRows,
 } = useRunStepPresentation(run, selectedStep, contractPreviewCache)
+const currentOrderActionStatus = computed(() => currentStep.value?.node_type === 'order_preparation'
+  ? String(currentStep.value.result_summary?.order_action_status || 'pending')
+  : '')
+const currentOrderAction = computed(() => currentStep.value?.node_type === 'order_preparation'
+  ? String(currentStep.value.config_snapshot?.order_action || 'new_order')
+  : '')
+const canCompleteCurrent = computed(() => Boolean(
+  currentStep.value?.status === 'waiting'
+  && run.value?.status === 'awaiting_step_completion'
+  && (currentStep.value.node_type !== 'order_preparation' || currentOrderActionStatus.value === 'dispatched'),
+))
+const canSendOrderAction = computed(() => Boolean(
+  currentStep.value?.node_type === 'order_preparation'
+  && currentStep.value.status === 'waiting'
+  && run.value?.status === 'awaiting_step_completion'
+  && currentOrderActionStatus.value === 'pending',
+))
+const orderTerminalSocketPath = computed(() => selectedStep.value?.node_type === 'order_preparation'
+  ? `/ws/runs/${runId}/steps/${selectedStep.value.id}/order-terminal`
+  : '')
+
+async function sendCurrentOrderAction() {
+  if (!currentStep.value || !canSendOrderAction.value) return
+  actingStepId.value = currentStep.value.id
+  try {
+    await api.post(`/runs/${runId}/steps/${currentStep.value.id}/order-action`)
+    ElMessage.success(`已发送 ${currentOrderAction.value}`)
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+    await load()
+  } finally {
+    actingStepId.value = null
+  }
+}
+
+async function confirmCurrentOrderAction() {
+  if (!currentStep.value || currentOrderActionStatus.value !== 'unknown') return
+  try {
+    await ElMessageBox.confirm('请确认终端输出表明该动作已经发送。确认后系统不会再次发送。', '确认已发单', { type: 'warning' })
+    await api.post(`/runs/${runId}/steps/${currentStep.value.id}/order-action/confirm`)
+    ElMessage.success('已确认发单动作')
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
+  }
+}
 const wiringSnapshot = computed(() => {
   const value = selectedConfig.value.wiring_snapshot
   return value && typeof value === 'object' ? value as unknown as WiringSnapshot : null
@@ -270,7 +318,7 @@ watch(
           @click="currentStep && stepAction(currentStep, 'start')"
         >开始</el-button>
         <el-button
-          v-if="currentStep?.status === 'waiting' && run.status === 'awaiting_step_completion'"
+          v-if="canCompleteCurrent"
           type="success"
           :icon="CircleCheck"
           :loading="actingStepId === currentStep.id"
@@ -357,11 +405,29 @@ watch(
                   :title="orderResource.name"
                   :subtitle="orderTerminalSubtitle"
                   :active="workflowTerminalKind === 'order'"
+                  :auto-connect="Boolean(selectedStep?.result_summary?.process_started && selectedStep?.result_summary?.session_status === 'running')"
+                  :socket-path="orderTerminalSocketPath"
+                  read-only
                   :min-height="320"
                   @status="message => handleWorkflowTerminalStatus('order', message)"
                   @error="message => handleWorkflowTerminalError('order', message)"
-                  @workflow-command="message => handleWorkflowTerminalCommand('order', message)"
                 />
+                <div v-if="workflowTerminalKind === 'order' && selectedStep?.status === 'waiting'" class="order-action-bar">
+                  <el-button
+                    v-if="canSendOrderAction"
+                    type="primary"
+                    :icon="VideoPlay"
+                    :loading="actingStepId === selectedStep.id"
+                    @click="sendCurrentOrderAction"
+                  >发送 {{ currentOrderAction }}</el-button>
+                  <el-button
+                    v-else-if="['unknown', 'dispatching'].includes(currentOrderActionStatus)"
+                    type="warning"
+                    @click="confirmCurrentOrderAction"
+                  >确认已发送</el-button>
+                  <el-tag v-else-if="currentOrderActionStatus === 'dispatched'" type="success">已发送 {{ currentOrderAction }}</el-tag>
+                  <span class="muted">请确认终端程序已就绪后再发送；动作发送后仍需人工点击“完成”。</span>
+                </div>
                 <div v-if="showWorkflowTerminal && !workflowTerminalResource" class="empty-line">当前运行没有{{ workflowTerminalResourceText }}，无法加载 SSH 终端</div>
               </section>
 

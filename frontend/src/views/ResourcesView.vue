@@ -48,6 +48,10 @@ const orderTools = [
   { value: 'ees_ef_vi_trader_binary_api_test', path: '/home/user0/ees_ef_vi_trader_binary_api_test' },
   { value: 'ees_zf_trader_binary_api_test', path: '/home/user0/ees_zf_trader_binary_api_test' },
 ]
+const orderActionOptions = [
+  'new_order', 'new_order_simple', 'new_quote', 'new_quote_simple',
+  'new_arbi_order', 'new_arbi_order_simple', 'cxl_order', 'stop_order',
+]
 
 const slnicModels = [
   { value: 'SLNIC_NF11_10g_10g', path: '/home/user0/slnic/SLNIC_NF11_10g_10g_911.hw_7881.driver_12671.sw_20240528' },
@@ -67,7 +71,7 @@ const parserTools = [
 ]
 
 const empty = () => ({
-  name: '', resource_type: 'rem', market_environment: '', order_tool: '', slnic_model: '', parser_tool: '', business_code: 'fut_mm',
+  name: '', resource_type: 'rem', market_environment: '', order_tool: '', order_actions: [...orderActionOptions], slnic_model: '', parser_tool: '', business_code: 'fut_mm',
   host: '', ssh_port: 22, username: '', auth_type: 'password', password: '', private_key: '',
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
@@ -131,6 +135,7 @@ function handleResourceTypeChange(value: string) {
   else if (value === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
   else if (value === 'order') {
     form.order_tool = form.order_tool || orderTools[0].value
+    form.order_actions = form.order_actions?.length ? form.order_actions : [...orderActionOptions]
     setOrderToolDefaultPath(form.order_tool)
   }
   else if (value === 'slnic') {
@@ -147,6 +152,7 @@ function open(row?: any) {
   Object.assign(form, empty(), row || {})
   form.market_environment = row?.capabilities?.market_environment || ''
   form.order_tool = row?.capabilities?.order_tool || orderTools.find(item => item.path === row?.remote_path)?.value || ''
+  form.order_actions = row?.capabilities?.order_actions?.length ? [...row.capabilities.order_actions] : [...orderActionOptions]
   form.slnic_model = row?.capabilities?.slnic_model || slnicModels.find(item => item.path === row?.remote_path)?.value || ''
   form.parser_tool = row?.capabilities?.parser_tool || parserTools.find(item => `/home/user0/${item}` === row?.remote_path) || ''
   form.database_names = [...(row?.database_names || [])]
@@ -254,6 +260,10 @@ async function save() {
     ElMessage.warning('请选择发单工具')
     return
   }
+  if (form.resource_type === 'order' && !form.order_actions?.length) {
+    ElMessage.warning('请至少选择一个发单动作')
+    return
+  }
   if (form.resource_type === 'slnic' && !slnicModels.some(item => item.value === form.slnic_model)) {
     ElMessage.warning('请选择 SLNIC 型号')
     return
@@ -264,7 +274,7 @@ async function save() {
   }
   loading.value = true
   try {
-    const { market_environment, order_tool, slnic_model, parser_tool, ...payload } = form
+    const { market_environment, order_tool, order_actions, slnic_model, parser_tool, ...payload } = form
     const capabilities = { ...(form.capabilities || {}) }
     if (form.resource_type === 'market') {
       const selected = marketEnvironments.find(item => item.value === market_environment)!
@@ -283,9 +293,10 @@ async function save() {
         order_tool,
         order_tool_name: selected.value,
         order_tool_default_path: selected.path,
+        order_actions,
       })
     } else {
-      for (const key of ['order_tool', 'order_tool_name', 'order_tool_default_path']) delete capabilities[key]
+      for (const key of ['order_tool', 'order_tool_name', 'order_tool_default_path', 'order_actions']) delete capabilities[key]
     }
     if (form.resource_type === 'slnic') {
       const selected = slnicModels.find(item => item.value === slnic_model)!
@@ -320,6 +331,15 @@ async function save() {
       })
     } else if (form.database_connection_mode === 'direct') {
       Object.assign(payload, { host: '', username: '', password: null, private_key: null })
+    }
+    if (form.resource_type !== 'rem') {
+      Object.assign(payload, {
+        trade_ip: null,
+        trade_tcp_port: null,
+        trade_udp_port: null,
+        query_ip: null,
+        query_port: null,
+      })
     }
     if (editing.value) await api.put(`/resources/${editing.value}`, payload)
     else await api.post('/resources', payload)
@@ -452,6 +472,13 @@ onMounted(load)
               <el-select v-model="form.order_tool" placeholder="请选择发单工具" style="width:100%" @change="setOrderToolDefaultPath">
                 <el-option v-for="item in orderTools" :key="item.value" :label="item.value" :value="item.value" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.resource_type === 'order'" :span="24">
+            <el-form-item label="支持动作" required>
+              <el-checkbox-group v-model="form.order_actions">
+                <el-checkbox v-for="action in orderActionOptions" :key="action" :value="action">{{ action }}</el-checkbox>
+              </el-checkbox-group>
             </el-form-item>
           </el-col>
           <el-col v-if="form.resource_type === 'slnic'" :span="24">

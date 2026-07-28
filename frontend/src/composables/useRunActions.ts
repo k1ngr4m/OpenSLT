@@ -51,7 +51,6 @@ export function useRunActions(options: RunActionsOptions) {
         'slnic_start_capture',
         'slnic_stop_capture',
         'slnic_merge_capture',
-        'order_preparation',
       ]
       if (
         terminalNodeTypes.includes(step.node_type)
