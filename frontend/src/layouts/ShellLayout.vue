@@ -41,7 +41,7 @@ const activePath = computed(() => {
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
   return ['/dashboard', '/runs', '/plans', '/resources', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
-const beijingText = computed(() => `${formatBeijingDateTime(now.value)} 北京时间`)
+const beijingText = computed(() => `${formatBeijingDateTime(now.value)}`)
 
 function syncViewport() {
   isMobile.value = window.innerWidth < 768

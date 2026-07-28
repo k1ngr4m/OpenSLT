@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { RefreshRight, Search } from '@element-plus/icons-vue'
@@ -19,6 +19,8 @@ const databaseStep = ref(1)
 const databaseOptions = ref<{ name: string; missing: boolean }[]>([])
 const discoveringDatabases = ref(false)
 const discoveryError = ref('')
+const testingConnection = ref(false)
+const connectionTestResult = ref<{ ok: boolean; message: string } | null>(null)
 const filters = reactive({ keyword: '', type: '', business: '', health: '' })
 const filteredRows = computed(() => rows.value.filter(row => {
   const query = filters.keyword.trim().toLowerCase()
@@ -129,6 +131,7 @@ function handleResourceTypeChange(value: string) {
   databaseStep.value = 1
   databaseOptions.value = []
   discoveryError.value = ''
+  connectionTestResult.value = null
   if (value === 'rem') {
     setRemDefaultPath(form.business_code)
   }
@@ -170,7 +173,50 @@ function open(row?: any) {
   databaseStep.value = 1
   databaseOptions.value = []
   discoveryError.value = ''
+  connectionTestResult.value = null
   dialog.value = true
+}
+
+function validateSshConnection() {
+  if (!form.host.trim()) return '请填写 Linux 地址'
+  if (!form.username.trim()) return '请填写 SSH 用户名'
+  if (form.resource_type === 'order' && !orderTools.some(item => item.value === form.order_tool)) return '请选择发单工具'
+  if (form.resource_type === 'order' && !form.remote_path.trim()) return '请填写远端路径'
+  return ''
+}
+
+async function testConnection() {
+  const validationError = validateSshConnection()
+  if (validationError) {
+    ElMessage.warning(validationError)
+    return
+  }
+  testingConnection.value = true
+  connectionTestResult.value = null
+  const capabilities = { ...(form.capabilities || {}) }
+  if (form.resource_type === 'order') capabilities.order_tool = form.order_tool
+  try {
+    const { data } = await api.post('/resources/connection-test', {
+      resource_id: editing.value,
+      resource_type: form.resource_type,
+      host: form.host,
+      ssh_port: form.ssh_port,
+      username: form.username,
+      auth_type: form.auth_type,
+      password: form.password,
+      private_key: form.private_key,
+      remote_path: form.remote_path,
+      capabilities,
+    })
+    connectionTestResult.value = data
+    data.ok ? ElMessage.success(data.message) : ElMessage.error(data.message)
+  } catch (error) {
+    const message = errorMessage(error)
+    connectionTestResult.value = { ok: false, message }
+    ElMessage.error(message)
+  } finally {
+    testingConnection.value = false
+  }
 }
 
 function validateDatabaseConnection() {
@@ -382,6 +428,14 @@ function connectionText(row: any) {
     : target
 }
 
+watch(
+  () => [
+    form.resource_type, form.host, form.ssh_port, form.username, form.auth_type,
+    form.password, form.private_key, form.remote_path, form.order_tool,
+  ],
+  () => { connectionTestResult.value = null },
+)
+
 onMounted(load)
 </script>
 
@@ -565,6 +619,15 @@ onMounted(load)
           <el-col v-if="form.resource_type !== 'rem'" :span="24"><el-form-item label="备注"><el-input v-model="form.notes" type="textarea" /></el-form-item></el-col>
         </el-row>
 
+        <el-alert
+          v-if="form.resource_type !== 'database' && connectionTestResult"
+          :type="connectionTestResult.ok ? 'success' : 'error'"
+          :title="connectionTestResult.message"
+          :closable="false"
+          show-icon
+          class="connection-test-result"
+        />
+
         <section v-if="form.resource_type === 'database' && databaseStep === 2" class="database-selection-step">
           <div class="database-connection-summary">
             <div><small>连接方式</small><strong>{{ form.database_connection_mode === 'ssh_tunnel' ? 'SSH 隧道' : '直接连接' }}</strong></div>
@@ -590,15 +653,18 @@ onMounted(load)
         <el-button @click="dialog = false">取消</el-button>
         <template v-if="form.resource_type === 'database'">
           <el-button v-if="databaseStep === 2" @click="backToDatabaseConnection">上一步</el-button>
-          <el-button v-if="databaseStep === 1" type="primary" :loading="discoveringDatabases" @click="discoverDatabases">下一步</el-button>
+          <el-button v-if="databaseStep === 1" type="primary" :loading="discoveringDatabases" @click="discoverDatabases">测试连接并下一步</el-button>
           <el-button v-else type="primary" :loading="loading" :disabled="!form.database_names.length" @click="save">保存</el-button>
         </template>
-        <el-button v-else type="primary" :loading="loading" @click="save">保存</el-button>
+        <template v-else>
+          <el-button :loading="testingConnection" :disabled="loading" @click="testConnection">连通测试</el-button>
+          <el-button type="primary" :loading="loading" :disabled="testingConnection" @click="save">保存</el-button>
+        </template>
       </template>
     </el-drawer>
   </div>
 </template>
 
 <style scoped>
-.resource-filters>.el-select{width:160px}.keyword-filter{width:300px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.resource-table{overflow:hidden}.resource-table :deep(.mono){font-size:11px}.port-input :deep(.el-input__wrapper){padding-right:32px;padding-left:32px}.port-input :deep(.el-input-number__decrease),.port-input :deep(.el-input-number__increase){width:30px}.more-config-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 18px;padding:12px 0 9px;border-bottom:1px solid var(--ui-border)}.more-config-heading strong,.more-config-heading span{display:block}.more-config-heading strong{font-size:13px}.more-config-heading span{margin-top:3px;color:var(--ui-text-tertiary);font-size:11px}.more-config-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px}.more-config-grid .trade-ip-field{grid-column:1;grid-row:1}.more-config-grid .trade-tcp-field{grid-column:2;grid-row:1}.more-config-grid .trade-udp-field{grid-column:2;grid-row:2}.more-config-grid .query-ip-field{grid-column:1;grid-row:3}.more-config-grid .query-port-field{grid-column:2;grid-row:3}.database-steps{margin:-4px 0 22px;padding:0 40px}.database-selection-step{min-height:330px;padding:6px 0 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-subtle)}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:var(--ui-text-tertiary);font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:var(--ui-text-primary);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:var(--ui-text-secondary);font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:var(--ui-danger);font-size:12px}@media(max-width:767px){.resource-filters>*{width:100%!important}.filter-count{margin-left:0}.database-steps{padding:0}.database-selection-meta,.database-discovery-error{margin-left:0}.more-config-heading{align-items:flex-start}.more-config-grid{display:block}}
+.resource-filters>.el-select{width:160px}.keyword-filter{width:300px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.resource-table{overflow:hidden}.resource-table :deep(.mono){font-size:11px}.port-input :deep(.el-input__wrapper){padding-right:32px;padding-left:32px}.port-input :deep(.el-input-number__decrease),.port-input :deep(.el-input-number__increase){width:30px}.connection-test-result{margin-top:4px}.more-config-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 18px;padding:12px 0 9px;border-bottom:1px solid var(--ui-border)}.more-config-heading strong,.more-config-heading span{display:block}.more-config-heading strong{font-size:13px}.more-config-heading span{margin-top:3px;color:var(--ui-text-tertiary);font-size:11px}.more-config-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px}.more-config-grid .trade-ip-field{grid-column:1;grid-row:1}.more-config-grid .trade-tcp-field{grid-column:2;grid-row:1}.more-config-grid .trade-udp-field{grid-column:2;grid-row:2}.more-config-grid .query-ip-field{grid-column:1;grid-row:3}.more-config-grid .query-port-field{grid-column:2;grid-row:3}.database-steps{margin:-4px 0 22px;padding:0 40px}.database-selection-step{min-height:330px;padding:6px 0 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-subtle)}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:var(--ui-text-tertiary);font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:var(--ui-text-primary);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:var(--ui-text-secondary);font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:var(--ui-danger);font-size:12px}@media(max-width:767px){.resource-filters>*{width:100%!important}.filter-count{margin-left:0}.database-steps{padding:0}.database-selection-meta,.database-discovery-error{margin-left:0}.more-config-heading{align-items:flex-start}.more-config-grid{display:block}}
 </style>

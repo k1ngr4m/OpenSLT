@@ -110,7 +110,7 @@ onMounted(load)
             <el-table-column label="进度" width="145">
               <template #default="scope"><el-progress :percentage="scope.row.progress" :stroke-width="6" /></template>
             </el-table-column>
-            <el-table-column label="创建时间（北京时间）" width="190">
+            <el-table-column label="创建时间" width="190">
               <template #default="scope"><span class="table-time">{{ formatBeijingDateTime(scope.row.created_at) }}</span></template>
             </el-table-column>
           </el-table>

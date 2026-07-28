@@ -17,7 +17,7 @@ REPORT_TEMPLATE = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-
 <style>body{font-family:sans-serif;color:#1f2937;margin:32px}h1{color:#0f766e}table{border-collapse:collapse;width:100%}td,th{border:1px solid #d1d5db;padding:8px;text-align:left}.muted{color:#64748b}</style></head><body>
 <h1>OpenSLT 测速报告</h1><p class="muted">运行编号：{{ run.run_number }}</p>
 <table><tr><th>业务</th><td>{{ run.business_code }}</td><th>状态</th><td>{{ run.status }}</td></tr>
-<tr><th>开始时间（北京时间）</th><td>{{ format_time(run.started_at) if run.started_at else '-' }}</td><th>结束时间（北京时间）</th><td>{{ format_time(run.finished_at) if run.finished_at else '-' }}</td></tr></table>
+<tr><th>开始时间</th><td>{{ format_time(run.started_at) if run.started_at else '-' }}</td><th>结束时间</th><td>{{ format_time(run.finished_at) if run.finished_at else '-' }}</td></tr></table>
 <h2>步骤时间线</h2><table><tr><th>步骤</th><th>状态</th><th>耗时(ms)</th></tr>{% for step in run.steps %}<tr><td>{{ step.name }}</td><td>{{ step.status }}</td><td>{{ step.duration_ms or '-' }}</td></tr>{% endfor %}</table>
 <h2>统计指标</h2><table><tr><th>指标</th><th>值</th><th>单位</th></tr>{% for metric in run.metrics %}<tr><td>{{ metric.name }}</td><td>{{ '%.3f'|format(metric.value) }}</td><td>{{ metric.unit }}</td></tr>{% endfor %}</table>
 <h2>最终结论</h2><p>{{ run.verdict.final_result if run.verdict and run.verdict.final_result else '待复核' }}</p><p>{{ run.verdict.issue_description if run.verdict else '' }}</p><p>{{ run.verdict.notes if run.verdict else '' }}</p>
@@ -52,8 +52,8 @@ def generate_reports(db: Session, run: TestRun) -> typing.List[Artifact]:
     summary.append(["运行编号", run.run_number])
     summary.append(["业务", run.business_code])
     summary.append(["状态", run.status])
-    summary.append(["开始时间（北京时间）", format_beijing(run.started_at) if run.started_at else "-"])
-    summary.append(["结束时间（北京时间）", format_beijing(run.finished_at) if run.finished_at else "-"])
+    summary.append(["开始时间", format_beijing(run.started_at) if run.started_at else "-"])
+    summary.append(["结束时间", format_beijing(run.finished_at) if run.finished_at else "-"])
     metrics = workbook.create_sheet("指标")
     metrics.append(["指标", "值", "单位", "样本数"])
     for metric in run.metrics:

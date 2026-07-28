@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import posixpath
+import shlex
 import typing
 
+import asyncssh
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,11 +17,84 @@ from app.core.database import get_db
 from app.core.security import decrypt_secret, encrypt_secret
 from app.core.time import beijing_now
 from app.models import BusinessType, PlanResource, Resource, ResourceLock, RunResource, ScenarioResource, User, WorkflowVersionResource
-from app.schemas import ResourceOut, ResourceWrite
+from app.schemas import ResourceConnectionTestRequest, ResourceOut, ResourceWrite
 from app.services.audit import write_audit
-from app.services.order_sessions import ssh_options
 
 router = APIRouter()
+
+
+async def _check_ssh_resource(
+    *,
+    host: str,
+    port: int,
+    username: str,
+    password: typing.Union[str, None],
+    private_key: typing.Union[str, None],
+    resource_type: str,
+    remote_path: str,
+    capabilities: typing.Dict[str, typing.Any],
+) -> dict:
+    result = await ssh_adapter.check(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        private_key=private_key,
+    )
+    if not result["ok"] or resource_type != "order":
+        return result
+
+    binary = str((capabilities or {}).get("order_tool") or "").strip()
+    command = (
+        "command -v tmux >/dev/null 2>&1 && test -d {workdir} && test -x {binary}"
+    ).format(
+        workdir=shlex.quote(remote_path),
+        binary=shlex.quote(posixpath.join(remote_path, binary)),
+    )
+    options: typing.Dict[str, typing.Any] = {
+        "host": host,
+        "port": port,
+        "username": username,
+        "known_hosts": None,
+        "connect_timeout": 15,
+    }
+    if password:
+        options["password"] = password
+    if private_key:
+        options["client_keys"] = [asyncssh.import_private_key(private_key)]
+    async with asyncssh.connect(**options) as connection:
+        checked = await connection.run(command, check=False)
+    if checked.exit_status != 0:
+        return {"ok": False, "message": "发单资源缺少 tmux、工作目录或可执行程序"}
+    return result
+
+
+def _connection_test_credentials(
+    payload: ResourceConnectionTestRequest,
+    stored: typing.Union[Resource, None],
+) -> typing.Tuple[typing.Union[str, None], typing.Union[str, None]]:
+    password = payload.password or None
+    private_key = payload.private_key or None
+    if not stored:
+        return password, private_key
+
+    identity_matches = (
+        stored.host.strip().casefold() == payload.host.casefold()
+        and stored.ssh_port == payload.ssh_port
+        and stored.username.strip().casefold() == payload.username.casefold()
+        and stored.auth_type == payload.auth_type
+    )
+    if payload.auth_type == "password" and not password:
+        if identity_matches:
+            password = decrypt_secret(stored.encrypted_password)
+        elif stored.encrypted_password:
+            raise ValueError("SSH 连接信息已修改，请重新输入 SSH 密码")
+    if payload.auth_type == "private_key" and not private_key:
+        if identity_matches:
+            private_key = decrypt_secret(stored.encrypted_private_key)
+        elif stored.encrypted_private_key:
+            raise ValueError("SSH 连接信息已修改，请重新输入 SSH 私钥")
+    return password, private_key
 
 @router.get("/business-types")
 def list_business_types(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[dict]:
@@ -74,6 +150,46 @@ def delete_resource(resource_id: int, request: Request, actor: User = Depends(ad
     write_audit(db, "resource.delete", "resource", resource_id, actor, request, detail={"logical": bool(referenced)}); db.commit(); return Response(status_code=204)
 
 
+@router.post("/resources/connection-test")
+async def test_resource_connection(
+    payload: ResourceConnectionTestRequest,
+    request: Request,
+    actor: User = Depends(admin_only),
+    db: Session = Depends(get_db),
+) -> dict:
+    stored = None
+    if payload.resource_id is not None:
+        stored = db.get(Resource, payload.resource_id)
+        if not stored or stored.is_deleted:
+            raise not_found("资源")
+    try:
+        password, private_key = _connection_test_credentials(payload, stored)
+        result = await _check_ssh_resource(
+            host=payload.host,
+            port=payload.ssh_port,
+            username=payload.username,
+            password=password,
+            private_key=private_key,
+            resource_type=payload.resource_type,
+            remote_path=payload.remote_path,
+            capabilities=payload.capabilities,
+        )
+    except Exception as exc:
+        result = {"ok": False, "message": str(exc)}
+    write_audit(
+        db,
+        "resource.connection_test",
+        "resource",
+        payload.resource_id,
+        actor,
+        request,
+        result="success" if result["ok"] else "failed",
+        detail={"resource_type": payload.resource_type},
+    )
+    db.commit()
+    return result
+
+
 @router.post("/resources/{resource_id}/health")
 async def check_resource(resource_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> dict:
     resource = db.get(Resource, resource_id)
@@ -82,23 +198,16 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
         if resource.resource_type == "database":
             result = await mysql_adapter.health(resource)
         else:
-            result = await ssh_adapter.check(host=resource.host, port=resource.ssh_port, username=resource.username, password=decrypt_secret(resource.encrypted_password), private_key=decrypt_secret(resource.encrypted_private_key))
-            if result["ok"] and resource.resource_type == "order":
-                import asyncssh
-                import posixpath
-                import shlex
-
-                binary = str((resource.capabilities or {}).get("order_tool") or "").strip()
-                command = (
-                    "command -v tmux >/dev/null 2>&1 && test -d {workdir} && test -x {binary}"
-                ).format(
-                    workdir=shlex.quote(resource.remote_path),
-                    binary=shlex.quote(posixpath.join(resource.remote_path, binary)),
-                )
-                async with asyncssh.connect(**ssh_options(resource)) as connection:
-                    checked = await connection.run(command, check=False)
-                if checked.exit_status != 0:
-                    result = {"ok": False, "message": "发单资源缺少 tmux、工作目录或可执行程序"}
+            result = await _check_ssh_resource(
+                host=resource.host,
+                port=resource.ssh_port,
+                username=resource.username,
+                password=decrypt_secret(resource.encrypted_password),
+                private_key=decrypt_secret(resource.encrypted_private_key),
+                resource_type=resource.resource_type,
+                remote_path=resource.remote_path,
+                capabilities=resource.capabilities or {},
+            )
         resource.health_status = "healthy" if result["ok"] else "unhealthy"
     except Exception as exc:
         result = {"ok": False, "message": str(exc)}; resource.health_status = "unhealthy"

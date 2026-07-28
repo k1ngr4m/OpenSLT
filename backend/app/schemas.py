@@ -217,6 +217,27 @@ class ResourceOut(ORMModel):
     created_at: datetime
 
 
+class ResourceConnectionTestRequest(BaseModel):
+    resource_id: typing.Union[int, None] = Field(default=None, ge=1)
+    resource_type: Literal["rem", "market", "order", "slnic", "capture", "coco", "parser"]
+    host: str
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    username: str
+    auth_type: Literal["password", "private_key"] = "password"
+    password: typing.Union[str, None] = None
+    private_key: typing.Union[str, None] = None
+    remote_path: str = ""
+    capabilities: typing.Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_ssh_connection(self) -> "ResourceConnectionTestRequest":
+        self.host = self.host.strip()
+        self.username = self.username.strip()
+        if not self.host or not self.username:
+            raise ValueError("SSH 地址和用户名不能为空")
+        return self
+
+
 class DatabaseDiscoveryRequest(BaseModel):
     resource_id: typing.Union[int, None] = Field(default=None, ge=1)
     database_connection_mode: Literal["direct", "ssh_tunnel"] = "direct"
