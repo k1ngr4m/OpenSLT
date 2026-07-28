@@ -19,6 +19,7 @@ from app.workflow_node_configs import (
     SlnicStopConfig,
     WiringConfirmationConfig,
 )
+from app.wiring_profiles import RemWiringProfile
 
 
 class ORMModel(BaseModel):
@@ -98,12 +99,15 @@ class ResourceWrite(BaseModel):
     database_tls_enabled: bool = False
     remote_path: str = ""
     capabilities: typing.Dict[str, Any] = Field(default_factory=dict)
+    wiring_profile: typing.Union[RemWiringProfile, None] = None
     version_info: str = ""
     notes: str = ""
     is_enabled: bool = True
 
     @model_validator(mode="after")
     def validate_connection(self) -> "ResourceWrite":
+        if self.resource_type != "rem":
+            self.wiring_profile = None
         if self.resource_type != "database":
             if not self.host.strip() or not self.username.strip():
                 raise ValueError("SSH 地址和用户名不能为空")
@@ -161,6 +165,7 @@ class ResourceOut(ORMModel):
     has_database_password: bool
     remote_path: str
     capabilities: typing.Dict[str, Any]
+    wiring_profile: typing.Union[RemWiringProfile, None]
     version_info: str
     notes: str
     is_enabled: bool

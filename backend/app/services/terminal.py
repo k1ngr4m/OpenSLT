@@ -6,7 +6,7 @@ import posixpath
 import shlex
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from uuid import uuid4
 
 import asyncssh
@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import SessionLocal
 from app.core.logging import trace_id_ctx
 from app.core.security import CredentialSecretError, decode_token, decrypt_secret
+from app.core.time import beijing_now
 from app.models import Resource, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, User
 from app.services.audit import write_audit
 from app.services.events import broker
@@ -212,7 +213,7 @@ def _dispatch_slnic_terminal_command(
     if not resource.remote_path.strip():
         return None, _workflow_command_error("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径")
 
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
     action = str(command_meta["action"])
     command = f"cd {shlex.quote(workdir)} && {command_meta['script']}"
@@ -296,7 +297,7 @@ async def _dispatch_order_preparation_command(
     if not order_resource or order_resource.id != resource.id:
         return None, _workflow_command_error("INVALID_RESOURCE", "当前发单资源不属于该运行")
 
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     if retrying:
         step.retry_count += 1
     transition_step(step, "running")
@@ -324,7 +325,7 @@ async def _dispatch_order_preparation_command(
         if not command:
             raise WorkflowError("ORDER_COMMAND_EMPTY", "发单命令为空", 409)
     except Exception as exc:
-        failed_at = datetime.now(timezone.utc)
+        failed_at = beijing_now()
         message = getattr(exc, "message", str(exc))
         code = getattr(exc, "code", "ORDER_PREPARATION_FAILED")
         transition_step(step, "failed")
@@ -350,7 +351,7 @@ async def _dispatch_order_preparation_command(
         broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
         return None, _workflow_command_error(code, message)
 
-    dispatched_at = datetime.now(timezone.utc)
+    dispatched_at = beijing_now()
     transition_step(step, "waiting")
     step.progress = 100
     step.finished_at = None
@@ -533,7 +534,7 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, actor_id
 
 async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token: str) -> None:
     trace_token = trace_id_ctx.set(str(uuid4()))
-    started_at = datetime.now(timezone.utc)
+    started_at = beijing_now()
     actor_id: typing.Union[int, None] = None
     resource: typing.Union[TerminalResource, None] = None
     opened = False
@@ -591,7 +592,7 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
         await _close(websocket)
     finally:
         if opened and actor_id is not None and resource is not None:
-            duration_ms = max(0, int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000))
+            duration_ms = max(0, int((beijing_now() - started_at).total_seconds() * 1000))
             _audit(
                 websocket,
                 actor_id,

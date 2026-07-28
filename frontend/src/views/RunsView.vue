@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { ApiPlan, ApiResource, ApiScenario } from '@/types/api'
 import type { RunDetail } from '@/types/run'
 import { businessText, resourceText } from '@/utils/status'
+import { formatBeijingDateTime } from '@/utils/time'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const auth = useAuthStore()
@@ -110,10 +111,6 @@ function resourceOptionLabel(resource: ApiResource) {
   return `${resource.name}  |  ${location || '无地址'}  |  ${health}`
 }
 
-function formatTime(value: string) {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
-
 async function copyRunNumber(value: string) {
   await navigator.clipboard.writeText(value)
   ElMessage.success(`已复制运行编号 ${value}`)
@@ -197,7 +194,7 @@ onMounted(async () => {
         <el-table-column label="方案 / 场景" min-width="210"><template #default="scope"><strong>{{ scope.row.config_snapshot?.plan?.name || '-' }}</strong><small class="muted">{{ scope.row.config_snapshot?.scenario?.name || '-' }}</small></template></el-table-column>
         <el-table-column label="状态" width="145"><template #default="scope"><StatusBadge :status="scope.row.status" show-raw /></template></el-table-column>
         <el-table-column label="进度" width="165"><template #default="scope"><el-progress :percentage="scope.row.progress" :stroke-width="6" /></template></el-table-column>
-        <el-table-column label="创建时间" width="175"><template #default="scope"><span class="table-time">{{ formatTime(scope.row.created_at) }}</span></template></el-table-column>
+        <el-table-column label="创建时间（北京时间）" width="190"><template #default="scope"><span class="table-time">{{ formatBeijingDateTime(scope.row.created_at) }}</span></template></el-table-column>
         <el-table-column label="操作" width="86" fixed="right"><template #default="scope"><el-button link type="primary" @click.stop="router.push(`/runs/${scope.row.id}`)">查看</el-button></template></el-table-column>
       </el-table>
       <div v-if="!loading && !runs.length" class="empty-state"><div><strong>尚无测速运行</strong><span>选择方案、场景和资源后即可创建第一条运行。</span><br><el-button v-if="auth.canOperate" class="empty-action" type="primary" @click="open">创建运行</el-button></div></div>

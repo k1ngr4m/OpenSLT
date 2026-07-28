@@ -32,6 +32,7 @@ def ensure_portable_environment(root: Path) -> None:
             "\n".join(
                 [
                     "ENVIRONMENT=portable",
+                    "TZ=Asia/Shanghai",
                     "PORTABLE_MODE=true",
                     "ENABLE_INTERNAL_SCHEDULER=true",
                     "DATABASE_URL=sqlite:///./data/openslt.sqlite3",
@@ -50,6 +51,7 @@ def ensure_portable_environment(root: Path) -> None:
             encoding="utf-8",
         )
     os.environ.setdefault("PORTABLE_MODE", "true")
+    os.environ.setdefault("TZ", "Asia/Shanghai")
     os.environ.setdefault("ENABLE_INTERNAL_SCHEDULER", "true")
     if getattr(sys, "frozen", False):
         bundle_root = Path(getattr(sys, "_MEIPASS")).resolve()

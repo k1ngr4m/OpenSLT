@@ -7,7 +7,6 @@ import shlex
 import tempfile
 import typing
 from contextlib import suppress
-from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -19,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.adapters.database import DatabaseOperationError, mysql_adapter, validate_database
 from app.core.compat import to_thread
 from app.core.config import settings
+from app.core.time import beijing_now
 from app.models import Artifact, Resource, RunStep, ScenarioWorkflowNode, TestRun
 from app.services.order_configs import parser_main_config_filename
 from app.services.workflow_capture import _ssh_options, capture_database, capture_server, preview_node
@@ -364,7 +364,7 @@ async def execute_parser_node(
     output_artifacts: list[Artifact] = []
     stdout = ""
     stderr = ""
-    started_at = datetime.now(timezone.utc)
+    started_at = beijing_now()
 
     with tempfile.TemporaryDirectory(prefix="openslt-parser-") as temporary_name:
         staging = Path(temporary_name)
@@ -433,7 +433,7 @@ async def execute_parser_node(
 
     if not output_artifacts:
         raise WorkflowError("PARSER_OUTPUT_MISSING", "解析节点没有产生 CSV 产物", 409)
-    duration_ms = int((datetime.now(timezone.utc) - started_at).total_seconds() * 1000)
+    duration_ms = int((beijing_now() - started_at).total_seconds() * 1000)
     return {
         "resource_id": parser_resource.id,
         "database_name": database_name,

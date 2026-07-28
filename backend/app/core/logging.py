@@ -13,6 +13,7 @@ from uuid import uuid4
 import structlog
 
 from app.core.config import settings
+from app.core.time import beijing_now
 
 trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="")
 
@@ -47,11 +48,18 @@ def add_context(_: Any, __: str, event_dict: typing.Dict[str, Any]) -> typing.Di
     return {key: redact(value) for key, value in event_dict.items()}
 
 
+def add_beijing_timestamp(
+    _: Any, __: str, event_dict: typing.Dict[str, Any]
+) -> typing.Dict[str, Any]:
+    event_dict.setdefault("timestamp", beijing_now().isoformat(timespec="milliseconds"))
+    return event_dict
+
+
 def configure_logging() -> None:
     shared = [
         structlog.contextvars.merge_contextvars,
         add_context,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
+        add_beijing_timestamp,
         structlog.processors.add_log_level,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,

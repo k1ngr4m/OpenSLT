@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import typing
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
@@ -13,6 +12,7 @@ from app.api.deps import admin_only, get_current_user, operators
 from app.api.routes.common import not_found
 from app.core.database import get_db
 from app.core.security import decrypt_secret, encrypt_secret
+from app.core.time import beijing_now
 from app.models import BusinessType, PlanResource, Resource, ResourceLock, RunResource, ScenarioResource, User, WorkflowVersionResource
 from app.schemas import ResourceOut, ResourceWrite
 from app.services.audit import write_audit
@@ -33,7 +33,7 @@ def list_resources(business_code: typing.Union[str, None] = None, resource_type:
 
 @router.post("/resources", response_model=ResourceOut, status_code=201)
 def create_resource(payload: ResourceWrite, request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> Resource:
-    data = payload.model_dump(exclude={"password", "private_key", "database_password"})
+    data = payload.model_dump(mode="json", exclude={"password", "private_key", "database_password"})
     resource = Resource(
         **data,
         encrypted_password=encrypt_secret(payload.password),
@@ -47,7 +47,7 @@ def create_resource(payload: ResourceWrite, request: Request, actor: User = Depe
 def update_resource(resource_id: int, payload: ResourceWrite, request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> Resource:
     resource = db.get(Resource, resource_id)
     if not resource or resource.is_deleted: raise not_found("资源")
-    data = payload.model_dump(exclude={"password", "private_key", "database_password"})
+    data = payload.model_dump(mode="json", exclude={"password", "private_key", "database_password"})
     for key, value in data.items(): setattr(resource, key, value)
     if payload.password: resource.encrypted_password = encrypt_secret(payload.password)
     if payload.private_key: resource.encrypted_private_key = encrypt_secret(payload.private_key)
@@ -84,4 +84,4 @@ async def check_resource(resource_id: int, request: Request, actor: User = Depen
         resource.health_status = "healthy" if result["ok"] else "unhealthy"
     except Exception as exc:
         result = {"ok": False, "message": str(exc)}; resource.health_status = "unhealthy"
-    resource.health_checked_at = datetime.now(timezone.utc); write_audit(db, "resource.health_check", "resource", resource.id, actor, request, result="success" if result["ok"] else "failed"); db.commit(); return result
+    resource.health_checked_at = beijing_now(); write_audit(db, "resource.health_check", "resource", resource.id, actor, request, result="success" if result["ok"] else "failed"); db.commit(); return result

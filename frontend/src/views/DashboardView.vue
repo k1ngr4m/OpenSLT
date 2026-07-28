@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { ApiResource } from '@/types/api'
 import type { RunDetail } from '@/types/run'
 import { businessText } from '@/utils/status'
+import { formatBeijingDateTime } from '@/utils/time'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const router = useRouter()
@@ -24,10 +25,6 @@ const healthy = computed(() => resources.value.filter(resource => resource.healt
 const unhealthyResources = computed(() => resources.value.filter(resource => resource.is_enabled && resource.health_status && resource.health_status !== 'healthy'))
 const attentionRuns = computed(() => runs.value.filter(run => run.status.includes('awaiting') || run.status.includes('failed') || run.status === 'timed_out').slice(0, 5))
 const recentRuns = computed(() => [...runs.value].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 8))
-
-function formatTime(value: string) {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
 
 function healthText(value?: string | null) {
   return value === 'healthy' ? '健康' : value === 'unhealthy' ? '异常' : '未知'
@@ -113,8 +110,8 @@ onMounted(load)
             <el-table-column label="进度" width="145">
               <template #default="scope"><el-progress :percentage="scope.row.progress" :stroke-width="6" /></template>
             </el-table-column>
-            <el-table-column label="创建时间" width="168">
-              <template #default="scope"><span class="table-time">{{ formatTime(scope.row.created_at) }}</span></template>
+            <el-table-column label="创建时间（北京时间）" width="190">
+              <template #default="scope"><span class="table-time">{{ formatBeijingDateTime(scope.row.created_at) }}</span></template>
             </el-table-column>
           </el-table>
           <div v-if="!recentRuns.length" class="empty-state">

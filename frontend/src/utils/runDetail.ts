@@ -1,4 +1,5 @@
 import type { ContractFilePreview, JsonMap } from '@/types/run'
+import { formatBeijingDateTime, formatBeijingTime } from '@/utils/time'
 
 export const nodeTypeText: Record<string, string> = {
   server_config: '服务器配置',
@@ -43,11 +44,11 @@ export function optionalNumber(value: unknown) {
 }
 
 export function formatDate(value?: string | null) {
-  return value ? new Date(value).toLocaleString() : '-'
+  return formatBeijingDateTime(value)
 }
 
 export function formatTime(value?: string | null) {
-  return value ? new Date(value).toLocaleTimeString() : '--:--:--'
+  return formatBeijingTime(value)
 }
 
 export function formatDuration(value?: number | null) {

@@ -62,6 +62,21 @@ export function useRunStepPresentation(
       ]
     }
     if (step.node_type === 'wiring_confirmation') {
+      const snapshot = isJsonMap(config.wiring_snapshot) ? config.wiring_snapshot : null
+      const rem = snapshot && isJsonMap(snapshot.rem) ? snapshot.rem : null
+      const slnic = snapshot && isJsonMap(snapshot.slnic) ? snapshot.slnic : null
+      const clientInterface = snapshot && isJsonMap(snapshot.client_interface) ? snapshot.client_interface : null
+      const marketInterface = snapshot && isJsonMap(snapshot.market_interface) ? snapshot.market_interface : null
+      if (snapshot) {
+        return [
+          { label: '拓扑类型', value: stringValue(snapshot.model_label) },
+          { label: 'REM 柜台', value: `${stringValue(rem?.name)} (${stringValue(rem?.host)})` },
+          { label: '客户端接口', value: `${stringValue(clientInterface?.name)} / ${stringValue(clientInterface?.ip_address)}`, mono: true },
+          { label: '市场端接口', value: `${stringValue(marketInterface?.name)} / ${stringValue(marketInterface?.ip_address)}`, mono: true },
+          { label: 'SLNIC 节点', value: `${stringValue(slnic?.name)} (${stringValue(slnic?.host)})` },
+          { label: '确认要求', value: '查看动态接线图后人工确认' },
+        ]
+      }
       return [
         { label: '接线图', value: stringValue(config.diagram, stringValue(selectedResult.value.diagram, 'placeholder')) },
         { label: '确认要求', value: stringValue(config.instructions, '等待现场确认链路连接') },

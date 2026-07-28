@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import typing
-from datetime import datetime, timezone
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -13,6 +12,7 @@ from app.api.routes.common import not_found
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import create_access_token, create_refresh_token, decode_token, hash_password, token_fingerprint, verify_password
+from app.core.time import beijing_now, from_unix_timestamp
 from app.models import RefreshToken, User
 from app.schemas import LoginRequest, RefreshRequest, TokenPair, UserCreate, UserOut, UserUpdate
 from app.services.audit import write_audit
@@ -29,8 +29,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     access = create_access_token(user.id, user.role)
     refresh = create_refresh_token(user.id)
     decoded = decode_token(refresh, "refresh")
-    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(refresh), expires_at=datetime.fromtimestamp(decoded["exp"], timezone.utc)))
-    user.last_login_at = datetime.now(timezone.utc)
+    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(refresh), expires_at=from_unix_timestamp(decoded["exp"])))
+    user.last_login_at = beijing_now()
     write_audit(db, "login", "user", user.id, user, request)
     db.commit()
     return TokenPair(access_token=access, refresh_token=refresh, expires_in=settings.jwt_access_minutes * 60)
@@ -44,13 +44,13 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair
         user = db.get(User, int(decoded["sub"]))
     except (jwt.InvalidTokenError, KeyError, ValueError):
         stored = user = None
-    now = datetime.now(timezone.utc)
-    if not stored or stored.revoked_at or stored.expires_at.replace(tzinfo=timezone.utc) <= now or not user or not user.is_active:
+    now = beijing_now()
+    if not stored or stored.revoked_at or stored.expires_at <= now or not user or not user.is_active:
         raise HTTPException(status_code=401, detail={"code": "INVALID_REFRESH_TOKEN", "message": "刷新令牌无效"})
     stored.revoked_at = now
     new_refresh = create_refresh_token(user.id)
     new_decoded = decode_token(new_refresh, "refresh")
-    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(new_refresh), expires_at=datetime.fromtimestamp(new_decoded["exp"], timezone.utc)))
+    db.add(RefreshToken(user_id=user.id, fingerprint=token_fingerprint(new_refresh), expires_at=from_unix_timestamp(new_decoded["exp"])))
     db.commit()
     return TokenPair(access_token=create_access_token(user.id, user.role), refresh_token=new_refresh, expires_in=settings.jwt_access_minutes * 60)
 
@@ -59,7 +59,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair
 def logout(payload: RefreshRequest, request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
     stored = db.scalar(select(RefreshToken).where(RefreshToken.fingerprint == token_fingerprint(payload.refresh_token)))
     if stored and stored.user_id == user.id:
-        stored.revoked_at = datetime.now(timezone.utc)
+        stored.revoked_at = beijing_now()
     write_audit(db, "logout", "user", user.id, user, request)
     db.commit()
     return Response(status_code=204)
@@ -93,4 +93,3 @@ def update_user(user_id: int, payload: UserUpdate, request: Request, actor: User
     if password: user.password_hash = hash_password(password)
     for key, value in data.items(): setattr(user, key, value)
     write_audit(db, "user.update", "user", user.id, actor, request, detail={"fields": sorted(payload.model_fields_set)}); db.commit(); return user
-

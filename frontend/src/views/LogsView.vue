@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import { Download, RefreshRight, Search, CopyDocument } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiAuditLog, ApiLog } from '@/types/api'
+import { formatBeijingDateTime } from '@/utils/time'
 
 const auth = useAuthStore()
 const tab = ref('logs')
@@ -93,7 +94,7 @@ onMounted(load)
             <el-button type="primary" :loading="loading" @click="load">查询</el-button>
           </div>
           <el-table :data="rows" v-loading="loading" height="calc(100dvh - 322px)" empty-text="没有符合条件的日志" class="log-table">
-            <el-table-column label="UTC 时间" width="185"><template #default="scope"><time class="mono table-time">{{ new Date(scope.row.created_at).toISOString().replace('T',' ').slice(0,23) }}</time></template></el-table-column>
+            <el-table-column label="北京时间" width="195"><template #default="scope"><time class="mono table-time">{{ formatBeijingDateTime(scope.row.created_at, { milliseconds: true }) }}</time></template></el-table-column>
             <el-table-column label="级别" width="95"><template #default="scope"><el-tag :type="levelType(scope.row.level)" effect="plain" size="small">{{ scope.row.level }}</el-tag></template></el-table-column>
             <el-table-column label="类型" width="105"><template #default="scope">{{ logTypeText[scope.row.log_type] || scope.row.log_type }}</template></el-table-column>
             <el-table-column prop="source" label="来源" width="110" show-overflow-tooltip />
@@ -106,7 +107,7 @@ onMounted(load)
         <el-tab-pane v-if="auth.isAdmin" label="审计日志" name="audit">
           <div class="audit-note"><div><strong>不可变审计记录</strong><span>导出行为本身也会写入审计日志</span></div><el-button :icon="Download" @click="exportAudit">导出 CSV</el-button></div>
           <el-table :data="audit" v-loading="loading" height="calc(100dvh - 292px)" empty-text="暂无审计日志">
-            <el-table-column label="UTC 时间" width="185"><template #default="scope"><time class="mono table-time">{{ new Date(scope.row.created_at).toISOString().replace('T',' ').slice(0,23) }}</time></template></el-table-column>
+            <el-table-column label="北京时间" width="195"><template #default="scope"><time class="mono table-time">{{ formatBeijingDateTime(scope.row.created_at, { milliseconds: true }) }}</time></template></el-table-column>
             <el-table-column prop="actor_id" label="操作者" width="90" />
             <el-table-column prop="action" label="动作" min-width="150" />
             <el-table-column prop="object_type" label="对象类型" min-width="120" />

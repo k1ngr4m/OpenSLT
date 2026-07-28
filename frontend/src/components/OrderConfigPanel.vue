@@ -7,6 +7,7 @@ import { api, errorMessage } from '@/api/client'
 import OrderConfigNodeEditor from '@/components/OrderConfigNodeEditor.vue'
 import type { OrderConfigDetail, OrderConfigFile, XmlNode } from '@/types/orderConfig'
 import { formatBytes, parseDocument, prepareTree, serializeDocument } from '@/utils/orderConfigXml'
+import { formatBeijingDateTime, formatBeijingFilenameStamp } from '@/utils/time'
 
 const props = defineProps<{ resourceId: number; active: boolean; resourceType?: 'order' | 'parser' }>()
 const loaded = ref(false)
@@ -186,8 +187,7 @@ async function save() {
 }
 
 function suggestedName() {
-  const now = new Date()
-  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
+  const stamp = formatBeijingFilenameStamp()
   return `${prefix.value}-scenario-${stamp}.xml`
 }
 
@@ -291,7 +291,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
       <div v-else class="file-list">
         <button v-for="file in filteredFiles" :key="file.name" type="button" class="file-item" :class="{ active: file.name === selectedName }" @click="selectFile(file.name)">
           <el-icon><Document /></el-icon>
-          <span><strong>{{ file.name }}</strong><small>{{ formatBytes(file.size) }} · {{ new Date(file.modified_at).toLocaleString() }}</small></span>
+          <span><strong>{{ file.name }}</strong><small>{{ formatBytes(file.size) }} · {{ formatBeijingDateTime(file.modified_at) }}</small></span>
         </button>
       </div>
       <el-button :icon="Plus" class="create-button" :disabled="!files.length" @click="openCreate">复制新建配置</el-button>
@@ -306,7 +306,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
         <div class="editor-toolbar">
           <div class="file-title">
             <div><strong class="mono">{{ selectedName }}</strong><el-tag v-if="dirty" type="warning" effect="plain">未保存</el-tag></div>
-            <small>{{ formatBytes(size) }} · {{ modifiedAt ? new Date(modifiedAt).toLocaleString() : '' }} · <span class="mono">{{ checksum.slice(0, 12) }}</span></small>
+            <small>{{ formatBytes(size) }} · {{ modifiedAt ? formatBeijingDateTime(modifiedAt) : '' }} · <span class="mono">{{ checksum.slice(0, 12) }}</span></small>
           </div>
           <div class="editor-actions">
             <el-button :icon="CopyDocument" :disabled="!selectedName" @click="openCreate">复制</el-button>

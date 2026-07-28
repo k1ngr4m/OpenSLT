@@ -74,11 +74,14 @@ chmod +x ./start-web.sh
 复制 `.env.example` 为 `.env` 后按环境调整配置。常用配置包括：
 
 ```text
+TZ=Asia/Shanghai
 DATABASE_URL=sqlite:///./backend/data/openslt.sqlite3
 ENABLE_INTERNAL_SCHEDULER=true
 HOST=127.0.0.1
 PORT=8000
 ```
+
+OpenSLT 自身产生的 API、页面、日志、报表和导出时间统一使用北京时间（UTC+08:00）；数据库中的时间仍按 UTC 保存，不需要迁移历史数据。
 
 任务调度默认由 FastAPI 进程内置循环承担，不需要外部消息队列或独立任务进程。生产环境建议使用 MySQL 8 和独立非 root 用户。JWT 签名密钥与资源凭据加密密钥会在未显式配置时自动生成，并持久保存在数据目录下；也可以通过 `CREDENTIAL_ENCRYPTION_KEY` 显式配置由 `Fernet.generate_key()` 生成的固定密钥。请在资源管理中配置并验证 REM、模拟市场、发单工具、SLNIC、解析工具和 MySQL 资源后再运行自动化任务。
 

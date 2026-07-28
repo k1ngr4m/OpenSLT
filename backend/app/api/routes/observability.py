@@ -41,7 +41,7 @@ def list_audit_logs(action: typing.Union[str, None] = None, object_type: typing.
 
 @router.get("/audit-logs/export")
 def export_audit_logs(request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> StreamingResponse:
-    rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc())).all(); output = io.StringIO(); writer = csv.writer(output); writer.writerow(["id", "time_utc", "actor_id", "action", "object_type", "object_id", "result", "trace_id"])
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc())).all(); output = io.StringIO(); writer = csv.writer(output); writer.writerow(["id", "time_beijing", "actor_id", "action", "object_type", "object_id", "result", "trace_id"])
     for row in rows: writer.writerow([row.id, row.created_at.isoformat(), row.actor_id, row.action, row.object_type, row.object_id, row.result, row.trace_id])
     write_audit(db, "audit.export", "audit_log", None, actor, request, detail={"count": len(rows)}); db.commit(); return StreamingResponse(iter([output.getvalue().encode("utf-8-sig")]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=audit-logs.csv"})
 
@@ -53,4 +53,3 @@ def download_artifact(artifact_id: int, request: Request, user: User = Depends(g
     path = Path(artifact.path).resolve(); root = settings.artifact_root.resolve()
     if root not in path.parents or not path.is_file(): raise not_found("产物文件")
     write_audit(db, "artifact.download", "artifact", artifact.id, user, request); db.commit(); return FileResponse(path, media_type=artifact.content_type, filename=artifact.name)
-

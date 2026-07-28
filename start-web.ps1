@@ -5,6 +5,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$env:TZ = "Asia/Shanghai"
 
 $ProjectRoot = $PSScriptRoot
 $FrontendRoot = Join-Path $ProjectRoot "frontend"

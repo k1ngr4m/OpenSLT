@@ -6,7 +6,7 @@ import re
 import typing
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import AsyncIterator
 from uuid import uuid4
 from xml.dom import Node, minidom
@@ -15,6 +15,7 @@ from xml.parsers.expat import ExpatError
 import asyncssh
 
 from app.core.security import decrypt_secret
+from app.core.time import beijing_now, from_unix_timestamp
 from app.models import Resource
 
 
@@ -401,7 +402,7 @@ async def _write_remote_file(
 
 
 def _modified_at(value: typing.Union[int, None]) -> datetime:
-    return datetime.fromtimestamp(value or 0, timezone.utc)
+    return from_unix_timestamp(value or 0)
 
 
 class OrderConfigService:
@@ -474,7 +475,7 @@ class OrderConfigService:
                 content, attrs = await _read_remote_file(sftp, context, source_name)
                 parse_xml(content)
                 await _write_remote_file(sftp, context, name, content, attrs.permissions, replace=False)
-            return config_detail(context, name, content, datetime.now(timezone.utc))
+            return config_detail(context, name, content, beijing_now())
         except OrderConfigError:
             raise
         except (asyncssh.Error, OSError) as exc:
@@ -490,7 +491,7 @@ class OrderConfigService:
                 if checksum(current) != expected_checksum:
                     raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
                 await _write_remote_file(sftp, context, filename, content, attrs.permissions, replace=True)
-            return config_detail(context, filename, content, datetime.now(timezone.utc))
+            return config_detail(context, filename, content, beijing_now())
         except OrderConfigError:
             raise
         except (asyncssh.Error, OSError) as exc:
@@ -511,7 +512,7 @@ class OrderConfigService:
                 if await sftp.exists(_path(context, new_name)):
                     raise OrderConfigError("ORDER_CONFIG_NAME_CONFLICT", "配置文件名已存在", 409)
                 await sftp.rename(_path(context, filename), _path(context, new_name))
-            return config_detail(context, new_name, current, datetime.now(timezone.utc))
+            return config_detail(context, new_name, current, beijing_now())
         except OrderConfigError:
             raise
         except (asyncssh.Error, OSError) as exc:
@@ -527,7 +528,7 @@ class OrderConfigService:
                     raise OrderConfigError("ORDER_CONFIG_CHANGED", "配置已被其他用户修改，请重新加载", 409)
                 trash_directory = _path(context, TRASH_DIRECTORY)
                 await sftp.makedirs(trash_directory, exist_ok=True)
-                timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+                timestamp = beijing_now().strftime("%Y%m%dT%H%M%S")
                 trash_name = f"{timestamp}-{uuid4().hex[:8]}-{filename}"
                 await sftp.rename(_path(context, filename), posixpath.join(trash_directory, trash_name))
                 return trash_name

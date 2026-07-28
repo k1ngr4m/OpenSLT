@@ -18,6 +18,7 @@ from app.services.resource_relations import (
     sync_workflow_resources,
     workflow_resource_ids,
 )
+from app.wiring_profiles import build_wiring_snapshot
 
 SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
 NODE_TYPES = {
@@ -182,6 +183,19 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 errors.append({**prefix, "field": "database_name", "message": "配置数据库不在资源白名单中"})
             if not keys or any(key not in GLOBAL_SETTING_KEYS for key in keys):
                 errors.append({**prefix, "field": "keys", "message": "至少选择一个受支持的配置项"})
+        elif node.node_type == "wiring_confirmation":
+            if str(config.get("diagram") or "placeholder") == "resource":
+                rem_resource = resources.get("rem")
+                slnic_resource = resources.get("slnic")
+                if not rem_resource:
+                    errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定 REM 柜台"})
+                if not slnic_resource:
+                    errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定 SLNIC 节点"})
+                if rem_resource and slnic_resource:
+                    try:
+                        build_wiring_snapshot(rem_resource, slnic_resource, scenario.plan.business_code)
+                    except (KeyError, ValueError):
+                        errors.append({**prefix, "field": "wiring_profile", "message": "REM 接线配置不完整或 IP 格式无效"})
         elif node.node_type == "order_preparation":
             if "order" not in resources:
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少发单工具资源"})

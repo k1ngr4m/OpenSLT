@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
+export TZ=Asia/Shanghai
 
 SCRIPT_DIR="$(dirname -- "$0")"
 cd -- "$SCRIPT_DIR"

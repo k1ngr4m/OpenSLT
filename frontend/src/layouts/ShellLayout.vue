@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { formatBeijingDateTime } from '@/utils/time'
 import {
   DataAnalysis,
   Monitor,
@@ -40,10 +41,7 @@ const activePath = computed(() => {
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
   return ['/dashboard', '/runs', '/plans', '/resources', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
-const utcText = computed(() => {
-  const parts = now.value.toISOString().replace('T', ' ').slice(0, 19)
-  return `${parts} UTC`
-})
+const beijingText = computed(() => `${formatBeijingDateTime(now.value)} 北京时间`)
 
 function syncViewport() {
   isMobile.value = window.innerWidth < 768
@@ -163,12 +161,8 @@ onBeforeUnmount(() => {
               <el-icon><Expand v-if="collapsed || isMobile" /><Fold v-else /></el-icon>
             </el-button>
           </el-tooltip>
-          <div class="service-health" role="status">
-            <el-icon><CircleCheck /></el-icon>
-            <span>系统服务正常</span>
-          </div>
         </div>
-        <time class="utc-time mono" :datetime="now.toISOString()">{{ utcText }}</time>
+        <time class="beijing-time mono" :datetime="now.toISOString()">{{ beijingText }}</time>
       </header>
       <main id="main-content" class="main" tabindex="-1">
         <router-view />
@@ -207,9 +201,9 @@ nav{min-height:0;flex:1;overflow:auto}
 .nav-toggle{color:var(--ui-text-secondary)}
 .service-health{gap:7px;color:var(--ui-success);font-size:12px;font-weight:500}
 .service-health .el-icon{font-size:15px}
-.utc-time{color:var(--ui-text-tertiary);font-size:11px}
+.beijing-time{color:var(--ui-text-tertiary);font-size:11px}
 .main{min-width:0;flex:1;outline:none}
 .nav-scrim{position:fixed;z-index:25;inset:0;border:0;background:rgba(5,25,29,.5)}
 @media(max-width:1199px){.topbar{padding-inline:16px}}
-@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{padding-inline:12px}.utc-time{font-size:10px}.service-health span{display:none}}
+@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{padding-inline:12px}.beijing-time{font-size:10px}.service-health span{display:none}}
 </style>

@@ -4,7 +4,7 @@ import asyncio
 import os
 import socket
 import typing
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import and_, or_, select, update
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import logger, redact
+from app.core.time import beijing_now
 from app.models import DurableTask, TestRun
 from app.services.run_state import TERMINAL_RUN_STATUSES
 
@@ -40,7 +41,7 @@ def enqueue_task(
         if reactivate and existing.status in {"succeeded", "failed"}:
             existing.status = "queued"
             existing.attempts = 0
-            existing.available_at = available_at or datetime.now(timezone.utc)
+            existing.available_at = available_at or beijing_now()
             existing.lease_expires_at = None
             existing.locked_by = None
             existing.last_error = None
@@ -52,7 +53,7 @@ def enqueue_task(
         payload=dict(payload),
         idempotency_key=idempotency_key,
         max_attempts=max_attempts,
-        available_at=available_at or datetime.now(timezone.utc),
+        available_at=available_at or beijing_now(),
     )
     db.add(task)
     db.flush()
@@ -80,7 +81,7 @@ def claim_task(
     worker_id: str = WORKER_ID,
     lease_seconds: typing.Optional[int] = None,
 ) -> bool:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     lease = lease_seconds or settings.task_lease_seconds
     result = db.execute(
         update(DurableTask)
@@ -104,7 +105,7 @@ def claim_due_tasks(
     limit: int = 20,
     worker_id: str = WORKER_ID,
 ) -> typing.List[int]:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     candidate_ids = list(
         db.scalars(
             select(DurableTask.id)
@@ -130,14 +131,14 @@ def renew_task_lease(
             DurableTask.status == "running",
             DurableTask.locked_by == worker_id,
         )
-        .values(lease_expires_at=datetime.now(timezone.utc) + timedelta(seconds=lease))
+        .values(lease_expires_at=beijing_now() + timedelta(seconds=lease))
     )
     db.commit()
     return result.rowcount == 1
 
 
 def recover_abandoned_tasks(db: Session) -> int:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     result = db.execute(
         update(DurableTask)
         .where(
@@ -251,7 +252,7 @@ async def execute_claimed_task(task_id: int, worker_id: str = WORKER_ID) -> None
         task = db.get(DurableTask, task_id)
         if not task or task.status != "running" or task.locked_by != worker_id:
             return
-        now = datetime.now(timezone.utc)
+        now = beijing_now()
         if error is None:
             task.status = "succeeded"
             task.finished_at = now

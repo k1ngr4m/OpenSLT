@@ -6,13 +6,14 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any
 
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
+from app.core.time import beijing_now
 
 
 def hash_password(password: str) -> str:
@@ -35,7 +36,7 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def create_token(subject: str, token_type: str, expires_delta: timedelta, **claims: Any) -> str:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     payload = {
         "sub": subject,
         "type": token_type,

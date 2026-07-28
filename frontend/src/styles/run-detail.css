@@ -190,82 +190,6 @@
   font: 12px/1.6 "Cascadia Code", Consolas, monospace;
 }
 
-.wiring-run {
-  display: grid;
-  grid-template-columns: 1fr minmax(90px, .7fr) 1fr minmax(90px, .7fr) 1fr;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  margin: 10px 0 4px;
-  border: 1px solid #e3efeb;
-  border-radius: 8px;
-  background: #f8fbfa;
-}
-
-.wiring-device {
-  display: flex;
-  min-height: 76px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #9bc8bd;
-  border-left: 4px solid #269a82;
-  border-radius: 8px;
-  background: #f3faf8;
-}
-
-.wiring-device.market {
-  border-color: #b7c9dd;
-  border-left-color: #4f83b2;
-  background: #f5f8fc;
-}
-
-.wiring-device.order {
-  border-color: #d9bd84;
-  border-left-color: #bd842f;
-  background: #fffaf1;
-}
-
-.wiring-device span,
-.wiring-cable span {
-  margin-top: 4px;
-  color: #75848c;
-  font-size: 11px;
-}
-
-.wiring-cable {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  text-align: center;
-}
-
-.wiring-cable i {
-  position: relative;
-  height: 2px;
-  flex: 1;
-  background: #94aaa5;
-}
-
-.wiring-cable i:first-child::before,
-.wiring-cable i:last-child::after {
-  position: absolute;
-  top: -3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #269a82;
-  content: '';
-}
-
-.wiring-cable i:first-child::before {
-  left: 0;
-}
-
-.wiring-cable i:last-child::after {
-  right: 0;
-}
-
 .mini-table {
   display: grid;
   gap: 8px;
@@ -341,13 +265,6 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .wiring-run {
-    grid-template-columns: 1fr 70px 1fr 70px 1fr;
-  }
-
-  .wiring-cable span {
-    display: none;
-  }
 }
 
 @media (max-width: 1120px) {
@@ -401,15 +318,6 @@
 
   .main-card {
     padding-inline: 14px;
-  }
-
-  .wiring-run {
-    grid-template-columns: 1fr;
-  }
-
-  .wiring-cable {
-    min-height: 32px;
-    transform: rotate(90deg);
   }
 
   .mini-row,

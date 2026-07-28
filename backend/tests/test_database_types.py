@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import Column, Integer, MetaData, Table, create_engine, select
 from sqlalchemy.dialects import mysql
 from sqlalchemy.schema import CreateIndex, CreateTable
 
-from app.core.types import JSONText
+from app.core.types import BeijingDateTime, JSONText
 from app.models import ContractDataFile
 
 
@@ -52,3 +54,46 @@ def test_contract_file_unique_index_fits_legacy_innodb_limit() -> None:
 
     assert "CREATE UNIQUE INDEX uq_t_contract_data_files_node_name_checksum" in ddl
     assert "(workflow_node_id, filename(120), checksum(64))" in ddl
+
+
+def test_beijing_datetime_stores_utc_and_returns_beijing_time() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    table = Table(
+        "timestamps",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("happened_at", BeijingDateTime(), nullable=False),
+    )
+    table.metadata.create_all(engine)
+    beijing = timezone(timedelta(hours=8))
+
+    with engine.begin() as connection:
+        connection.execute(
+            table.insert().values(id=1, happened_at=datetime(2026, 7, 28, 16, 30, tzinfo=beijing))
+        )
+        raw = connection.exec_driver_sql(
+            "SELECT happened_at FROM timestamps WHERE id = 1"
+        ).scalar_one()
+        restored = connection.execute(select(table.c.happened_at)).scalar_one()
+
+    assert str(raw).startswith("2026-07-28 08:30:00")
+    assert restored.isoformat() == "2026-07-28T16:30:00+08:00"
+
+
+def test_beijing_datetime_treats_legacy_naive_values_as_utc() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    table = Table(
+        "timestamps",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("happened_at", BeijingDateTime(), nullable=False),
+    )
+    table.metadata.create_all(engine)
+
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO timestamps (id, happened_at) VALUES (1, '2026-07-28 08:30:00')"
+        )
+        restored = connection.execute(select(table.c.happened_at)).scalar_one()
+
+    assert restored.isoformat() == "2026-07-28T16:30:00+08:00"

@@ -1,23 +1,20 @@
 from __future__ import annotations
 
 import typing
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.types import JSONText
-
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+from app.core.time import beijing_now
+from app.core.types import BeijingDateTime, JSONText
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
+    updated_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now, onupdate=beijing_now)
 
 
 class User(TimestampMixin, Base):
@@ -28,7 +25,7 @@ class User(TimestampMixin, Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="visitor", index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    last_login_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     refresh_tokens: Mapped[typing.List['RefreshToken']] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
@@ -37,9 +34,9 @@ class RefreshToken(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(BeijingDateTime())
+    revoked_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
 
 
@@ -73,12 +70,13 @@ class Resource(TimestampMixin, Base):
     database_tls_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     remote_path: Mapped[str] = mapped_column(String(512), default="")
     capabilities: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    wiring_profile: Mapped[typing.Union[typing.Dict[str, Any], None]] = mapped_column(JSONText)
     version_info: Mapped[str] = mapped_column(String(255), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     health_status: Mapped[str] = mapped_column(String(32), default="unknown")
-    health_checked_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    health_checked_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     locks: Mapped[typing.List['ResourceLock']] = relationship(back_populates="resource")
 
     @property
@@ -97,9 +95,9 @@ class DatabaseUpdateConfirmation(Base):
     estimated_rows: Mapped[int] = mapped_column(Integer)
     actual_rows: Mapped[typing.Union[int, None]] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    completed_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(BeijingDateTime(), index=True)
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
+    completed_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
 
 
 class TestPlan(TimestampMixin, Base):
@@ -173,7 +171,7 @@ class ScenarioWorkflowVersion(TimestampMixin, Base):
     resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)
     created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
     published_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"))
-    published_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     scenario: Mapped[TestScenario] = relationship(
         back_populates="workflow_versions", foreign_keys=[scenario_id]
     )
@@ -223,9 +221,9 @@ class TestRun(TimestampMixin, Base):
     config_snapshot: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
-    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
-    timeout_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    timeout_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     error_code: Mapped[typing.Union[str, None]] = mapped_column(String(64))
     error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
     queue_reason: Mapped[typing.Union[str, None]] = mapped_column(Text)
@@ -271,7 +269,7 @@ class RunStatusTransition(Base):
     )
     reason: Mapped[typing.Union[str, None]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, index=True
+        BeijingDateTime(), default=beijing_now, index=True
     )
     run: Mapped[TestRun] = relationship(back_populates="status_transitions")
 
@@ -288,15 +286,15 @@ class DurableTask(Base):
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
-    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    available_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now, index=True)
     lease_expires_at: Mapped[typing.Union[datetime, None]] = mapped_column(
-        DateTime(timezone=True), index=True
+        BeijingDateTime(), index=True
     )
     locked_by: Mapped[typing.Union[str, None]] = mapped_column(String(128), index=True)
     last_error: Mapped[typing.Union[str, None]] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
+    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
 
 
 class ScenarioResource(Base):
@@ -390,8 +388,8 @@ class RunStep(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=2)
-    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
-    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     duration_ms: Mapped[typing.Union[int, None]] = mapped_column(Integer)
     error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
     run: Mapped[TestRun] = relationship(back_populates="steps")
@@ -413,8 +411,8 @@ class ConfigurationCaptureSnapshot(Base):
     attempt: Mapped[int] = mapped_column(Integer, default=1)
     error_message: Mapped[typing.Union[str, None]] = mapped_column(Text)
     created_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"))
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
+    finished_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     items: Mapped[typing.List['ConfigurationCaptureItem']] = relationship(
         cascade="all, delete-orphan", order_by="ConfigurationCaptureItem.id"
     )
@@ -467,7 +465,7 @@ class ContractDataFile(Base):
     checksum: Mapped[str] = mapped_column(String(64), index=True)
     preview_rows: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
     created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
 
 
 class LogRecord(Base):
@@ -489,7 +487,7 @@ class LogRecord(Base):
     detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     artifact_path: Mapped[typing.Union[str, None]] = mapped_column(String(1024))
     is_redacted: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now, index=True)
 
 
 class Artifact(Base):
@@ -504,7 +502,7 @@ class Artifact(Base):
     size: Mapped[int] = mapped_column(Integer, default=0)
     checksum: Mapped[str] = mapped_column(String(64), default="")
     is_immutable: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
     run: Mapped[TestRun] = relationship(back_populates="artifacts")
 
 
@@ -529,7 +527,7 @@ class Verdict(TimestampMixin, Base):
     issue_description: Mapped[str] = mapped_column(Text, default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     reviewed_by: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"))
-    reviewed_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     run: Mapped[TestRun] = relationship(back_populates="verdict")
 
 
@@ -538,9 +536,9 @@ class ResourceLock(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
-    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    released_at: Mapped[typing.Union[datetime, None]] = mapped_column(DateTime(timezone=True), index=True)
+    acquired_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
+    lease_expires_at: Mapped[datetime] = mapped_column(BeijingDateTime(), index=True)
+    released_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime(), index=True)
     release_reason: Mapped[typing.Union[str, None]] = mapped_column(String(128))
     resource: Mapped[Resource] = relationship(back_populates="locks")
     run: Mapped[TestRun] = relationship(back_populates="locks")
@@ -558,4 +556,4 @@ class AuditLog(Base):
     user_agent: Mapped[typing.Union[str, None]] = mapped_column(String(512))
     trace_id: Mapped[str] = mapped_column(String(64), index=True)
     detail: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now, index=True)

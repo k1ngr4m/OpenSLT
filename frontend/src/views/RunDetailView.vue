@@ -10,6 +10,7 @@ import RunLogPanel from '@/components/run-detail/RunLogPanel.vue'
 import RunWorkflowStrip from '@/components/run-detail/RunWorkflowStrip.vue'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useRunActions } from '@/composables/useRunActions'
 import { useRunLifecycle } from '@/composables/useRunLifecycle'
 import { useRunStepPresentation } from '@/composables/useRunStepPresentation'
@@ -25,6 +26,7 @@ import type {
 } from '@/types/run'
 import { formatBytes, formatDate, nodeTypeText, normalizeContractFile, prettyJson } from '@/utils/runDetail'
 import { businessText, resourceText } from '@/utils/status'
+import type { WiringSnapshot } from '@/utils/wiring'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -101,6 +103,10 @@ const {
   showRawResult,
   summaryRows,
 } = useRunStepPresentation(run, selectedStep, contractPreviewCache)
+const wiringSnapshot = computed(() => {
+  const value = selectedConfig.value.wiring_snapshot
+  return value && typeof value === 'object' ? value as unknown as WiringSnapshot : null
+})
 const filteredLogs = computed(() => {
   if (logScope.value === 'all') return logs.value
   return logs.value.filter(log => log.step_id === logScope.value)
@@ -350,13 +356,11 @@ watch(
                 <div v-if="showWorkflowTerminal && !workflowTerminalResource" class="empty-line">当前运行没有{{ workflowTerminalResourceText }}，无法加载 SSH 终端</div>
               </section>
 
-              <div v-if="selectedStep.node_type === 'wiring_confirmation'" class="wiring-run">
-                <div class="wiring-device"><strong>REM 系统</strong><span>测试服务器</span></div>
-                <div class="wiring-cable"><i></i><span>链路连接</span><i></i></div>
-                <div class="wiring-device market"><strong>模拟市场</strong><span>行情服务器</span></div>
-                <div class="wiring-cable"><i></i><span>链路连接</span><i></i></div>
-                <div class="wiring-device order"><strong>发单工具</strong><span>订单服务器</span></div>
-              </div>
+              <WiringTopologyDiagram
+                v-if="selectedStep.node_type === 'wiring_confirmation'"
+                :snapshot="wiringSnapshot"
+                empty-message="该历史节点使用旧版占位图，确认流程仍可正常执行"
+              />
 
               <section class="detail-section">
                 <h3>节点配置</h3>

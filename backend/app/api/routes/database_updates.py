@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,6 +11,7 @@ from app.adapters.database import DatabaseOperationError, mysql_adapter, parse_u
 from app.api.deps import operators
 from app.api.routes.common import database_http_error, database_resource
 from app.core.database import get_db
+from app.core.time import beijing_now
 from app.models import DatabaseUpdateConfirmation, User
 from app.schemas import DatabaseSqlRequest, DatabaseUpdateExecuteRequest
 from app.services.audit import write_audit
@@ -47,7 +48,7 @@ async def database_update_preview(
         sql_fingerprint=plan.fingerprint,
         estimated_rows=estimated_rows,
         status="pending",
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        expires_at=beijing_now() + timedelta(minutes=5),
     )
     db.add(confirmation)
     write_audit(db, "database.update_preview", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "estimated_rows": estimated_rows})
@@ -75,10 +76,8 @@ async def database_update_execute(
     except DatabaseOperationError as exc:
         raise database_http_error(exc) from exc
     confirmation = db.get(DatabaseUpdateConfirmation, payload.confirmation_id)
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     expires_at = confirmation.expires_at if confirmation else None
-    if expires_at and expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if (
         not confirmation
         or confirmation.resource_id != resource.id
@@ -108,15 +107,15 @@ async def database_update_execute(
         affected_rows = await mysql_adapter.execute_update(resource, database_name, plan, confirmation.estimated_rows)
     except DatabaseOperationError as exc:
         confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
-        confirmation.status = "failed"; confirmation.completed_at = datetime.now(timezone.utc)
+        confirmation.status = "failed"; confirmation.completed_at = beijing_now()
         write_audit(db, "database.update_execute", "resource", resource.id, actor, request, "failed", {"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "code": exc.code}); db.commit()
         raise database_http_error(exc) from exc
     except Exception as exc:
         confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
-        confirmation.status = "failed"; confirmation.completed_at = datetime.now(timezone.utc)
+        confirmation.status = "failed"; confirmation.completed_at = beijing_now()
         write_audit(db, "database.update_execute", "resource", resource.id, actor, request, "failed", {"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "code": "DATABASE_OPERATION_FAILED"}); db.commit()
         raise HTTPException(status_code=502, detail={"code": "DATABASE_OPERATION_FAILED", "message": str(exc)}) from exc
     confirmation = db.get(DatabaseUpdateConfirmation, confirmation.id)
-    confirmation.status = "executed"; confirmation.actual_rows = affected_rows; confirmation.completed_at = datetime.now(timezone.utc)
+    confirmation.status = "executed"; confirmation.actual_rows = affected_rows; confirmation.completed_at = beijing_now()
     write_audit(db, "database.update_execute", "resource", resource.id, actor, request, detail={"database": database_name, "table": plan.table_name, "sql_fingerprint": plan.fingerprint, "affected_rows": affected_rows}); db.commit()
     return {"affected_rows": affected_rows, "status": "executed"}

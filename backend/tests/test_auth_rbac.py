@@ -35,6 +35,26 @@ def test_errors_include_trace_id(client: TestClient):
     assert response.headers["x-trace-id"] == response.json()["trace_id"]
 
 
+def test_api_timestamps_are_serialized_in_beijing_time(
+    client: TestClient, admin_headers: typing.Dict[str, str]
+):
+    response = client.get("/api/v1/auth/me", headers=admin_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["created_at"].endswith("+08:00")
+    assert payload["last_login_at"].endswith("+08:00")
+
+
+def test_audit_export_uses_beijing_time(
+    client: TestClient, admin_headers: typing.Dict[str, str]
+):
+    response = client.get("/api/v1/audit-logs/export", headers=admin_headers)
+    assert response.status_code == 200
+    content = response.content.decode("utf-8-sig")
+    assert content.splitlines()[0].startswith("id,time_beijing,")
+    assert "+08:00" in content
+
+
 def test_slnic_resource_type_is_supported(client: TestClient, admin_headers: typing.Dict[str, str]):
     resource = create_resource(client, admin_headers, "SLNIC-01", resource_type="slnic")
     assert resource["resource_type"] == "slnic"

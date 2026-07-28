@@ -3,11 +3,12 @@ from __future__ import annotations
 import typing
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import asyncssh
 
 from app.core.logging import redact
+from app.core.time import beijing_now
 
 
 @dataclass
@@ -32,7 +33,7 @@ class SSHAdapter:
             return {"ok": result.stdout == "OPENSLT_OK", "message": "SSH connection successful"}
 
     async def execute(self, connection: asyncssh.SSHClientConnection, command: str) -> CommandResult:
-        started_at = datetime.now(timezone.utc)
+        started_at = beijing_now()
         result = await connection.run(command, check=False)
         return CommandResult(
             command=redact(command),
@@ -40,7 +41,7 @@ class SSHAdapter:
             stdout=result.stdout,
             stderr=result.stderr,
             started_at=started_at,
-            finished_at=datetime.now(timezone.utc),
+            finished_at=beijing_now(),
         )
 
     async def stream(self, connection: asyncssh.SSHClientConnection, command: str) -> typing.AsyncIterator[typing.Tuple[str, str]]:
@@ -53,4 +54,3 @@ class SSHAdapter:
 
 
 ssh_adapter = SSHAdapter()
-

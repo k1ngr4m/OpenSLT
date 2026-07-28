@@ -7,7 +7,7 @@ import hashlib
 import json
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import logger, redact
+from app.core.time import as_beijing, beijing_now
 from app.models import Artifact, AuditLog, LogRecord, Metric, Resource, ResourceLock, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, TestScenario
 from app.services.events import broker
 from app.services.resource_relations import run_resource_ids
@@ -42,11 +43,7 @@ TERMINAL_STATUSES = TERMINAL_RUN_STATUSES
 
 
 def _duration_ms(started_at: datetime, finished_at: datetime) -> int:
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=timezone.utc)
-    if finished_at.tzinfo is None:
-        finished_at = finished_at.replace(tzinfo=timezone.utc)
-    return int((finished_at - started_at).total_seconds() * 1000)
+    return int((as_beijing(finished_at) - as_beijing(started_at)).total_seconds() * 1000)
 
 
 def append_log(db: Session, run: TestRun, event: str, message: str, *, level: str = "INFO", step: typing.Union[RunStep, None] = None, source: str = "worker", detail: typing.Union[dict, None] = None, log_type: str = "run") -> LogRecord:
@@ -65,7 +62,7 @@ def append_log(db: Session, run: TestRun, event: str, message: str, *, level: st
     )
     db.add(record)
     db.flush()
-    broker.publish(run.id, {"type": "log", "data": {"id": record.id, "level": level, "event": event, "message": safe_message, "step_id": record.step_id, "created_at": datetime.now(timezone.utc).isoformat()}})
+    broker.publish(run.id, {"type": "log", "data": {"id": record.id, "level": level, "event": event, "message": safe_message, "step_id": record.step_id, "created_at": beijing_now().isoformat()}})
     return record
 
 
@@ -89,7 +86,7 @@ def create_workflow_steps(run: TestRun, workflow: ScenarioWorkflowVersion) -> No
 
 
 def acquire_locks(db: Session, run: TestRun, lease_minutes: int = 180) -> typing.Tuple[bool, typing.List[int]]:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     resource_ids = run_resource_ids(run)
     active = db.scalars(select(ResourceLock).where(and_(ResourceLock.resource_id.in_(resource_ids), ResourceLock.released_at.is_(None), ResourceLock.lease_expires_at > now))).all()
     conflicts = sorted({lock.resource_id for lock in active if lock.run_id != run.id})
@@ -105,7 +102,7 @@ def acquire_locks(db: Session, run: TestRun, lease_minutes: int = 180) -> typing
 
 def release_locks(db: Session, run_id: int, reason: str) -> int:
     locks = db.scalars(select(ResourceLock).where(ResourceLock.run_id == run_id, ResourceLock.released_at.is_(None))).all()
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     for lock in locks:
         lock.released_at = now
         lock.release_reason = reason
@@ -122,7 +119,7 @@ def renew_run_locks(db: Session, run_id: int, lease_minutes: int = 180) -> int:
             )
         ).all()
     )
-    lease_expires_at = datetime.now(timezone.utc) + timedelta(minutes=lease_minutes)
+    lease_expires_at = beijing_now() + timedelta(minutes=lease_minutes)
     for lock in locks:
         lock.lease_expires_at = lease_expires_at
     db.flush()
@@ -141,7 +138,7 @@ async def _perform_step(db: Session, run: TestRun, code: str, run_status: str, d
     step = _step(run, code)
     transition_run(run, run_status)
     transition_step(step, "running")
-    step.started_at = datetime.now(timezone.utc)
+    step.started_at = beijing_now()
     started_clock = time.perf_counter()
     append_log(db, run, f"{code}.started", f"{step.name}开始", step=step)
     db.commit()
@@ -152,7 +149,7 @@ async def _perform_step(db: Session, run: TestRun, code: str, run_status: str, d
         raise asyncio.CancelledError
     transition_step(step, "succeeded")
     step.progress = 100
-    step.finished_at = datetime.now(timezone.utc)
+    step.finished_at = beijing_now()
     step.duration_ms = int((time.perf_counter() - started_clock) * 1000)
     run.progress = min(90, step.position * 9)
     append_log(db, run, f"{code}.completed", f"{step.name}完成", step=step)
@@ -198,7 +195,7 @@ async def start_run(run_id: int) -> None:
             db.commit()
             return
         transition_run(run, "precheck")
-        run.started_at = run.started_at or datetime.now(timezone.utc)
+        run.started_at = run.started_at or beijing_now()
         run.queue_reason = None
         append_log(db, run, "run.started", "测速运行已启动")
         db.commit()
@@ -222,7 +219,7 @@ async def start_run(run_id: int) -> None:
             transition_run(run, "precheck_failed")
             run.error_code = "PRECHECK_FAILED"
             run.error_message = redact(str(exc))
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = beijing_now()
             append_log(db, run, "run.failed", str(exc), level="ERROR")
             release_locks(db, run.id, "precheck_failed")
             db.commit()
@@ -246,7 +243,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
                 append_log(db, run, "run.queued", run.queue_reason, level="WARNING")
                 db.commit()
                 return
-            run.started_at = run.started_at or datetime.now(timezone.utc)
+            run.started_at = run.started_at or beijing_now()
             run.queue_reason = None
             if run.steps:
                 transition_run(run, "awaiting_step_start")
@@ -254,7 +251,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             else:
                 transition_run(run, "completed")
                 run.progress = 100
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = beijing_now()
                 release_locks(db, run.id, "completed")
                 append_log(db, run, "run.completed", "工作流运行完成")
             db.commit()
@@ -290,7 +287,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
                 append_log=append_log,
             )
             step.result_summary = await workflow_handler_registry.execute(node.node_type, context)
-            executed_at = datetime.now(timezone.utc)
+            executed_at = beijing_now()
             transition_step(step, "waiting")
             step.progress = 100
             step.duration_ms = _duration_ms(step.started_at, executed_at)
@@ -311,7 +308,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             if failed:
                 transition_step(failed, "failed")
                 failed.error_message = redact(str(exc))
-                failed.finished_at = datetime.now(timezone.utc)
+                failed.finished_at = beijing_now()
                 started_at = failed.started_at or failed.finished_at
                 failed.duration_ms = _duration_ms(started_at, failed.finished_at)
                 transition_run(run, "awaiting_step_retry")
@@ -331,7 +328,7 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
                 transition_run(run, "execution_failed")
                 run.error_code = getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED")
                 run.error_message = redact(str(exc))
-                run.finished_at = datetime.now(timezone.utc)
+                run.finished_at = beijing_now()
                 append_log(db, run, "run.failed", str(exc), level="ERROR")
                 release_locks(db, run.id, run.status)
             db.commit()
@@ -362,7 +359,7 @@ def begin_workflow_step(
     current.progress = 0
     current.error_message = None
     current.finished_at = None
-    current.started_at = datetime.now(timezone.utc)
+    current.started_at = beijing_now()
     transition_run(run, "running")
     run.error_code = None
     run.error_message = None
@@ -386,7 +383,7 @@ def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_id: in
     current = next((item for item in run.steps if item.status != "succeeded"), None)
     if not step or not current or current.id != step.id or step.status != "waiting":
         raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     if (
         step.node_type == "slnic_merge_capture"
         and (step.result_summary or {}).get("mode") == "terminal"
@@ -440,7 +437,7 @@ async def continue_after_wiring(run_id: int) -> None:
         if not run or run.status != "awaiting_wiring":
             return
         wiring = _step(run, "wiring_confirmation")
-        transition_step(wiring, "succeeded"); wiring.progress = 100; wiring.started_at = wiring.started_at or datetime.now(timezone.utc); wiring.finished_at = datetime.now(timezone.utc); wiring.duration_ms = 0
+        transition_step(wiring, "succeeded"); wiring.progress = 100; wiring.started_at = wiring.started_at or beijing_now(); wiring.finished_at = beijing_now(); wiring.duration_ms = 0
         append_log(db, run, "wiring.confirmed", "人工接线已确认", step=wiring)
         db.commit()
         phases = [
@@ -474,9 +471,9 @@ async def continue_after_wiring(run_id: int) -> None:
         if run:
             failed_step = next((step for step in run.steps if step.status == "running"), None)
             if failed_step:
-                transition_step(failed_step, "failed"); failed_step.error_message = redact(str(exc)); failed_step.finished_at = datetime.now(timezone.utc)
+                transition_step(failed_step, "failed"); failed_step.error_message = redact(str(exc)); failed_step.finished_at = beijing_now()
             transition_run(run, "parse_failed" if failed_step and failed_step.code == "coco_parse" else "execution_failed")
-            run.error_code = "EXECUTION_FAILED"; run.error_message = redact(str(exc)); run.finished_at = datetime.now(timezone.utc)
+            run.error_code = "EXECUTION_FAILED"; run.error_message = redact(str(exc)); run.finished_at = beijing_now()
             append_log(db, run, "run.failed", str(exc), level="ERROR", step=failed_step)
             release_locks(db, run.id, run.status)
             db.commit()
@@ -499,10 +496,10 @@ def cancel_run(
         actor_id=actor_id,
         reason=reason,
     )
-    run.finished_at = datetime.now(timezone.utc)
+    run.finished_at = beijing_now()
     for step in run.steps:
         if step.status in {"running", "waiting"}:
-            transition_step(step, "cancelled"); step.finished_at = datetime.now(timezone.utc)
+            transition_step(step, "cancelled"); step.finished_at = beijing_now()
     append_log(db, run, "run.cancelled", "运行已取消，安全清理已触发", level="WARNING", detail={"reason": reason})
     release_locks(db, run.id, reason)
     db.commit()
@@ -510,7 +507,7 @@ def cancel_run(
 
 
 def reclaim_expired_locks(db: Session) -> int:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     locks = db.scalars(select(ResourceLock).where(ResourceLock.released_at.is_(None), ResourceLock.lease_expires_at <= now)).all()
     for lock in locks:
         lock.released_at = now; lock.release_reason = "lease_expired"
@@ -519,7 +516,7 @@ def reclaim_expired_locks(db: Session) -> int:
 
 
 def expire_timed_out_runs(db: Session) -> int:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     runs = list(
         db.scalars(
             select(TestRun)
@@ -574,7 +571,7 @@ def queued_run_ids(db: Session, limit: int = 20) -> typing.List[int]:
 
 
 def archive_and_clean_logs(db: Session) -> typing.Dict[str, int]:
-    now = datetime.now(timezone.utc)
+    now = beijing_now()
     log_cutoff = now - timedelta(days=settings.app_log_retention_days)
     audit_cutoff = now - timedelta(days=settings.audit_log_retention_days)
     old_logs = db.scalars(select(LogRecord).where(LogRecord.created_at < log_cutoff)).all()

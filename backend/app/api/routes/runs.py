@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import typing
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -12,6 +12,7 @@ from app.api.deps import get_current_user, operators
 from app.api.routes.common import load_run, not_found, workflow_http_error, workflow_nodes_snapshot
 from app.core.database import get_db
 from app.core.logging import trace_id_ctx
+from app.core.time import beijing_now
 from app.models import Artifact, ConfigurationCaptureSnapshot, LogRecord, Resource, TestPlan, TestRun, TestScenario, User, Verdict
 from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, RunCreate, RunOut, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
@@ -22,6 +23,7 @@ from app.services.reports import generate_reports
 from app.services.resource_relations import sync_run_resources
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.workflows import WorkflowError, load_version, resource_map
+from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
 
@@ -45,18 +47,29 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
         extra = sorted(set(provided_types) - required_types)
         raise HTTPException(status_code=400, detail={"code": "RESOURCE_SET_MISMATCH", "message": f"运行资源类型与场景不一致，缺少: {missing}，多余: {extra}"})
     node_snapshots = workflow_nodes_snapshot(db, workflow)
-    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "workflow": {"id": workflow.id, "version_no": workflow.version_no, "nodes": node_snapshots}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "host": resource.host, "version": resource.version_info} for resource in resources]}
+    snapshot = {"plan": {"id": plan.id, "name": plan.name, "business_code": plan.business_code, "config_version": plan.config_version}, "scenario": {"id": scenario.id, "name": scenario.name, "scenario_type": scenario.scenario_type, "config_version": scenario.config_version}, "workflow": {"id": workflow.id, "version_no": workflow.version_no, "nodes": node_snapshots}, "resources": [{"id": resource.id, "name": resource.name, "type": resource.resource_type, "business_code": resource.business_code, "host": resource.host, "version": resource.version_info, "wiring_profile": resource.wiring_profile if resource.resource_type == "rem" else None} for resource in resources]}
     timeout_at = (
-        datetime.now(timezone.utc) + timedelta(minutes=payload.timeout_minutes)
+        beijing_now() + timedelta(minutes=payload.timeout_minutes)
         if payload.timeout_minutes is not None
         else None
     )
-    run = TestRun(run_number=f"R{datetime.now(timezone.utc):%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, workflow_version_id=workflow.id, business_code=plan.business_code, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=timeout_at)
+    run = TestRun(run_number=f"R{beijing_now():%Y%m%d%H%M%S}-{uuid4().hex[:6].upper()}", plan_id=plan.id, scenario_id=scenario.id, workflow_version_id=workflow.id, business_code=plan.business_code, config_snapshot=snapshot, trace_id=trace_id_ctx.get() or str(uuid4()), created_by=actor.id, timeout_at=timeout_at)
     sync_run_resources(run, payload.resource_ids)
     create_workflow_steps(run, workflow)
     node_configs = {item["id"]: item["config"] for item in node_snapshots}
+    resources_by_type = {resource.resource_type: resource for resource in resources}
     for step in run.steps:
         step.config_snapshot = dict(node_configs.get(step.workflow_node_id) or {})
+        if step.node_type == "wiring_confirmation" and step.config_snapshot.get("diagram") == "resource":
+            try:
+                step.config_snapshot["wiring_snapshot"] = build_wiring_snapshot(
+                    resources_by_type["rem"], resources_by_type["slnic"], plan.business_code
+                )
+            except (KeyError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "WIRING_PROFILE_INVALID", "message": "REM 或 SLNIC 接线配置不完整，请先更新资源"},
+                ) from exc
     db.add(run); db.flush(); write_audit(db, "run.create", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 
 
@@ -207,13 +220,13 @@ def submit_verdict(run_id: int, payload: VerdictWrite, request: Request, actor: 
     run = load_run(db, run_id)
     if run.status not in {"awaiting_review", "completed"}: raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前状态不能提交结论"})
     verdict = run.verdict or Verdict(run_id=run.id)
-    verdict.final_result = payload.final_result; verdict.issue_description = payload.issue_description; verdict.notes = payload.notes; verdict.reviewed_by = actor.id; verdict.reviewed_at = datetime.now(timezone.utc)
+    verdict.final_result = payload.final_result; verdict.issue_description = payload.issue_description; verdict.notes = payload.notes; verdict.reviewed_by = actor.id; verdict.reviewed_at = beijing_now()
     if not run.verdict: db.add(verdict)
     review = next(step for step in run.steps if step.code == "manual_review"); transition_step(review, "succeeded"); review.progress = 100; review.started_at = review.started_at or verdict.reviewed_at; review.finished_at = verdict.reviewed_at; review.duration_ms = 0
-    report_step = next(step for step in run.steps if step.code == "reporting"); transition_step(report_step, "running"); report_step.started_at = datetime.now(timezone.utc)
+    report_step = next(step for step in run.steps if step.code == "reporting"); transition_step(report_step, "running"); report_step.started_at = beijing_now()
     db.flush(); generate_reports(db, run)
-    transition_step(report_step, "succeeded"); report_step.progress = 100; report_step.finished_at = datetime.now(timezone.utc); report_step.duration_ms = int((report_step.finished_at - report_step.started_at).total_seconds() * 1000)
-    transition_run(run, "completed", source="api", actor_id=actor.id, reason="verdict submitted"); run.progress = 100; run.finished_at = datetime.now(timezone.utc); release_locks(db, run.id, "completed")
+    transition_step(report_step, "succeeded"); report_step.progress = 100; report_step.finished_at = beijing_now(); report_step.duration_ms = int((report_step.finished_at - report_step.started_at).total_seconds() * 1000)
+    transition_run(run, "completed", source="api", actor_id=actor.id, reason="verdict submitted"); run.progress = 100; run.finished_at = beijing_now(); release_locks(db, run.id, "completed")
     write_audit(db, "run.verdict_submit", "test_run", run.id, actor, request, detail={"final_result": payload.final_result}); db.commit(); broker.publish(run.id, {"type": "status", "status": "completed", "progress": 100}); return verdict
 
 

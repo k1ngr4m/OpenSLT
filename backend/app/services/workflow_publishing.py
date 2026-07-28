@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import typing
-from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.time import beijing_now
 from app.models import ContractDataFile, ScenarioWorkflowVersion, TestScenario
 from app.services.order_configs import OrderConfigError, order_config_service, parser_main_config_filename, update_symbol_csv_values
 from app.services.resource_relations import node_config_with_relations, node_contract_file_ids, sync_scenario_resources, workflow_resource_ids
@@ -121,7 +121,7 @@ async def publish(db: Session, scenario: TestScenario, version: ScenarioWorkflow
             previous.status = "retired"
     version.status = "published"
     version.published_by = actor_id
-    version.published_at = datetime.now(timezone.utc)
+    version.published_at = beijing_now()
     scenario.published_workflow_version_id = version.id
     scenario.draft_workflow_version_id = None
     scenario.workflow_status = "published"

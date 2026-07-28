@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import typing
 from contextlib import suppress
-from datetime import datetime, timezone
 
 import asyncssh
 from sqlalchemy import func, select
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.adapters.database import mysql_adapter, validate_database
 from app.core.compat import to_thread
 from app.core.security import decrypt_secret
+from app.core.time import beijing_now
 from app.models import ConfigurationCaptureItem, ConfigurationCaptureSnapshot, Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestScenario
 from app.services.workflow_core import (
     FIELD_LABELS,
@@ -102,7 +102,7 @@ async def capture_server(
                 with suppress(Exception):
                     await connection.wait_closed()
         snapshot.status = "failed" if failed else "succeeded"
-        snapshot.finished_at = datetime.now(timezone.utc)
+        snapshot.finished_at = beijing_now()
         snapshots.append(snapshot)
     db.flush()
     return snapshots
@@ -181,7 +181,7 @@ async def capture_database(
     except Exception as exc:
         snapshot.status = "failed"
         snapshot.error_message = str(exc)
-    snapshot.finished_at = datetime.now(timezone.utc)
+    snapshot.finished_at = beijing_now()
     db.flush()
     return [snapshot]
 
