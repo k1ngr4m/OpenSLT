@@ -16,7 +16,7 @@ SLNIC_TERMINAL_COMMANDS = {
         "node_label": "关闭 SLNIC",
     },
     "slnic_merge_capture": {
-        "script": "./pcap_mergetoo slnic* && "
+        "script": "./pcap_merge_tool slnic* && "
         "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
         "test -f merge_pcap.pcap && ./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
         "action": "合并",

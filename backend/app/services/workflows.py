@@ -173,7 +173,7 @@ async def execute_slnic_node(
             return summary
 
         await _run_slnic_command(
-            connection, prefix + "./pcap_mergetoo slnic*", "合并 SLNIC 抓包"
+            connection, prefix + "./pcap_merge_tool slnic*", "合并 SLNIC 抓包"
         )
         await _run_slnic_command(
             connection,

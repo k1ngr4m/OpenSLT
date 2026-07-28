@@ -169,7 +169,7 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
     assert all(options["password"] == "secret" for options in connect_options)
     assert commands[0] == "cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh"
     assert commands[1] == "cd /tmp/openslt/tcpdump && ./stop_slnic_dump.sh"
-    assert commands[2] == "cd /tmp/openslt/tcpdump && ./pcap_mergetoo slnic*"
+    assert commands[2] == "cd /tmp/openslt/tcpdump && ./pcap_merge_tool slnic*"
     assert "merge_pacp.pcap" in commands[3]
     assert commands[4].endswith(
         "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng"
@@ -276,5 +276,5 @@ def test_remote_slnic_stop_failure_continues_to_merge(client, admin_headers, mon
     assert completed["error_code"] is None
     assert completed["error_message"] is None
     assert completed["steps"][2]["status"] == "succeeded"
-    assert any("./pcap_mergetoo slnic*" in command for command in commands)
+    assert any("./pcap_merge_tool slnic*" in command for command in commands)
     assert completed["artifacts"][0]["name"] == "merge_pcap.pcapng"

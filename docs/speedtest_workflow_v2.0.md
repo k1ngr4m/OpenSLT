@@ -70,7 +70,7 @@
             b. 关闭slnic节点
                 调用 路径/tcpdump/stop_slnic_dump.sh 结束抓包
             c. 合并pcapng节点
-                抓包结束后会在/tcpdump目录中生成四个.pcapng的文件，通过调用./pcap_mergetoo slnic* 的命令合并为单一文件merge_pacp.pcap
+                抓包结束后会在/tcpdump目录中生成四个.pcapng的文件，通过调用./pcap_merge_tool slnic* 的命令合并为单一文件merge_pacp.pcap
                 然后调用 ./editcap merge_pcap.pcap merge_pcap.pcapng 将.pcap文件转换成.pcapng文件
 
     资源管理中新增资源添加一个解析工具

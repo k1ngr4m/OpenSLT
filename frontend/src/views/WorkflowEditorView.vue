@@ -195,7 +195,7 @@ function slnicWorkdir() {
 function slnicCommands(type: string) {
   if (type === 'slnic_start_capture') return ['./start_slnic_dump.sh']
   if (type === 'slnic_stop_capture') return ['./stop_slnic_dump.sh']
-  return ['./pcap_mergetoo slnic*', './editcap merge_pcap.pcap merge_pcap.pcapng']
+  return ['./pcap_merge_tool slnic*', './editcap merge_pcap.pcap merge_pcap.pcapng']
 }
 
 function defaultNode(type: string): WorkflowNode {

@@ -522,10 +522,10 @@ def test_terminal_workflow_command_dispatches_slnic_merge_and_collects_artifact_
         response = websocket.receive_json()
         assert response["type"] == "workflow_command"
         assert response["status"] == "dispatched"
-        assert "./pcap_mergetoo slnic*" in response["command"]
+        assert "./pcap_merge_tool slnic*" in response["command"]
         assert "./editcap merge_pcap.pcap merge_pcap.pcapng" in response["command"]
 
-    assert "./pcap_mergetoo slnic*" in connections[2].process.stdin.writes[0]
+    assert "./pcap_merge_tool slnic*" in connections[2].process.stdin.writes[0]
     before_complete = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
     assert before_complete["status"] == "awaiting_step_completion"
     assert before_complete["steps"][2]["result_summary"]["mode"] == "terminal"
