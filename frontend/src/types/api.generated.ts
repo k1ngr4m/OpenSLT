@@ -1294,6 +1294,14 @@ export interface components {
             /** Value */
             value: number;
         };
+        /** OrderActionRequest */
+        OrderActionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "new_order" | "new_order_simple" | "new_quote" | "new_quote_simple" | "new_arbi_order" | "new_arbi_order_simple" | "cxl_order" | "stop_order";
+        };
         /** OrderConfigCreate */
         OrderConfigCreate: {
             /** Name */
@@ -3840,7 +3848,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["OrderActionRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

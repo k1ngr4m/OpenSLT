@@ -16,6 +16,7 @@ from app.services import order_configs
 from app.services import terminal as terminal_service
 from app.services import workflow_contracts, workflows
 from app.services.run_state import transition_run, transition_step
+from app.services.workflows import WorkflowError
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -618,7 +619,7 @@ def test_generic_terminal_rejects_order_workflow_start(
     assert updated["steps"][0]["status"] == "pending"
 
 
-def test_order_action_is_sent_once_and_completion_cleans_session(
+def test_order_actions_can_repeat_and_completion_cleans_session(
     client: TestClient,
     admin_headers: typing.Dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
@@ -653,10 +654,169 @@ def test_order_action_is_sent_once_and_completion_cleans_session(
     response = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action", headers=admin_headers)
     assert response.status_code == 200, response.text
     assert sent == [("openslt-order-r1-s1", "new_order")]
-    duplicate = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action", headers=admin_headers)
-    assert duplicate.status_code == 409
+    quote = client.post(
+        f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action",
+        headers=admin_headers,
+        json={"action": "new_quote"},
+    )
+    repeated = client.post(
+        f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action",
+        headers=admin_headers,
+        json={"action": "new_quote"},
+    )
+    assert quote.status_code == 200, quote.text
+    assert repeated.status_code == 200, repeated.text
+    assert sent == [
+        ("openslt-order-r1-s1", "new_order"),
+        ("openslt-order-r1-s1", "new_quote"),
+        ("openslt-order-r1-s1", "new_quote"),
+    ]
+    history = repeated.json()["steps"][0]["result_summary"]["order_action_history"]
+    assert [item["action"] for item in history] == ["new_order", "new_quote", "new_quote"]
+    assert all(item["status"] == "dispatched" for item in history)
     completed = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/complete", headers=admin_headers)
     assert completed.status_code == 200, completed.text
+
+
+def test_order_step_can_complete_without_sending_action(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    db = SessionLocal()
+    try:
+        stored = db.get(RunModel, run["id"])
+        step = stored.steps[0]
+        transition_run(stored, "awaiting_step_completion")
+        transition_step(step, "waiting")
+        step.result_summary = {
+            "process_started": True,
+            "tmux_session": "openslt-order-r1-s1",
+            "order_action_status": "pending",
+            "order_action_history": [],
+        }
+        db.commit()
+    finally:
+        db.close()
+    cleaned = []
+
+    async def fake_cleanup(_resource, session):
+        cleaned.append(session)
+        return True
+
+    monkeypatch.setattr(runs_route, "cleanup_order_session", fake_cleanup)
+    step_id = run["steps"][0]["id"]
+    response = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/complete", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    assert cleaned == ["openslt-order-r1-s1"]
+
+
+def test_order_action_rejects_action_not_supported_by_resource(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    db = SessionLocal()
+    try:
+        stored_resource = db.get(Resource, resource["id"])
+        stored_resource.capabilities = {**stored_resource.capabilities, "order_actions": ["new_order"]}
+        stored = db.get(RunModel, run["id"])
+        transition_run(stored, "awaiting_step_completion")
+        transition_step(stored.steps[0], "waiting")
+        stored.steps[0].result_summary = {"order_action_status": "pending"}
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        f"/api/v1/runs/{run['id']}/steps/{run['steps'][0]['id']}/order-action",
+        headers=admin_headers,
+        json={"action": "new_quote"},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "ORDER_ACTION_UNSUPPORTED"
+
+
+def test_unknown_order_action_is_recorded_and_can_be_confirmed(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    db = SessionLocal()
+    try:
+        stored = db.get(RunModel, run["id"])
+        transition_run(stored, "awaiting_step_completion")
+        transition_step(stored.steps[0], "waiting")
+        stored.steps[0].result_summary = {"order_action_status": "pending"}
+        db.commit()
+    finally:
+        db.close()
+
+    async def fail_send(_resource, _session, _action):
+        raise WorkflowError("ORDER_SESSION_LOST", "session lost", 409)
+
+    monkeypatch.setattr(runs_route, "send_order_action", fail_send)
+    step_id = run["steps"][0]["id"]
+    failed = client.post(
+        f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action",
+        headers=admin_headers,
+        json={"action": "new_order_simple"},
+    )
+    assert failed.status_code == 409
+    current = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    summary = current["steps"][0]["result_summary"]
+    assert summary["order_action_status"] == "unknown"
+    assert summary["order_action_history"][-1]["status"] == "unknown"
+    blocked = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/complete", headers=admin_headers)
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "ORDER_ACTION_UNRESOLVED"
+
+    confirmed = client.post(
+        f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action/confirm",
+        headers=admin_headers,
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    confirmed_history = confirmed.json()["steps"][0]["result_summary"]["order_action_history"]
+    assert confirmed_history[-1]["status"] == "dispatched"
+    assert confirmed_history[-1]["confirmed_by"] == 1
+
+
+def test_order_action_history_is_limited_to_one_hundred_entries(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    db = SessionLocal()
+    try:
+        stored = db.get(RunModel, run["id"])
+        transition_run(stored, "awaiting_step_completion")
+        transition_step(stored.steps[0], "waiting")
+        stored.steps[0].result_summary = {
+            "order_action_status": "dispatched",
+            "order_action_history": [
+                {"request_id": "old-%s" % index, "action": "new_order", "status": "dispatched"}
+                for index in range(100)
+            ],
+        }
+        db.commit()
+    finally:
+        db.close()
+
+    async def fake_send(_resource, _session, _action):
+        return None
+
+    monkeypatch.setattr(runs_route, "send_order_action", fake_send)
+    step_id = run["steps"][0]["id"]
+    response = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    history = response.json()["steps"][0]["result_summary"]["order_action_history"]
+    assert len(history) == 100
+    assert history[0]["request_id"] == "old-1"
+    assert history[-1]["request_id"] != "old-99"
 
 
 def test_unknown_order_action_can_restart_the_whole_node(
@@ -675,6 +835,11 @@ def test_unknown_order_action_can_restart_the_whole_node(
             "process_started": True,
             "tmux_session": "openslt-order-r1-s1",
             "order_action_status": "unknown",
+            "order_action_history": [{
+                "request_id": "unknown-1",
+                "action": "new_order",
+                "status": "unknown",
+            }],
         }
         db.commit()
     finally:
@@ -693,6 +858,7 @@ def test_unknown_order_action_can_restart_the_whole_node(
     assert cleaned == ["openslt-order-r1-s1"]
     assert response.json()["status"] == "running"
     assert response.json()["steps"][0]["retry_count"] == 1
+    assert response.json()["steps"][0]["result_summary"]["order_action_history"][0]["request_id"] == "unknown-1"
 
 
 def test_remote_terminal_reports_connection_failure(

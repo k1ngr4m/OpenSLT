@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.core.logging import trace_id_ctx
 from app.core.time import beijing_now
 from app.models import Artifact, ConfigurationCaptureSnapshot, LogRecord, Resource, RunStep, TestPlan, TestRun, TestScenario, User, Verdict
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, RunCreate, RunOut, VerdictOut, VerdictWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, RunCreate, RunOut, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -27,6 +27,7 @@ from app.services.workflows import WorkflowError, load_version, resource_map
 from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
+ORDER_ACTION_HISTORY_LIMIT = 100
 
 @router.post("/runs", response_model=RunOut, status_code=201)
 def create_run(payload: RunCreate, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
@@ -196,8 +197,36 @@ def _order_step_resource(db: Session, run: TestRun, step_id: int) -> typing.Tupl
     return step, resource
 
 
+def _order_action_history(summary: typing.Mapping[str, typing.Any]) -> typing.List[typing.Dict[str, typing.Any]]:
+    raw = summary.get("order_action_history")
+    if not isinstance(raw, list):
+        return []
+    return [dict(item) for item in raw if isinstance(item, dict)][-ORDER_ACTION_HISTORY_LIMIT:]
+
+
+def _update_order_action_history(
+    summary: typing.Dict[str, typing.Any],
+    request_id: str,
+    **changes: typing.Any,
+) -> typing.Dict[str, typing.Any]:
+    history = _order_action_history(summary)
+    for item in reversed(history):
+        if item.get("request_id") == request_id:
+            item.update(changes)
+            break
+    summary["order_action_history"] = history[-ORDER_ACTION_HISTORY_LIMIT:]
+    return summary
+
+
 @router.post("/runs/{run_id}/steps/{step_id}/order-action", response_model=RunOut)
-async def dispatch_order_action(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+async def dispatch_order_action(
+    run_id: int,
+    step_id: int,
+    request: Request,
+    payload: typing.Union[OrderActionRequest, None] = None,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> TestRun:
     db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
     run = load_run(db, run_id)
     try:
@@ -206,17 +235,30 @@ async def dispatch_order_action(run_id: int, step_id: int, request: Request, act
             raise WorkflowError("INVALID_TRANSITION", "当前发单节点不能发送动作", 409)
         summary = dict(step.result_summary or {})
         status = str(summary.get("order_action_status") or "pending")
-        if status != "pending":
-            raise WorkflowError("ORDER_ACTION_ALREADY_SENT", "发单动作已发送或结果待确认，不能重复发送", 409)
-        action = str((step.config_snapshot or {}).get("order_action") or "new_order")
+        if status in {"dispatching", "unknown"}:
+            raise WorkflowError("ORDER_ACTION_UNRESOLVED", "上一条发单动作结果尚未确认，不能继续发送", 409)
+        action = str(payload.action if payload else (step.config_snapshot or {}).get("order_action") or "new_order")
         if action not in supported_order_actions(resource):
             raise WorkflowError("ORDER_ACTION_UNSUPPORTED", "发单资源不支持动作 %s" % action, 409)
         session = str(summary.get("tmux_session") or order_session_name(run.id, step.id))
+        request_id = str(uuid4())
+        dispatch_started_at = beijing_now()
+        history = _order_action_history(summary)
+        history.append({
+            "request_id": request_id,
+            "action": action,
+            "status": "dispatching",
+            "requested_by": actor.id,
+            "started_at": dispatch_started_at.isoformat(),
+            "finished_at": None,
+            "error": None,
+        })
         summary.update({
             "order_action": action,
             "order_action_status": "dispatching",
             "action_dispatched_by": actor.id,
-            "action_dispatch_started_at": beijing_now().isoformat(),
+            "action_dispatch_started_at": dispatch_started_at.isoformat(),
+            "order_action_history": history[-ORDER_ACTION_HISTORY_LIMIT:],
         })
         step.result_summary = summary
         db.commit()
@@ -225,24 +267,43 @@ async def dispatch_order_action(run_id: int, step_id: int, request: Request, act
         except WorkflowError as exc:
             run = load_run(db, run_id)
             step = next(item for item in run.steps if item.id == step_id)
-            step.result_summary = {
+            failed_at = beijing_now()
+            failed_summary = {
                 **(step.result_summary or {}),
                 "order_action_status": "unknown",
                 "order_action_error": exc.message,
             }
-            append_log(db, run, "order.action_unknown", "发单动作发送结果不确定，请查看终端后确认", level="WARNING", step=step, source="terminal", detail={"action": action})
+            step.result_summary = _update_order_action_history(
+                failed_summary,
+                request_id,
+                status="unknown",
+                finished_at=failed_at.isoformat(),
+                error=exc.message,
+            )
+            detail = {"action": action, "request_id": request_id, "error": exc.message}
+            append_log(db, run, "order.action_unknown", "发单动作发送结果不确定，请查看终端后确认", level="WARNING", step=step, source="terminal", detail=detail)
+            write_audit(db, "run.order_action", "run_step", step.id, actor, request, result="unknown", detail={"run_id": run.id, **detail})
             db.commit()
             raise
         run = load_run(db, run_id)
         step = next(item for item in run.steps if item.id == step_id)
         dispatched_at = beijing_now()
-        step.result_summary = {
+        succeeded_summary = {
             **(step.result_summary or {}),
             "order_action_status": "dispatched",
             "action_dispatched_at": dispatched_at.isoformat(),
+            "order_action_error": None,
         }
-        append_log(db, run, "order.action_dispatched", "已发送发单动作 %s" % action, step=step, source="terminal", detail={"action": action, "tmux_session": session})
-        write_audit(db, "run.order_action", "run_step", step.id, actor, request, detail={"run_id": run.id, "action": action})
+        step.result_summary = _update_order_action_history(
+            succeeded_summary,
+            request_id,
+            status="dispatched",
+            finished_at=dispatched_at.isoformat(),
+            error=None,
+        )
+        detail = {"action": action, "request_id": request_id, "tmux_session": session}
+        append_log(db, run, "order.action_dispatched", "已发送发单动作 %s" % action, step=step, source="terminal", detail=detail)
+        write_audit(db, "run.order_action", "run_step", step.id, actor, request, detail={"run_id": run.id, **detail})
         db.commit()
         broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
         return load_run(db, run.id)
@@ -258,12 +319,25 @@ def confirm_order_action(run_id: int, step_id: int, request: Request, actor: Use
         if (step.result_summary or {}).get("order_action_status") not in {"unknown", "dispatching"}:
             raise WorkflowError("ORDER_ACTION_CONFIRM_INVALID", "只有发送结果不确定的动作可以人工确认", 409)
         now = beijing_now()
-        step.result_summary = {
+        summary = {
             **(step.result_summary or {}),
             "order_action_status": "dispatched",
             "action_confirmed_by": actor.id,
             "action_confirmed_at": now.isoformat(),
+            "order_action_error": None,
         }
+        history = _order_action_history(summary)
+        pending = next((item for item in reversed(history) if item.get("status") in {"unknown", "dispatching"}), None)
+        if pending:
+            pending.update({
+                "status": "dispatched",
+                "finished_at": pending.get("finished_at") or now.isoformat(),
+                "error": None,
+                "confirmed_by": actor.id,
+                "confirmed_at": now.isoformat(),
+            })
+        summary["order_action_history"] = history
+        step.result_summary = summary
         append_log(db, run, "order.action_confirmed", "操作员确认发单动作已发送", step=step, source="user")
         write_audit(db, "run.order_action_confirm", "run_step", step.id, actor, request, detail={"run_id": run.id})
         db.commit()
@@ -277,10 +351,12 @@ async def complete_run_step(run_id: int, step_id: int, request: Request, actor: 
     run = load_run(db, run_id)
     try:
         step = next((item for item in run.steps if item.id == step_id), None)
-        if step and step.node_type == "order_preparation" and (step.result_summary or {}).get("order_action_status") == "dispatched":
+        if step and step.node_type == "order_preparation":
             current = next((item for item in run.steps if item.status != "succeeded"), None)
             if run.status != "awaiting_step_completion" or step.status != "waiting" or not current or current.id != step.id:
                 raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
+            if (step.result_summary or {}).get("order_action_status") in {"dispatching", "unknown"}:
+                raise WorkflowError("ORDER_ACTION_UNRESOLVED", "发单动作结果尚未确认，不能完成节点", 409)
             _step, resource = _order_step_resource(db, run, step_id)
             session = str((step.result_summary or {}).get("tmux_session") or order_session_name(run.id, step.id))
             await cleanup_order_session(resource, session)

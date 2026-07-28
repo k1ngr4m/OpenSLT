@@ -324,10 +324,70 @@
     grid-template-columns: 1fr;
   }
 }
-.order-action-bar {
+.order-action-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.order-action-heading,
+.order-action-history-heading,
+.order-action-resolution,
+.order-action-history-row {
   display: flex;
   align-items: center;
+}
+
+.order-action-heading,
+.order-action-history-heading {
+  justify-content: space-between;
   gap: 12px;
+}
+
+.order-action-buttons,
+.order-action-resolution {
+  display: flex;
   flex-wrap: wrap;
-  margin-top: 14px;
+  gap: 8px;
+}
+
+.order-action-buttons :deep(.el-button) {
+  margin-left: 0;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.order-action-resolution {
+  padding-top: 10px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.order-action-history {
+  display: grid;
+  gap: 0;
+  padding-top: 4px;
+}
+
+.order-action-history-heading {
+  padding-bottom: 6px;
+  font-size: 12px;
+}
+
+.order-action-history-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  gap: 12px;
+  min-height: 36px;
+  border-top: 1px solid var(--ui-border);
+  font-size: 12px;
+}
+
+.order-action-history-row time {
+  color: var(--ui-text-secondary);
+}
+
+.order-action-history-row code {
+  overflow: hidden;
+  color: var(--ui-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

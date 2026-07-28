@@ -153,7 +153,9 @@ async def launch_order_session(
             "tmux_session": session,
             "session_status": "running",
             "process_started": True,
+            "supported_order_actions": list(supported_order_actions(resource)),
             "order_action_status": "pending",
+            "order_action_history": [],
         }
     except WorkflowError:
         raise

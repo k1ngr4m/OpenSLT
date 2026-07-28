@@ -936,6 +936,29 @@
         "title": "MetricOut",
         "type": "object"
       },
+      "OrderActionRequest": {
+        "properties": {
+          "action": {
+            "enum": [
+              "new_order",
+              "new_order_simple",
+              "new_quote",
+              "new_quote_simple",
+              "new_arbi_order",
+              "new_arbi_order_simple",
+              "cxl_order",
+              "stop_order"
+            ],
+            "title": "Action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "OrderActionRequest",
+        "type": "object"
+      },
       "OrderConfigCreate": {
         "properties": {
           "name": {
@@ -6199,6 +6222,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/OrderActionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

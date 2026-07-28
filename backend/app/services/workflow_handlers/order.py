@@ -10,6 +10,7 @@ class OrderPreparationHandler:
     terminal_kind = None
 
     async def execute(self, context: WorkflowExecutionContext) -> dict:
+        previous_history = list((context.step.result_summary or {}).get("order_action_history") or [])[-100:]
         summary = await workflows.prepare_order_node(
             context.db,
             context.workflow,
@@ -24,7 +25,13 @@ class OrderPreparationHandler:
             str(summary["generated_command"]),
             replace=context.step.retry_count > 0,
         )
-        return {**summary, **session, "resource_id": resource.id, "resource_name": resource.name}
+        return {
+            **summary,
+            **session,
+            "order_action_history": previous_history,
+            "resource_id": resource.id,
+            "resource_name": resource.name,
+        }
 
 
 HANDLERS = (OrderPreparationHandler(),)

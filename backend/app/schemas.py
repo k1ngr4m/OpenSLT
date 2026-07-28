@@ -13,6 +13,7 @@ from app.services.run_state import RunStatus, StepStatus
 from app.workflow_node_configs import (
     ORDER_ACTIONS,
     DatabaseConfig,
+    OrderAction,
     OrderPreparationConfig,
     ParserConfig,
     ServerConfig,
@@ -564,6 +565,10 @@ class RunCreate(BaseModel):
     scenario_id: int
     resource_ids: typing.List[int] = Field(min_length=1)
     timeout_minutes: typing.Union[int, None] = Field(default=None, ge=1, le=1440)
+
+
+class OrderActionRequest(BaseModel):
+    action: OrderAction
 
 
 class StepOut(ORMModel):

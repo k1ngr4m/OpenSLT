@@ -385,9 +385,9 @@ async def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_
         raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
     if (
         step.node_type == "order_preparation"
-        and (step.result_summary or {}).get("order_action_status") != "dispatched"
+        and (step.result_summary or {}).get("order_action_status") in {"dispatching", "unknown"}
     ):
-        raise WorkflowError("ORDER_ACTION_REQUIRED", "请先发送发单动作，再完成节点", 409)
+        raise WorkflowError("ORDER_ACTION_UNRESOLVED", "发单动作结果尚未确认，不能完成节点", 409)
     now = beijing_now()
     if (
         step.node_type == "slnic_merge_capture"

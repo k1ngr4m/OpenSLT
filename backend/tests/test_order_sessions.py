@@ -93,6 +93,8 @@ async def test_launch_order_session_uses_safe_tmux_command(monkeypatch):
         "cd /tmp/tool && ./binary order.xml",
     )
     assert result["tmux_session"] == "openslt-order-r12-s34"
+    assert result["supported_order_actions"] == ["new_order"]
+    assert result["order_action_history"] == []
     launch = next(command for command in connection.commands if command.startswith("tmux respawn-pane"))
     assert shlex.split(launch) == [
         "tmux",
