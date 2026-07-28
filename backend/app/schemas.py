@@ -618,7 +618,12 @@ class OrderActionRequest(BaseModel):
 
 
 class ParserTableExportRequest(BaseModel):
-    table: Literal["t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders"]
+    table: Literal[
+        "t_fut_orders",
+        "t_fut_quotes",
+        "t_fut_arbi_orders",
+        "t_account_exchange_code",
+    ]
 
 
 class StatisticsInputSelectionRequest(BaseModel):
@@ -688,7 +693,12 @@ class ArtifactOut(ORMModel):
 
 
 class ParserTableExportOut(BaseModel):
-    table: Literal["t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders"]
+    table: Literal[
+        "t_fut_orders",
+        "t_fut_quotes",
+        "t_fut_arbi_orders",
+        "t_account_exchange_code",
+    ]
     artifact_id: int
     filename: str
     database_name: str

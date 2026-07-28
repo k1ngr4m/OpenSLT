@@ -228,6 +228,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resources/connection-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Resource Connection */
+        post: operations["test_resource_connection_api_v1_resources_connection_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resources/database/discover": {
         parameters: {
             query?: never;
@@ -1604,7 +1621,7 @@ export interface components {
              * Table
              * @enum {string}
              */
-            table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders";
+            table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders" | "t_account_exchange_code";
         };
         /** ParserTableExportRequest */
         ParserTableExportRequest: {
@@ -1612,7 +1629,7 @@ export interface components {
              * Table
              * @enum {string}
              */
-            table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders";
+            table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders" | "t_account_exchange_code";
         };
         /** PlanOut */
         PlanOut: {
@@ -1669,6 +1686,42 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** ResourceConnectionTestRequest */
+        ResourceConnectionTestRequest: {
+            /**
+             * Auth Type
+             * @default password
+             * @enum {string}
+             */
+            auth_type: "password" | "private_key";
+            /** Capabilities */
+            capabilities?: Record<string, unknown>;
+            /** Host */
+            host: string;
+            /** Password */
+            password?: string | null;
+            /** Private Key */
+            private_key?: string | null;
+            /**
+             * Remote Path
+             * @default
+             */
+            remote_path: string;
+            /** Resource Id */
+            resource_id?: number | null;
+            /**
+             * Resource Type
+             * @enum {string}
+             */
+            resource_type: "rem" | "market" | "order" | "slnic" | "capture" | "coco" | "parser";
+            /**
+             * Ssh Port
+             * @default 22
+             */
+            ssh_port: number;
+            /** Username */
+            username: string;
         };
         /** ResourceOut */
         ResourceOut: {
@@ -2951,6 +3004,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_resource_connection_api_v1_resources_connection_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResourceConnectionTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, unknown>;
                 };
             };
             /** @description Validation Error */

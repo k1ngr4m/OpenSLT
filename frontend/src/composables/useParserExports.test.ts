@@ -59,7 +59,7 @@ describe('useParserExports', () => {
   it('lists all parser tables and exports one as an archived download', async () => {
     const { downloadArtifact, exports, reload } = setup()
     expect(exports.parserExportRows.value.map(row => row.table)).toEqual([
-      't_fut_orders', 't_fut_quotes', 't_fut_arbi_orders',
+      't_fut_orders', 't_fut_quotes', 't_fut_arbi_orders', 't_account_exchange_code',
     ])
     expect(exports.canExportParserTables.value).toBe(true)
 
@@ -68,6 +68,14 @@ describe('useParserExports', () => {
     expect(api.post).toHaveBeenCalledWith('/runs/2/steps/13/parser-exports', { table: 't_fut_orders' })
     expect(reload).toHaveBeenCalled()
     expect(downloadArtifact).toHaveBeenCalledWith(41)
+  })
+
+  it('exports the account exchange code snapshot through the same endpoint', async () => {
+    const { exports } = setup()
+
+    await exports.exportParserTable('t_account_exchange_code')
+
+    expect(api.post).toHaveBeenCalledWith('/runs/2/steps/13/parser-exports', { table: 't_account_exchange_code' })
   })
 
   it('exposes an existing snapshot as refreshable', () => {

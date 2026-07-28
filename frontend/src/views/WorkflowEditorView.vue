@@ -673,7 +673,7 @@ onMounted(load)
             <p class="slnic-note">命令由系统固定生成，工作流节点不能修改脚本路径或追加 Shell 参数。</p>
           </template>
           <template v-else-if="selectedNode.node_type === 'parser_parse'">
-            <label class="field required"><span>运行数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable || !selectedResourceMap.database" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>从该数据库导出 t_fut_orders、t_fut_quotes、t_fut_arbi_orders。</small></label>
+            <label class="field required"><span>运行数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable || !selectedResourceMap.database" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>三张订单表从该 *_trading_data 库导出；t_account_exchange_code 从同前缀 *_config 库导出。</small></label>
             <div class="section-label">解析 XML</div>
             <label class="field required">
               <span>config.xml 配置</span>

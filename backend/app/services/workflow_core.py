@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestScenario
 from app.services.order_configs import parser_config_role, parser_main_config_filename
+from app.services.parser_inputs import parser_config_database_name
 from app.services.resource_relations import (
     node_config_with_relations,
     node_contract_file_ids,
@@ -31,7 +32,6 @@ NODE_TYPES = {
     "data_statistics",
     *SLNIC_NODE_TYPES,
 }
-PARSER_TABLES = ("t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders")
 SERVER_FIELDS = {
     "rem": {"ip", "nic_model", "machine_model", "os_version", "cpu_model"},
     "market": {"ip", "os_version", "cpu_model"},
@@ -268,6 +268,20 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少数据库资源"})
             elif database_name not in (database_resource.database_names or []):
                 errors.append({**prefix, "field": "database_name", "message": "运行数据库不在资源白名单中"})
+            else:
+                config_database_name = parser_config_database_name(database_name)
+                if not config_database_name:
+                    errors.append({
+                        **prefix,
+                        "field": "database_name",
+                        "message": "运行数据库名称必须以 _trading_data 结尾",
+                    })
+                elif config_database_name not in (database_resource.database_names or []):
+                    errors.append({
+                        **prefix,
+                        "field": "database_name",
+                        "message": f"数据库资源缺少配套配置库 {config_database_name}",
+                    })
             preceding_merges = [
                 item for item in version.nodes
                 if item.position < node.position and item.node_type == "slnic_merge_capture"

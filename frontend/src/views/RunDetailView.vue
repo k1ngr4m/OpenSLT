@@ -398,7 +398,6 @@ watch(
                       <span v-if="row.ready" class="muted">{{ row.detail.row_count ?? 0 }} 行 · {{ formatDate(String(row.detail.exported_at || '')) }}</span>
                       <span v-else class="muted">尚未获取，开始解析时将自动生成</span>
                     </div>
-                    <code v-if="row.ready" class="parser-export-checksum" :title="String(row.detail.checksum || '')">{{ String(row.detail.checksum || '').slice(0, 12) }}…</code>
                     <div class="parser-export-actions">
                       <el-button
                         v-if="auth.canOperate && canExportParserTables"

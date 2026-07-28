@@ -26,6 +26,7 @@ from app.services.order_configs import (
     parser_config_role,
     parser_main_config_filename,
 )
+from app.services.parser_inputs import PARSER_TABLES, parser_config_database_name, parser_table_database_name
 from app.services.workflow_capture import _ssh_options, capture_database, capture_server, preview_node
 from app.services.workflow_contracts import _sftp, fetch_contract_files, parse_read_symbol_csv, prepare_order_node
 from app.services.workflow_core import (
@@ -43,8 +44,6 @@ from app.services.workflow_core import (
 )
 from app.services.workflow_publishing import publish, validate_publish
 from app.workflow_node_configs import ParserConfig, parse_node_config
-
-PARSER_TABLES = ("t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders")
 
 def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
     return (
@@ -268,6 +267,33 @@ def _parser_input_exports(step: RunStep) -> dict[str, dict[str, typing.Any]]:
         for table, value in raw.items()
         if table in PARSER_TABLES and isinstance(value, dict)
     }
+
+
+def resolve_parser_table_database(
+    database_resource: Resource,
+    trading_database_name: str,
+    table: str,
+) -> str:
+    selected = parser_table_database_name(table, trading_database_name)
+    if table not in PARSER_TABLES:
+        raise WorkflowError("PARSER_TABLE_INVALID", f"不支持导出数据表 {table}", 400)
+    if not selected:
+        raise WorkflowError(
+            "PARSER_CONFIG_DATABASE_INVALID",
+            "运行数据库名称必须以 _trading_data 结尾，才能匹配配置数据库",
+            409,
+        )
+    try:
+        return validate_database(database_resource, selected)
+    except DatabaseOperationError as exc:
+        if table == "t_account_exchange_code":
+            expected = parser_config_database_name(trading_database_name)
+            raise WorkflowError(
+                "PARSER_CONFIG_DATABASE_REQUIRED",
+                f"数据库资源缺少配套配置库 {expected}",
+                409,
+            ) from exc
+        raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
 
 
 def _parser_input_artifact(
@@ -513,6 +539,10 @@ async def execute_parser_node(
         database_name = validate_database(database_resource, database_name)
     except DatabaseOperationError as exc:
         raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+    table_databases = {
+        table: resolve_parser_table_database(database_resource, database_name, table)
+        for table in PARSER_TABLES
+    }
     capabilities = parser_resource.capabilities or {}
     binary = str(capabilities.get("parser_binary") or capabilities.get("parser_tool") or "").strip()
     directory = parser_resource.remote_path.strip().rstrip("/")
@@ -544,14 +574,15 @@ async def execute_parser_node(
         staging = Path(temporary_name)
         input_files: dict[str, Path] = {}
         for table in PARSER_TABLES:
-            snapshot = _valid_parser_input_snapshot(db, run, step, table, database_name)
+            table_database_name = table_databases[table]
+            snapshot = _valid_parser_input_snapshot(db, run, step, table, table_database_name)
             if snapshot is None:
                 exported = await export_parser_table_snapshot(
                     db,
                     run,
                     step,
                     database_resource,
-                    database_name,
+                    table_database_name,
                     table,
                     source="auto",
                 )
@@ -566,7 +597,7 @@ async def execute_parser_node(
                         source="parser",
                         detail={key: exported[key] for key in ("table", "artifact_id", "row_count", "checksum", "source")},
                     )
-                snapshot = _valid_parser_input_snapshot(db, run, step, table, database_name)
+                snapshot = _valid_parser_input_snapshot(db, run, step, table, table_database_name)
             if snapshot is None:
                 raise WorkflowError("PARSER_INPUT_MISSING", f"未能准备解析输入 {table}.csv", 409)
             artifact, detail = snapshot
@@ -644,6 +675,7 @@ async def execute_parser_node(
         **(step.result_summary or {}),
         "resource_id": parser_resource.id,
         "database_name": database_name,
+        "config_database_name": table_databases["t_account_exchange_code"],
         "parser_xml_files": {
             role: {"filename": detail["name"], "checksum": detail["checksum"]}
             for role, detail in xml_files.items()

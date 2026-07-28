@@ -1430,7 +1430,8 @@
             "enum": [
               "t_fut_orders",
               "t_fut_quotes",
-              "t_fut_arbi_orders"
+              "t_fut_arbi_orders",
+              "t_account_exchange_code"
             ],
             "title": "Table",
             "type": "string"
@@ -1458,7 +1459,8 @@
             "enum": [
               "t_fut_orders",
               "t_fut_quotes",
-              "t_fut_arbi_orders"
+              "t_fut_arbi_orders",
+              "t_account_exchange_code"
             ],
             "title": "Table",
             "type": "string"
@@ -1583,6 +1585,97 @@
           "refresh_token"
         ],
         "title": "RefreshRequest",
+        "type": "object"
+      },
+      "ResourceConnectionTestRequest": {
+        "properties": {
+          "auth_type": {
+            "default": "password",
+            "enum": [
+              "password",
+              "private_key"
+            ],
+            "title": "Auth Type",
+            "type": "string"
+          },
+          "capabilities": {
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "private_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Private Key"
+          },
+          "remote_path": {
+            "default": "",
+            "title": "Remote Path",
+            "type": "string"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "resource_type": {
+            "enum": [
+              "rem",
+              "market",
+              "order",
+              "slnic",
+              "capture",
+              "coco",
+              "parser"
+            ],
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "ssh_port": {
+            "default": 22,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Ssh Port",
+            "type": "integer"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_type",
+          "host",
+          "username"
+        ],
+        "title": "ResourceConnectionTestRequest",
         "type": "object"
       },
       "ResourceOut": {
@@ -4774,6 +4867,50 @@
           }
         ],
         "summary": "Create Resource"
+      }
+    },
+    "/api/v1/resources/connection-test": {
+      "post": {
+        "operationId": "test_resource_connection_api_v1_resources_connection_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResourceConnectionTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Test Resource Connection Api V1 Resources Connection Test Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Resource Connection"
       }
     },
     "/api/v1/resources/database/discover": {

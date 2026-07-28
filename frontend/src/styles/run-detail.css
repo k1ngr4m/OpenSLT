@@ -300,7 +300,7 @@
 
 .parser-export-row {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) 130px auto;
+  grid-template-columns: minmax(240px, 1fr) auto;
   align-items: center;
   gap: 16px;
   min-height: 64px;
@@ -320,16 +320,8 @@
   white-space: nowrap;
 }
 
-.parser-export-name span,
-.parser-export-checksum {
+.parser-export-name span {
   font-size: 12px;
-}
-
-.parser-export-checksum {
-  overflow: hidden;
-  color: var(--ui-text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .parser-export-actions {
@@ -447,10 +439,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 8px 12px;
     padding: 12px 0;
-  }
-
-  .parser-export-checksum {
-    display: none;
   }
 
   .parser-export-actions {

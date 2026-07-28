@@ -25,7 +25,8 @@ from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.statistics_execution import select_statistics_inputs
-from app.services.workflows import PARSER_TABLES, WorkflowError, export_parser_table_snapshot, load_version, resource_map
+from app.services.parser_inputs import PARSER_TABLES
+from app.services.workflows import WorkflowError, export_parser_table_snapshot, load_version, resolve_parser_table_database, resource_map
 from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
@@ -222,12 +223,17 @@ async def export_run_parser_table(
             database_name = validate_database(database_resource, database_name)
         except DatabaseOperationError as exc:
             raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+        table_database_name = resolve_parser_table_database(
+            database_resource,
+            database_name,
+            payload.table,
+        )
         result = await export_parser_table_snapshot(
             db,
             run,
             step,
             database_resource,
-            database_name,
+            table_database_name,
             payload.table,
             source="manual",
             actor_id=actor.id,

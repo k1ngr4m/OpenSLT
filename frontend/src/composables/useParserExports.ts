@@ -3,7 +3,12 @@ import { ElMessage } from 'element-plus'
 import { api, errorMessage } from '@/api/client'
 import type { JsonMap, RunDetail, RunStep } from '@/types/run'
 
-export const PARSER_TABLES = ['t_fut_orders', 't_fut_quotes', 't_fut_arbi_orders'] as const
+export const PARSER_TABLES = [
+  't_fut_orders',
+  't_fut_quotes',
+  't_fut_arbi_orders',
+  't_account_exchange_code',
+] as const
 export type ParserTable = typeof PARSER_TABLES[number]
 
 interface ParserExportDetail extends JsonMap {

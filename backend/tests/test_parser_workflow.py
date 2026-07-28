@@ -139,13 +139,14 @@ def create_parser_resource(client, headers, tool="soft_cffex_speed_analysis_v2",
     return response.json()
 
 
-def create_database_resource(client, headers):
+def create_database_resource(client, headers, database_names=None):
     response = client.post("/api/v1/resources", headers=headers, json={
         "name": "Parser-Database", "resource_type": "database", "business_code": "fut_mm",
         "host": "", "ssh_port": 22, "username": "", "auth_type": "password",
         "database_engine": "mysql", "database_connection_mode": "direct",
         "database_host": "127.0.0.1", "database_port": 3306,
-        "database_names": ["fut_mm_trading_data"], "database_username": "tester",
+        "database_names": database_names or ["fut_mm_config", "fut_mm_trading_data"],
+        "database_username": "tester",
         "database_password": "secret", "database_tls_enabled": False,
         "remote_path": "", "capabilities": {}, "version_info": "test",
         "notes": "", "is_enabled": True,
@@ -325,6 +326,46 @@ def test_parser_publish_rejects_missing_merge(client, admin_headers):
     assert any("pcapng" in item["message"] for item in published.json()["errors"])
 
 
+def test_parser_publish_rejects_missing_paired_config_database(client, admin_headers):
+    database = create_database_resource(
+        client,
+        admin_headers,
+        database_names=["fut_mm_trading_data"],
+    )
+    parser = create_parser_resource(client, admin_headers)
+    _, scenario = create_plan_scenario(
+        client,
+        admin_headers,
+        resource_ids=[database["id"], parser["id"]],
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [database["id"], parser["id"]],
+            "nodes": [parser_nodes()[-1]],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish",
+        headers=admin_headers,
+    )
+
+    assert published.status_code == 422
+    assert any(
+        item.get("field") == "database_name"
+        and "fut_mm_config" in item["message"]
+        for item in published.json()["errors"]
+    )
+
+
 def test_parser_publish_rejects_changed_selected_xml(client, admin_headers, monkeypatch):
     config_sftp = FakeConfigSFTP()
 
@@ -482,7 +523,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     export_calls = []
 
     async def fake_export(database_resource, database_name, table, target):
-        export_calls.append(table)
+        export_calls.append((database_name, table))
         if table == "t_fut_orders":
             target.write_text("id,account\n", encoding="utf-8")
             return 0
@@ -606,6 +647,13 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     assert refreshed_export.status_code == 200, refreshed_export.text
     assert refreshed_export.json()["artifact_id"] == first_export.json()["artifact_id"]
     assert refreshed_export.json()["row_count"] == 0
+    account_export = client.post(
+        export_url,
+        headers=admin_headers,
+        json={"table": "t_account_exchange_code"},
+    )
+    assert account_export.status_code == 200, account_export.text
+    assert account_export.json()["database_name"] == "fut_mm_config"
     invalid_export = client.post(
         export_url,
         headers=admin_headers,
@@ -624,23 +672,35 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     assert connection.commands[0].endswith(
         " && /home/user0/soft_cffex_speed_analysis_v2/soft_cffex_speed_analysis_v2 soft_cffex_speed_analysis.xml"
     )
+    remote_workdir = connection.commands[0].split(" && ", 1)[0].replace("cd ", "", 1)
+    for filename in (
+        "t_fut_orders.csv",
+        "t_fut_quotes.csv",
+        "t_fut_arbi_orders.csv",
+        "t_account_exchange_code.csv",
+    ):
+        assert f"{remote_workdir}/{filename}" in connection.sftp.files
     assert connection.closed is True
     assert connection.sftp.closed is True
     assert export_calls == [
-        "t_fut_orders",
-        "t_fut_orders",
-        "t_fut_quotes",
-        "t_fut_arbi_orders",
+        ("fut_mm_trading_data", "t_fut_orders"),
+        ("fut_mm_trading_data", "t_fut_orders"),
+        ("fut_mm_config", "t_account_exchange_code"),
+        ("fut_mm_trading_data", "t_fut_quotes"),
+        ("fut_mm_trading_data", "t_fut_arbi_orders"),
     ]
     input_artifacts = [item for item in run["artifacts"] if item["artifact_type"] == "parser_input_csv"]
     assert {item["name"] for item in input_artifacts} == {
         "t_fut_orders.csv", "t_fut_quotes.csv", "t_fut_arbi_orders.csv",
+        "t_account_exchange_code.csv",
     }
     parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
+    assert parse_step["result_summary"]["config_database_name"] == "fut_mm_config"
     exports = parse_step["result_summary"]["parser_input_exports"]
     assert exports["t_fut_orders"]["source"] == "manual"
     assert exports["t_fut_orders"]["row_count"] == 0
     assert exports["t_fut_quotes"]["source"] == "auto"
+    assert exports["t_account_exchange_code"]["database_name"] == "fut_mm_config"
     late_export = client.post(
         export_url,
         headers=admin_headers,
