@@ -71,6 +71,19 @@ describe('useRunActions', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
+  it('starts order nodes through the durable step endpoint', async () => {
+    const runTerminalStep = vi.fn().mockResolvedValue(undefined)
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep,
+    })
+
+    await actions.stepAction(step('order_preparation'), 'start')
+    expect(api.post).toHaveBeenCalledWith('/runs/11/steps/7/start')
+    expect(runTerminalStep).not.toHaveBeenCalled()
+  })
+
   it('uses the audited confirmation endpoint for wiring nodes', async () => {
     const actions = useRunActions({
       runId: 11,

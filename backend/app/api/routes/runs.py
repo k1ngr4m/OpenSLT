@@ -13,16 +13,15 @@ from app.api.routes.common import load_run, not_found, workflow_http_error, work
 from app.core.database import get_db
 from app.core.logging import trace_id_ctx
 from app.core.time import beijing_now
-from app.models import Artifact, ConfigurationCaptureSnapshot, LogRecord, Resource, TestPlan, TestRun, TestScenario, User, Verdict
+from app.models import Artifact, ConfigurationCaptureSnapshot, LogRecord, Resource, RunStep, TestPlan, TestRun, TestScenario, User, Verdict
 from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, RunCreate, RunOut, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
 from app.services.orchestration import append_log, begin_workflow_step, cancel_run, complete_workflow_step, create_workflow_steps, confirm_workflow_step, release_locks
 from app.services.order_sessions import cleanup_order_session, order_session_name, send_order_action, supported_order_actions
-from app.services.resource_relations import run_resource_ids
+from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
-from app.services.resource_relations import sync_run_resources
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.workflows import WorkflowError, load_version, resource_map
 from app.wiring_profiles import build_wiring_snapshot
@@ -199,6 +198,7 @@ def _order_step_resource(db: Session, run: TestRun, step_id: int) -> typing.Tupl
 
 @router.post("/runs/{run_id}/steps/{step_id}/order-action", response_model=RunOut)
 async def dispatch_order_action(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
     run = load_run(db, run_id)
     try:
         step, resource = _order_step_resource(db, run, step_id)
@@ -278,6 +278,9 @@ async def complete_run_step(run_id: int, step_id: int, request: Request, actor: 
     try:
         step = next((item for item in run.steps if item.id == step_id), None)
         if step and step.node_type == "order_preparation" and (step.result_summary or {}).get("order_action_status") == "dispatched":
+            current = next((item for item in run.steps if item.status != "succeeded"), None)
+            if run.status != "awaiting_step_completion" or step.status != "waiting" or not current or current.id != step.id:
+                raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的节点", 409)
             _step, resource = _order_step_resource(db, run, step_id)
             session = str((step.result_summary or {}).get("tmux_session") or order_session_name(run.id, step.id))
             await cleanup_order_session(resource, session)
@@ -292,6 +295,21 @@ async def complete_run_step(run_id: int, step_id: int, request: Request, actor: 
 async def retry_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
     try:
+        current = next((item for item in run.steps if item.id == step_id), None)
+        if (
+            current
+            and current.node_type == "order_preparation"
+            and current.status == "waiting"
+            and run.status == "awaiting_step_completion"
+            and (current.result_summary or {}).get("order_action_status") in {"unknown", "dispatching"}
+        ):
+            _step, resource = _order_step_resource(db, run, step_id)
+            session = str((current.result_summary or {}).get("tmux_session") or order_session_name(run.id, current.id))
+            await cleanup_order_session(resource, session)
+            current.result_summary = {**(current.result_summary or {}), "session_status": "closed"}
+            transition_step(current, "failed")
+            current.error_message = "发单动作结果不确定，操作员选择重试节点"
+            transition_run(run, "awaiting_step_retry")
         step = begin_workflow_step(db, run, step_id, retry=True)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc

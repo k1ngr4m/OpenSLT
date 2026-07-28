@@ -151,6 +151,16 @@ async function confirmCurrentOrderAction() {
     if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
   }
 }
+
+async function retryUnknownOrderAction() {
+  if (!currentStep.value || !['unknown', 'dispatching'].includes(currentOrderActionStatus.value)) return
+  try {
+    await ElMessageBox.confirm('该动作可能已经到达发单程序。重试会关闭当前会话并重新启动节点，可能造成重复发单。', '重试发单节点', { type: 'warning', confirmButtonText: '仍要重试' })
+    await stepAction(currentStep.value, 'retry')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(errorMessage(error))
+  }
+}
 const wiringSnapshot = computed(() => {
   const value = selectedConfig.value.wiring_snapshot
   return value && typeof value === 'object' ? value as unknown as WiringSnapshot : null
@@ -425,6 +435,13 @@ watch(
                     type="warning"
                     @click="confirmCurrentOrderAction"
                   >确认已发送</el-button>
+                  <el-button
+                    v-if="['unknown', 'dispatching'].includes(currentOrderActionStatus)"
+                    type="danger"
+                    plain
+                    :loading="actingStepId === selectedStep.id"
+                    @click="retryUnknownOrderAction"
+                  >重试节点</el-button>
                   <el-tag v-else-if="currentOrderActionStatus === 'dispatched'" type="success">已发送 {{ currentOrderAction }}</el-tag>
                   <span class="muted">请确认终端程序已就绪后再发送；动作发送后仍需人工点击“完成”。</span>
                 </div>

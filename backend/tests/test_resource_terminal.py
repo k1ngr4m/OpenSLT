@@ -9,12 +9,13 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from app.api.routes import runs as runs_route
 from app.core.database import SessionLocal
-from app.models import AuditLog, Resource
+from app.models import AuditLog, Resource, TestRun as RunModel
 from app.services import order_configs
 from app.services import terminal as terminal_service
-from app.api.routes import runs as runs_route
 from app.services import workflow_contracts, workflows
+from app.services.run_state import transition_run, transition_step
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -579,7 +580,7 @@ def test_terminal_workflow_command_rejects_wrong_resource(
     assert unchanged["steps"][0]["status"] == "pending"
 
 
-def test_terminal_workflow_command_dispatches_order_command_after_preparation(
+def test_generic_terminal_rejects_order_workflow_start(
     client: TestClient,
     admin_headers: typing.Dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
@@ -592,68 +593,7 @@ def test_terminal_workflow_command_dispatches_order_command_after_preparation(
     async def fake_connect(**_):
         return connection
 
-    async def fake_prepare_order_node(*_):
-        return {
-            "prepared": True,
-            "xml_filename": "order.xml",
-            "xml_checksum": "abc123",
-            "read_symbol_csv": 0,
-            "network_interface": "p4p1",
-            "contract_files": [],
-            "generated_command": "cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml",
-            "process_started": False,
-        }
-
     monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
-    monkeypatch.setattr(workflows, "prepare_order_node", fake_prepare_order_node)
-
-    with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
-        assert websocket.receive_json()["status"] == "connecting"
-        assert websocket.receive_json()["status"] == "connected"
-        assert "remote-ready" in websocket.receive_json()["data"]
-        websocket.send_json(
-            {
-                "type": "workflow_step_command",
-                "run_id": run["id"],
-                "step_id": step["id"],
-                "operation": "start",
-            }
-        )
-        response = websocket.receive_json()
-        assert response["type"] == "workflow_command"
-        assert response["status"] == "dispatched"
-        assert response["command"] == "cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml"
-
-    assert connection.process.stdin.writes == ["cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml\r"]
-    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
-    assert updated["status"] == "awaiting_step_completion"
-    updated_step = updated["steps"][0]
-    assert updated_step["status"] == "waiting"
-    assert updated_step["result_summary"]["mode"] == "terminal"
-    assert updated_step["result_summary"]["resource_id"] == resource["id"]
-    assert updated_step["result_summary"]["resource_name"] == resource["name"]
-    assert updated_step["result_summary"]["command"] == "cd /tmp/openslt && export ZF_ATTR=interface=p4p1 && ./openslt order.xml"
-    assert updated_step["result_summary"]["process_started"] is True
-
-
-def test_terminal_workflow_command_marks_order_preparation_failure_retryable(
-    client: TestClient,
-    admin_headers: typing.Dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
-):
-    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
-    step = run["steps"][0]
-    token = access_token(admin_headers)
-    connection = FakeConnection()
-
-    async def fake_connect(**_):
-        return connection
-
-    async def failed_prepare_order_node(*_):
-        raise workflows.WorkflowError("ORDER_CONFIG_CHANGED", "XML 配置校验值与发布版本不一致", 409)
-
-    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
-    monkeypatch.setattr(workflows, "prepare_order_node", failed_prepare_order_node)
 
     with client.websocket_connect(terminal_url(resource["id"], token)) as websocket:
         assert websocket.receive_json()["status"] == "connecting"
@@ -670,13 +610,12 @@ def test_terminal_workflow_command_marks_order_preparation_failure_retryable(
         response = websocket.receive_json()
         assert response["type"] == "workflow_command"
         assert response["status"] == "failed"
-        assert response["code"] == "ORDER_CONFIG_CHANGED"
+        assert response["code"] == "INVALID_WORKFLOW_STEP"
 
     assert connection.process.stdin.writes == []
     updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
-    assert updated["status"] == "awaiting_step_retry"
-    assert updated["steps"][0]["status"] == "failed"
-    assert updated["steps"][0]["error_message"] == "XML 配置校验值与发布版本不一致"
+    assert updated["status"] == "awaiting_step_start"
+    assert updated["steps"][0]["status"] == "pending"
 
 
 def test_order_action_is_sent_once_and_completion_cleans_session(
@@ -684,13 +623,11 @@ def test_order_action_is_sent_once_and_completion_cleans_session(
     admin_headers: typing.Dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ):
-    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
     # Put the prepared node into the same waiting state produced by the tmux launcher.
     db = SessionLocal()
     try:
-        from app.models import TestRun
-        from app.services.run_state import transition_run, transition_step
-        stored = db.get(TestRun, run["id"])
+        stored = db.get(RunModel, run["id"])
         step = stored.steps[0]
         transition_run(stored, "awaiting_step_completion")
         transition_step(step, "waiting")
@@ -720,6 +657,42 @@ def test_order_action_is_sent_once_and_completion_cleans_session(
     assert duplicate.status_code == 409
     completed = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/complete", headers=admin_headers)
     assert completed.status_code == 200, completed.text
+
+
+def test_unknown_order_action_can_restart_the_whole_node(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    db = SessionLocal()
+    try:
+        stored = db.get(RunModel, run["id"])
+        step = stored.steps[0]
+        transition_run(stored, "awaiting_step_completion")
+        transition_step(step, "waiting")
+        step.result_summary = {
+            "process_started": True,
+            "tmux_session": "openslt-order-r1-s1",
+            "order_action_status": "unknown",
+        }
+        db.commit()
+    finally:
+        db.close()
+    cleaned = []
+
+    async def fake_cleanup(_resource, session):
+        cleaned.append(session)
+        return True
+
+    monkeypatch.setattr(runs_route, "cleanup_order_session", fake_cleanup)
+    monkeypatch.setattr(runs_route, "schedule_task", lambda _task_id: None)
+    step_id = run["steps"][0]["id"]
+    response = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/retry", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    assert cleaned == ["openslt-order-r1-s1"]
+    assert response.json()["status"] == "running"
+    assert response.json()["steps"][0]["retry_count"] == 1
 
 
 def test_remote_terminal_reports_connection_failure(
