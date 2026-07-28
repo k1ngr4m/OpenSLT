@@ -108,7 +108,7 @@ if [[ "$INSTALL_RPMS" == true ]]; then
 fi
 
 if [[ "$RPMS_ONLY" == true ]]; then
-    printf '[OpenSLT] RPM installation completed. Configure MySQL before installing OpenSLT.\n'
+    printf '[OpenSLT] RPM installation completed. Configure MariaDB before installing OpenSLT.\n'
     exit 0
 fi
 

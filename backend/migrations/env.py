@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
-from app.core.database import Base, ensure_database_exists
+from app.core.database import Base, ensure_database_exists, validate_database_server
 from app.models import *  # noqa: F403
 
 config = context.config
@@ -30,6 +30,9 @@ def run_migrations_online() -> None:
     ensure_database_exists(settings.database_url)
     connectable = engine_from_config(config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
+        validate_database_server(connection)
+        if connection.dialect.name == "mysql":
+            connection.exec_driver_sql("SET SESSION default_storage_engine=InnoDB")
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -37,6 +40,7 @@ def run_migrations_online() -> None:
             version_table="t_alembic_version",
         )
         with context.begin_transaction(): context.run_migrations()
+        validate_database_server(connection)
 
 
 if context.is_offline_mode(): run_migrations_offline()

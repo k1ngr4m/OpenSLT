@@ -11,7 +11,7 @@ usage() {
 Usage: collect-rpms-rhel7.sh [--output DIR] [--package-file FILE]
 
 Run this on the internet-connected RHEL 7.9 x86_64 build host after enabling
-the RHEL/SCL, Nginx, and MySQL Community 8 repositories. The result is a
+the RHEL/SCL and Nginx repositories. The result is a
 dependency-complete RPM directory which build-offline-bundle.sh can include.
 EOF
 }

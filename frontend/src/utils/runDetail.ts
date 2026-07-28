@@ -10,6 +10,7 @@ export const nodeTypeText: Record<string, string> = {
   slnic_stop_capture: '关闭 SLNIC',
   slnic_merge_capture: '合并 pcapng',
   parser_parse: '数据解析',
+  data_statistics: '数据统计',
 }
 
 export function statusClass(status: string) {

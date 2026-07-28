@@ -7,6 +7,7 @@ from app.services.workflow_handlers.capture import HANDLERS as CAPTURE_HANDLERS
 from app.services.workflow_handlers.order import HANDLERS as ORDER_HANDLERS
 from app.services.workflow_handlers.parser import HANDLERS as PARSER_HANDLERS
 from app.services.workflow_handlers.slnic import HANDLERS as SLNIC_HANDLERS
+from app.services.workflow_handlers.statistics import HANDLERS as STATISTICS_HANDLERS
 
 
 class WorkflowHandlerRegistry:
@@ -39,5 +40,5 @@ class WorkflowHandlerRegistry:
 
 
 registry = WorkflowHandlerRegistry()
-for registered_handler in (*CAPTURE_HANDLERS, *ORDER_HANDLERS, *SLNIC_HANDLERS, *PARSER_HANDLERS):
+for registered_handler in (*CAPTURE_HANDLERS, *ORDER_HANDLERS, *SLNIC_HANDLERS, *PARSER_HANDLERS, *STATISTICS_HANDLERS):
     registry.register(registered_handler)

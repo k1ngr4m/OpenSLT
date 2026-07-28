@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import typing
+import re
+from dataclasses import dataclass
 from collections.abc import Generator
 
 from sqlalchemy import create_engine, text
@@ -18,6 +20,77 @@ class Base(DeclarativeBase):
 
 class DatabaseBootstrapError(RuntimeError):
     pass
+
+
+class DatabaseCompatibilityError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class DatabaseServerInfo:
+    family: str
+    version: typing.Tuple[int, int, int]
+    raw_version: str
+
+
+def _parse_server_version(raw_version: str) -> DatabaseServerInfo:
+    family = "mariadb" if "mariadb" in raw_version.casefold() else "mysql"
+    versions = [
+        tuple(int(part) for part in match)
+        for match in re.findall(r"(\d+)\.(\d+)\.(\d+)", raw_version)
+    ]
+    if not versions:
+        raise DatabaseCompatibilityError(
+            f"无法识别数据库服务端版本：{raw_version}"
+        )
+    version = versions[0]
+    # Newer MariaDB servers may advertise a 5.5.5 compatibility prefix.
+    if family == "mariadb" and version == (5, 5, 5) and len(versions) > 1:
+        version = versions[1]
+    return DatabaseServerInfo(family=family, version=version, raw_version=raw_version)
+
+
+def validate_database_server(connection: typing.Any) -> typing.Optional[DatabaseServerInfo]:
+    """Fail early when the MySQL-compatible server cannot safely host OpenSLT."""
+    if connection.dialect.name != "mysql":
+        return None
+
+    raw_version = str(connection.exec_driver_sql("SELECT VERSION()").scalar_one())
+    info = _parse_server_version(raw_version)
+    minimum = (5, 5, 68) if info.family == "mariadb" else (5, 5, 3)
+    if info.version < minimum:
+        label = "MariaDB" if info.family == "mariadb" else "MySQL"
+        required = ".".join(str(part) for part in minimum)
+        raise DatabaseCompatibilityError(
+            f"OpenSLT 要求 {label} >= {required}，当前服务端为 {raw_version}"
+        )
+
+    innodb_support = connection.exec_driver_sql(
+        "SELECT SUPPORT FROM information_schema.ENGINES WHERE ENGINE = 'InnoDB'"
+    ).scalar_one_or_none()
+    if str(innodb_support or "").upper() not in {"YES", "DEFAULT"}:
+        raise DatabaseCompatibilityError("OpenSLT 要求数据库服务端启用 InnoDB")
+
+    utf8mb4_collation = connection.exec_driver_sql(
+        "SELECT COLLATION_NAME FROM information_schema.COLLATIONS "
+        "WHERE COLLATION_NAME = 'utf8mb4_unicode_ci'"
+    ).scalar_one_or_none()
+    if not utf8mb4_collation:
+        raise DatabaseCompatibilityError(
+            "OpenSLT 要求数据库服务端支持 utf8mb4_unicode_ci"
+        )
+
+    incompatible_tables = connection.exec_driver_sql(
+        "SELECT GROUP_CONCAT(CONCAT(TABLE_NAME, ':', COALESCE(ENGINE, 'NULL')) "
+        "ORDER BY TABLE_NAME SEPARATOR ',') FROM information_schema.TABLES "
+        "WHERE TABLE_SCHEMA = DATABASE() AND LEFT(TABLE_NAME, 2) = 't_' "
+        "AND UPPER(COALESCE(ENGINE, '')) <> 'INNODB'"
+    ).scalar_one_or_none()
+    if incompatible_tables:
+        raise DatabaseCompatibilityError(
+            f"OpenSLT 数据表必须全部使用 InnoDB：{incompatible_tables}"
+        )
+    return info
 
 
 def ensure_database_exists(database_url: str) -> bool:

@@ -15,6 +15,7 @@ class ParserHandler:
             context.step,
             context.node,
             context.resources,
+            append_log_callback=context.append_log,
         )
         context.append_log(
             context.db,

@@ -41,6 +41,10 @@ SYMBOL_CSV_ELEMENTS = {
     "futures": "fut_symbol_csv",
     "options": "opt_symbol_csv",
 }
+PARSER_CONFIG_ROLE_PATTERNS = {
+    "config": re.compile(r"^config(?:[._-][A-Za-z0-9._-]+)?\.xml$", re.IGNORECASE),
+    "instance": re.compile(r"^instance(?:[._-][A-Za-z0-9._-]+)?\.xml$", re.IGNORECASE),
+}
 
 
 class OrderConfigError(Exception):
@@ -256,6 +260,13 @@ def parser_main_config_filename(resource: Resource) -> str:
     if tool.endswith("_v2"):
         tool = tool[:-3]
     return f"{tool or 'parser'}.xml"
+
+
+def parser_config_role(filename: str) -> str:
+    for role, pattern in PARSER_CONFIG_ROLE_PATTERNS.items():
+        if pattern.fullmatch(filename):
+            return role
+    return "analysis" if re.fullmatch(r"[A-Za-z0-9._-]+\.xml", filename, re.IGNORECASE) else "invalid"
 
 
 def _parser_main_default_content(tool: str) -> str:

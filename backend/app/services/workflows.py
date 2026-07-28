@@ -20,7 +20,12 @@ from app.core.compat import to_thread
 from app.core.config import settings
 from app.core.time import beijing_now
 from app.models import Artifact, Resource, RunStep, ScenarioWorkflowNode, TestRun
-from app.services.order_configs import parser_main_config_filename
+from app.services.order_configs import (
+    OrderConfigError,
+    order_config_service,
+    parser_config_role,
+    parser_main_config_filename,
+)
 from app.services.workflow_capture import _ssh_options, capture_database, capture_server, preview_node
 from app.services.workflow_contracts import _sftp, fetch_contract_files, parse_read_symbol_csv, prepare_order_node
 from app.services.workflow_core import (
@@ -252,6 +257,114 @@ def _parser_artifact_directory(run: TestRun, step: RunStep) -> Path:
     )
 
 
+def _parser_input_directory(run: TestRun, step: RunStep) -> Path:
+    return _parser_artifact_directory(run, step) / "inputs"
+
+
+def _parser_input_exports(step: RunStep) -> dict[str, dict[str, typing.Any]]:
+    raw = (step.result_summary or {}).get("parser_input_exports")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        table: dict(value)
+        for table, value in raw.items()
+        if table in PARSER_TABLES and isinstance(value, dict)
+    }
+
+
+def _parser_input_artifact(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    table: str,
+) -> typing.Optional[Artifact]:
+    return db.scalar(
+        select(Artifact).where(
+            Artifact.run_id == run.id,
+            Artifact.step_id == step.id,
+            Artifact.artifact_type == "parser_input_csv",
+            Artifact.name == f"{table}.csv",
+        )
+    )
+
+
+def _register_parser_input_artifact(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    table: str,
+    target: Path,
+) -> Artifact:
+    data = target.read_bytes()
+    artifact = _parser_input_artifact(db, run, step, table)
+    if artifact is None:
+        artifact = Artifact(
+            run_id=run.id,
+            step_id=step.id,
+            artifact_type="parser_input_csv",
+            name=target.name,
+            path=str(target),
+        )
+        db.add(artifact)
+    artifact.path = str(target)
+    artifact.content_type = "text/csv"
+    artifact.size = len(data)
+    artifact.checksum = hashlib.sha256(data).hexdigest()
+    artifact.is_immutable = False
+    db.flush()
+    return artifact
+
+
+async def export_parser_table_snapshot(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    database_resource: Resource,
+    database_name: str,
+    table: str,
+    *,
+    source: str,
+    actor_id: typing.Optional[int] = None,
+) -> dict[str, typing.Any]:
+    if table not in PARSER_TABLES:
+        raise WorkflowError("PARSER_TABLE_INVALID", f"不支持导出数据表 {table}", 400)
+    directory = _parser_input_directory(run, step)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{table}.csv"
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
+    try:
+        row_count = await _export_parser_table(
+            database_resource,
+            database_name,
+            table,
+            temporary,
+        )
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    artifact = _register_parser_input_artifact(db, run, step, table, target)
+    exported_at = beijing_now()
+    detail = {
+        "artifact_id": artifact.id,
+        "filename": artifact.name,
+        "database_name": database_name,
+        "row_count": row_count,
+        "size": artifact.size,
+        "checksum": artifact.checksum,
+        "source": source,
+        "exported_by": actor_id,
+        "exported_at": exported_at.isoformat(),
+    }
+    exports = _parser_input_exports(step)
+    exports[table] = detail
+    step.result_summary = {
+        **(step.result_summary or {}),
+        "parser_input_exports": exports,
+    }
+    db.flush()
+    return {"table": table, **detail, "artifact": artifact}
+
+
 def _parser_pcap_artifact(db: Session, run: TestRun, step: RunStep) -> Artifact:
     prior_steps = sorted(
         (
@@ -327,12 +440,67 @@ def _register_parser_artifact(
     return artifact
 
 
+async def _load_parser_xml_files(
+    resource: Resource,
+    raw_config: typing.Mapping[str, typing.Any],
+) -> dict[str, dict[str, typing.Any]]:
+    selections = {
+        "config": (
+            str(raw_config.get("config_xml_filename") or "config.xml").strip(),
+            str(raw_config.get("config_xml_checksum") or "").strip(),
+        ),
+        "instance": (
+            str(raw_config.get("instance_xml_filename") or "instance.xml").strip(),
+            str(raw_config.get("instance_xml_checksum") or "").strip(),
+        ),
+        "analysis": (
+            str(raw_config.get("analysis_xml_filename") or parser_main_config_filename(resource)).strip(),
+            str(raw_config.get("analysis_xml_checksum") or "").strip(),
+        ),
+    }
+    loaded: dict[str, dict[str, typing.Any]] = {}
+    for role, (filename, expected_checksum) in selections.items():
+        if parser_config_role(filename) != role:
+            raise WorkflowError("PARSER_CONFIG_INVALID", f"解析 {role} XML 文件类型不正确", 409)
+        try:
+            detail = await order_config_service.read(resource, filename)
+        except OrderConfigError as exc:
+            raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+        if expected_checksum and detail["checksum"] != expected_checksum:
+            raise WorkflowError("PARSER_CONFIG_CHANGED", f"解析配置 {filename} 已发生变化", 409)
+        loaded[role] = detail
+    return loaded
+
+
+def _valid_parser_input_snapshot(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    table: str,
+    database_name: str,
+) -> typing.Optional[tuple[Artifact, dict[str, typing.Any]]]:
+    detail = _parser_input_exports(step).get(table)
+    if not detail or detail.get("database_name") != database_name:
+        return None
+    artifact = _parser_input_artifact(db, run, step, table)
+    if not artifact or artifact.id != detail.get("artifact_id"):
+        return None
+    path = Path(artifact.path)
+    if not path.is_file():
+        return None
+    checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+    if checksum != artifact.checksum or checksum != detail.get("checksum"):
+        return None
+    return artifact, detail
+
+
 async def execute_parser_node(
     db: Session,
     run: TestRun,
     step: RunStep,
     node: ScenarioWorkflowNode,
     run_resources: dict[str, Resource],
+    append_log_callback: typing.Optional[typing.Callable[..., typing.Any]] = None,
 ) -> dict:
     parser_resource = run_resources.get("parser")
     database_resource = run_resources.get("database")
@@ -340,7 +508,8 @@ async def execute_parser_node(
         raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
     if not database_resource:
         raise WorkflowError("PARSER_DATABASE_REQUIRED", "运行资源缺少数据库", 409)
-    config = typing.cast(ParserConfig, parse_node_config(node.node_type, node.config or {}))
+    raw_config = step.config_snapshot or node.config or {}
+    config = typing.cast(ParserConfig, parse_node_config(node.node_type, raw_config))
     database_name = config.database_name.strip()
     try:
         database_name = validate_database(database_resource, database_name)
@@ -348,16 +517,23 @@ async def execute_parser_node(
         raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
     capabilities = parser_resource.capabilities or {}
     binary = str(capabilities.get("parser_binary") or capabilities.get("parser_tool") or "").strip()
-    config_filename = parser_main_config_filename(parser_resource)
     directory = parser_resource.remote_path.strip().rstrip("/")
-    if not binary or not directory or not config_filename:
+    if not binary or not directory:
         raise WorkflowError("PARSER_RESOURCE_INVALID", "解析工具资源配置不完整", 409)
+    xml_files = await _load_parser_xml_files(parser_resource, raw_config)
+    analysis_filename = str(xml_files["analysis"]["name"])
     pcap_artifact = _parser_pcap_artifact(db, run, step)
     artifact_directory = _parser_artifact_directory(run, step)
     artifact_directory.mkdir(parents=True, exist_ok=True)
+    remote_workdir = posixpath.join(
+        directory,
+        ".openslt-runs",
+        f"r{run.id}-s{step.id}-a{step.retry_count}-{uuid4().hex[:8]}",
+    )
+    binary_path = posixpath.join(directory, binary)
     command = (
-        f"cd {shlex.quote(directory)} && "
-        f"{shlex.quote('./' + binary)} {shlex.quote(config_filename)}"
+        f"cd {shlex.quote(remote_workdir)} && "
+        f"{shlex.quote(binary_path)} {shlex.quote(analysis_filename)}"
     )
     table_rows: dict[str, int] = {}
     input_checksums: dict[str, str] = {}
@@ -370,12 +546,44 @@ async def execute_parser_node(
         staging = Path(temporary_name)
         input_files: dict[str, Path] = {}
         for table in PARSER_TABLES:
-            target = staging / f"{table}.csv"
-            table_rows[table] = await _export_parser_table(
-                database_resource, database_name, table, target
-            )
-            input_files[target.name] = target
+            snapshot = _valid_parser_input_snapshot(db, run, step, table, database_name)
+            if snapshot is None:
+                exported = await export_parser_table_snapshot(
+                    db,
+                    run,
+                    step,
+                    database_resource,
+                    database_name,
+                    table,
+                    source="auto",
+                )
+                if append_log_callback:
+                    append_log_callback(
+                        db,
+                        run,
+                        "parser.table_exported",
+                        f"已自动导出 {table}",
+                        step=step,
+                        source="parser",
+                        detail={key: exported[key] for key in ("table", "artifact_id", "row_count", "checksum", "source")},
+                    )
+                snapshot = _valid_parser_input_snapshot(db, run, step, table, database_name)
+            if snapshot is None:
+                raise WorkflowError("PARSER_INPUT_MISSING", f"未能准备解析输入 {table}.csv", 409)
+            artifact, detail = snapshot
+            artifact.is_immutable = True
+            table_rows[table] = int(detail.get("row_count") or 0)
+            input_files[artifact.name] = Path(artifact.path)
         input_files["merge_pcap.pcapng"] = Path(pcap_artifact.path)
+        xml_staging = {
+            "config.xml": xml_files["config"],
+            "instance.xml": xml_files["instance"],
+            analysis_filename: xml_files["analysis"],
+        }
+        for filename, detail in xml_staging.items():
+            target = staging / filename
+            target.write_text(str(detail["content"]), encoding="utf-8")
+            input_files[filename] = target
         for filename, source in input_files.items():
             input_checksums[filename] = hashlib.sha256(source.read_bytes()).hexdigest()
 
@@ -384,10 +592,9 @@ async def execute_parser_node(
         try:
             connection = await asyncssh.connect(**_ssh_options(parser_resource))
             sftp = await connection.start_sftp_client()
-            await sftp.makedirs(directory, exist_ok=True)
-            before = await _parser_csv_snapshot(sftp, directory)
+            await sftp.makedirs(remote_workdir, exist_ok=True)
             for filename, source in input_files.items():
-                await _upload_parser_input(sftp, directory, filename, source)
+                await _upload_parser_input(sftp, remote_workdir, filename, source)
             result = await connection.run(command, check=False)
             stdout = str(result.stdout or "")
             stderr = str(result.stderr or "")
@@ -398,10 +605,10 @@ async def execute_parser_node(
                     f"解析命令失败（退出码 {result.exit_status}）：{detail}",
                     409,
                 )
-            after = await _parser_csv_snapshot(sftp, directory)
+            after = await _parser_csv_snapshot(sftp, remote_workdir)
             changed = sorted(
-                name for name, state in after.items()
-                if name not in input_files and (name not in before or before[name] != state)
+                name for name in after
+                if name not in input_files
             )
             if not changed:
                 raise WorkflowError("PARSER_OUTPUT_MISSING", "解析成功但没有生成或更新 CSV 文件", 409)
@@ -409,7 +616,7 @@ async def execute_parser_node(
                 target = artifact_directory / filename
                 partial = target.with_name(f".{target.name}.{uuid4().hex}.part")
                 try:
-                    await sftp.get(posixpath.join(directory, filename), str(partial))
+                    await sftp.get(posixpath.join(remote_workdir, filename), str(partial))
                     partial.replace(target)
                 except Exception as exc:
                     raise WorkflowError(
@@ -435,8 +642,14 @@ async def execute_parser_node(
         raise WorkflowError("PARSER_OUTPUT_MISSING", "解析节点没有产生 CSV 产物", 409)
     duration_ms = int((beijing_now() - started_at).total_seconds() * 1000)
     return {
+        **(step.result_summary or {}),
         "resource_id": parser_resource.id,
         "database_name": database_name,
+        "parser_xml_files": {
+            role: {"filename": detail["name"], "checksum": detail["checksum"]}
+            for role, detail in xml_files.items()
+        },
+        "remote_workdir": remote_workdir,
         "table_rows": table_rows,
         "input_checksums": input_checksums,
         "pcap_artifact_id": pcap_artifact.id,

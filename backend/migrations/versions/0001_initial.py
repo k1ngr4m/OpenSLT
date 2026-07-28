@@ -190,8 +190,19 @@ def _is_sqlite() -> bool:
     return op.get_context().dialect.name == "sqlite"
 
 
+def _create_table(name: str, *columns: sa.SchemaItem):
+    options = {}
+    if not _is_sqlite():
+        options = {
+            "mysql_engine": "InnoDB",
+            "mysql_charset": "utf8mb4",
+            "mysql_collate": "utf8mb4_unicode_ci",
+        }
+    return op.create_table(name, *columns, **options)
+
+
 def upgrade() -> None:
-    op.create_table(
+    _create_table(
         "t_users",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("username", sa.String(64), nullable=False),
@@ -203,7 +214,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_table(
+    _create_table(
         "t_business_types",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("code", sa.String(32), nullable=False),
@@ -213,7 +224,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("code"),
     )
-    op.create_table(
+    _create_table(
         "t_resources",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("name", sa.String(128), nullable=False),
@@ -249,7 +260,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_table(
+    _create_table(
         "t_refresh_tokens",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -260,7 +271,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["t_users.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("fingerprint"),
     )
-    op.create_table(
+    _create_table(
         "t_database_update_confirmations",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("resource_id", sa.Integer(), nullable=False),
@@ -277,7 +288,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["actor_id"], ["t_users.id"], ondelete="CASCADE"),
     )
-    op.create_table(
+    _create_table(
         "t_test_plans",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("name", sa.String(128), nullable=False),
@@ -310,7 +321,7 @@ def upgrade() -> None:
                 ),
             ]
         )
-    op.create_table(
+    _create_table(
         "t_test_scenarios",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("plan_id", sa.Integer(), nullable=False),
@@ -330,7 +341,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["plan_id"], ["t_test_plans.id"], ondelete="CASCADE"),
         *scenario_constraints,
     )
-    op.create_table(
+    _create_table(
         "t_scenario_workflow_versions",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("scenario_id", sa.Integer(), nullable=False),
@@ -365,7 +376,7 @@ def upgrade() -> None:
             ["id"],
             ondelete="SET NULL",
         )
-    op.create_table(
+    _create_table(
         "t_scenario_workflow_nodes",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("workflow_version_id", sa.Integer(), nullable=False),
@@ -380,7 +391,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("workflow_version_id", "node_key", name="uq_workflow_node_key"),
         sa.UniqueConstraint("workflow_version_id", "position", name="uq_workflow_node_position"),
     )
-    op.create_table(
+    _create_table(
         "t_test_runs",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_number", sa.String(40), nullable=False),
@@ -410,7 +421,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["workflow_version_id"], ["t_scenario_workflow_versions.id"]),
         sa.ForeignKeyConstraint(["created_by"], ["t_users.id"]),
     )
-    op.create_table(
+    _create_table(
         "t_run_steps",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -433,7 +444,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["workflow_node_id"], ["t_scenario_workflow_nodes.id"], ondelete="SET NULL"),
         sa.UniqueConstraint("run_id", "code", name="uq_run_step_code"),
     )
-    op.create_table(
+    _create_table(
         "t_configuration_capture_snapshots",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("scenario_id", sa.Integer(), nullable=False),
@@ -459,7 +470,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"]),
         sa.ForeignKeyConstraint(["created_by"], ["t_users.id"]),
     )
-    op.create_table(
+    _create_table(
         "t_configuration_capture_items",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("snapshot_id", sa.Integer(), nullable=False),
@@ -473,7 +484,7 @@ def upgrade() -> None:
         sa.Column("error_message", sa.Text()),
         sa.ForeignKeyConstraint(["snapshot_id"], ["t_configuration_capture_snapshots.id"], ondelete="CASCADE"),
     )
-    op.create_table(
+    _create_table(
         "t_contract_data_files",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("scenario_id", sa.Integer()),
@@ -499,7 +510,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["database_resource_id"], ["t_resources.id"]),
         sa.ForeignKeyConstraint(["created_by"], ["t_users.id"]),
     )
-    op.create_table(
+    _create_table(
         "t_log_records",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("log_type", sa.String(32), nullable=False),
@@ -519,7 +530,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["run_id"], ["t_test_runs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["step_id"], ["t_run_steps.id"], ondelete="SET NULL"),
     )
-    op.create_table(
+    _create_table(
         "t_artifacts",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -535,7 +546,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["run_id"], ["t_test_runs.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["step_id"], ["t_run_steps.id"], ondelete="SET NULL"),
     )
-    op.create_table(
+    _create_table(
         "t_metrics",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -547,7 +558,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["run_id"], ["t_test_runs.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("run_id", "name", name="uq_run_metric_name"),
     )
-    op.create_table(
+    _create_table(
         "t_verdicts",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -562,7 +573,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["reviewed_by"], ["t_users.id"]),
         sa.UniqueConstraint("run_id"),
     )
-    op.create_table(
+    _create_table(
         "t_resource_locks",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("resource_id", sa.Integer(), nullable=False),
@@ -574,7 +585,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["resource_id"], ["t_resources.id"]),
         sa.ForeignKeyConstraint(["run_id"], ["t_test_runs.id"], ondelete="CASCADE"),
     )
-    op.create_table(
+    _create_table(
         "t_audit_logs",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("actor_id", sa.Integer()),
@@ -589,7 +600,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["actor_id"], ["t_users.id"]),
     )
-    op.create_table(
+    _create_table(
         "t_plan_resources",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("plan_id", sa.Integer(), nullable=False),
@@ -600,7 +611,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("plan_id", "resource_id", name="uq_plan_resource"),
         sa.UniqueConstraint("plan_id", "position", name="uq_plan_resource_position"),
     )
-    op.create_table(
+    _create_table(
         "t_scenario_resources",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("scenario_id", sa.Integer(), nullable=False),
@@ -611,7 +622,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("scenario_id", "resource_id", name="uq_scenario_resource"),
         sa.UniqueConstraint("scenario_id", "position", name="uq_scenario_resource_position"),
     )
-    op.create_table(
+    _create_table(
         "t_workflow_version_resources",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("workflow_version_id", sa.Integer(), nullable=False),
@@ -628,7 +639,7 @@ def upgrade() -> None:
             "workflow_version_id", "position", name="uq_workflow_version_resource_position"
         ),
     )
-    op.create_table(
+    _create_table(
         "t_run_resources",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -639,7 +650,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("run_id", "resource_id", name="uq_run_resource"),
         sa.UniqueConstraint("run_id", "position", name="uq_run_resource_position"),
     )
-    op.create_table(
+    _create_table(
         "t_workflow_node_contract_files",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("workflow_node_id", sa.Integer(), nullable=False),
@@ -658,7 +669,7 @@ def upgrade() -> None:
             "workflow_node_id", "position", name="uq_workflow_node_contract_position"
         ),
     )
-    op.create_table(
+    _create_table(
         "t_run_status_transitions",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("run_id", sa.Integer(), nullable=False),
@@ -675,7 +686,7 @@ def upgrade() -> None:
             "run_id", "status_version", name="uq_run_status_transition_version"
         ),
     )
-    op.create_table(
+    _create_table(
         "t_durable_tasks",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("task_type", sa.String(64), nullable=False),

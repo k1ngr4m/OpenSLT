@@ -12,10 +12,20 @@ from fastapi.testclient import TestClient
 from app.core.database import SessionLocal
 from app.models import AuditLog
 from app.services import order_configs
-from app.services.order_configs import OrderConfigError, parse_xml, update_symbol_csv_values
+from app.services.order_configs import OrderConfigError, parse_xml, parser_config_role, update_symbol_csv_values
 
 
 LEGACY_RESPONSE_FIELD = "sim" "ulated"
+
+
+def test_parser_config_roles_allow_typed_copies():
+    assert parser_config_role("config.xml") == "config"
+    assert parser_config_role("config-scenario.xml") == "config"
+    assert parser_config_role("instance_backup.xml") == "instance"
+    assert parser_config_role("instance.v2.xml") == "instance"
+    assert parser_config_role("soft_cffex_speed_analysis.xml") == "analysis"
+    assert parser_config_role("scenario.xml") == "analysis"
+    assert parser_config_role("../config.xml") == "invalid"
 
 
 def create_order_resource(client: TestClient, headers: typing.Dict[str, str], name: str = "Order-Config") -> dict:

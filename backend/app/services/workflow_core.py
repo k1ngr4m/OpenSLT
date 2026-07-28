@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestScenario
-from app.services.order_configs import parser_main_config_filename
+from app.services.order_configs import parser_config_role, parser_main_config_filename
 from app.services.resource_relations import (
     node_config_with_relations,
     node_contract_file_ids,
@@ -28,6 +28,7 @@ NODE_TYPES = {
     "wiring_confirmation",
     "order_preparation",
     "parser_parse",
+    "data_statistics",
     *SLNIC_NODE_TYPES,
 }
 PARSER_TABLES = ("t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders")
@@ -244,6 +245,25 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                     errors.append({**prefix, "field": "resource", "message": "解析工具资源未配置远端路径"})
                 if not parser_main_config_filename(parser_resource).strip():
                     errors.append({**prefix, "field": "resource", "message": "解析工具资源未配置主 XML"})
+            parser_xml_fields = (
+                ("config", "config_xml_filename", "config.xml 配置"),
+                ("instance", "instance_xml_filename", "instance.xml 配置"),
+                ("analysis", "analysis_xml_filename", "分析主配置"),
+            )
+            selected_parser_xml: set[str] = set()
+            for expected_role, field, label in parser_xml_fields:
+                filename = str(config.get(field) or "").strip()
+                checksum = str(config.get(field.replace("filename", "checksum")) or "").strip()
+                if not filename:
+                    errors.append({**prefix, "field": field, "message": f"请选择{label}"})
+                    continue
+                if parser_config_role(filename) != expected_role:
+                    errors.append({**prefix, "field": field, "message": f"{label}文件类型不正确"})
+                if filename in selected_parser_xml:
+                    errors.append({**prefix, "field": field, "message": "三个解析 XML 不能重复"})
+                selected_parser_xml.add(filename)
+                if not re.fullmatch(r"[0-9a-f]{64}", checksum):
+                    errors.append({**prefix, "field": field.replace("filename", "checksum"), "message": f"请重新选择{label}以固化校验和"})
             if not database_resource:
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少数据库资源"})
             elif database_name not in (database_resource.database_names or []):
@@ -254,6 +274,29 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
             ]
             if not preceding_merges or slnic_state != "merged":
                 errors.append({**prefix, "field": "position", "message": "数据解析前需要先完成 SLNIC 合并 pcapng 节点"})
+        elif node.node_type == "data_statistics":
+            parser_resource = resources.get("parser")
+            parser_node_key = str(config.get("parser_node_key") or "").strip()
+            preceding_parsers = [
+                item for item in version.nodes
+                if item.position < node.position and item.node_type == "parser_parse"
+            ]
+            source_node = next(
+                (item for item in preceding_parsers if item.node_key == parser_node_key),
+                None,
+            )
+            if not parser_resource or parser_resource.is_deleted or not parser_resource.is_enabled:
+                errors.append({**prefix, "field": "resource", "message": "数据统计需要已启用的解析工具资源"})
+            if not parser_node_key:
+                errors.append({**prefix, "field": "parser_node_key", "message": "请选择前置数据解析节点"})
+            elif source_node is None:
+                errors.append({**prefix, "field": "parser_node_key", "message": "数据统计只能引用位于其前面的数据解析节点"})
+            if not re.fullmatch(r"[A-Za-z0-9._-]+\.py", str(config.get("script_filename") or "")):
+                errors.append({**prefix, "field": "script_filename", "message": "请选择有效的远端统计脚本"})
+            if not re.fullmatch(r"[0-9a-f]{64}", str(config.get("script_checksum") or "")):
+                errors.append({**prefix, "field": "script_checksum", "message": "请重新选择统计脚本以固化校验和"})
+            if not isinstance(config.get("max_latency_ns"), int) or int(config.get("max_latency_ns") or 0) < 1:
+                errors.append({**prefix, "field": "max_latency_ns", "message": "异常大值上限必须为正整数"})
         elif node.node_type in SLNIC_NODE_TYPES:
             resource = resources.get("slnic")
             if not resource or resource.is_deleted or not resource.is_enabled:

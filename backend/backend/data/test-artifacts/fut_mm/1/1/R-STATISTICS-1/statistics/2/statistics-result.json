@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "script": {
+    "filename": "statistics_cffex.py",
+    "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "max_latency_ns": 999999999,
+  "inputs": [
+    {
+      "artifact_id": 1,
+      "filename": "rem_client_new_to_market_speed.csv",
+      "checksum": "43ba2ec838dc051839558eb245f9980de5d41265872f081ab01ee648f3e4f908"
+    }
+  ],
+  "results": [
+    {
+      "schema_version": 1,
+      "source_file": "rem_client_new_to_market_speed.csv",
+      "unit": "ns",
+      "sample_count": 10,
+      "excluded_counts": {
+        "above_limit": 1,
+        "negative": 2,
+        "invalid": 0
+      },
+      "metrics": [
+        {
+          "key": "average",
+          "label": "平均值",
+          "value": 250.0
+        },
+        {
+          "key": "p99",
+          "label": "99%",
+          "value": 350.0
+        }
+      ]
+    }
+  ],
+  "duration_ms": 0
+}

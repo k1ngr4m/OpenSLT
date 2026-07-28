@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, CircleCheck, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, CircleCheck, Download, Refresh, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import RunCaptureDetails from '@/components/run-detail/RunCaptureDetails.vue'
 import RunContractFiles from '@/components/run-detail/RunContractFiles.vue'
@@ -14,6 +14,8 @@ import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useRunActions } from '@/composables/useRunActions'
 import { useRunLifecycle } from '@/composables/useRunLifecycle'
 import { useOrderActions } from '@/composables/useOrderActions'
+import { useParserExports } from '@/composables/useParserExports'
+import { useStatisticsInputs } from '@/composables/useStatisticsInputs'
 import { useRunStepPresentation } from '@/composables/useRunStepPresentation'
 import { useWorkflowTerminal } from '@/composables/useWorkflowTerminal'
 import { useAuthStore } from '@/stores/auth'
@@ -116,6 +118,35 @@ const {
   sendOrderAction,
   sendingOrderAction,
 } = useOrderActions({ currentStep, reload: load, retryStep: stepAction, run, runId })
+const {
+  canExportParserTables,
+  exportingTable,
+  exportParserTable,
+  parserExportRows,
+} = useParserExports({
+  currentStep,
+  selectedStep,
+  run,
+  runId,
+  reload: load,
+  downloadArtifact: download,
+})
+const {
+  canSelectStatisticsInputs,
+  displayStatisticsValue,
+  saveStatisticsInputs,
+  savingStatisticsInputs,
+  selectedArtifactIds,
+  statisticsInputArtifacts,
+  statisticsResults,
+  statisticsSelectionDirty,
+  statisticsSelectionReady,
+  statisticsUnit,
+} = useStatisticsInputs({ currentStep, selectedStep, run, runId, reload: load })
+const statisticsActionBlocked = computed(() => Boolean(
+  currentStep.value?.node_type === 'data_statistics'
+  && (!statisticsSelectionReady.value || savingStatisticsInputs.value),
+))
 const canCompleteCurrent = computed(() => Boolean(
   currentStep.value?.status === 'waiting'
   && run.value?.status === 'awaiting_step_completion'
@@ -289,6 +320,7 @@ watch(
           type="primary"
           :icon="VideoPlay"
           :loading="actingStepId === currentStep.id || terminalCommandPendingStepId === currentStep.id"
+          :disabled="Boolean(exportingTable) || statisticsActionBlocked"
           @click="currentStep && stepAction(currentStep, 'start')"
         >开始</el-button>
         <el-button
@@ -303,6 +335,7 @@ watch(
           type="warning"
           :icon="RefreshRight"
           :loading="actingStepId === currentStep.id || terminalCommandPendingStepId === currentStep.id"
+          :disabled="Boolean(exportingTable) || statisticsActionBlocked"
           @click="currentStep && stepAction(currentStep, 'retry')"
         >重试</el-button>
         <el-button v-if="run.status === 'awaiting_review'" type="success" @click="verdictDialog = true">提交人工结论</el-button>
@@ -349,6 +382,61 @@ watch(
                   <strong :class="{ mono: item.mono }">{{ item.value || '-' }}</strong>
                 </div>
               </div>
+
+              <section v-if="selectedStep.node_type === 'parser_parse'" class="detail-section parser-export-panel">
+                <div class="section-heading">
+                  <div>
+                    <h3>解析输入 CSV</h3>
+                    <p class="muted">手动获取的快照会被解析复用，开始时自动补齐缺失表。</p>
+                  </div>
+                  <el-tag v-if="canExportParserTables" type="success" effect="plain">可获取</el-tag>
+                </div>
+                <div class="parser-export-list">
+                  <div v-for="row in parserExportRows" :key="row.table" class="parser-export-row">
+                    <div class="parser-export-name">
+                      <code>{{ row.table }}</code>
+                      <span v-if="row.ready" class="muted">{{ row.detail.row_count ?? 0 }} 行 · {{ formatDate(String(row.detail.exported_at || '')) }}</span>
+                      <span v-else class="muted">尚未获取，开始解析时将自动生成</span>
+                    </div>
+                    <code v-if="row.ready" class="parser-export-checksum" :title="String(row.detail.checksum || '')">{{ String(row.detail.checksum || '').slice(0, 12) }}…</code>
+                    <div class="parser-export-actions">
+                      <el-button
+                        v-if="auth.canOperate && canExportParserTables"
+                        :icon="row.ready ? Refresh : Download"
+                        :loading="exportingTable === row.table"
+                        :disabled="Boolean(exportingTable && exportingTable !== row.table)"
+                        @click="exportParserTable(row.table)"
+                      >{{ row.ready ? '刷新 CSV' : '获取 CSV' }}</el-button>
+                      <el-tooltip v-if="row.artifactId" content="下载当前快照" placement="top">
+                        <el-button :icon="Download" circle plain aria-label="下载当前 CSV 快照" @click="download(row.artifactId)" />
+                      </el-tooltip>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section v-if="selectedStep.node_type === 'data_statistics'" class="detail-section statistics-panel">
+                <div class="section-heading">
+                  <div>
+                    <h3>统计输入 CSV</h3>
+                    <p class="muted">从绑定的数据解析节点产物中选择；保存选择后才能开始或重试。</p>
+                  </div>
+                  <el-tag v-if="canSelectStatisticsInputs" type="success" effect="plain">可选择</el-tag>
+                </div>
+                <el-checkbox-group v-model="selectedArtifactIds" class="statistics-input-list" :disabled="!canSelectStatisticsInputs">
+                  <el-checkbox v-for="artifact in statisticsInputArtifacts" :key="artifact.id" :label="artifact.id">
+                    <span class="statistics-input-copy">
+                      <strong>{{ artifact.name }}</strong>
+                      <small>{{ formatBytes(artifact.size) }} · {{ artifact.checksum.slice(0, 12) }}…</small>
+                    </span>
+                  </el-checkbox>
+                </el-checkbox-group>
+                <div v-if="!statisticsInputArtifacts.length" class="empty-line">前置解析节点暂无可统计的 CSV 产物</div>
+                <div v-if="auth.canOperate && canSelectStatisticsInputs" class="statistics-selection-actions">
+                  <span class="muted">已勾选 {{ selectedArtifactIds.length }} 个<span v-if="statisticsSelectionDirty"> · 尚未保存</span></span>
+                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!selectedArtifactIds.length || !statisticsSelectionDirty" @click="saveStatisticsInputs">保存输入选择</el-button>
+                </div>
+              </section>
 
               <section v-show="showWorkflowTerminal" class="detail-section workflow-terminal-section">
                 <div class="section-heading">
@@ -487,6 +575,33 @@ watch(
 
                 <div v-if="parserOutputFiles.length" class="file-chips">
                   <span v-for="file in parserOutputFiles" :key="file">{{ file }}</span>
+                </div>
+
+                <div v-if="statisticsResults.length" class="statistics-results">
+                  <div class="statistics-result-toolbar">
+                    <strong>统计结果</strong>
+                    <el-radio-group v-model="statisticsUnit" size="small">
+                      <el-radio-button value="ns">ns</el-radio-button>
+                      <el-radio-button value="us">us</el-radio-button>
+                    </el-radio-group>
+                  </div>
+                  <section v-for="result in statisticsResults" :key="String(result.source_file)" class="statistics-result-card">
+                    <div class="statistics-result-title">
+                      <div><strong>{{ result.source_file }}</strong><span class="muted">{{ result.sample_count }} 个有效样本</span></div>
+                      <el-tag effect="plain">{{ statisticsUnit }}</el-tag>
+                    </div>
+                    <div class="statistics-excluded">
+                      <span>超上限 {{ (result.excluded_counts as any)?.above_limit || 0 }}</span>
+                      <span>负数 {{ (result.excluded_counts as any)?.negative || 0 }}</span>
+                      <span>无效 {{ (result.excluded_counts as any)?.invalid || 0 }}</span>
+                    </div>
+                    <el-table :data="Array.isArray(result.metrics) ? result.metrics : []" size="small" border>
+                      <el-table-column prop="label" label="指标" />
+                      <el-table-column label="值">
+                        <template #default="scope"><strong>{{ displayStatisticsValue(scope.row.value) }}</strong> {{ statisticsUnit }}</template>
+                      </el-table-column>
+                    </el-table>
+                  </section>
                 </div>
 
                 <div v-if="selectedArtifacts.length" class="artifact-links">

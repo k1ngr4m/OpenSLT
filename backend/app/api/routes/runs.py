@@ -14,7 +14,8 @@ from app.core.database import get_db
 from app.core.logging import trace_id_ctx
 from app.core.time import beijing_now
 from app.models import Artifact, ConfigurationCaptureSnapshot, LogRecord, Resource, RunStep, TestPlan, TestRun, TestScenario, User, Verdict
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, RunCreate, RunOut, VerdictOut, VerdictWrite
+from app.adapters.database import DatabaseOperationError, validate_database
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -23,7 +24,8 @@ from app.services.order_sessions import cleanup_order_session, order_session_nam
 from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
-from app.services.workflows import WorkflowError, load_version, resource_map
+from app.services.statistics_execution import select_statistics_inputs
+from app.services.workflows import PARSER_TABLES, WorkflowError, export_parser_table_snapshot, load_version, resource_map
 from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
@@ -175,6 +177,7 @@ async def confirm_run_step(run_id: int, step_id: int, request: Request, actor: U
 
 @router.post("/runs/{run_id}/steps/{step_id}/start", response_model=RunOut)
 async def start_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
     run = load_run(db, run_id)
     try:
         step = begin_workflow_step(db, run, step_id)
@@ -182,6 +185,130 @@ async def start_run_step(run_id: int, step_id: int, request: Request, actor: Use
         raise workflow_http_error(exc) from exc
     task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": step.id}, f"workflow-step:{run.id}:{step.id}:retry:{step.retry_count}")
     write_audit(db, "run.step_start", "run_step", step.id, actor, request, detail={"run_id": run.id}); db.commit(); schedule_task(task.id); return load_run(db, run.id)
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/parser-exports", response_model=ParserTableExportOut)
+async def export_run_parser_table(
+    run_id: int,
+    step_id: int,
+    payload: ParserTableExportRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
+    run = load_run(db, run_id)
+    step = next((item for item in run.steps if item.id == step_id), None)
+    try:
+        if not step or step.node_type != "parser_parse":
+            raise WorkflowError("PARSER_NODE_REQUIRED", "当前节点不是数据解析节点", 409)
+        current = next((item for item in run.steps if item.status != "succeeded"), None)
+        allowed = (
+            (run.status == "awaiting_step_start" and step.status == "pending")
+            or (run.status == "awaiting_step_retry" and step.status == "failed")
+        )
+        if not allowed or not current or current.id != step.id:
+            raise WorkflowError("PARSER_EXPORT_NOT_ALLOWED", "当前数据解析节点不能获取 CSV", 409)
+        if payload.table not in PARSER_TABLES:
+            raise WorkflowError("PARSER_TABLE_INVALID", f"不支持导出数据表 {payload.table}", 400)
+        database_resource = db.scalar(select(Resource).where(
+            Resource.id.in_(run_resource_ids(run)),
+            Resource.resource_type == "database",
+        ))
+        if not database_resource:
+            raise WorkflowError("PARSER_DATABASE_REQUIRED", "运行资源缺少数据库", 409)
+        database_name = str((step.config_snapshot or {}).get("database_name") or "").strip()
+        try:
+            database_name = validate_database(database_resource, database_name)
+        except DatabaseOperationError as exc:
+            raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+        result = await export_parser_table_snapshot(
+            db,
+            run,
+            step,
+            database_resource,
+            database_name,
+            payload.table,
+            source="manual",
+            actor_id=actor.id,
+        )
+        detail = {key: result[key] for key in ("table", "artifact_id", "row_count", "checksum", "source")}
+        append_log(db, run, "parser.table_exported", f"已获取 {payload.table}.csv", step=step, source="user", detail=detail)
+        write_audit(db, "run.parser_table_export", "run_step", step.id, actor, request, detail={"run_id": run.id, **detail})
+        db.commit()
+        return result
+    except WorkflowError as exc:
+        write_audit(
+            db,
+            "run.parser_table_export",
+            "run_step",
+            step_id,
+            actor,
+            request,
+            result="failed",
+            detail={"run_id": run.id, "table": payload.table, "code": exc.code},
+        )
+        db.commit()
+        raise workflow_http_error(exc) from exc
+
+
+@router.put(
+    "/runs/{run_id}/steps/{step_id}/statistics-inputs",
+    response_model=StatisticsInputSelectionOut,
+)
+def update_statistics_inputs(
+    run_id: int,
+    step_id: int,
+    payload: StatisticsInputSelectionRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
+    run = load_run(db, run_id)
+    step = next((item for item in run.steps if item.id == step_id), None)
+    try:
+        if not step or step.node_type != "data_statistics":
+            raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
+        current = next((item for item in run.steps if item.status != "succeeded"), None)
+        allowed = (
+            (run.status == "awaiting_step_start" and step.status == "pending")
+            or (run.status == "awaiting_step_retry" and step.status == "failed")
+        )
+        if not allowed or not current or current.id != step.id:
+            raise WorkflowError("STATISTICS_SELECTION_NOT_ALLOWED", "当前数据统计节点不能选择输入", 409)
+        result = select_statistics_inputs(db, run, step, payload.artifact_ids, actor.id)
+        detail = {
+            "run_id": run.id,
+            "artifact_ids": [item["artifact_id"] for item in result["inputs"]],
+        }
+        append_log(
+            db,
+            run,
+            "statistics.inputs_selected",
+            f"已选择 {len(result['inputs'])} 个统计输入",
+            step=step,
+            source="user",
+            detail=detail,
+        )
+        write_audit(
+            db, "run.statistics_inputs", "run_step", step.id, actor, request, detail=detail
+        )
+        db.commit()
+        return result
+    except WorkflowError as exc:
+        write_audit(
+            db,
+            "run.statistics_inputs",
+            "run_step",
+            step_id,
+            actor,
+            request,
+            result="failed",
+            detail={"run_id": run.id, "artifact_ids": payload.artifact_ids, "code": exc.code},
+        )
+        db.commit()
+        raise workflow_http_error(exc) from exc
 
 
 def _order_step_resource(db: Session, run: TestRun, step_id: int) -> typing.Tuple[typing.Any, Resource]:
@@ -369,6 +496,7 @@ async def complete_run_step(run_id: int, step_id: int, request: Request, actor: 
 
 @router.post("/runs/{run_id}/steps/{step_id}/retry", response_model=RunOut)
 async def retry_run_step(run_id: int, step_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
     run = load_run(db, run_id)
     try:
         current = next((item for item in run.steps if item.id == step_id), None)

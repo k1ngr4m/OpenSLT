@@ -4,7 +4,7 @@
 
 - 外网制包机：RHEL 7.9、x86_64、glibc 2.17、Python 3.8.13。
 - 内网服务器：RHEL 7.9、x86_64、glibc 2.17、Python 3.8.13。
-- 生产形态：Nginx、systemd、MySQL 8、单个 OpenSLT API 进程。
+- 生产形态：Nginx、systemd、MariaDB 5.5.68、单个 OpenSLT API 进程。
 
 不要在内网服务器运行仓库根目录的 `start-web.sh` 或
 `deploy/scripts/install.sh`。这两个脚本面向开发或在线环境，会尝试访问 PyPI 和
@@ -29,9 +29,8 @@ npm --prefix frontend run build
 
 在外网 RHEL 7.9 制包机上配置并验证以下软件源：
 
-- RHEL 7 基础源及 Red Hat Software Collections。
+- RHEL 7 基础源、MariaDB 5.5.68 及 Red Hat Software Collections。
 - 提供 RHEL 7 x86_64 包的 Nginx 软件源。
-- MySQL Community 8.0 软件源。
 
 安装制包工具后收集依赖闭包：
 
@@ -41,7 +40,7 @@ chmod +x deploy/offline/collect-rpms-rhel7.sh
 deploy/offline/collect-rpms-rhel7.sh --output /tmp/openslt-rpms
 ```
 
-脚本使用 `rpm-packages-rhel7.txt`。如果服务器已经由运维统一安装 MySQL 或
+脚本使用 `rpm-packages-rhel7.txt`。如果服务器已经由运维统一安装 MariaDB 或
 Nginx，可以编辑一份清单副本并通过 `--package-file` 指定，但不要直接删改默认
 清单。
 
@@ -82,18 +81,38 @@ sha256sum -c openslt-offline-rhel7-x86_64-0.1.0.tar.gz.sha256
 tar -xzf openslt-offline-rhel7-x86_64-0.1.0.tar.gz
 ```
 
-## 4. 准备 MySQL 8
+## 4. 准备 MariaDB 5.5.68
 
-进入内网解压后的离线包，先只安装 RPM，然后启动 MySQL 并完成安全初始化：
+进入内网解压后的离线包，先只安装 RPM，然后启动 MariaDB 并完成安全初始化：
 
 ```bash
 chmod +x install.sh
 ./install.sh --rpms-only
-systemctl enable --now mysqld
+systemctl enable --now mariadb
+mysql_secure_installation
 ```
 
-OpenSLT 数据库使用 `utf8mb4`；应用账号只需要目标数据库内的权限，不应授予
-全局管理权限。
+在 `/etc/my.cnf.d/server.cnf` 的 `[mysqld]` 段确认以下设置并重启 MariaDB：
+
+```ini
+[mysqld]
+default-storage-engine=InnoDB
+character-set-server=utf8mb4
+collation-server=utf8mb4_unicode_ci
+innodb-file-per-table=1
+```
+
+```bash
+systemctl restart mariadb
+mysql -uroot -p -NBe \
+  "SELECT VERSION(), @@default_storage_engine, @@character_set_server, @@collation_server"
+```
+
+输出必须显示 MariaDB 5.5.68、InnoDB、utf8mb4 和 utf8mb4_unicode_ci。OpenSLT
+迁移和启动时还会验证版本、InnoDB 与排序规则，不满足要求时会直接给出错误，避免
+在 MyISAM 或错误字符集上运行。
+
+应用账号只需要目标数据库内的权限，不应授予全局管理权限。
 
 ```sql
 CREATE DATABASE openslt
@@ -107,7 +126,8 @@ GRANT ALL PRIVILEGES ON openslt.* TO 'openslt'@'127.0.0.1';
 FLUSH PRIVILEGES;
 ```
 
-MySQL 只需监听本机或受控管理网地址。数据库密码写入 URL 前必须进行百分号编码，
+MariaDB 只需监听本机或受控管理网地址。虽然服务端是 MariaDB，`DATABASE_URL`
+仍使用 `mysql+pymysql://`。数据库密码写入 URL 前必须进行百分号编码，
 避免 `@`、`:`、`/`、`#` 等字符破坏 `DATABASE_URL`。
 
 ## 5. 生成生产配置
@@ -135,7 +155,7 @@ MySQL 只需监听本机或受控管理网地址。数据库密码写入 URL 前
 
 ## 6. 内网安装
 
-先确认 MySQL 可以登录，再进入解压后的离线包目录：
+先确认 MariaDB 可以登录，再进入解压后的离线包目录：
 
 ```bash
 chmod +x install.sh
@@ -153,7 +173,7 @@ Alembic 迁移、SELinux 上下文设置、Nginx 检查和服务启动。应用�
 /var/log/openslt
 ```
 
-如果 MySQL 使用内网已有实例，也可以跳过前面的 `--rpms-only`，由运维预装 Nginx、
+如果 MariaDB 使用内网已有实例，也可以跳过前面的 `--rpms-only`，由运维预装 Nginx、
 Python 和 curl。如果希望先检查迁移结果而不启动服务，增加 `--no-start`。
 
 安装完成后通过内网服务器地址访问，立即修改初始管理员密码。
@@ -185,14 +205,24 @@ Nginx 改为监听 443。
 
 ```bash
 curl -fsS http://127.0.0.1:8000/health
-systemctl status openslt-api nginx mysqld
+systemctl status openslt-api nginx mariadb
 journalctl -u openslt-api -n 100 --no-pager
 ```
 
 随后验证登录、权限、SSH 终端、资源健康检查、数据库查询、WebSocket、完整测速
 工作流、HTML/Excel/PDF 报告和服务器重启后的自动恢复。
 
-每天备份 MySQL、`/var/lib/openslt/artifacts` 和
+确认迁移生成的所有 OpenSLT 表都是 InnoDB；下面的查询必须返回空结果：
+
+```sql
+SELECT TABLE_NAME, ENGINE
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = 'openslt'
+  AND LEFT(TABLE_NAME, 2) = 't_'
+  AND UPPER(COALESCE(ENGINE, '')) <> 'INNODB';
+```
+
+每天使用 `mysqldump` 备份 MariaDB，同时备份 `/var/lib/openslt/artifacts` 和
 `/etc/openslt/openslt.env`。备份应放到另一存储设备并定期执行恢复演练。
 
 WeasyPrint 在 RHEL 7 上可能因系统 Pango 版本较旧而退回简化 PDF。若正式中文

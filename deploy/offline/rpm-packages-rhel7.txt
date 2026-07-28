@@ -1,5 +1,5 @@
-# One package per line. Repositories for RHEL 7 Software Collections, Nginx,
-# and MySQL Community 8 must be enabled on the internet-connected build host.
+# One package per line. Repositories for RHEL 7, Software Collections, and
+# Nginx must be enabled on the internet-connected build host.
 curl
 nginx
 policycoreutils-python
@@ -7,9 +7,8 @@ rh-python38
 rh-python38-python
 rh-python38-python-pip
 rh-python38-python-setuptools
-mysql-community-server
-mysql-community-client
-mysql-community-common
-mysql-community-libs
+mariadb
+mariadb-server
+mariadb-libs
 libaio
 numactl-libs

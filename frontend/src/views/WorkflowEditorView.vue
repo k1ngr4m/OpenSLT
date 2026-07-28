@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { EditableWorkflowNode as WorkflowNode, WorkflowNodeType } from '@/types/api'
 import { resourceText } from '@/utils/status'
 import { buildWiringSnapshot } from '@/utils/wiring'
+import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +31,10 @@ const draggingKey = ref('')
 const previewSnapshots = ref<any[]>([])
 const previewing = ref(false)
 const orderConfigs = ref<any[]>([])
+const parserConfigs = ref<any[]>([])
+const loadingParserConfigs = ref(false)
+const statisticsScripts = ref<any[]>([])
+const loadingStatisticsScripts = ref(false)
 const contractFiles = ref<any[]>([])
 const fetchingContracts = ref(false)
 let contractFilesRequestId = 0
@@ -45,7 +50,7 @@ const nodeCategories = [
   { title: '流程准备', types: ['wiring_confirmation'] },
   { title: '发单', types: ['order_preparation'] },
   { title: 'SLNIC', types: ['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'] },
-  { title: '数据解析', types: ['parser_parse'] },
+  { title: '数据处理', types: ['parser_parse', 'data_statistics'] },
 ]
 
 const GLOBAL_KEYS = [
@@ -102,6 +107,15 @@ const wiringValidationMessage = computed(() => {
 const selectedContractFiles = computed(() => {
   const ids = new Set(selectedNode.value?.config.contract_file_ids || [])
   return contractFiles.value.filter(item => ids.has(item.id))
+})
+const parserXmlOptions = computed<Record<ParserXmlRole, any[]>>(() => ({
+  config: parserConfigs.value.filter(file => parserXmlRole(file.name) === 'config'),
+  instance: parserConfigs.value.filter(file => parserXmlRole(file.name) === 'instance'),
+  analysis: parserConfigs.value.filter(file => parserXmlRole(file.name) === 'analysis'),
+}))
+const precedingParserNodes = computed(() => {
+  const index = nodes.value.findIndex(item => item.node_key === selectedKey.value)
+  return index < 0 ? [] : nodes.value.slice(0, index).filter(item => item.node_type === 'parser_parse')
 })
 
 function makeKey() {
@@ -171,6 +185,7 @@ function nodeMeta(type: string) {
     slnic_stop_capture: { label: '关闭 SLNIC', icon: VideoPause, tone: 'violet' },
     slnic_merge_capture: { label: '合并 pcapng', icon: Files, tone: 'violet' },
     parser_parse: { label: '数据解析', icon: Document, tone: 'blue' },
+    data_statistics: { label: '数据统计', icon: Tickets, tone: 'teal' },
   }[type] || { label: type, icon: Document, tone: 'teal' }
 }
 
@@ -184,6 +199,7 @@ function nodeDescription(type: string) {
     slnic_stop_capture: '调用脚本结束抓包',
     slnic_merge_capture: '合并并转换为单一 pcapng 产物',
     parser_parse: '导出订单数据、上传抓包并执行解析工具',
+    data_statistics: '选择解析 CSV 并调用交易所统计脚本',
   }[type] || ''
 }
 
@@ -204,7 +220,33 @@ function defaultNode(type: string): WorkflowNode {
   if (type === 'database_config') return { node_key: key, position: 0, node_type: type, name: '获取数据库配置', config: { database_name: '', keys: [] } }
   if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'resource' } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [], order_action: 'new_order' } }
-  if (type === 'parser_parse') return { node_key: key, position: 0, node_type: type, name: '数据解析', config: { database_name: '' } }
+  if (type === 'parser_parse') return {
+    node_key: key,
+    position: 0,
+    node_type: type,
+    name: '数据解析',
+    config: {
+      database_name: '',
+      config_xml_filename: '', config_xml_checksum: '',
+      instance_xml_filename: '', instance_xml_checksum: '',
+      analysis_xml_filename: '', analysis_xml_checksum: '',
+    },
+  }
+  if (type === 'data_statistics') {
+    const parserNode = [...nodes.value.slice(0, insertAt.value)].reverse().find(item => item.node_type === 'parser_parse')
+    return {
+      node_key: key,
+      position: 0,
+      node_type: type,
+      name: '数据统计',
+      config: {
+        parser_node_key: parserNode?.node_key || '',
+        script_filename: '',
+        script_checksum: '',
+        max_latency_ns: 999999999,
+      },
+    }
+  }
   return { node_key: key, position: 0, node_type: type as WorkflowNodeType, name: nodeMeta(type).label, config: {} }
 }
 
@@ -319,6 +361,110 @@ async function loadOrderConfigs() {
   catch { orderConfigs.value = [] }
 }
 
+async function loadParserConfigs() {
+  const resource = selectedResourceMap.value.parser
+  if (!resource) { parserConfigs.value = []; return }
+  loadingParserConfigs.value = true
+  try {
+    parserConfigs.value = (await api.get(`/resources/${resource.id}/parser-configs`)).data.files || []
+  } catch (error) {
+    parserConfigs.value = []
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loadingParserConfigs.value = false
+  }
+}
+
+async function loadStatisticsScripts() {
+  const resource = selectedResourceMap.value.parser
+  if (!resource) { statisticsScripts.value = []; return }
+  loadingStatisticsScripts.value = true
+  try {
+    statisticsScripts.value = (await api.get(`/resources/${resource.id}/statistics-scripts`)).data.files || []
+  } catch (error) {
+    statisticsScripts.value = []
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loadingStatisticsScripts.value = false
+  }
+}
+
+function selectStatisticsScript(filename: string) {
+  const node = selectedNode.value
+  if (!node || node.node_type !== 'data_statistics') return
+  const script = statisticsScripts.value.find(item => item.name === filename && item.executable)
+  node.config.script_filename = script?.name || ''
+  node.config.script_checksum = script?.checksum || ''
+  markDirty()
+}
+
+function ensureStatisticsScriptSelection() {
+  const node = selectedNode.value
+  if (!editable.value || !node || node.node_type !== 'data_statistics') return
+  const script = statisticsScripts.value.find(item => item.name === node.config.script_filename && item.executable)
+  if (!script || (node.config.script_checksum && node.config.script_checksum !== script.checksum)) {
+    node.config.script_filename = ''
+    node.config.script_checksum = ''
+    markDirty()
+  } else if (!node.config.script_checksum) {
+    node.config.script_checksum = script.checksum
+    markDirty()
+  }
+}
+
+const parserXmlFields: Record<ParserXmlRole, { filename: string; checksum: string }> = {
+  config: { filename: 'config_xml_filename', checksum: 'config_xml_checksum' },
+  instance: { filename: 'instance_xml_filename', checksum: 'instance_xml_checksum' },
+  analysis: { filename: 'analysis_xml_filename', checksum: 'analysis_xml_checksum' },
+}
+
+async function selectParserXml(role: ParserXmlRole, filename: string, quiet = false) {
+  const resource = selectedResourceMap.value.parser
+  const node = selectedNode.value
+  if (!resource || !node || node.node_type !== 'parser_parse') return
+  const fields = parserXmlFields[role]
+  const config = node.config as Record<string, any>
+  if (!filename) {
+    config[fields.filename] = ''
+    config[fields.checksum] = ''
+    markDirty()
+    return
+  }
+  try {
+    const detail = (await api.get(`/resources/${resource.id}/parser-configs/${encodeURIComponent(filename)}`)).data
+    config[fields.filename] = detail.name
+    config[fields.checksum] = detail.checksum
+    markDirty()
+  } catch (error) {
+    config[fields.filename] = ''
+    config[fields.checksum] = ''
+    if (!quiet) ElMessage.error(errorMessage(error))
+  }
+}
+
+async function ensureParserXmlSelections() {
+  const node = selectedNode.value
+  const resource = selectedResourceMap.value.parser
+  if (!editable.value || !node || node.node_type !== 'parser_parse' || !resource) return
+  const config = node.config as Record<string, any>
+  const defaults: Record<ParserXmlRole, string> = {
+    config: parserXmlOptions.value.config.find(file => file.name === 'config.xml')?.name || parserXmlOptions.value.config[0]?.name || '',
+    instance: parserXmlOptions.value.instance.find(file => file.name === 'instance.xml')?.name || parserXmlOptions.value.instance[0]?.name || '',
+    analysis: parserXmlOptions.value.analysis.find(file => file.name === resource.capabilities?.parser_config_filename)?.name || parserXmlOptions.value.analysis[0]?.name || '',
+  }
+  for (const role of ['config', 'instance', 'analysis'] as ParserXmlRole[]) {
+    const fields = parserXmlFields[role]
+    const current = String(config[fields.filename] || '')
+    const valid = parserXmlOptions.value[role].some(file => file.name === current)
+    if (!valid) {
+      config[fields.filename] = ''
+      config[fields.checksum] = ''
+    }
+    const filename = valid ? current : defaults[role]
+    if (filename && (!valid || !config[fields.checksum])) await selectParserXml(role, filename, true)
+  }
+}
+
 function xmlFlag(document: any): 0 | 1 {
   const matches: string[] = []
   const visit = (node: any) => {
@@ -398,6 +544,18 @@ watch(selectedNode, async node => {
   previewSnapshots.value = []
   globalKeySearch.value = ''
   if (node?.node_type === 'order_preparation') { await loadOrderConfigs(); await loadContractFiles() }
+  if (node?.node_type === 'parser_parse') { await loadParserConfigs(); await ensureParserXmlSelections() }
+  if (node?.node_type === 'data_statistics') { await loadStatisticsScripts(); ensureStatisticsScriptSelection() }
+})
+watch(() => selectedResourceMap.value.parser?.id, async () => {
+  if (selectedNode.value?.node_type === 'parser_parse') {
+    await loadParserConfigs()
+    await ensureParserXmlSelections()
+  }
+  if (selectedNode.value?.node_type === 'data_statistics') {
+    await loadStatisticsScripts()
+    ensureStatisticsScriptSelection()
+  }
 })
 
 onBeforeRouteLeave(async () => {
@@ -438,7 +596,7 @@ onMounted(load)
           <template v-for="(node, index) in nodes" :key="node.node_key">
             <article :data-node-key="node.node_key" class="flow-node" :class="[{ selected: selectedKey === node.node_key }, nodeMeta(node.node_type).tone]" :draggable="editable" @dragstart="draggingKey = node.node_key" @dragover.prevent @drop="dropNode(index)" @click="selectedKey = node.node_key">
               <div class="node-icon"><el-icon><component :is="nodeMeta(node.node_type).icon" /></el-icon></div>
-              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
+              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="node.node_type === 'data_statistics'">{{ node.config.script_filename || '未选择统计脚本' }}</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
               <div v-if="editable" class="node-actions"><el-button text circle :icon="Top" :disabled="index === 0" aria-label="上移节点" @click.stop="moveNode(index, -1)" /><el-button text circle :icon="Bottom" :disabled="index === nodes.length - 1" aria-label="下移节点" @click.stop="moveNode(index, 1)" /><el-button text circle type="danger" :icon="Delete" aria-label="删除节点" @click.stop="removeNode(index)" /></div>
             </article>
             <div class="flow-link"><span></span><button v-if="editable" class="add-point" type="button" aria-label="在此处添加节点" @click="openPicker(index + 1)"><el-icon><Plus /></el-icon></button></div>
@@ -514,14 +672,57 @@ onMounted(load)
           </template>
           <template v-else-if="selectedNode.node_type === 'parser_parse'">
             <label class="field required"><span>运行数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable || !selectedResourceMap.database" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>从该数据库导出 t_fut_orders、t_fut_quotes、t_fut_arbi_orders。</small></label>
+            <div class="section-label">解析 XML</div>
+            <label class="field required">
+              <span>config.xml 配置</span>
+              <el-select v-model="selectedNode.config.config_xml_filename" :loading="loadingParserConfigs" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectParserXml('config', String(value || ''))"><el-option v-for="file in parserXmlOptions.config" :key="file.name" :label="file.name" :value="file.name" /></el-select>
+              <small class="mono">SHA-256 {{ selectedNode.config.config_xml_checksum || '未固化' }}</small>
+            </label>
+            <label class="field required">
+              <span>instance.xml 配置</span>
+              <el-select v-model="selectedNode.config.instance_xml_filename" :loading="loadingParserConfigs" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectParserXml('instance', String(value || ''))"><el-option v-for="file in parserXmlOptions.instance" :key="file.name" :label="file.name" :value="file.name" /></el-select>
+              <small class="mono">SHA-256 {{ selectedNode.config.instance_xml_checksum || '未固化' }}</small>
+            </label>
+            <label class="field required">
+              <span>分析主配置</span>
+              <el-select v-model="selectedNode.config.analysis_xml_filename" :loading="loadingParserConfigs" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectParserXml('analysis', String(value || ''))"><el-option v-for="file in parserXmlOptions.analysis" :key="file.name" :label="file.name" :value="file.name" /></el-select>
+              <small class="mono">SHA-256 {{ selectedNode.config.analysis_xml_checksum || '未固化' }}</small>
+            </label>
             <div class="section-label">解析资源</div>
             <div class="slnic-summary">
               <div><span>解析工具</span><strong>{{ selectedResourceMap.parser?.capabilities?.parser_binary || '未绑定解析资源' }}</strong></div>
               <div><span>远端路径</span><strong class="mono">{{ selectedResourceMap.parser?.remote_path || '-' }}</strong></div>
-              <div><span>主配置 XML</span><strong class="mono">{{ selectedResourceMap.parser?.capabilities?.parser_config_filename || '-' }}</strong></div>
+              <div><span>资源默认主配置</span><strong class="mono">{{ selectedResourceMap.parser?.capabilities?.parser_config_filename || '-' }}</strong></div>
             </div>
             <el-alert v-if="!selectedResourceMap.parser || !selectedResourceMap.database" title="请先在左侧资源池绑定解析工具和数据库资源" type="warning" :closable="false" show-icon />
             <el-alert title="该节点必须位于合并 pcapng 节点之后；运行时会上传三份订单 CSV 和 merge_pcap.pcapng。" type="info" :closable="false" show-icon />
+          </template>
+          <template v-else-if="selectedNode.node_type === 'data_statistics'">
+            <label class="field required">
+              <span>前置解析节点</span>
+              <el-select v-model="selectedNode.config.parser_node_key" :disabled="!editable" @change="markDirty">
+                <el-option v-for="node in precedingParserNodes" :key="node.node_key" :label="`${node.position}. ${node.name}`" :value="node.node_key" />
+              </el-select>
+              <small>运行时只能选择该解析节点归档的 CSV 产物。</small>
+            </label>
+            <label class="field required">
+              <span>交易所统计脚本</span>
+              <el-select v-model="selectedNode.config.script_filename" :loading="loadingStatisticsScripts" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectStatisticsScript(String(value || ''))">
+                <el-option v-for="script in statisticsScripts" :key="script.name" :label="script.executable ? script.name : `${script.name}（不可执行）`" :value="script.name" :disabled="!script.executable" />
+              </el-select>
+              <small class="mono">SHA-256 {{ selectedNode.config.script_checksum || '未固化' }}</small>
+            </label>
+            <label class="field required">
+              <span>异常大值上限（ns）</span>
+              <el-input-number v-model="selectedNode.config.max_latency_ns" :disabled="!editable" :min="1" :precision="0" controls-position="right" style="width:100%" @change="markDirty" />
+              <small>作为第三个命令行参数传给统计脚本，默认 999999999。</small>
+            </label>
+            <div class="slnic-summary">
+              <div><span>解析资源</span><strong>{{ selectedResourceMap.parser?.name || '未绑定解析资源' }}</strong></div>
+              <div><span>执行方式</span><strong>远端脚本 · JSON 输出</strong></div>
+              <div class="wide"><span>脚本目录</span><code>{{ selectedResourceMap.parser?.remote_path || '-' }}</code></div>
+            </div>
+            <el-alert v-if="!precedingParserNodes.length" title="请将数据统计节点放在数据解析节点之后" type="warning" :closable="false" show-icon />
           </template>
 
           <div v-if="previewSnapshots.length" class="preview-results"><div class="section-label">最近预采集结果</div><div v-for="snapshot in previewSnapshots" :key="snapshot.id" class="snapshot"><div><strong>{{ snapshot.source_type === 'server' ? `资源 #${snapshot.resource_id}` : snapshot.database_name }}</strong><el-tag size="small" :type="snapshot.status === 'succeeded' ? 'success' : 'danger'">{{ snapshot.status === 'succeeded' ? '成功' : '失败' }}</el-tag></div><dl><template v-for="item in snapshot.items" :key="item.id"><dt>{{ item.item_label }}</dt><dd :class="{ failed: item.status === 'failed' }">{{ item.value_text || item.error_message || '-' }}</dd></template></dl></div></div>

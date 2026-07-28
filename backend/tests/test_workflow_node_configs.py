@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import WorkflowDocumentWrite
-from app.workflow_node_configs import OrderPreparationConfig, ServerConfig, parse_node_config
+from app.workflow_node_configs import OrderPreparationConfig, ParserConfig, ServerConfig, StatisticsConfig, parse_node_config
 
 
 def test_workflow_document_discriminates_node_config_by_node_type() -> None:
@@ -48,3 +48,23 @@ def test_runtime_config_parser_uses_the_same_contract() -> None:
 
     with pytest.raises(ValidationError):
         parse_node_config("order_preparation", {"read_symbol_csv": 2})
+
+    parser = parse_node_config("parser_parse", {
+        "database_name": "fut_mm_trading_data",
+        "config_xml_filename": "config-test.xml",
+        "config_xml_checksum": "a" * 64,
+        "instance_xml_filename": "instance-test.xml",
+        "instance_xml_checksum": "b" * 64,
+        "analysis_xml_filename": "soft_cffex_speed_analysis.xml",
+        "analysis_xml_checksum": "c" * 64,
+    })
+    assert isinstance(parser, ParserConfig)
+    assert parser.analysis_xml_filename == "soft_cffex_speed_analysis.xml"
+
+    statistics = parse_node_config("data_statistics", {
+        "parser_node_key": "parse",
+        "script_filename": "statistics_cffex.py",
+        "script_checksum": "d" * 64,
+    })
+    assert isinstance(statistics, StatisticsConfig)
+    assert statistics.max_latency_ns == 999999999

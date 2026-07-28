@@ -424,6 +424,23 @@ export interface paths {
         patch: operations["rename_parser_config_api_v1_resources__resource_id__parser_configs__filename__patch"];
         trace?: never;
     };
+    "/api/v1/resources/{resource_id}/statistics-scripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Statistics Scripts */
+        get: operations["list_statistics_scripts_api_v1_resources__resource_id__statistics_scripts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -680,6 +697,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/steps/{step_id}/parser-exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Run Parser Table */
+        post: operations["export_run_parser_table_api_v1_runs__run_id__steps__step_id__parser_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/steps/{step_id}/retry": {
         parameters: {
             query?: never;
@@ -708,6 +742,23 @@ export interface paths {
         put?: never;
         /** Start Run Step */
         post: operations["start_run_step_api_v1_runs__run_id__steps__step_id__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Statistics Inputs */
+        put: operations["update_statistics_inputs_api_v1_runs__run_id__steps__step_id__statistics_inputs_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1440,10 +1491,40 @@ export interface components {
         /** ParserConfig */
         ParserConfig: {
             /**
+             * Analysis Xml Checksum
+             * @default
+             */
+            analysis_xml_checksum: string;
+            /**
+             * Analysis Xml Filename
+             * @default
+             */
+            analysis_xml_filename: string;
+            /**
+             * Config Xml Checksum
+             * @default
+             */
+            config_xml_checksum: string;
+            /**
+             * Config Xml Filename
+             * @default
+             */
+            config_xml_filename: string;
+            /**
              * Database Name
              * @default
              */
             database_name: string;
+            /**
+             * Instance Xml Checksum
+             * @default
+             */
+            instance_xml_checksum: string;
+            /**
+             * Instance Xml Filename
+             * @default
+             */
+            instance_xml_filename: string;
         };
         /** ParserNodeOut */
         ParserNodeOut: {
@@ -1474,6 +1555,47 @@ export interface components {
              * @enum {string}
              */
             node_type: "parser_parse";
+        };
+        /** ParserTableExportOut */
+        ParserTableExportOut: {
+            artifact: components["schemas"]["ArtifactOut"];
+            /** Artifact Id */
+            artifact_id: number;
+            /** Checksum */
+            checksum: string;
+            /** Database Name */
+            database_name: string;
+            /**
+             * Exported At
+             * Format: date-time
+             */
+            exported_at: string;
+            /** Exported By */
+            exported_by: number | null;
+            /** Filename */
+            filename: string;
+            /** Row Count */
+            row_count: number;
+            /** Size */
+            size: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "manual" | "auto";
+            /**
+             * Table
+             * @enum {string}
+             */
+            table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders";
+        };
+        /** ParserTableExportRequest */
+        ParserTableExportRequest: {
+            /**
+             * Table
+             * @enum {string}
+             */
+            table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders";
         };
         /** PlanOut */
         PlanOut: {
@@ -1980,6 +2102,110 @@ export interface components {
              */
             node_type: "slnic_stop_capture";
         };
+        /** StatisticsConfig */
+        StatisticsConfig: {
+            /**
+             * Max Latency Ns
+             * @default 999999999
+             */
+            max_latency_ns: number;
+            /**
+             * Parser Node Key
+             * @default
+             */
+            parser_node_key: string;
+            /**
+             * Script Checksum
+             * @default
+             */
+            script_checksum: string;
+            /**
+             * Script Filename
+             * @default
+             */
+            script_filename: string;
+        };
+        /** StatisticsInputOut */
+        StatisticsInputOut: {
+            /** Artifact Id */
+            artifact_id: number;
+            /** Checksum */
+            checksum: string;
+            /** Filename */
+            filename: string;
+            /** Size */
+            size: number;
+        };
+        /** StatisticsInputSelectionOut */
+        StatisticsInputSelectionOut: {
+            /** Inputs */
+            inputs: components["schemas"]["StatisticsInputOut"][];
+            /**
+             * Selected At
+             * Format: date-time
+             */
+            selected_at: string;
+            /** Selected By */
+            selected_by: number;
+        };
+        /** StatisticsInputSelectionRequest */
+        StatisticsInputSelectionRequest: {
+            /** Artifact Ids */
+            artifact_ids: number[];
+        };
+        /** StatisticsNodeOut */
+        StatisticsNodeOut: {
+            config?: components["schemas"]["StatisticsConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "data_statistics";
+            /** Position */
+            position: number;
+        };
+        /** StatisticsNodeWrite */
+        StatisticsNodeWrite: {
+            config?: components["schemas"]["StatisticsConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "data_statistics";
+        };
+        /** StatisticsScriptFileOut */
+        StatisticsScriptFileOut: {
+            /** Checksum */
+            checksum: string;
+            /** Executable */
+            executable: boolean;
+            /**
+             * Modified At
+             * Format: date-time
+             */
+            modified_at: string;
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+        };
+        /** StatisticsScriptListOut */
+        StatisticsScriptListOut: {
+            /** Directory */
+            directory: string;
+            /** Files */
+            files: components["schemas"]["StatisticsScriptFileOut"][];
+        };
         /** StepOut */
         StepOut: {
             /** Code */
@@ -2176,7 +2402,7 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
             /** Nodes */
-            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"])[];
+            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"] | components["schemas"]["StatisticsNodeWrite"])[];
             /** Resource Ids */
             resource_ids: number[];
         };
@@ -2190,7 +2416,7 @@ export interface components {
             /** Id */
             id: number;
             /** Nodes */
-            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"])[];
+            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"] | components["schemas"]["StatisticsNodeOut"])[];
             /** Published At */
             published_at: string | null;
             /** Published By */
@@ -3393,6 +3619,37 @@ export interface operations {
             };
         };
     };
+    list_statistics_scripts_api_v1_resources__resource_id__statistics_scripts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatisticsScriptListOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_runs_api_v1_runs_get: {
         parameters: {
             query?: {
@@ -3906,6 +4163,42 @@ export interface operations {
             };
         };
     };
+    export_run_parser_table_api_v1_runs__run_id__steps__step_id__parser_exports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParserTableExportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParserTableExportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_run_step_api_v1_runs__run_id__steps__step_id__retry_post: {
         parameters: {
             query?: never;
@@ -3957,6 +4250,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_statistics_inputs_api_v1_runs__run_id__steps__step_id__statistics_inputs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatisticsInputSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatisticsInputSelectionOut"];
                 };
             };
             /** @description Validation Error */

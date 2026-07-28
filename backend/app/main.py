@@ -15,7 +15,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.api.router import router
 from app.core.config import settings
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, engine, validate_database_server
 from app.core.logging import configure_logging, logger, trace_id_ctx
 from app.core.security import CredentialSecretError, hash_password
 from app.models import BusinessType, User
@@ -78,6 +78,14 @@ async def internal_scheduler() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    with engine.connect() as connection:
+        database_server = validate_database_server(connection)
+    if database_server is not None:
+        logger.info(
+            "database_server_compatible",
+            family=database_server.family,
+            version=database_server.raw_version,
+        )
     seed_database()
     recovery_db = SessionLocal()
     try:

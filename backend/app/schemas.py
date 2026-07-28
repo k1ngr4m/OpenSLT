@@ -16,6 +16,7 @@ from app.workflow_node_configs import (
     OrderAction,
     OrderPreparationConfig,
     ParserConfig,
+    StatisticsConfig,
     ServerConfig,
     SlnicMergeConfig,
     SlnicStartConfig,
@@ -302,6 +303,19 @@ class OrderConfigDetailOut(OrderConfigFileOut):
     tool: str
 
 
+class StatisticsScriptFileOut(BaseModel):
+    name: str
+    size: int
+    modified_at: datetime
+    checksum: str
+    executable: bool
+
+
+class StatisticsScriptListOut(BaseModel):
+    directory: str
+    files: typing.List[StatisticsScriptFileOut]
+
+
 class DatabaseExportRequest(DatabaseSqlRequest):
     format: Literal["csv", "xlsx"]
 
@@ -409,6 +423,11 @@ class ParserNodeWrite(WorkflowNodeBase):
     config: ParserConfig = Field(default_factory=ParserConfig)
 
 
+class StatisticsNodeWrite(WorkflowNodeBase):
+    node_type: Literal["data_statistics"]
+    config: StatisticsConfig = Field(default_factory=StatisticsConfig)
+
+
 WorkflowNodeWrite = Annotated[
     typing.Union[
         ServerConfigNodeWrite,
@@ -419,6 +438,7 @@ WorkflowNodeWrite = Annotated[
         SlnicStopNodeWrite,
         SlnicMergeNodeWrite,
         ParserNodeWrite,
+        StatisticsNodeWrite,
     ],
     Field(discriminator="node_type"),
 ]
@@ -471,6 +491,10 @@ class ParserNodeOut(ParserNodeWrite, WorkflowNodeOutFields):
     pass
 
 
+class StatisticsNodeOut(StatisticsNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
 WorkflowNodeOut = Annotated[
     typing.Union[
         ServerConfigNodeOut,
@@ -481,6 +505,7 @@ WorkflowNodeOut = Annotated[
         SlnicStopNodeOut,
         SlnicMergeNodeOut,
         ParserNodeOut,
+        StatisticsNodeOut,
     ],
     Field(discriminator="node_type"),
 ]
@@ -571,6 +596,27 @@ class OrderActionRequest(BaseModel):
     action: OrderAction
 
 
+class ParserTableExportRequest(BaseModel):
+    table: Literal["t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders"]
+
+
+class StatisticsInputSelectionRequest(BaseModel):
+    artifact_ids: typing.List[int] = Field(min_length=1)
+
+
+class StatisticsInputOut(BaseModel):
+    artifact_id: int
+    filename: str
+    size: int
+    checksum: str
+
+
+class StatisticsInputSelectionOut(BaseModel):
+    inputs: typing.List[StatisticsInputOut]
+    selected_by: int
+    selected_at: datetime
+
+
 class StepOut(ORMModel):
     id: int
     code: str
@@ -618,6 +664,20 @@ class ArtifactOut(ORMModel):
     checksum: str
     is_immutable: bool
     created_at: datetime
+
+
+class ParserTableExportOut(BaseModel):
+    table: Literal["t_fut_orders", "t_fut_quotes", "t_fut_arbi_orders"]
+    artifact_id: int
+    filename: str
+    database_name: str
+    row_count: int
+    size: int
+    checksum: str
+    source: Literal["manual", "auto"]
+    exported_by: typing.Union[int, None]
+    exported_at: datetime
+    artifact: ArtifactOut
 
 
 class RunStatusTransitionOut(ORMModel):

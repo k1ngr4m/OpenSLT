@@ -101,7 +101,20 @@ export function useRunStepPresentation(
     if (step.node_type === 'parser_parse') {
       return [
         { label: '数据库', value: stringValue(config.database_name) },
-        { label: '解析配置', value: stringValue(config.config_filename) },
+        { label: 'config.xml', value: stringValue(config.config_xml_filename, 'config.xml') },
+        { label: 'config.xml 校验', value: stringValue(config.config_xml_checksum), mono: true },
+        { label: 'instance.xml', value: stringValue(config.instance_xml_filename, 'instance.xml') },
+        { label: 'instance.xml 校验', value: stringValue(config.instance_xml_checksum), mono: true },
+        { label: '分析主配置', value: stringValue(config.analysis_xml_filename) },
+        { label: '分析配置校验', value: stringValue(config.analysis_xml_checksum), mono: true },
+      ]
+    }
+    if (step.node_type === 'data_statistics') {
+      return [
+        { label: '前置解析节点', value: stringValue(config.parser_node_key), mono: true },
+        { label: '统计脚本', value: stringValue(config.script_filename), mono: true },
+        { label: '脚本校验', value: stringValue(config.script_checksum), mono: true },
+        { label: '异常大值上限', value: `${optionalNumber(config.max_latency_ns) ?? 999999999} ns` },
       ]
     }
     if (step.node_type.startsWith('slnic_')) {
@@ -163,10 +176,23 @@ export function useRunStepPresentation(
     if (step.node_type === 'parser_parse') {
       return [
         { label: '数据库', value: stringValue(result.database_name) },
+        { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
         { label: '退出码', value: optionalNumber(result.exit_code) ?? '-' },
         { label: '执行耗时', value: formatDuration(optionalNumber(result.duration_ms)) },
         { label: 'PCAP 产物 ID', value: optionalNumber(result.pcap_artifact_id) ?? '-' },
         { label: '输出文件', value: Array.isArray(result.output_files) ? `${result.output_files.length} 个` : '-' },
+      ]
+    }
+    if (step.node_type === 'data_statistics') {
+      const selection = isJsonMap(result.statistics_selection) ? result.statistics_selection : null
+      const script = isJsonMap(result.statistics_script) ? result.statistics_script : null
+      return [
+        { label: '统计脚本', value: stringValue(script?.filename, stringValue(selectedConfig.value.script_filename)), mono: true },
+        { label: '脚本校验', value: stringValue(script?.checksum, stringValue(selectedConfig.value.script_checksum)), mono: true },
+        { label: '输入文件', value: Array.isArray(selection?.inputs) ? `${selection.inputs.length} 个` : '-' },
+        { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
+        { label: '执行耗时', value: formatDuration(optionalNumber(result.duration_ms)) },
+        { label: '结果产物 ID', value: optionalNumber(result.statistics_artifact_id) ?? '-' },
       ]
     }
     return objectRows(result)

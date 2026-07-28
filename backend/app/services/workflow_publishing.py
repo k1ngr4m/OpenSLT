@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.models import ContractDataFile, ScenarioWorkflowVersion, TestScenario
-from app.services.order_configs import OrderConfigError, order_config_service, parser_main_config_filename, update_symbol_csv_values
+from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
 from app.services.resource_relations import node_config_with_relations, node_contract_file_ids, sync_scenario_resources, workflow_resource_ids
+from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
 from app.services.workflow_contracts import parse_read_symbol_csv
 from app.services.workflow_core import CONTRACT_TYPE_LABELS, WorkflowError, resource_map, validate_structure
 
@@ -23,14 +24,41 @@ async def validate_publish(
     resources = resource_map(db, version)
     order_config_updates: list[dict[str, typing.Any]] = []
     for node in version.nodes:
+        if node.node_type == "data_statistics":
+            resource = resources.get("parser")
+            config = node_config_with_relations(node)
+            filename = str(config.get("script_filename") or "").strip()
+            expected = str(config.get("script_checksum") or "").strip()
+            if resource and filename and expected:
+                try:
+                    detail = await statistics_script_service.read(resource, filename)
+                    if not detail["executable"]:
+                        raise WorkflowError("STATISTICS_SCRIPT_NOT_EXECUTABLE", "统计脚本没有可执行权限", 409)
+                    if detail["checksum"] != expected:
+                        raise WorkflowError("STATISTICS_SCRIPT_CHANGED", "统计脚本已发生变化，请重新选择", 409)
+                except (StatisticsScriptError, WorkflowError) as exc:
+                    errors.append({"node_key": node.node_key, "field": "script_filename", "message": str(exc)})
+            continue
         if node.node_type == "parser_parse":
             resource = resources.get("parser")
             if resource:
-                filename = parser_main_config_filename(resource)
-                try:
-                    await order_config_service.read(resource, filename)
-                except OrderConfigError as exc:
-                    errors.append({"node_key": node.node_key, "field": "resource", "message": str(exc)})
+                config = node_config_with_relations(node)
+                parser_xml_fields = (
+                    ("config_xml_filename", "config_xml_checksum", "config.xml 配置"),
+                    ("instance_xml_filename", "instance_xml_checksum", "instance.xml 配置"),
+                    ("analysis_xml_filename", "analysis_xml_checksum", "分析主配置"),
+                )
+                for filename_field, checksum_field, label in parser_xml_fields:
+                    filename = str(config.get(filename_field) or "").strip()
+                    expected = str(config.get(checksum_field) or "").strip()
+                    if not filename or not expected:
+                        continue
+                    try:
+                        detail = await order_config_service.read(resource, filename)
+                        if detail["checksum"] != expected:
+                            raise WorkflowError("PARSER_CONFIG_CHANGED", f"{label}已发生变化，请重新选择", 409)
+                    except (OrderConfigError, WorkflowError) as exc:
+                        errors.append({"node_key": node.node_key, "field": filename_field, "message": str(exc)})
             continue
         if node.node_type != "order_preparation":
             continue

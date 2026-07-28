@@ -21,6 +21,7 @@ from app.core.time import as_beijing, beijing_now
 from app.models import Artifact, AuditLog, LogRecord, Metric, Resource, ResourceLock, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, TestScenario
 from app.services.events import broker
 from app.services.resource_relations import run_resource_ids
+from app.services.statistics_execution import require_statistics_selection
 from app.services.run_state import TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.base import WorkflowExecutionContext
@@ -353,6 +354,8 @@ def begin_workflow_step(
     expected_step_status = "failed" if retry else "pending"
     if current.status != expected_step_status:
         raise WorkflowError("INVALID_TRANSITION", "当前节点状态不能执行此操作", 409)
+    if current.node_type == "data_statistics":
+        require_statistics_selection(db, run, current)
     if retry:
         current.retry_count += 1
     transition_step(current, "running")

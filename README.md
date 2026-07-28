@@ -81,9 +81,9 @@ ENABLE_INTERNAL_SCHEDULER=true
 
 OpenSLT 自身产生的 API、页面、日志、报表和导出时间统一使用北京时间（UTC+08:00）；数据库中的时间仍按 UTC 保存，不需要迁移历史数据。
 
-任务调度默认由 FastAPI 进程内置循环承担，不需要外部消息队列或独立任务进程。生产环境建议使用 MySQL 8 和独立非 root 用户。JWT 签名密钥与资源凭据加密密钥会在未显式配置时自动生成，并持久保存在数据目录下；也可以通过 `CREDENTIAL_ENCRYPTION_KEY` 显式配置由 `Fernet.generate_key()` 生成的固定密钥。请在资源管理中配置并验证 REM、模拟市场、发单工具、SLNIC、解析工具和 MySQL 资源后再运行自动化任务。
+任务调度默认由 FastAPI 进程内置循环承担，不需要外部消息队列或独立任务进程。生产环境支持 MariaDB 5.5.68 和 MySQL 8，数据库必须启用 InnoDB、`utf8mb4` 与 `utf8mb4_unicode_ci`；服务启动和迁移会主动验证这些能力。请使用独立非 root 数据库用户。JWT 签名密钥与资源凭据加密密钥会在未显式配置时自动生成，并持久保存在数据目录下；也可以通过 `CREDENTIAL_ENCRYPTION_KEY` 显式配置由 `Fernet.generate_key()` 生成的固定密钥。请在资源管理中配置并验证 REM、模拟市场、发单工具、SLNIC、解析工具和 MySQL 资源后再运行自动化任务。
 
-当 `DATABASE_URL` 指向 MySQL 时，启动和在线迁移会自动创建尚不存在的目标数据库，再执行 Alembic 建表。首次启动使用的 MySQL 账号需要具备 `CREATE` 权限；数据库创建完成后可按生产安全策略收紧权限。
+当 `DATABASE_URL` 指向 MariaDB/MySQL 时，启动和在线迁移会自动创建尚不存在的目标数据库，再执行 Alembic 建表。首次启动使用的数据库账号需要具备 `CREATE` 权限；数据库创建完成后可按生产安全策略收紧权限。MariaDB 仍使用 SQLAlchemy 的 `mysql+pymysql://` URL。
 
 ## 生产构建
 

@@ -224,6 +224,125 @@
   margin-top: 12px;
 }
 
+.statistics-input-list {
+  display: grid;
+  gap: 8px;
+}
+
+.statistics-input-list :deep(.el-checkbox) {
+  width: 100%;
+  height: auto;
+  padding: 10px 12px;
+  margin: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+}
+
+.statistics-input-copy strong,
+.statistics-input-copy small {
+  display: block;
+}
+
+.statistics-input-copy small {
+  margin-top: 4px;
+  color: var(--ui-text-secondary);
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.statistics-selection-actions,
+.statistics-result-toolbar,
+.statistics-result-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.statistics-selection-actions {
+  margin-top: 12px;
+}
+
+.statistics-results {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.statistics-result-card {
+  padding: 14px;
+  border: 1px solid var(--ui-border);
+  border-radius: 9px;
+  background: var(--ui-surface-subtle);
+}
+
+.statistics-result-title div > * {
+  display: block;
+}
+
+.statistics-result-title span {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.statistics-excluded {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 12px 0;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+}
+
+.parser-export-list {
+  display: grid;
+  border-top: 1px solid var(--ui-border);
+}
+
+.parser-export-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 130px auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 64px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.parser-export-name {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.parser-export-name code {
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parser-export-name span,
+.parser-export-checksum {
+  font-size: 12px;
+}
+
+.parser-export-checksum {
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.parser-export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.parser-export-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
 .file-chips span {
   padding: 6px 9px;
   border-radius: 6px;
@@ -322,6 +441,21 @@
   .mini-row,
   .mini-table.two-col .mini-row {
     grid-template-columns: 1fr;
+  }
+
+  .parser-export-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+    padding: 12px 0;
+  }
+
+  .parser-export-checksum {
+    display: none;
+  }
+
+  .parser-export-actions {
+    grid-column: 2;
+    grid-row: 1;
   }
 }
 .order-action-panel {

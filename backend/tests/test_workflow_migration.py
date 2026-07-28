@@ -143,6 +143,9 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
+    assert sql.count("ENGINE=InnoDB") == 27
+    assert sql.count("CHARSET=utf8mb4") == 27
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 27
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert (

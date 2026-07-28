@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import asyncssh
+import pytest
 
 from app.models import Artifact
 from app.services import order_configs
@@ -152,16 +153,35 @@ def create_database_resource(client, headers):
     return response.json()
 
 
-def parser_nodes():
+def parser_nodes(parser_config=None):
     return [
         {"node_key": "start", "node_type": "slnic_start_capture", "name": "Start", "config": {}},
         {"node_key": "stop", "node_type": "slnic_stop_capture", "name": "Stop", "config": {}},
         {"node_key": "merge", "node_type": "slnic_merge_capture", "name": "Merge", "config": {}},
         {
             "node_key": "parse", "node_type": "parser_parse", "name": "Parse",
-            "config": {"database_name": "fut_mm_trading_data"},
+            "config": {"database_name": "fut_mm_trading_data", **(parser_config or {})},
         },
     ]
+
+
+def parser_xml_config(client, headers, resource):
+    base = f"/api/v1/resources/{resource['id']}/parser-configs"
+    files = client.get(base, headers=headers)
+    assert files.status_code == 200, files.text
+    main = resource["capabilities"]["parser_config_filename"]
+    details = {
+        name: client.get(f"{base}/{name}", headers=headers).json()
+        for name in ("config.xml", "instance.xml", main)
+    }
+    return {
+        "config_xml_filename": "config.xml",
+        "config_xml_checksum": details["config.xml"]["checksum"],
+        "instance_xml_filename": "instance.xml",
+        "instance_xml_checksum": details["instance.xml"]["checksum"],
+        "analysis_xml_filename": main,
+        "analysis_xml_checksum": details[main]["checksum"],
+    }
 
 
 def complete_workflow(client, headers, run_id):
@@ -304,6 +324,84 @@ def test_parser_publish_rejects_missing_merge(client, admin_headers):
     assert any("pcapng" in item["message"] for item in published.json()["errors"])
 
 
+def test_parser_publish_rejects_changed_selected_xml(client, admin_headers, monkeypatch):
+    config_sftp = FakeConfigSFTP()
+
+    async def fake_connect(**_options):
+        return FakeConfigConnection(config_sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
+    slnic = create_resource(client, admin_headers, "SLNIC-Parser-Config", resource_type="slnic")
+    database = create_database_resource(client, admin_headers)
+    parser = create_parser_resource(client, admin_headers)
+    xml_config = parser_xml_config(client, admin_headers, parser)
+    _, scenario = create_plan_scenario(
+        client,
+        admin_headers,
+        resource_ids=[slnic["id"], database["id"], parser["id"]],
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [slnic["id"], database["id"], parser["id"]],
+            "nodes": parser_nodes(xml_config),
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    base = f"/api/v1/resources/{parser['id']}/parser-configs/config.xml"
+    detail = client.get(base, headers=admin_headers).json()
+    changed = client.put(
+        base,
+        headers=admin_headers,
+        json={
+            "content": detail["content"].replace("100001", "100002"),
+            "expected_checksum": detail["checksum"],
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish",
+        headers=admin_headers,
+    )
+    assert published.status_code == 422
+    assert any("发生变化" in item["message"] for item in published.json()["errors"])
+
+
+@pytest.mark.asyncio
+async def test_parser_runtime_xml_fallback_and_checksum_validation(monkeypatch):
+    resource = SimpleNamespace(
+        capabilities={"parser_config_filename": "soft_cffex_speed_analysis.xml"},
+    )
+    requested = []
+
+    async def fake_read(_resource, filename):
+        requested.append(filename)
+        return {"name": filename, "content": "<root />", "checksum": "a" * 64}
+
+    monkeypatch.setattr(order_configs.order_config_service, "read", fake_read)
+    loaded = await workflows._load_parser_xml_files(resource, {})
+    assert requested == ["config.xml", "instance.xml", "soft_cffex_speed_analysis.xml"]
+    assert set(loaded) == {"config", "instance", "analysis"}
+
+    with pytest.raises(workflows.WorkflowError) as changed:
+        await workflows._load_parser_xml_files(resource, {
+            "config_xml_filename": "config.xml",
+            "config_xml_checksum": "b" * 64,
+            "instance_xml_filename": "instance.xml",
+            "instance_xml_checksum": "a" * 64,
+            "analysis_xml_filename": "soft_cffex_speed_analysis.xml",
+            "analysis_xml_checksum": "a" * 64,
+        })
+    assert changed.value.code == "PARSER_CONFIG_CHANGED"
+
+
 def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     client, admin_headers, monkeypatch
 ):
@@ -319,9 +417,10 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     plan, scenario = create_plan_scenario(
         client, admin_headers, resource_ids=[slnic["id"], database["id"], parser["id"]]
     )
+    xml_config = parser_xml_config(client, admin_headers, parser)
     publish_workflow(
         client, admin_headers, scenario,
-        [slnic["id"], database["id"], parser["id"]], parser_nodes(),
+        [slnic["id"], database["id"], parser["id"]], parser_nodes(xml_config),
     )
 
     async def fake_slnic(db, run, step, node, run_resources):
@@ -339,7 +438,10 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
         db.flush()
         return {"exit_code": 0, "artifact_id": artifact.id}
 
+    export_calls = []
+
     async def fake_export(database_resource, database_name, table, target):
+        export_calls.append(table)
         target.write_text("id,account\n1,100001\n", encoding="utf-8")
         return 1
 
@@ -395,7 +497,8 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
         async def run(self, command, check=False):
             self.commands.append(command)
-            output_path = "/home/user0/soft_cffex_speed_analysis_v2/analysis-result.csv"
+            workdir = command.split(" && ", 1)[0].replace("cd ", "", 1)
+            output_path = f"{workdir}/analysis-result.csv"
             self.sftp.files[output_path] = b"sequence,latency_us\n1,82.1\n"
             self.sftp.mtimes[output_path] = 3
             return SimpleNamespace(exit_status=0, stdout="finished", stderr="")
@@ -413,6 +516,14 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
     monkeypatch.setattr(workflows, "execute_slnic_node", fake_slnic)
     monkeypatch.setattr(workflows, "_export_parser_table", fake_export)
+    async def fake_load_xml(_resource, _raw_config):
+        return {
+            "config": {"name": "config.xml", "content": "<root />", "checksum": xml_config["config_xml_checksum"]},
+            "instance": {"name": "instance.xml", "content": "<root />", "checksum": xml_config["instance_xml_checksum"]},
+            "analysis": {"name": "soft_cffex_speed_analysis.xml", "content": "<tcp />", "checksum": xml_config["analysis_xml_checksum"]},
+        }
+
+    monkeypatch.setattr(workflows, "_load_parser_xml_files", fake_load_xml)
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
 
     created = client.post("/api/v1/runs", headers=admin_headers, json={
@@ -421,13 +532,73 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
         "timeout_minutes": 30,
     }).json()
     client.post(f"/api/v1/runs/{created['id']}/start", headers=admin_headers)
+
+    for _ in range(10):
+        pending_run = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
+        current = next(item for item in pending_run["steps"] if item["status"] != "succeeded")
+        if current["node_type"] == "parser_parse":
+            break
+        operation = "complete" if current["status"] == "waiting" else "start"
+        response = client.post(
+            f"/api/v1/runs/{created['id']}/steps/{current['id']}/{operation}",
+            headers=admin_headers,
+        )
+        assert response.status_code == 200, response.text
+    else:
+        raise AssertionError("parser step was not reached")
+
+    export_url = f"/api/v1/runs/{created['id']}/steps/{current['id']}/parser-exports"
+    first_export = client.post(
+        export_url,
+        headers=admin_headers,
+        json={"table": "t_fut_orders"},
+    )
+    assert first_export.status_code == 200, first_export.text
+    refreshed_export = client.post(
+        export_url,
+        headers=admin_headers,
+        json={"table": "t_fut_orders"},
+    )
+    assert refreshed_export.status_code == 200, refreshed_export.text
+    assert refreshed_export.json()["artifact_id"] == first_export.json()["artifact_id"]
+    invalid_export = client.post(
+        export_url,
+        headers=admin_headers,
+        json={"table": "t_users"},
+    )
+    assert invalid_export.status_code == 422
+
     run = complete_workflow(client, admin_headers, created["id"])
     assert run["status"] == "completed"
     parsed = [item for item in run["artifacts"] if item["artifact_type"] == "parsed_csv"]
     assert [item["name"] for item in parsed] == ["analysis-result.csv"]
-    assert connection.commands == [
-        "cd /home/user0/soft_cffex_speed_analysis_v2 && "
-        "./soft_cffex_speed_analysis_v2 soft_cffex_speed_analysis.xml"
-    ]
+    assert len(connection.commands) == 1
+    assert connection.commands[0].startswith(
+        "cd /home/user0/soft_cffex_speed_analysis_v2/.openslt-runs/"
+    )
+    assert connection.commands[0].endswith(
+        " && /home/user0/soft_cffex_speed_analysis_v2/soft_cffex_speed_analysis_v2 soft_cffex_speed_analysis.xml"
+    )
     assert connection.closed is True
     assert connection.sftp.closed is True
+    assert export_calls == [
+        "t_fut_orders",
+        "t_fut_orders",
+        "t_fut_quotes",
+        "t_fut_arbi_orders",
+    ]
+    input_artifacts = [item for item in run["artifacts"] if item["artifact_type"] == "parser_input_csv"]
+    assert {item["name"] for item in input_artifacts} == {
+        "t_fut_orders.csv", "t_fut_quotes.csv", "t_fut_arbi_orders.csv",
+    }
+    parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
+    exports = parse_step["result_summary"]["parser_input_exports"]
+    assert exports["t_fut_orders"]["source"] == "manual"
+    assert exports["t_fut_quotes"]["source"] == "auto"
+    late_export = client.post(
+        export_url,
+        headers=admin_headers,
+        json={"table": "t_fut_orders"},
+    )
+    assert late_export.status_code == 409
+    assert late_export.json()["code"] == "PARSER_EXPORT_NOT_ALLOWED"

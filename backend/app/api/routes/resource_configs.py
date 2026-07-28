@@ -9,11 +9,18 @@ from app.api.deps import operators
 from app.api.routes.common import order_config_http_error, order_config_resource, parser_config_resource
 from app.core.database import get_db
 from app.models import User
-from app.schemas import OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate
+from app.schemas import OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, StatisticsScriptListOut
 from app.services.audit import write_audit
 from app.services.order_configs import OrderConfigError, order_config_service
+from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
 
 router = APIRouter()
+
+
+def statistics_script_http_error(exc: StatisticsScriptError):
+    from fastapi import HTTPException
+
+    return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message})
 
 def write_order_config_audit(
     db: Session,
@@ -203,6 +210,32 @@ async def list_parser_configs(
         write_order_config_audit(db, request, actor, resource_id, "parser_config.list", "failed", {"code": exc.code})
         raise order_config_http_error(exc) from exc
     write_order_config_audit(db, request, actor, resource_id, "parser_config.list", detail={"count": len(result["files"])})
+    return result
+
+
+@router.get("/resources/{resource_id}/statistics-scripts", response_model=StatisticsScriptListOut)
+async def list_statistics_scripts(
+    resource_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = parser_config_resource(db, resource_id)
+    try:
+        result = await statistics_script_service.list(resource)
+    except StatisticsScriptError as exc:
+        write_order_config_audit(
+            db, request, actor, resource_id, "statistics_script.list", "failed", {"code": exc.code}
+        )
+        raise statistics_script_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "statistics_script.list",
+        detail={"count": len(result["files"])},
+    )
     return result
 
 

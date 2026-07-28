@@ -77,6 +77,19 @@ class SlnicMergeConfig(WorkflowNodeConfig):
 
 class ParserConfig(WorkflowNodeConfig):
     database_name: str = ""
+    config_xml_filename: str = ""
+    config_xml_checksum: str = ""
+    instance_xml_filename: str = ""
+    instance_xml_checksum: str = ""
+    analysis_xml_filename: str = ""
+    analysis_xml_checksum: str = ""
+
+
+class StatisticsConfig(WorkflowNodeConfig):
+    parser_node_key: str = ""
+    script_filename: str = ""
+    script_checksum: str = ""
+    max_latency_ns: int = Field(default=999999999, ge=1)
 
 
 NodeConfig = typing.Union[
@@ -88,6 +101,7 @@ NodeConfig = typing.Union[
     SlnicStopConfig,
     SlnicMergeConfig,
     ParserConfig,
+    StatisticsConfig,
 ]
 
 
@@ -100,6 +114,7 @@ NODE_CONFIG_MODELS: typing.Dict[str, typing.Type[WorkflowNodeConfig]] = {
     "slnic_stop_capture": SlnicStopConfig,
     "slnic_merge_capture": SlnicMergeConfig,
     "parser_parse": ParserConfig,
+    "data_statistics": StatisticsConfig,
 }
 
 

@@ -1260,9 +1260,39 @@
       "ParserConfig": {
         "additionalProperties": false,
         "properties": {
+          "analysis_xml_checksum": {
+            "default": "",
+            "title": "Analysis Xml Checksum",
+            "type": "string"
+          },
+          "analysis_xml_filename": {
+            "default": "",
+            "title": "Analysis Xml Filename",
+            "type": "string"
+          },
+          "config_xml_checksum": {
+            "default": "",
+            "title": "Config Xml Checksum",
+            "type": "string"
+          },
+          "config_xml_filename": {
+            "default": "",
+            "title": "Config Xml Filename",
+            "type": "string"
+          },
           "database_name": {
             "default": "",
             "title": "Database Name",
+            "type": "string"
+          },
+          "instance_xml_checksum": {
+            "default": "",
+            "title": "Instance Xml Checksum",
+            "type": "string"
+          },
+          "instance_xml_filename": {
+            "default": "",
+            "title": "Instance Xml Filename",
             "type": "string"
           }
         },
@@ -1341,6 +1371,103 @@
           "node_type"
         ],
         "title": "ParserNodeWrite",
+        "type": "object"
+      },
+      "ParserTableExportOut": {
+        "properties": {
+          "artifact": {
+            "$ref": "#/components/schemas/ArtifactOut"
+          },
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "integer"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "database_name": {
+            "title": "Database Name",
+            "type": "string"
+          },
+          "exported_at": {
+            "format": "date-time",
+            "title": "Exported At",
+            "type": "string"
+          },
+          "exported_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exported By"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "manual",
+              "auto"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "table": {
+            "enum": [
+              "t_fut_orders",
+              "t_fut_quotes",
+              "t_fut_arbi_orders"
+            ],
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table",
+          "artifact_id",
+          "filename",
+          "database_name",
+          "row_count",
+          "size",
+          "checksum",
+          "source",
+          "exported_by",
+          "exported_at",
+          "artifact"
+        ],
+        "title": "ParserTableExportOut",
+        "type": "object"
+      },
+      "ParserTableExportRequest": {
+        "properties": {
+          "table": {
+            "enum": [
+              "t_fut_orders",
+              "t_fut_quotes",
+              "t_fut_arbi_orders"
+            ],
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table"
+        ],
+        "title": "ParserTableExportRequest",
         "type": "object"
       },
       "PlanOut": {
@@ -2839,6 +2966,235 @@
         "title": "SlnicStopNodeWrite",
         "type": "object"
       },
+      "StatisticsConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "max_latency_ns": {
+            "default": 999999999,
+            "minimum": 1.0,
+            "title": "Max Latency Ns",
+            "type": "integer"
+          },
+          "parser_node_key": {
+            "default": "",
+            "title": "Parser Node Key",
+            "type": "string"
+          },
+          "script_checksum": {
+            "default": "",
+            "title": "Script Checksum",
+            "type": "string"
+          },
+          "script_filename": {
+            "default": "",
+            "title": "Script Filename",
+            "type": "string"
+          }
+        },
+        "title": "StatisticsConfig",
+        "type": "object"
+      },
+      "StatisticsInputOut": {
+        "properties": {
+          "artifact_id": {
+            "title": "Artifact Id",
+            "type": "integer"
+          },
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "filename",
+          "size",
+          "checksum"
+        ],
+        "title": "StatisticsInputOut",
+        "type": "object"
+      },
+      "StatisticsInputSelectionOut": {
+        "properties": {
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsInputOut"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "selected_at": {
+            "format": "date-time",
+            "title": "Selected At",
+            "type": "string"
+          },
+          "selected_by": {
+            "title": "Selected By",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inputs",
+          "selected_by",
+          "selected_at"
+        ],
+        "title": "StatisticsInputSelectionOut",
+        "type": "object"
+      },
+      "StatisticsInputSelectionRequest": {
+        "properties": {
+          "artifact_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "title": "Artifact Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifact_ids"
+        ],
+        "title": "StatisticsInputSelectionRequest",
+        "type": "object"
+      },
+      "StatisticsNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/StatisticsConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "data_statistics",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "StatisticsNodeOut",
+        "type": "object"
+      },
+      "StatisticsNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/StatisticsConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "data_statistics",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "StatisticsNodeWrite",
+        "type": "object"
+      },
+      "StatisticsScriptFileOut": {
+        "properties": {
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "executable": {
+            "title": "Executable",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "format": "date-time",
+            "title": "Modified At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "modified_at",
+          "checksum",
+          "executable"
+        ],
+        "title": "StatisticsScriptFileOut",
+        "type": "object"
+      },
+      "StatisticsScriptListOut": {
+        "properties": {
+          "directory": {
+            "title": "Directory",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsScriptFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "directory",
+          "files"
+        ],
+        "title": "StatisticsScriptListOut",
+        "type": "object"
+      },
       "StepOut": {
         "properties": {
           "code": {
@@ -3404,6 +3760,7 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "data_statistics": "#/components/schemas/StatisticsNodeWrite",
                   "database_config": "#/components/schemas/DatabaseConfigNodeWrite",
                   "order_preparation": "#/components/schemas/OrderPreparationNodeWrite",
                   "parser_parse": "#/components/schemas/ParserNodeWrite",
@@ -3439,6 +3796,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ParserNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/StatisticsNodeWrite"
                 }
               ]
             },
@@ -3476,6 +3836,7 @@
             "items": {
               "discriminator": {
                 "mapping": {
+                  "data_statistics": "#/components/schemas/StatisticsNodeOut",
                   "database_config": "#/components/schemas/DatabaseConfigNodeOut",
                   "order_preparation": "#/components/schemas/OrderPreparationNodeOut",
                   "parser_parse": "#/components/schemas/ParserNodeOut",
@@ -3511,6 +3872,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/ParserNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/StatisticsNodeOut"
                 }
               ]
             },
@@ -5456,6 +5820,50 @@
         "summary": "Update Parser Config"
       }
     },
+    "/api/v1/resources/{resource_id}/statistics-scripts": {
+      "get": {
+        "operationId": "list_statistics_scripts_api_v1_resources__resource_id__statistics_scripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsScriptListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Statistics Scripts"
+      }
+    },
     "/api/v1/runs": {
       "get": {
         "operationId": "list_runs_api_v1_runs_get",
@@ -6322,6 +6730,69 @@
         "summary": "Confirm Order Action"
       }
     },
+    "/api/v1/runs/{run_id}/steps/{step_id}/parser-exports": {
+      "post": {
+        "operationId": "export_run_parser_table_api_v1_runs__run_id__steps__step_id__parser_exports_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParserTableExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParserTableExportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Run Parser Table"
+      }
+    },
     "/api/v1/runs/{run_id}/steps/{step_id}/retry": {
       "post": {
         "operationId": "retry_run_step_api_v1_runs__run_id__steps__step_id__retry_post",
@@ -6426,6 +6897,69 @@
           }
         ],
         "summary": "Start Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs": {
+      "put": {
+        "operationId": "update_statistics_inputs_api_v1_runs__run_id__steps__step_id__statistics_inputs_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatisticsInputSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsInputSelectionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Statistics Inputs"
       }
     },
     "/api/v1/runs/{run_id}/verdict": {
