@@ -19,6 +19,16 @@ chmod +x deploy/offline/*.sh
 deploy/offline/make-offline-package.sh --version 0.1.0
 ```
 
+如果当前 yum 源没有 `nginx`，脚本会临时使用 nginx.org 的 RHEL 7 官方仓库，退出时
+自动删除临时 repo 文件，不会修改已有仓库配置。若服务器只能访问单位镜像，请指定
+镜像的 Nginx 仓库地址（地址中的 `$basearch` 必须使用单引号保护）：
+
+```bash
+deploy/offline/make-offline-package.sh \
+  --version 0.1.0 \
+  --nginx-repo-url 'http://yum.example.internal/nginx/rhel/7/$basearch/'
+```
+
 将生成的 `.tar.gz` 和 `.tar.gz.sha256` 传入内网并校验、解压。首次部署执行：
 
 ```bash
@@ -67,7 +77,7 @@ npm --prefix frontend run build
 在外网 RHEL 7.9 制包机上配置并验证以下软件源：
 
 - RHEL 7 基础源、MariaDB 5.5.68 及 Red Hat Software Collections。
-- 提供 RHEL 7 x86_64 包的 Nginx 软件源。
+- Nginx 软件源可选；没有时一键脚本会临时启用 nginx.org 官方 RHEL 7 源。
 
 推荐直接使用前述 `make-offline-package.sh`。如需分步排查，可先安装制包工具并
 手工收集依赖闭包：

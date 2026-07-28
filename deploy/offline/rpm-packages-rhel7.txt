@@ -1,5 +1,5 @@
-# One package per line. Repositories for RHEL 7, Software Collections, and
-# Nginx must be enabled on the internet-connected build host.
+# One package per line. RHEL 7 and Software Collections repositories must be
+# enabled. The collector can temporarily enable the official Nginx repository.
 curl
 nginx
 policycoreutils-python

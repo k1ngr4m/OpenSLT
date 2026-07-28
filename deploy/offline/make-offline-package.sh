@@ -8,6 +8,7 @@ PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
 SKIP_TESTS=false
+NGINX_REPO_URL=""
 
 usage() {
     cat <<'EOF'
@@ -19,6 +20,8 @@ Options:
   --python PATH       Python 3.8 executable
   --output DIR        Output directory (default: release/)
   --version VERSION   Unique release label (default: date + Git commit)
+  --nginx-repo-url URL
+                      Alternate RHEL 7 Nginx repository base URL
   --skip-tests        Skip backend tests during packaging
   -h, --help          Show this help
 
@@ -38,6 +41,10 @@ while (($#)); do
             ;;
         --version)
             VERSION="$2"
+            shift 2
+            ;;
+        --nginx-repo-url)
+            NGINX_REPO_URL="$2"
             shift 2
             ;;
         --skip-tests)
@@ -98,7 +105,9 @@ trap 'rm -rf -- "$WORK_DIR"' EXIT
 RPM_DIR="$WORK_DIR/rpms"
 
 printf '[OpenSLT] Collecting the complete RHEL 7 RPM dependency set...\n'
-"$SCRIPT_DIR/collect-rpms-rhel7.sh" --output "$RPM_DIR"
+COLLECT_ARGS=(--output "$RPM_DIR")
+[[ -n "$NGINX_REPO_URL" ]] && COLLECT_ARGS+=(--nginx-repo-url "$NGINX_REPO_URL")
+"$SCRIPT_DIR/collect-rpms-rhel7.sh" "${COLLECT_ARGS[@]}"
 
 BUILD_ARGS=(
     --python "$PYTHON"
