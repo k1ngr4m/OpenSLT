@@ -38,7 +38,10 @@ test = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests"]
+testpaths = [
+  "backend/tests",
+  "tools/ees_ef_vi_trader_binary_api_test/tests",
+]
 pythonpath = ["backend"]
 asyncio_mode = "auto"
 

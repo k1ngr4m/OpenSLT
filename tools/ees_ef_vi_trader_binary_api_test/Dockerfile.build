@@ -1,0 +1,7 @@
+FROM quay.io/pypa/manylinux2014_x86_64
+
+COPY requirements-build.txt /tmp/requirements-build.txt
+RUN /opt/python/cp38-cp38/bin/python -m pip install --no-cache-dir -r /tmp/requirements-build.txt
+
+WORKDIR /src
+ENTRYPOINT ["/bin/bash"]

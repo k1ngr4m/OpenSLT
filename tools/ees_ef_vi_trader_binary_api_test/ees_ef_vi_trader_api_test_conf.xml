@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<tcp>
+  <group_zf_tpi id="tpi" disp="TPI">
+    <tpi_instance_count disp="TPI INSTANCE COUNT" value="1" />
+    <enter_times disp="TIMES" value="10" />
+    <enter_batch disp="BATCH" value="1" />
+    <batch_interval_time disp="BATCH INTERVAL TIME USEC" value="1000000" />
+    <read_symbol_csv value="0" />
+    <fut_symbol_csv value="t_close_report.csv" />
+    <opt_symbol_csv value="t_close_report_opt.csv" />
+  </group_zf_tpi>
+  <tpl_tpi_0 id="tpl_tpi" disp="tpl_tpi">
+    <group_broker id="rem_conf" disp="REM">
+      <app_id disp="APP_ID" value="SIM_APP" />
+      <login_id disp="LOGIN_ID" value="simulator" />
+      <password disp="PASSWORD" value="CHANGE_ME" />
+      <rem_trade_ip disp="TRADE_IP" value="192.0.2.10" />
+      <rem_trade_port disp="TRADE_PORT" value="20000" />
+      <rem_query_ip disp="QUERY_IP" value="192.0.2.11" />
+      <rem_query_port disp="QUERY_PORT" value="20001" />
+      <rem_local_trade_ip disp="LOCAL_TRADE_IP" value="192.0.2.20" />
+      <cpus_bind disp="CPU_BIND" value="0" />
+    </group_broker>
+    <group_new_order id="new_order" disp="NEW_ORDER">
+      <exchange disp="EXCHANGE" value="102" />
+      <account disp="ACCOUNT" value="SIM100001" />
+      <sec_type disp="CS:1, OPTIONS:2, FUT:3" value="3" />
+      <side disp="open_long:1, close_today_long:2" value="1" />
+      <quantity disp="QUANTITY" value="1" />
+      <symbol disp="SYMBOL" value="SIM0000" />
+      <price disp="PRICE" value="100.0000" />
+      <batch_order_num value="1" />
+      <enter_interval_time disp="INTERVAL TIME NSEC" value="1000" />
+    </group_new_order>
+  </tpl_tpi_0>
+</tcp>

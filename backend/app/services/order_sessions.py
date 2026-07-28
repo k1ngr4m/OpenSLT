@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import posixpath
 import shlex
 import typing
 from contextlib import suppress
@@ -10,6 +12,9 @@ from app.core.security import decrypt_secret
 from app.models import Resource, RunStep, TestRun
 from app.services.workflows import WorkflowError
 from app.workflow_node_configs import ORDER_ACTIONS
+
+
+ORDER_PROCESS_STARTUP_GRACE_SECONDS = 2.0
 
 
 def order_session_name(run_id: int, step_id: int) -> str:
@@ -51,6 +56,31 @@ async def _run(connection: typing.Any, command: str, code: str, message: str) ->
     return result
 
 
+async def _order_pane_state(connection: typing.Any, session: str) -> typing.Tuple[bool, typing.Optional[int]]:
+    target = shlex.quote("%s:0.0" % session)
+    result = await connection.run(
+        "tmux display-message -p -t %s '#{pane_dead}|#{pane_dead_status}' 2>/dev/null" % target,
+        check=False,
+    )
+    if result.exit_status != 0:
+        return False, None
+    dead, _, status = (result.stdout or "").strip().partition("|")
+    if dead != "1":
+        return True, None
+    try:
+        return False, int(status)
+    except ValueError:
+        return False, None
+
+
+async def _capture_order_pane(connection: typing.Any, session: str) -> str:
+    result = await connection.run(
+        "tmux capture-pane -p -S -200 -t %s 2>/dev/null" % shlex.quote("%s:0.0" % session),
+        check=False,
+    )
+    return (result.stdout or result.stderr or "").strip()[-2000:]
+
+
 async def launch_order_session(
     resource: Resource,
     run: TestRun,
@@ -64,17 +94,61 @@ async def launch_order_session(
     try:
         connection = await asyncssh.connect(**ssh_options(resource))
         await _run(connection, "command -v tmux >/dev/null 2>&1", "ORDER_TMUX_REQUIRED", "发单服务器未安装 tmux")
+        workdir = resource.remote_path.strip().rstrip("/")
+        binary = str((resource.capabilities or {}).get("order_tool") or posixpath.basename(workdir)).strip()
+        await _run(
+            connection,
+            "test -d %s" % shlex.quote(workdir),
+            "ORDER_WORKDIR_REQUIRED",
+            "发单工作目录不存在：%s" % workdir,
+        )
+        binary_path = posixpath.join(workdir, binary)
+        await _run(
+            connection,
+            "test -x %s" % shlex.quote(binary_path),
+            "ORDER_BINARY_REQUIRED",
+            "发单程序不存在或不可执行：%s" % binary_path,
+        )
         exists = await connection.run("tmux has-session -t %s 2>/dev/null" % shlex.quote(session), check=False)
         if exists.exit_status == 0 and replace:
             await connection.run("tmux kill-session -t %s" % shlex.quote(session), check=False)
             exists = await connection.run("tmux has-session -t %s 2>/dev/null" % shlex.quote(session), check=False)
         if exists.exit_status != 0:
             shell_command = "/bin/sh -lc %s" % shlex.quote(generated_command)
-            launch = "tmux new-session -d -s %s %s" % (
-                shlex.quote(session),
-                shlex.quote(shell_command),
+            await _run(
+                connection,
+                "tmux new-session -d -s %s" % shlex.quote(session),
+                "ORDER_SESSION_START_FAILED",
+                "创建发单 tmux 会话失败",
             )
-            await _run(connection, launch, "ORDER_SESSION_START_FAILED", "启动发单 tmux 会话失败")
+            try:
+                await _run(
+                    connection,
+                    "tmux set-option -w -t %s remain-on-exit on" % shlex.quote(session),
+                    "ORDER_SESSION_START_FAILED",
+                    "配置发单 tmux 会话失败",
+                )
+                await _run(
+                    connection,
+                    "tmux respawn-pane -k -t %s %s" % (shlex.quote(session), shlex.quote(shell_command)),
+                    "ORDER_SESSION_START_FAILED",
+                    "启动发单程序失败",
+                )
+            except Exception:
+                await connection.run("tmux kill-session -t %s" % shlex.quote(session), check=False)
+                raise
+            await asyncio.sleep(ORDER_PROCESS_STARTUP_GRACE_SECONDS)
+            running, exit_status = await _order_pane_state(connection, session)
+            if not running:
+                output = await _capture_order_pane(connection, session)
+                detail = "退出码 %s" % exit_status if exit_status is not None else "状态未知"
+                if output:
+                    detail += "：%s" % output
+                raise WorkflowError(
+                    "ORDER_SESSION_START_FAILED",
+                    "发单程序启动后立即退出（%s）" % detail,
+                    409,
+                )
         return {
             "tmux_session": session,
             "session_status": "running",
@@ -113,6 +187,10 @@ async def send_order_action(resource: Resource, session: str, action: str) -> No
         connection = await asyncssh.connect(**ssh_options(resource))
         if not await order_session_exists_on_connection(connection, session):
             raise WorkflowError("ORDER_SESSION_LOST", "发单 tmux 会话不存在，请重试节点", 409)
+        running, exit_status = await _order_pane_state(connection, session)
+        if not running:
+            detail = "（退出码 %s）" % exit_status if exit_status is not None else ""
+            raise WorkflowError("ORDER_SESSION_LOST", "发单程序已经退出%s，请查看终端并重试节点" % detail, 409)
         literal = "tmux send-keys -t %s -l %s" % (shlex.quote(session), shlex.quote(action))
         await _run(connection, literal, "ORDER_ACTION_FAILED", "发送发单动作失败")
         await _run(
