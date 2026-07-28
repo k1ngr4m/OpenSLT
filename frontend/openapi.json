@@ -7519,6 +7519,63 @@
         "summary": "Create Contract Files"
       }
     },
+    "/api/v1/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files/scan": {
+      "post": {
+        "operationId": "scan_contract_files_api_v1_scenarios__scenario_id__workflow_nodes__node_key__contract_files_scan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "node_key",
+            "required": true,
+            "schema": {
+              "title": "Node Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContractDataFileOut"
+                  },
+                  "title": "Response Scan Contract Files Api V1 Scenarios  Scenario Id  Workflow Nodes  Node Key  Contract Files Scan Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Scan Contract Files"
+      }
+    },
     "/api/v1/scenarios/{scenario_id}/workflow/nodes/{node_key}/preview": {
       "post": {
         "operationId": "preview_workflow_node_api_v1_scenarios__scenario_id__workflow_nodes__node_key__preview_post",

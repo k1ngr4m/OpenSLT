@@ -154,12 +154,14 @@ async def scan_remote_contract_files(
                 await client.get(remote_path, str(temporary))
                 data = temporary.read_bytes()
                 checksum = hashlib.sha256(data).hexdigest()
-                existing = db.scalar(select(ContractDataFile).where(
-                    ContractDataFile.workflow_node_id == node.id,
-                    ContractDataFile.filename == filename,
-                    ContractDataFile.checksum == checksum,
-                ))
-                if existing:
+                existing = db.scalar(
+                    select(ContractDataFile).where(
+                        ContractDataFile.order_resource_id == order_resource.id,
+                        ContractDataFile.filename == filename,
+                        ContractDataFile.checksum == checksum,
+                    ).order_by(ContractDataFile.id.desc())
+                )
+                if existing and Path(existing.archive_path).is_file():
                     discovered.append(existing)
                     continue
                 quote_date, row_count, preview_rows = _inspect_contract_csv(temporary, filename)

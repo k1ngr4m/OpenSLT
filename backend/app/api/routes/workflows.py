@@ -115,7 +115,7 @@ async def scan_contract_files(scenario_id: int, node_key: str, request: Request,
     node = next((item for item in version.nodes if item.node_key == node_key), None)
     if not node: raise not_found("节点")
     try:
-        await scan_remote_contract_files(db, scenario, version, node, actor.id)
+        discovered = await scan_remote_contract_files(db, scenario, version, node, actor.id)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
     write_audit(db, "workflow.contract_scan", "workflow_node", node.id, actor, request)
@@ -124,6 +124,8 @@ async def scan_contract_files(scenario_id: int, node_key: str, request: Request,
     criteria = [ContractDataFile.workflow_node_id == node.id]
     if referenced_ids:
         criteria.append(ContractDataFile.id.in_(referenced_ids))
+    if discovered:
+        criteria.append(ContractDataFile.id.in_([item.id for item in discovered]))
     return list(db.scalars(
         select(ContractDataFile).where(or_(*criteria)).order_by(ContractDataFile.id.desc())
     ).all())

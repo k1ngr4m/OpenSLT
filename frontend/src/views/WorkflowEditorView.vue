@@ -651,7 +651,7 @@ onMounted(load)
               <div v-else v-loading="scanningContracts" class="contract-empty">发单工具目录下暂无 CSV 文件</div>
               <el-collapse v-if="selectedContractFiles.length" class="contract-previews">
                 <el-collapse-item v-for="file in selectedContractFiles" :key="file.id" :name="file.id">
-                  <template #title><span class="contract-preview-title"><strong>{{ file.contract_type === 'futures' ? '期货' : '期权' }}</strong><small>{{ file.quote_date }} · {{ file.row_count }} 条</small></span></template>
+                  <template #title><span class="contract-preview-title"><strong>{{ file.contract_type === 'futures' ? '期货' : file.contract_type === 'options' ? '期权' : '未识别类型' }}</strong><small>{{ file.quote_date || '无交易日' }} · {{ file.row_count }} 条</small></span></template>
                   <div class="checksum"><span>SHA-256</span><code>{{ file.checksum }}</code></div>
                   <el-table :data="file.preview_rows" size="small" max-height="210" border>
                     <el-table-column v-for="column in previewColumns(file)" :key="column" :prop="column" :label="column" min-width="120" show-overflow-tooltip />
@@ -678,17 +678,14 @@ onMounted(load)
             <label class="field required">
               <span>config.xml 配置</span>
               <el-select v-model="selectedNode.config.config_xml_filename" :loading="loadingParserConfigs" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectParserXml('config', String(value || ''))"><el-option v-for="file in parserXmlOptions.config" :key="file.name" :label="file.name" :value="file.name" /></el-select>
-              <small class="mono">SHA-256 {{ selectedNode.config.config_xml_checksum || '未固化' }}</small>
             </label>
             <label class="field required">
               <span>instance.xml 配置</span>
               <el-select v-model="selectedNode.config.instance_xml_filename" :loading="loadingParserConfigs" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectParserXml('instance', String(value || ''))"><el-option v-for="file in parserXmlOptions.instance" :key="file.name" :label="file.name" :value="file.name" /></el-select>
-              <small class="mono">SHA-256 {{ selectedNode.config.instance_xml_checksum || '未固化' }}</small>
             </label>
             <label class="field required">
               <span>分析主配置</span>
               <el-select v-model="selectedNode.config.analysis_xml_filename" :loading="loadingParserConfigs" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectParserXml('analysis', String(value || ''))"><el-option v-for="file in parserXmlOptions.analysis" :key="file.name" :label="file.name" :value="file.name" /></el-select>
-              <small class="mono">SHA-256 {{ selectedNode.config.analysis_xml_checksum || '未固化' }}</small>
             </label>
             <div class="section-label">解析资源</div>
             <div class="slnic-summary">

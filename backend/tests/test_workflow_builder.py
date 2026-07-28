@@ -102,6 +102,9 @@ class FakeSFTP:
             "type": asyncssh.FILEXFER_TYPE_REGULAR,
         }
 
+    async def get(self, remote_path: str, local_path: str):
+        Path(local_path).write_text(self.files[remote_path]["content"], encoding="utf-8")
+
     async def remove(self, path: str):
         if path not in self.files:
             raise asyncssh.SFTPNoSuchFile("missing")
@@ -217,6 +220,101 @@ def test_unpublished_scenario_cannot_run(client, admin_headers):
         "plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [rem["id"]], "timeout_minutes": 30,
     })
     assert response.status_code == 404
+
+
+def test_scan_existing_contract_csv_files(client, admin_headers, monkeypatch):
+    order = create_order_resource(client, admin_headers)
+    sftp = FakeSFTP(order["remote_path"])
+    sftp.files[f'{order["remote_path"]}/t_close_report_20260728.csv'] = {
+        "content": "quote_date,symbol\n2026-07-28,IF2608\n2026-07-28,IF2609\n",
+        "permissions": 0o600,
+        "mtime": 1_700_000_300,
+        "type": asyncssh.FILEXFER_TYPE_REGULAR,
+    }
+    sftp.files[f'{order["remote_path"]}/t_close_report_opt_20260728.csv'] = {
+        "content": "quote_date,symbol\n2026-07-28,IO2608-C-4000\n",
+        "permissions": 0o600,
+        "mtime": 1_700_000_301,
+        "type": asyncssh.FILEXFER_TYPE_REGULAR,
+    }
+    sftp.files[f'{order["remote_path"]}/notes.txt'] = {
+        "content": "ignored",
+        "permissions": 0o600,
+        "mtime": 1_700_000_302,
+        "type": asyncssh.FILEXFER_TYPE_REGULAR,
+    }
+
+    async def fake_connect(**_options):
+        return FakeConnection(sftp)
+
+    monkeypatch.setattr(workflow_contracts.asyncssh, "connect", fake_connect)
+    _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[order["id"]])
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [order["id"]],
+            "nodes": [{
+                "node_key": "order",
+                "node_type": "order_preparation",
+                "name": "Prepare order",
+                "config": {"xml_filename": "", "read_symbol_csv": 0},
+            }],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    endpoint = f"/api/v1/scenarios/{scenario['id']}/workflow/nodes/order/contract-files/scan"
+    scanned = client.post(endpoint, headers=admin_headers)
+    assert scanned.status_code == 200, scanned.text
+    files = scanned.json()
+    assert {item["filename"] for item in files} == {
+        "t_close_report_20260728.csv",
+        "t_close_report_opt_20260728.csv",
+    }
+    assert {item["contract_type"] for item in files} == {"futures", "options"}
+    assert {item["row_count"] for item in files} == {1, 2}
+    assert all(item["quote_date"] == "2026-07-28" for item in files)
+    assert all(item["database_resource_id"] is None for item in files)
+    assert len(next(item for item in files if item["contract_type"] == "futures")["preview_rows"]) == 2
+
+    repeated = client.post(endpoint, headers=admin_headers)
+    assert repeated.status_code == 200, repeated.text
+    assert {item["id"] for item in repeated.json()} == {item["id"] for item in files}
+
+    _, second_scenario = create_plan_scenario(
+        client, admin_headers, resource_ids=[order["id"]]
+    )
+    second_document = client.get(
+        f"/api/v1/scenarios/{second_scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    second_saved = client.put(
+        f"/api/v1/scenarios/{second_scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": second_document["draft"]["revision"],
+            "resource_ids": [order["id"]],
+            "nodes": [{
+                "node_key": "order",
+                "node_type": "order_preparation",
+                "name": "Prepare order",
+                "config": {"xml_filename": "", "read_symbol_csv": 0},
+            }],
+        },
+    )
+    assert second_saved.status_code == 200, second_saved.text
+    second_scan = client.post(
+        f"/api/v1/scenarios/{second_scenario['id']}/workflow/nodes/order/contract-files/scan",
+        headers=admin_headers,
+    )
+    assert second_scan.status_code == 200, second_scan.text
+    assert {item["id"] for item in second_scan.json()} == {item["id"] for item in files}
+    with SessionLocal() as db:
+        assert db.query(ContractDataFile).count() == 2
 
 
 def test_publish_rejects_incomplete_order_node(client, admin_headers):
