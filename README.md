@@ -77,8 +77,6 @@ chmod +x ./start-web.sh
 TZ=Asia/Shanghai
 DATABASE_URL=sqlite:///./backend/data/openslt.sqlite3
 ENABLE_INTERNAL_SCHEDULER=true
-HOST=127.0.0.1
-PORT=8000
 ```
 
 OpenSLT 自身产生的 API、页面、日志、报表和导出时间统一使用北京时间（UTC+08:00）；数据库中的时间仍按 UTC 保存，不需要迁移历史数据。
@@ -97,24 +95,6 @@ npm --prefix frontend run build
 ```
 
 FastAPI 会在检测到 `frontend/dist` 后托管 Web SPA。Nginx 和 systemd API 的部署示例位于 `deploy/`。
-
-## Windows Portable Web 版
-
-Portable 版将 FastAPI、Vue 构建产物和 Python 运行时打包为免安装程序，启动后仍通过浏览器使用 Web 界面，不包含原生桌面 UI。
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\deploy\portable\build-portable.ps1 -Python python
-```
-
-输出文件：
-
-```text
-release/OpenSLT-Portable/OpenSLT.exe
-release/OpenSLT-Portable-windows-x64.zip
-```
-
-详细说明见 `deploy/portable/README-PORTABLE.txt`。
 
 ## 验证
 

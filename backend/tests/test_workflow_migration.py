@@ -167,31 +167,3 @@ def test_only_single_baseline_revision_remains() -> None:
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout.strip() == "0001 (head)"
-
-
-def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
-    database_path = tmp_path / "portable.sqlite3"
-    environment = dict(os.environ)
-    environment["DATABASE_URL"] = _database_url(database_path)
-    environment["PYTHONPATH"] = str(REPOSITORY_ROOT / "backend")
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from portable_main import upgrade_portable_database; upgrade_portable_database()",
-        ],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    with sqlite3.connect(database_path) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
-        }
-        assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
-            "0001",
-        )

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from pathlib import Path
 
 
@@ -20,4 +21,3 @@ def test_api_routes_take_precedence_over_spa(client, admin_headers):
     me = client.get("/api/v1/auth/me", headers=admin_headers)
     assert me.status_code == 200
     assert me.json()["username"] == "admin"
-

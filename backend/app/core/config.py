@@ -5,7 +5,6 @@ from functools import lru_cache
 from pathlib import Path
 import os
 import secrets
-import sys
 
 from cryptography.fernet import Fernet
 from pydantic import Field, model_validator
@@ -29,22 +28,17 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     app_log_retention_days: int = 90
     audit_log_retention_days: int = 365
-    portable_mode: bool = False
     enable_internal_scheduler: bool = True
     task_lease_seconds: int = Field(default=60, ge=10, le=3600)
     task_heartbeat_seconds: int = Field(default=20, ge=3, le=1200)
     frontend_dist: typing.Union[Path, None] = None
-    host: str = "127.0.0.1"
-    port: int = Field(default=8000, ge=1, le=65535)
-    open_browser: bool = False
     initial_admin_username: str = "admin"
     initial_admin_password: str = "shengli123"
 
     @model_validator(mode="after")
     def ensure_directories(self) -> "Settings":
         if self.frontend_dist is None:
-            bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
-            candidate = bundle_root / "frontend" / "dist"
+            candidate = Path(__file__).resolve().parents[3] / "frontend" / "dist"
             self.frontend_dist = candidate if candidate.is_dir() else None
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)

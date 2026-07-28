@@ -16,7 +16,4 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 .vite/
 *.sqlite3
-.venv-portable/
 build/
-release/OpenSLT-Portable/
-release/*.zip

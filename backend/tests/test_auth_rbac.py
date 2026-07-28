@@ -8,7 +8,6 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.core.config import _load_or_create_credential_encryption_key, _load_or_create_jwt_secret
-from backend.portable_main import ensure_portable_environment
 from conftest import create_resource
 
 
@@ -86,10 +85,3 @@ def test_credential_encryption_key_is_generated_validated_and_persisted(tmp_path
     assert _load_or_create_credential_encryption_key(configured, artifact_root) == configured
     with pytest.raises(ValueError, match="Fernet.generate_key"):
         _load_or_create_credential_encryption_key("replace-with-fernet-generate-key", artifact_root)
-
-
-def test_portable_environment_does_not_write_jwt_secret(tmp_path: Path):
-    ensure_portable_environment(tmp_path)
-    content = (tmp_path / ".env").read_text(encoding="utf-8")
-    assert "JWT_SECRET" not in content
-    assert "CREDENTIAL_ENCRYPTION_KEY=" in content

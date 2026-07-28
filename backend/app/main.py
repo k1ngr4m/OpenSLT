@@ -90,7 +90,7 @@ async def lifespan(_: FastAPI):
     if settings.enable_internal_scheduler:
         scheduler_task = asyncio.create_task(internal_scheduler())
         logger.info("internal_scheduler_started")
-    logger.info("application_started", portable_mode=settings.portable_mode)
+    logger.info("application_started")
     try:
         yield
     finally:
