@@ -1483,6 +1483,15 @@ export interface components {
             /** Refresh Token */
             refresh_token: string;
         };
+        /** RemWiringProfile */
+        RemWiringProfile: {
+            client_interface: components["schemas"]["WiringInterface"];
+            /** Client Switch Label */
+            client_switch_label: string;
+            market_interface: components["schemas"]["WiringInterface"];
+            /** Market Switch Label */
+            market_switch_label: string;
+        };
         /** ResourceOut */
         ResourceOut: {
             /** Auth Type */
@@ -1536,6 +1545,7 @@ export interface components {
             username: string;
             /** Version Info */
             version_info: string;
+            wiring_profile: components["schemas"]["RemWiringProfile"] | null;
         };
         /** ResourceWrite */
         ResourceWrite: {
@@ -1617,6 +1627,7 @@ export interface components {
              * @default
              */
             version_info: string;
+            wiring_profile?: components["schemas"]["RemWiringProfile"] | null;
         };
         /** RunCreate */
         RunCreate: {
@@ -2093,6 +2104,16 @@ export interface components {
              * @enum {string}
              */
             node_type: "wiring_confirmation";
+        };
+        /** WiringInterface */
+        WiringInterface: {
+            /**
+             * Ip Address
+             * Format: ipv4
+             */
+            ip_address: string;
+            /** Name */
+            name: string;
         };
         /** WorkflowDocumentOut */
         WorkflowDocumentOut: {

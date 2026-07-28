@@ -265,8 +265,8 @@ watch(
           type="success"
           :icon="CircleCheck"
           :loading="actingStepId === currentStep.id"
-          @click="currentStep && stepAction(currentStep, 'complete')"
-        >完成</el-button>
+          @click="currentStep && stepAction(currentStep, currentStep.node_type === 'wiring_confirmation' ? 'confirm' : 'complete')"
+        >{{ currentStep.node_type === 'wiring_confirmation' ? '确认接线' : '完成' }}</el-button>
         <el-button
           v-if="currentStep?.status === 'failed' && run.status === 'awaiting_step_retry'"
           type="warning"

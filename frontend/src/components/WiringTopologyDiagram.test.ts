@@ -14,7 +14,10 @@ describe('WiringTopologyDiagram', () => {
       { id: 1, name: 'REM-01', host: '10.1.51.8', wiring_profile: WIRING_PRESETS[businessCode] },
       { id: 2, name: 'SLNIC-01', host: '10.1.51.210' },
     )
-    const wrapper = mount(WiringTopologyDiagram, { props: { snapshot } })
+    const wrapper = mount(WiringTopologyDiagram, {
+      props: { snapshot },
+      global: { stubs: { ElIcon: true } },
+    })
     const content = wrapper.text()
     expect(content).toContain(model)
     expect(content).toContain(clientIp)
@@ -26,7 +29,10 @@ describe('WiringTopologyDiagram', () => {
   })
 
   it('renders an actionable empty state', () => {
-    const wrapper = mount(WiringTopologyDiagram, { props: { snapshot: null } })
+    const wrapper = mount(WiringTopologyDiagram, {
+      props: { snapshot: null },
+      global: { stubs: { ElIcon: true } },
+    })
     expect(wrapper.text()).toContain('接线图尚未就绪')
     expect(wrapper.text()).toContain('请先绑定 REM 与 SLNIC')
   })

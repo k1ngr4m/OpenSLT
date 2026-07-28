@@ -71,6 +71,18 @@ describe('useRunActions', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
+  it('uses the audited confirmation endpoint for wiring nodes', async () => {
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+    })
+
+    await actions.stepAction(step('wiring_confirmation'), 'confirm')
+    expect(api.post).toHaveBeenCalledWith('/runs/11/steps/7/confirm')
+    expect(message.success).toHaveBeenCalledWith('接线已确认')
+  })
+
   it('submits a verdict and closes the dialog', async () => {
     const reload = vi.fn().mockResolvedValue(undefined)
     const actions = useRunActions({

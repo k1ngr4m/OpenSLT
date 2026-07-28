@@ -3,7 +3,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errorMessage } from '@/api/client'
 import type { RunStep, RunVerdictWrite } from '@/types/run'
 
-type StepOperation = 'start' | 'complete' | 'retry'
+type StepOperation = 'start' | 'complete' | 'confirm' | 'retry'
 
 interface RunActionsOptions {
   runId: number
@@ -53,12 +53,15 @@ export function useRunActions(options: RunActionsOptions) {
         'slnic_merge_capture',
         'order_preparation',
       ]
-      if (terminalNodeTypes.includes(step.node_type) && operation !== 'complete') {
+      if (
+        terminalNodeTypes.includes(step.node_type)
+        && (operation === 'start' || operation === 'retry')
+      ) {
         await runTerminalStep(step, operation)
         return
       }
       await api.post(`/runs/${runId}/steps/${step.id}/${operation}`)
-      const messages = { start: '节点已开始', complete: '节点已完成', retry: '节点已重新执行' }
+      const messages = { start: '节点已开始', complete: '节点已完成', confirm: '接线已确认', retry: '节点已重新执行' }
       ElMessage.success(messages[operation])
       window.setTimeout(reload, 300)
     } catch (error) {

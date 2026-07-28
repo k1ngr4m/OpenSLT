@@ -110,7 +110,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0006"
+        ).scalar_one() == "0007"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -163,6 +163,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0004_normalize_plan_and_contract_relations.py",
         "0005_run_state_governance.py",
         "0006_durable_tasks.py",
+        "0007_resource_wiring_profile.py",
     }
 
 
@@ -190,7 +191,7 @@ def test_portable_launcher_applies_baseline_migration(tmp_path: Path) -> None:
         }
         assert tables == set(Base.metadata.tables) | {VERSION_TABLE}
         assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == (
-            "0006",
+            "0007",
         )
 
 

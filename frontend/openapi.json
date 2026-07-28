@@ -1420,6 +1420,37 @@
         "title": "RefreshRequest",
         "type": "object"
       },
+      "RemWiringProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "client_interface": {
+            "$ref": "#/components/schemas/WiringInterface"
+          },
+          "client_switch_label": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Client Switch Label",
+            "type": "string"
+          },
+          "market_interface": {
+            "$ref": "#/components/schemas/WiringInterface"
+          },
+          "market_switch_label": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Market Switch Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_switch_label",
+          "market_switch_label",
+          "client_interface",
+          "market_interface"
+        ],
+        "title": "RemWiringProfile",
+        "type": "object"
+      },
       "ResourceOut": {
         "properties": {
           "auth_type": {
@@ -1571,6 +1602,16 @@
           "version_info": {
             "title": "Version Info",
             "type": "string"
+          },
+          "wiring_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemWiringProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1592,6 +1633,7 @@
           "has_database_password",
           "remote_path",
           "capabilities",
+          "wiring_profile",
           "version_info",
           "notes",
           "is_enabled",
@@ -1794,6 +1836,16 @@
             "default": "",
             "title": "Version Info",
             "type": "string"
+          },
+          "wiring_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RemWiringProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3192,6 +3244,28 @@
           "node_type"
         ],
         "title": "WiringConfirmationNodeWrite",
+        "type": "object"
+      },
+      "WiringInterface": {
+        "additionalProperties": false,
+        "properties": {
+          "ip_address": {
+            "format": "ipv4",
+            "title": "Ip Address",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "ip_address"
+        ],
+        "title": "WiringInterface",
         "type": "object"
       },
       "WorkflowDocumentOut": {
