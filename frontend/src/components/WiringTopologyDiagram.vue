@@ -103,15 +103,15 @@ const slnicTitle = computed(() => {
         <foreignObject x="662" y="319" width="190" height="66"><div class="switch-copy"><strong>{{ snapshot.market_switch_label }}</strong><span>市场端</span></div></foreignObject>
 
         <g class="links">
-          <path d="M520 111 H468 V214 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
-          <path d="M468 214 H448 V494 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
-          <path d="M642 350 H490 V296 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
-          <path d="M520 350 V521 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
+          <path data-link="client-uplink-main" d="M520 111 H468 V214 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
+          <path data-link="client-uplink-slnic-0" d="M468 214 V494 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
+          <path data-link="market-uplink-main" d="M350 296 H490 V350 H642" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
+          <path data-link="market-uplink-slnic-1" d="M520 350 V521 H350" class="uplink" :marker-end="`url(#${uplinkArrow})`" />
 
-          <path d="M350 241 H448 V84 H520" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
-          <path d="M448 241 H430 V575 H350" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
-          <path d="M350 323 H548 V380 H642" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
-          <path d="M548 323 V548 H350" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
+          <path data-link="client-downlink-main" d="M350 241 H448 V84 H520" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
+          <path data-link="client-downlink-slnic-3" d="M448 241 H430 V575 H350" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
+          <path data-link="market-downlink-main" d="M642 380 H548 V323 H350" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
+          <path data-link="market-downlink-slnic-2" d="M548 323 V548 H350" class="downlink" :marker-end="`url(#${downlinkArrow})`" />
 
           <circle cx="468" cy="214" r="4" class="uplink-dot" />
           <circle cx="520" cy="350" r="4" class="uplink-dot" />
