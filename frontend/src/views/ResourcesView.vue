@@ -477,7 +477,7 @@ onMounted(load)
           <el-col v-if="form.resource_type === 'order'" :span="24">
             <el-form-item label="支持动作" required>
               <el-checkbox-group v-model="form.order_actions">
-                <el-checkbox v-for="action in orderActionOptions" :key="action" :value="action">{{ action }}</el-checkbox>
+                <el-checkbox v-for="action in orderActionOptions" :key="action" :label="action">{{ action }}</el-checkbox>
               </el-checkbox-group>
             </el-form-item>
           </el-col>

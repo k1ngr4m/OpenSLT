@@ -112,7 +112,7 @@ async def send_order_action(resource: Resource, session: str, action: str) -> No
         connection = await asyncssh.connect(**ssh_options(resource))
         if not await order_session_exists_on_connection(connection, session):
             raise WorkflowError("ORDER_SESSION_LOST", "发单 tmux 会话不存在，请重试节点", 409)
-        literal = "tmux send-keys -t %s -l -- %s" % (shlex.quote(session), shlex.quote(action))
+        literal = "tmux send-keys -t %s -l %s" % (shlex.quote(session), shlex.quote(action))
         await _run(connection, literal, "ORDER_ACTION_FAILED", "发送发单动作失败")
         await _run(
             connection,

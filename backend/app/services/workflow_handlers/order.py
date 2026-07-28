@@ -7,7 +7,7 @@ from app.services.workflow_handlers.base import WorkflowExecutionContext
 
 class OrderPreparationHandler:
     node_types = ("order_preparation",)
-    terminal_kind = None
+    terminal_kind = "order"
 
     async def execute(self, context: WorkflowExecutionContext) -> dict:
         summary = await workflows.prepare_order_node(

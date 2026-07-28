@@ -13,6 +13,7 @@ from app.core.database import SessionLocal
 from app.models import AuditLog, Resource
 from app.services import order_configs
 from app.services import terminal as terminal_service
+from app.api.routes import runs as runs_route
 from app.services import workflow_contracts, workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
@@ -676,6 +677,49 @@ def test_terminal_workflow_command_marks_order_preparation_failure_retryable(
     assert updated["status"] == "awaiting_step_retry"
     assert updated["steps"][0]["status"] == "failed"
     assert updated["steps"][0]["error_message"] == "XML 配置校验值与发布版本不一致"
+
+
+def test_order_action_is_sent_once_and_completion_cleans_session(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    # Put the prepared node into the same waiting state produced by the tmux launcher.
+    db = SessionLocal()
+    try:
+        from app.models import TestRun
+        from app.services.run_state import transition_run, transition_step
+        stored = db.get(TestRun, run["id"])
+        step = stored.steps[0]
+        transition_run(stored, "awaiting_step_completion")
+        transition_step(step, "waiting")
+        step.result_summary = {
+            "process_started": True,
+            "tmux_session": "openslt-order-r1-s1",
+            "order_action_status": "pending",
+        }
+        db.commit()
+    finally:
+        db.close()
+    sent = []
+
+    async def fake_send(_resource, session, action):
+        sent.append((session, action))
+
+    async def fake_cleanup(_resource, _session):
+        return True
+
+    monkeypatch.setattr(runs_route, "send_order_action", fake_send)
+    monkeypatch.setattr(runs_route, "cleanup_order_session", fake_cleanup)
+    step_id = run["steps"][0]["id"]
+    response = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    assert sent == [("openslt-order-r1-s1", "new_order")]
+    duplicate = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/order-action", headers=admin_headers)
+    assert duplicate.status_code == 409
+    completed = client.post(f"/api/v1/runs/{run['id']}/steps/{step_id}/complete", headers=admin_headers)
+    assert completed.status_code == 200, completed.text
 
 
 def test_remote_terminal_reports_connection_failure(

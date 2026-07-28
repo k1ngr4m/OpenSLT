@@ -56,6 +56,7 @@ def add_beijing_timestamp(
 
 
 def configure_logging() -> None:
+    Path(settings.log_dir).mkdir(parents=True, exist_ok=True)
     shared = [
         structlog.contextvars.merge_contextvars,
         add_context,
