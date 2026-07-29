@@ -6,10 +6,10 @@ OpenSLT 是面向盛立 REM 期货测速流程的 Web 平台，提供资源集�
 
 ## 快速启动
 
-要求 Python 3.8.2（3.8.x）、Node.js 20+ 和 npm 10+。Windows 开发环境可在仓库根目录双击 `start-web.cmd`，脚本会准备依赖、执行数据库迁移并打开：
+要求 Python 3.8+、Node.js 20+ 和 npm 10+。Windows 开发环境可在仓库根目录双击 `start-web.cmd`，脚本会准备依赖、执行数据库迁移并打开：
 
 ```text
-http://127.0.0.1:5173
+http://127.0.0.1:7777
 ```
 
 也可以从 PowerShell 启动并禁止自动打开浏览器：
@@ -25,7 +25,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[test]"
 python -m alembic upgrade head
-python -m uvicorn app.main:app --app-dir backend --reload --port 8000
+python -m uvicorn app.main:app --app-dir backend --reload --port 4396
 ```
 
 另开一个终端启动前端：
@@ -46,7 +46,7 @@ chmod +x ./start-web.sh
 ./start-web.sh
 ```
 
-前端监听 `0.0.0.0:5173`，可通过脚本输出的局域网地址访问；API 只监听 `127.0.0.1:8000`，由 Vite 代理 `/api` 和 WebSocket 请求。脚本要求系统已安装 tmux、curl、Python 3.8.2（3.8.x）、Node.js 20+ 和 npm 10+。
+前端监听 `0.0.0.0:7777`，可通过脚本输出的局域网地址访问；API 只监听 `127.0.0.1:4396`，由 Vite 代理 `/api` 和 WebSocket 请求。脚本要求系统已安装 tmux、curl、Python 3.8+、Node.js 20+ 和 npm 10+。
 
 常用管理命令：
 
@@ -110,7 +110,7 @@ python -m pytest
 npm --prefix frontend run build
 ```
 
-- API 文档：`http://127.0.0.1:8000/docs`
+- API 文档：`http://127.0.0.1:4396/docs`
 - 健康检查：`GET /health`
 
 ## 安全设计

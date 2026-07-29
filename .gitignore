@@ -19,3 +19,4 @@ frontend/vite.config.d.ts
 .vite/
 *.sqlite3
 build/
+/docs/

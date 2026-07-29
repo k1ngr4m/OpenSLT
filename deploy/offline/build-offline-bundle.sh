@@ -15,7 +15,7 @@ usage() {
 Usage: build-offline-bundle.sh [options]
 
 Options:
-  --python PATH       Python 3.8 executable on RHEL 7.9
+  --python PATH       Python >=3.8 executable on RHEL 7.9
   --rpm-dir DIR       RPM repository created by collect-rpms-rhel7.sh
   --output DIR        Output directory (default: release/)
   --version VERSION   Bundle version label
@@ -73,8 +73,8 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'Python executable not found: %s\n' "$PYTHON" >&2
     exit 1
 }
-"$PYTHON" -c 'import sys; raise SystemExit(0 if (3, 8, 2) <= sys.version_info[:3] < (3, 9) else 1)' || {
-    printf 'OpenSLT requires Python >=3.8.2,<3.9.\n' >&2
+"$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 8) else 1)' || {
+    printf 'OpenSLT requires Python >=3.8.\n' >&2
     exit 1
 }
 [[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {

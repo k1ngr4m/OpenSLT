@@ -5,6 +5,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 BUNDLE_ROOT="$SCRIPT_DIR"
 ENV_FILE="/etc/openslt/openslt.env"
+PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 FORCE_INSTALL=false
 
 usage() {
@@ -16,6 +17,7 @@ start the production services. Re-running the same version only restarts them.
 
 Options:
   --env-file FILE   Production environment path
+  --python PATH     Preinstalled Python >=3.8 executable
   --reinstall       Reinstall even when this bundle version is already active
   -h, --help        Show this help
 EOF
@@ -25,6 +27,10 @@ while (($#)); do
     case "$1" in
         --env-file)
             ENV_FILE="$2"
+            shift 2
+            ;;
+        --python)
+            PYTHON="$2"
             shift 2
             ;;
         --reinstall)
@@ -74,7 +80,7 @@ if [[ "$FORCE_INSTALL" == true || "$INSTALLED_VERSION" != "$BUNDLE_VERSION" \
     || ! -f /etc/nginx/conf.d/openslt.conf \
     || ! -f /opt/openslt/frontend/dist/index.html ]]; then
     printf '[OpenSLT] Installing bundle version %s...\n' "$BUNDLE_VERSION"
-    "$BUNDLE_ROOT/install.sh" --env-file "$ENV_FILE" --no-start
+    "$BUNDLE_ROOT/install.sh" --env-file "$ENV_FILE" --python "$PYTHON" --no-start
 else
     printf '[OpenSLT] Bundle version %s is already installed.\n' "$BUNDLE_VERSION"
     printf '[OpenSLT] Applying any pending database migrations...\n'
@@ -107,12 +113,12 @@ systemctl restart nginx
 
 printf '[OpenSLT] Waiting for production services...\n'
 for _ in {1..60}; do
-    if curl --fail --silent --max-time 2 http://127.0.0.1:8000/health >/dev/null \
-        && curl --fail --silent --max-time 2 http://127.0.0.1/ >/dev/null; then
+    if curl --fail --silent --max-time 2 http://127.0.0.1:4396/health >/dev/null \
+        && curl --fail --silent --max-time 2 http://127.0.0.1:7777/ >/dev/null; then
         install -d -o openslt -g openslt -m 0750 /var/lib/openslt
         install -o root -g root -m 0644 "$BUNDLE_ROOT/VERSION" "$INSTALLED_VERSION_FILE"
         LAN_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
-        printf '[OpenSLT] Production service is ready: http://%s/\n' "${LAN_ADDRESS:-127.0.0.1}"
+        printf '[OpenSLT] Production service is ready: http://%s:7777/\n' "${LAN_ADDRESS:-127.0.0.1}"
         if [[ -f /etc/openslt/initial-admin-password ]]; then
             printf '[OpenSLT] Initial password file: /etc/openslt/initial-admin-password\n'
         fi

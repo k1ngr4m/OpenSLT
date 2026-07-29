@@ -17,7 +17,7 @@ Usage: make-offline-package.sh [options]
 Run this once on the internet-connected RHEL 7.9 x86_64 packaging host.
 
 Options:
-  --python PATH       Python 3.8 executable
+  --python PATH       Python >=3.8 executable
   --output DIR        Output directory (default: release/)
   --version VERSION   Unique release label (default: date + Git commit)
   --nginx-repo-url URL

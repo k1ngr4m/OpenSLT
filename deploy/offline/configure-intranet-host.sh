@@ -18,6 +18,7 @@ Usage: configure.sh [options]
 Run this once as root on the offline RHEL 7.9 application host.
 
 Options:
+  --python PATH                Preinstalled Python >=3.8 executable
   --mysql-defaults-file FILE  Existing MySQL client option file for root/admin
   --database-name NAME        Application database (default: openslt)
   --database-user NAME        Application user (default: openslt)
@@ -31,6 +32,10 @@ EOF
 
 while (($#)); do
     case "$1" in
+        --python)
+            PYTHON="$2"
+            shift 2
+            ;;
         --mysql-defaults-file)
             MYSQL_DEFAULTS_FILE="$2"
             shift 2
@@ -88,8 +93,8 @@ PYTHON_VERSION="$("$PYTHON" -c 'import platform; print(platform.python_version()
     exit 1
 }
 "$PYTHON" -c \
-    'import sys; raise SystemExit(0 if (3, 8, 2) <= sys.version_info[:3] < (3, 9) else 1)' || {
-    printf 'OpenSLT requires preinstalled Python >=3.8.2,<3.9; found %s at %s\n' \
+    'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 8) else 1)' || {
+    printf 'OpenSLT requires preinstalled Python >=3.8; found %s at %s\n' \
         "$PYTHON_VERSION" "$PYTHON" >&2
     exit 1
 }
@@ -212,7 +217,7 @@ AUDIT_LOG_RETENTION_DAYS=365
 PORTABLE_MODE=false
 ENABLE_INTERNAL_SCHEDULER=true
 HOST=127.0.0.1
-PORT=8000
+PORT=4396
 OPEN_BROWSER=false
 INITIAL_ADMIN_USERNAME=admin
 INITIAL_ADMIN_PASSWORD="$INITIAL_ADMIN_PASSWORD"
@@ -226,7 +231,7 @@ fi
 if [[ "$OPEN_FIREWALL" == true ]] \
     && command -v firewall-cmd >/dev/null 2>&1 \
     && systemctl is-active --quiet firewalld; then
-    firewall-cmd --permanent --add-service=http
+    firewall-cmd --permanent --add-port=7777/tcp
     firewall-cmd --reload
 fi
 

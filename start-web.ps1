@@ -11,8 +11,10 @@ $ProjectRoot = $PSScriptRoot
 $FrontendRoot = Join-Path $ProjectRoot "frontend"
 $VenvRoot = Join-Path $ProjectRoot ".venv"
 $Python = Join-Path $VenvRoot "Scripts\python.exe"
-$ApiUrl = "http://127.0.0.1:8000"
-$WebUrl = "http://127.0.0.1:5173"
+$ApiPort = 4396
+$WebPort = 7777
+$ApiUrl = "http://127.0.0.1:$ApiPort"
+$WebUrl = "http://127.0.0.1:$WebPort"
 $ApiProcess = $null
 $WebProcess = $null
 $ExitCode = 0
@@ -202,36 +204,36 @@ try {
     Write-Step "Applying database migrations..."
     Invoke-External $Python @("-m", "alembic", "upgrade", "head") "Database migration failed."
 
-    $ReuseApi = Test-PortOpen "127.0.0.1" 8000
+    $ReuseApi = Test-PortOpen "127.0.0.1" $ApiPort
     if ($ReuseApi -and -not (Test-ApiReady)) {
-        throw "Port 8000 is already used by another application."
+        throw "Port $ApiPort is already used by another application."
     }
-    $ReuseWeb = Test-PortOpen "127.0.0.1" 5173
+    $ReuseWeb = Test-PortOpen "127.0.0.1" $WebPort
     if ($ReuseWeb -and -not (Test-WebReady)) {
-        throw "Port 5173 is already used by another application."
+        throw "Port $WebPort is already used by another application."
     }
 
     if (-not $ReuseApi) {
         Write-Step "Starting the API on $ApiUrl..."
         $ApiProcess = Start-Process -FilePath $Python -ArgumentList @(
             "-m", "uvicorn", "app.main:app", "--app-dir", "backend",
-            "--host", "127.0.0.1", "--port", "8000"
+            "--host", "127.0.0.1", "--port", "$ApiPort"
         ) -WorkingDirectory $ProjectRoot -NoNewWindow -PassThru
         Wait-UntilReady ${function:Test-ApiReady} $ApiProcess "OpenSLT API"
     }
     else {
-        Write-Step "Reusing the OpenSLT API already running on port 8000."
+        Write-Step "Reusing the OpenSLT API already running on port $ApiPort."
     }
 
     if (-not $ReuseWeb) {
         Write-Step "Starting the web client on $WebUrl..."
         $WebProcess = Start-Process -FilePath $Node.Source -ArgumentList @(
-            $ViteEntry, "--host", "127.0.0.1"
+            $ViteEntry, "--host", "0.0.0.0"
         ) -WorkingDirectory $FrontendRoot -NoNewWindow -PassThru
         Wait-UntilReady ${function:Test-WebReady} $WebProcess "OpenSLT web client"
     }
     else {
-        Write-Step "Reusing the OpenSLT web client already running on port 5173."
+        Write-Step "Reusing the OpenSLT web client already running on port $WebPort."
     }
 
     Write-Host ""

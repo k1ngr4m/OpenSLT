@@ -1,5 +1,5 @@
 # One package per line. RHEL 7 repositories must be enabled. The collector can
-# temporarily enable the official Nginx repository. Python 3.8 is preinstalled.
+# temporarily enable the official Nginx repository. Python >=3.8 is preinstalled.
 curl
 nginx
 policycoreutils-python

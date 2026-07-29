@@ -16,7 +16,7 @@ Usage: install.sh --env-file FILE [options]
 
 Options:
   --env-file FILE     Completed production environment file (required)
-  --python PATH       Python 3.8 executable
+  --python PATH       Python >=3.8 executable
   --install-rpms      Install the bundled RPM repository before OpenSLT
   --rpms-only         Install bundled RPMs, then stop before application setup
   --no-start          Install and migrate, but do not start/restart services
@@ -116,8 +116,8 @@ fi
     printf 'Python executable not found: %s\n' "$PYTHON" >&2
     exit 1
 }
-"$PYTHON" -c 'import sys; raise SystemExit(0 if (3, 8, 2) <= sys.version_info[:3] < (3, 9) else 1)' || {
-    printf 'OpenSLT requires Python >=3.8.2,<3.9.\n' >&2
+"$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 8) else 1)' || {
+    printf 'OpenSLT requires Python >=3.8.\n' >&2
     exit 1
 }
 command -v nginx >/dev/null 2>&1 || {
@@ -196,7 +196,7 @@ if [[ "$START_SERVICES" == true ]]; then
     systemctl restart nginx
     printf '[OpenSLT] Waiting for the health endpoint...\n'
     for _ in {1..60}; do
-        if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8000/health >/dev/null; then
+        if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:4396/health >/dev/null; then
             printf '[OpenSLT] OpenSLT is healthy.\n'
             exit 0
         fi

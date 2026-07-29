@@ -7,8 +7,10 @@
 - 内网服务器：RHEL 7.9、x86_64、glibc 2.17，已在相同路径安装 Python 3.8.13。
 - 生产形态：Nginx、systemd、MariaDB 5.5.68、单个 OpenSLT API 进程。
 
-Python 解释器是两台服务器的前置条件，不包含在离线压缩包中。压缩包包含应用及其
-全部 Python wheel 依赖，安装过程不会访问 PyPI。
+Python 3.8 及以上版本的解释器是两台服务器的前置条件，不包含在离线压缩包中。
+压缩包包含应用及其全部 Python wheel 依赖，安装过程不会访问 PyPI。制包机和内网
+服务器必须使用相同的 Python 主次版本；使用非默认路径时，制包、配置和启动命令均
+需传入 `--python PATH`。
 
 不要在内网服务器运行仓库根目录的 `start-web.sh` 或
 `deploy/scripts/install.sh`。这两个脚本面向开发或在线环境，会尝试访问 PyPI 和
@@ -231,7 +233,7 @@ chmod +x install.sh
 如果 MariaDB 使用内网已有实例，也可以跳过前面的 `--rpms-only`，由运维预装 Nginx、
 Python 和 curl。如果希望先检查迁移结果而不启动服务，增加 `--no-start`。
 
-安装完成后通过内网服务器地址访问，立即修改初始管理员密码。
+安装完成后通过 `http://内网服务器地址:7777/` 访问，立即修改初始管理员密码。
 
 ## 7. 网络和远端资源
 
@@ -239,7 +241,7 @@ Python 和 curl。如果希望先检查迁移结果而不启动服务，增加 `
 
 | 来源 | 目标 | 端口 | 用途 |
 | --- | --- | --- | --- |
-| 内网用户 | OpenSLT/Nginx | TCP 80 | Web 和 WebSocket |
+| 内网用户 | OpenSLT/Nginx | TCP 7777 | Web 和 WebSocket |
 | OpenSLT | REM、市场、发单、SLNIC、Coco、解析机 | TCP 22 | SSH/SFTP |
 | OpenSLT | 业务数据库 | TCP 3306 或跳板机 22 | 数据采集与数据库操作 |
 
@@ -259,7 +261,7 @@ Nginx 改为监听 443。
 按顺序完成：
 
 ```bash
-curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:4396/health
 systemctl status openslt-api nginx mariadb
 journalctl -u openslt-api -n 100 --no-pager
 ```
