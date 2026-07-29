@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import WorkflowDocumentWrite
-from app.workflow_node_configs import OrderPreparationConfig, ParserConfig, ServerConfig, StatisticsConfig, parse_node_config
+from app.workflow_node_configs import MarketStartupConfig, OrderPreparationConfig, ParserConfig, RemStartupConfig, ServerConfig, StatisticsConfig, parse_node_config
 
 
 def test_workflow_document_discriminates_node_config_by_node_type() -> None:
@@ -37,6 +37,28 @@ def test_workflow_document_discriminates_node_config_by_node_type() -> None:
 
 
 def test_runtime_config_parser_uses_the_same_contract() -> None:
+    rem_startup = parse_node_config("rem_startup", {})
+    assert isinstance(rem_startup, RemStartupConfig)
+
+    market_startup = parse_node_config("market_startup", {
+        "scripts": [{"filename": "start.sh", "checksum": "a" * 64}],
+    })
+    assert isinstance(market_startup, MarketStartupConfig)
+    assert market_startup.scripts[0].filename == "start.sh"
+
+    with pytest.raises(ValidationError):
+        parse_node_config("market_startup", {
+            "scripts": [{"filename": "../start.sh", "checksum": "a" * 64}],
+        })
+
+    with pytest.raises(ValidationError):
+        parse_node_config("market_startup", {
+            "scripts": [
+                {"filename": "start.sh", "checksum": "a" * 64},
+                {"filename": "start.sh", "checksum": "a" * 64},
+            ],
+        })
+
     config = parse_node_config("order_preparation", {
         "xml_filename": "order.xml",
         "network_interface": "p4p1",

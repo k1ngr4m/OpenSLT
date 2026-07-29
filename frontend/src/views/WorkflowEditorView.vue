@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Bottom, Check, Connection, Delete, Document, Files, Plus, Promotion, Refresh, Search, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, Bottom, Check, Connection, Delete, Document, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -10,6 +10,7 @@ import type { EditableWorkflowNode as WorkflowNode, WorkflowNodeType } from '@/t
 import { resourceText } from '@/utils/status'
 import { buildWiringSnapshot } from '@/utils/wiring'
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
+import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
 
 const route = useRoute()
 const router = useRouter()
@@ -35,6 +36,8 @@ const parserConfigs = ref<any[]>([])
 const loadingParserConfigs = ref(false)
 const statisticsScripts = ref<any[]>([])
 const loadingStatisticsScripts = ref(false)
+const marketScripts = ref<any[]>([])
+const loadingMarketScripts = ref(false)
 const contractFiles = ref<any[]>([])
 const fetchingContracts = ref(false)
 const scanningContracts = ref(false)
@@ -44,7 +47,7 @@ const resourceTypes = Object.keys(resourceText)
 const slnicNodeTypes = new Set(['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'])
 const nodeCategories = [
   { title: '获取配置', types: ['server_config', 'database_config'] },
-  { title: '流程准备', types: ['wiring_confirmation'] },
+  { title: '流程准备', types: ['wiring_confirmation', 'rem_startup', 'market_startup'] },
   { title: '发单', types: ['order_preparation'] },
   { title: 'SLNIC', types: ['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'] },
   { title: '数据处理', types: ['parser_parse', 'data_statistics'] },
@@ -110,6 +113,14 @@ const precedingParserNodes = computed(() => {
   const index = nodes.value.findIndex(item => item.node_key === selectedKey.value)
   return index < 0 ? [] : nodes.value.slice(0, index).filter(item => item.node_type === 'parser_parse')
 })
+const selectedMarketScriptRows = computed(() => {
+  const selections = Array.isArray(selectedNode.value?.config.scripts) ? selectedNode.value.config.scripts : []
+  return selections.map((selection: any) => {
+    const file = marketScripts.value.find(item => item.name === selection.filename)
+    const status = marketScriptSelectionStatus(selection, file)
+    return { selection, file, status }
+  })
+})
 
 function makeKey() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -170,6 +181,8 @@ function nodeMeta(type: string) {
     server_config: { label: '获取服务器配置', icon: Tickets, tone: 'teal' },
     database_config: { label: '获取数据库配置', icon: Document, tone: 'blue' },
     wiring_confirmation: { label: '接线确认', icon: Connection, tone: 'amber' },
+    rem_startup: { label: '启动rem柜台', icon: SwitchButton, tone: 'amber' },
+    market_startup: { label: '启动模拟市场', icon: VideoPlay, tone: 'amber' },
     order_preparation: { label: '发单执行', icon: Promotion, tone: 'rose' },
     slnic_start_capture: { label: '启动 SLNIC', icon: VideoPlay, tone: 'violet' },
     slnic_stop_capture: { label: '关闭 SLNIC', icon: VideoPause, tone: 'violet' },
@@ -184,6 +197,8 @@ function nodeDescription(type: string) {
     server_config: '通过 SSH 采集软硬件信息',
     database_config: '读取 t_global_settings',
     wiring_confirmation: '阻断流程并等待机房确认',
+    rem_startup: '停止服务、清理数据流并重新启动全部柜台服务',
+    market_startup: '按配置顺序执行模拟市场根目录下的启动脚本',
     order_preparation: '启动发单工具，运行时按需发单',
     slnic_start_capture: '调用脚本开始四路抓包',
     slnic_stop_capture: '调用脚本结束抓包',
@@ -198,6 +213,14 @@ function slnicWorkdir() {
   return root ? `${root}/tcpdump` : '未配置远端路径'
 }
 
+function remWorkdir() {
+  return String(selectedResourceMap.value.rem?.remote_path || '').replace(/\/+$/, '') || '未配置远端路径'
+}
+
+function remCommands() {
+  return ['./stop_rem.sh', './makeneat.sh', './start_rem_all.sh']
+}
+
 function slnicCommands(type: string) {
   if (type === 'slnic_start_capture') return ['./start_slnic_dump.sh']
   if (type === 'slnic_stop_capture') return ['./stop_slnic_dump.sh']
@@ -209,6 +232,7 @@ function defaultNode(type: string): WorkflowNode {
   if (type === 'server_config') return { node_key: key, position: 0, node_type: type, name: '获取服务器配置', config: { targets: [] } }
   if (type === 'database_config') return { node_key: key, position: 0, node_type: type, name: '获取数据库配置', config: { database_name: '', keys: [] } }
   if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'resource' } }
+  if (type === 'market_startup') return { node_key: key, position: 0, node_type: type, name: '启动模拟市场', config: { scripts: [] } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, database_node_key: '', trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return {
     node_key: key,
@@ -377,6 +401,53 @@ async function loadStatisticsScripts() {
   } finally {
     loadingStatisticsScripts.value = false
   }
+}
+
+async function loadMarketScripts() {
+  const resource = selectedResourceMap.value.market
+  if (!resource) { marketScripts.value = []; return }
+  loadingMarketScripts.value = true
+  try {
+    marketScripts.value = (await api.get(`/resources/${resource.id}/market-scripts`)).data.files || []
+  } catch (error) {
+    marketScripts.value = []
+    ElMessage.error(errorMessage(error))
+  } finally {
+    loadingMarketScripts.value = false
+  }
+}
+
+function marketScriptSelected(filename: string) {
+  return Boolean(selectedNode.value?.config.scripts?.some((item: any) => item.filename === filename))
+}
+
+function toggleMarketScript(script: any, checked: boolean) {
+  const node = selectedNode.value
+  if (!editable.value || !node || node.node_type !== 'market_startup') return
+  const scripts = Array.isArray(node.config.scripts) ? node.config.scripts : []
+  node.config.scripts = toggleMarketScriptSelection(scripts, script, checked)
+  markDirty()
+}
+
+function moveMarketScript(index: number, offset: number) {
+  const scripts = selectedNode.value?.config.scripts
+  if (!editable.value || !Array.isArray(scripts)) return
+  selectedNode.value!.config.scripts = moveMarketScriptSelection(scripts, index, offset)
+  markDirty()
+}
+
+function removeMarketScript(index: number) {
+  const scripts = selectedNode.value?.config.scripts
+  if (!editable.value || !Array.isArray(scripts)) return
+  scripts.splice(index, 1)
+  markDirty()
+}
+
+function reconfirmMarketScript(index: number) {
+  const row = selectedMarketScriptRows.value[index]
+  if (!editable.value || !row?.file?.executable || !row.selection) return
+  row.selection.checksum = row.file.checksum
+  markDirty()
 }
 
 function selectStatisticsScript(filename: string) {
@@ -548,6 +619,7 @@ watch(selectedNode, async node => {
   if (node?.node_type === 'order_preparation') { await loadOrderConfigs(); await loadContractFiles() }
   if (node?.node_type === 'parser_parse') { await loadParserConfigs(); await ensureParserXmlSelections() }
   if (node?.node_type === 'data_statistics') { await loadStatisticsScripts(); ensureStatisticsScriptSelection() }
+  if (node?.node_type === 'market_startup') await loadMarketScripts()
 })
 watch(() => selectedResourceMap.value.parser?.id, async () => {
   if (selectedNode.value?.node_type === 'parser_parse') {
@@ -558,6 +630,9 @@ watch(() => selectedResourceMap.value.parser?.id, async () => {
     await loadStatisticsScripts()
     ensureStatisticsScriptSelection()
   }
+})
+watch(() => selectedResourceMap.value.market?.id, async () => {
+  if (selectedNode.value?.node_type === 'market_startup') await loadMarketScripts()
 })
 
 onBeforeRouteLeave(async () => {
@@ -598,7 +673,7 @@ onMounted(load)
           <template v-for="(node, index) in nodes" :key="node.node_key">
             <article :data-node-key="node.node_key" class="flow-node" :class="[{ selected: selectedKey === node.node_key }, nodeMeta(node.node_type).tone]" :draggable="editable" @dragstart="draggingKey = node.node_key" @dragover.prevent @drop="dropNode(index)" @click="selectedKey = node.node_key">
               <div class="node-icon"><el-icon><component :is="nodeMeta(node.node_type).icon" /></el-icon></div>
-              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="node.node_type === 'data_statistics'">{{ node.config.script_filename || '未选择统计脚本' }}</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
+              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'rem_startup'">{{ selectedResourceMap.rem?.name || '未绑定 REM 资源' }}</small><small v-else-if="node.node_type === 'market_startup'">{{ node.config.scripts?.length || 0 }} 个启动脚本</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="node.node_type === 'data_statistics'">{{ node.config.script_filename || '未选择统计脚本' }}</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
               <div v-if="editable" class="node-actions"><el-button text circle :icon="Top" :disabled="index === 0" aria-label="上移节点" @click.stop="moveNode(index, -1)" /><el-button text circle :icon="Bottom" :disabled="index === nodes.length - 1" aria-label="下移节点" @click.stop="moveNode(index, 1)" /><el-button text circle type="danger" :icon="Delete" aria-label="删除节点" @click.stop="removeNode(index)" /></div>
             </article>
             <div class="flow-link"><span></span><button v-if="editable" class="add-point" type="button" aria-label="在此处添加节点" @click="openPicker(index + 1)"><el-icon><Plus /></el-icon></button></div>
@@ -659,6 +734,55 @@ onMounted(load)
                 </el-collapse-item>
               </el-collapse>
             </template>
+          </template>
+
+          <template v-else-if="selectedNode.node_type === 'rem_startup'">
+            <div class="slnic-summary">
+              <div><span>REM 柜台资源</span><strong>{{ selectedResourceMap.rem?.name || '资源池未绑定' }}</strong></div>
+              <div><span>执行模式</span><strong>固定远程脚本</strong></div>
+              <div class="wide"><span>工作目录</span><code>{{ remWorkdir() }}</code></div>
+            </div>
+            <el-alert v-if="!selectedResourceMap.rem" title="请先在左侧场景资源池绑定 REM 柜台" type="warning" :closable="false" show-icon />
+            <div class="section-label">执行命令（按顺序）</div>
+            <div class="slnic-commands"><code v-for="command in remCommands()" :key="command">{{ command }}</code></div>
+            <p class="slnic-note">任一命令失败都会停止后续执行；重试节点时将从 stop_rem.sh 重新开始。</p>
+          </template>
+
+          <template v-else-if="selectedNode.node_type === 'market_startup'">
+            <div class="slnic-summary">
+              <div><span>模拟市场资源</span><strong>{{ selectedResourceMap.market?.name || '资源池未绑定' }}</strong></div>
+              <div><span>执行模式</span><strong>顺序执行远程脚本</strong></div>
+              <div class="wide"><span>工作目录</span><code>{{ selectedResourceMap.market?.remote_path || '-' }}</code></div>
+            </div>
+            <el-alert v-if="!selectedResourceMap.market" title="请先在左侧场景资源池绑定模拟市场资源" type="warning" :closable="false" show-icon />
+            <div class="contract-toolbar"><strong>根目录 .sh 文件</strong><el-button size="small" :icon="Refresh" :loading="loadingMarketScripts" :disabled="!selectedResourceMap.market" circle aria-label="刷新模拟市场脚本" @click="loadMarketScripts" /></div>
+            <div v-loading="loadingMarketScripts" class="market-script-options">
+              <el-checkbox
+                v-for="script in marketScripts"
+                :key="script.name"
+                :model-value="marketScriptSelected(script.name)"
+                :disabled="!editable || (!script.executable && !marketScriptSelected(script.name))"
+                @change="value => toggleMarketScript(script, Boolean(value))"
+              >
+                <span><strong>{{ script.name }}</strong><small>{{ script.executable ? '可执行' : '无执行权限，不能选择' }}</small></span>
+              </el-checkbox>
+              <div v-if="!loadingMarketScripts && !marketScripts.length" class="contract-empty">根目录下暂无 .sh 文件</div>
+            </div>
+            <div class="section-label">执行顺序</div>
+            <div v-if="selectedMarketScriptRows.length" class="market-script-order">
+              <div v-for="(row, index) in selectedMarketScriptRows" :key="row.selection.filename" class="market-script-row" :class="{ invalid: row.status !== 'valid' }">
+                <span class="market-script-index">{{ index + 1 }}</span>
+                <div><strong>{{ row.selection.filename }}</strong><small v-if="row.status === 'missing'">远端文件已不存在</small><small v-else-if="row.status === 'not_executable'">远端文件已失去执行权限</small><small v-else-if="row.status === 'changed'">远端文件内容已变化，请重新确认</small><small v-else>校验和已固化</small></div>
+                <div class="market-script-actions">
+                  <el-button v-if="row.status === 'changed'" link type="warning" :disabled="!editable" @click="reconfirmMarketScript(index)">重新确认</el-button>
+                  <el-button text circle :icon="Top" :disabled="!editable || index === 0" aria-label="上移脚本" @click="moveMarketScript(index, -1)" />
+                  <el-button text circle :icon="Bottom" :disabled="!editable || index === selectedMarketScriptRows.length - 1" aria-label="下移脚本" @click="moveMarketScript(index, 1)" />
+                  <el-button text circle type="danger" :icon="Delete" :disabled="!editable" aria-label="移除脚本" @click="removeMarketScript(index)" />
+                </div>
+              </div>
+            </div>
+            <div v-else class="contract-empty">至少选择一个启动脚本</div>
+            <p class="slnic-note">任一脚本失败都会停止后续执行；重试节点时从第一个脚本重新开始。</p>
           </template>
 
           <template v-else-if="slnicNodeTypes.has(selectedNode.node_type)">
@@ -745,6 +869,7 @@ onMounted(load)
 .flow-node,.flow-empty,.wiring-placeholder,.node-picker button{border-radius:8px}.wiring-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:20px 0 10px}.wiring-editor-heading strong,.wiring-editor-heading span{display:block}.wiring-editor-heading span{max-width:240px;margin-top:4px;color:var(--ui-text-tertiary);font-size:11px;line-height:1.45}.wiring-editor-heading+.el-alert{margin-bottom:10px}.contract-previews{margin-top:12px}.contract-preview-title{display:flex;align-items:center;gap:8px;min-width:0}.contract-preview-title small{color:#7d8a92}.checksum{display:grid;gap:4px;margin-bottom:10px}.checksum span{font-size:10px;color:#7d8a92}.checksum code{font-size:10px;line-height:1.5;overflow-wrap:anywhere;color:#34444d}.snapshot dl{grid-template-columns:minmax(0,1fr) minmax(96px,35%);column-gap:12px}.snapshot dt,.snapshot dd{min-width:0;line-height:1.45;overflow-wrap:anywhere}.snapshot dt{font-family:Cascadia Code,Consolas,monospace;font-size:10px}.snapshot dd{font-variant-numeric:tabular-nums}@media(max-width:1250px){.editor-grid{grid-template-columns:180px minmax(320px,1fr) 300px}.resource-panel{padding:12px}.property-panel{padding:14px}.workflow-canvas{padding:16px 12px 48px}.flow-column,.flow-node,.flow-empty{width:290px}}
 .contract-empty{min-height:96px;margin-top:10px;border:1px dashed #ccd8dd;border-radius:8px;display:grid;place-items:center;color:#829099;font-size:11px}
 .flow-node.violet{border-left-color:#7669b5}.node-icon.violet{background:#eeebf8;color:#6556a5}.node-catalog{display:grid;gap:22px}.node-category h3{margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid #e6ebee;color:#697780;font-size:12px;font-weight:600}.slnic-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 14px}.slnic-summary>div{padding:11px;border:1px solid #e3e0ef;border-radius:8px;background:#f8f7fc}.slnic-summary .wide{grid-column:1/-1}.slnic-summary span,.slnic-summary strong,.slnic-summary code{display:block}.slnic-summary span{font-size:10px;color:#7f8991}.slnic-summary strong,.slnic-summary code{margin-top:5px;font-size:12px;overflow-wrap:anywhere}.slnic-commands{display:grid;gap:7px}.slnic-commands code{padding:10px;border-radius:7px;background:#242632;color:#d9e6df;font-size:11px;line-height:1.45;overflow-wrap:anywhere}.slnic-note{color:#7c8991;font-size:11px;line-height:1.6}
+.market-script-options{display:grid;max-height:190px;margin-top:10px;overflow:auto;border:1px solid #e0e7ea;border-radius:8px}.market-script-options :deep(.el-checkbox){height:auto;margin:0;padding:9px 11px;border-bottom:1px solid #edf1f3}.market-script-options :deep(.el-checkbox:last-of-type){border-bottom:0}.market-script-options strong,.market-script-options small{display:block}.market-script-options small{margin-top:3px;color:#85929a;font-size:10px}.market-script-order{display:grid;gap:7px}.market-script-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px;border:1px solid #dfe6ea;border-radius:7px}.market-script-row.invalid{border-color:#e3b268;background:#fffaf1}.market-script-row strong,.market-script-row small{display:block;overflow-wrap:anywhere}.market-script-row small{margin-top:3px;color:#85929a;font-size:10px}.market-script-row.invalid small{color:#a66e20}.market-script-index{display:grid;width:22px;height:22px;place-items:center;border-radius:5px;background:#edf3f4;color:#627078;font-size:10px;font-weight:700}.market-script-actions{display:flex;align-items:center}.market-script-actions :deep(.el-button){margin:0}
 
 /* Professional console theme and compact-window fallback */
 .workflow-page{min-height:calc(100dvh - 52px);overflow:hidden;background:var(--ui-surface-subtle);color:var(--ui-text-primary)}

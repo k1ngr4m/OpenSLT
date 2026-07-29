@@ -891,6 +891,170 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MarketScriptFileOut": {
+        "properties": {
+          "checksum": {
+            "title": "Checksum",
+            "type": "string"
+          },
+          "executable": {
+            "title": "Executable",
+            "type": "boolean"
+          },
+          "modified_at": {
+            "format": "date-time",
+            "title": "Modified At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "modified_at",
+          "checksum",
+          "executable"
+        ],
+        "title": "MarketScriptFileOut",
+        "type": "object"
+      },
+      "MarketScriptListOut": {
+        "properties": {
+          "directory": {
+            "title": "Directory",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/MarketScriptFileOut"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "directory",
+          "files"
+        ],
+        "title": "MarketScriptListOut",
+        "type": "object"
+      },
+      "MarketScriptSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "checksum": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Checksum",
+            "type": "string"
+          },
+          "filename": {
+            "pattern": "^[A-Za-z0-9._-]+\\.sh$",
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "checksum"
+        ],
+        "title": "MarketScriptSelection",
+        "type": "object"
+      },
+      "MarketStartupConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "scripts": {
+            "items": {
+              "$ref": "#/components/schemas/MarketScriptSelection"
+            },
+            "title": "Scripts",
+            "type": "array"
+          }
+        },
+        "title": "MarketStartupConfig",
+        "type": "object"
+      },
+      "MarketStartupNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/MarketStartupConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "market_startup",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "MarketStartupNodeOut",
+        "type": "object"
+      },
+      "MarketStartupNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/MarketStartupConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "market_startup",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "MarketStartupNodeWrite",
+        "type": "object"
+      },
       "MetricOut": {
         "properties": {
           "detail": {
@@ -1585,6 +1749,86 @@
           "refresh_token"
         ],
         "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RemStartupConfig": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "RemStartupConfig",
+        "type": "object"
+      },
+      "RemStartupNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/RemStartupConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "rem_startup",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "RemStartupNodeOut",
+        "type": "object"
+      },
+      "RemStartupNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/RemStartupConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "rem_startup",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "RemStartupNodeWrite",
         "type": "object"
       },
       "ResourceConnectionTestRequest": {
@@ -3855,8 +4099,10 @@
                 "mapping": {
                   "data_statistics": "#/components/schemas/StatisticsNodeWrite",
                   "database_config": "#/components/schemas/DatabaseConfigNodeWrite",
+                  "market_startup": "#/components/schemas/MarketStartupNodeWrite",
                   "order_preparation": "#/components/schemas/OrderPreparationNodeWrite",
                   "parser_parse": "#/components/schemas/ParserNodeWrite",
+                  "rem_startup": "#/components/schemas/RemStartupNodeWrite",
                   "server_config": "#/components/schemas/ServerConfigNodeWrite",
                   "slnic_merge_capture": "#/components/schemas/SlnicMergeNodeWrite",
                   "slnic_start_capture": "#/components/schemas/SlnicStartNodeWrite",
@@ -3874,6 +4120,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/WiringConfirmationNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/RemStartupNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/MarketStartupNodeWrite"
                 },
                 {
                   "$ref": "#/components/schemas/OrderPreparationNodeWrite"
@@ -3931,8 +4183,10 @@
                 "mapping": {
                   "data_statistics": "#/components/schemas/StatisticsNodeOut",
                   "database_config": "#/components/schemas/DatabaseConfigNodeOut",
+                  "market_startup": "#/components/schemas/MarketStartupNodeOut",
                   "order_preparation": "#/components/schemas/OrderPreparationNodeOut",
                   "parser_parse": "#/components/schemas/ParserNodeOut",
+                  "rem_startup": "#/components/schemas/RemStartupNodeOut",
                   "server_config": "#/components/schemas/ServerConfigNodeOut",
                   "slnic_merge_capture": "#/components/schemas/SlnicMergeNodeOut",
                   "slnic_start_capture": "#/components/schemas/SlnicStartNodeOut",
@@ -3950,6 +4204,12 @@
                 },
                 {
                   "$ref": "#/components/schemas/WiringConfirmationNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/RemStartupNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/MarketStartupNodeOut"
                 },
                 {
                   "$ref": "#/components/schemas/OrderPreparationNodeOut"
@@ -5305,6 +5565,50 @@
           }
         ],
         "summary": "Check Resource"
+      }
+    },
+    "/api/v1/resources/{resource_id}/market-scripts": {
+      "get": {
+        "operationId": "list_market_scripts_api_v1_resources__resource_id__market_scripts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketScriptListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Market Scripts"
       }
     },
     "/api/v1/resources/{resource_id}/order-configs": {

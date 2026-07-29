@@ -27,6 +27,8 @@ NODE_TYPES = {
     "server_config",
     "database_config",
     "wiring_confirmation",
+    "rem_startup",
+    "market_startup",
     "order_preparation",
     "parser_parse",
     "data_statistics",
@@ -207,6 +209,21 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                             "field": "resource",
                             "message": "REM、模拟市场或 SLNIC 的接线 IP 配置无效",
                         })
+        elif node.node_type == "rem_startup":
+            rem_resource = resources.get("rem")
+            if not rem_resource or rem_resource.is_deleted or not rem_resource.is_enabled:
+                errors.append({**prefix, "field": "resource", "message": "启动 REM 柜台需要绑定已启用的 REM 资源"})
+            elif not rem_resource.remote_path.strip():
+                errors.append({**prefix, "field": "resource", "message": "REM 资源未配置远端路径"})
+        elif node.node_type == "market_startup":
+            market_resource = resources.get("market")
+            scripts = config.get("scripts") or []
+            if not market_resource or market_resource.is_deleted or not market_resource.is_enabled:
+                errors.append({**prefix, "field": "resource", "message": "启动模拟市场需要绑定已启用的模拟市场资源"})
+            elif not market_resource.remote_path.strip():
+                errors.append({**prefix, "field": "resource", "message": "模拟市场资源未配置远端路径"})
+            if not scripts:
+                errors.append({**prefix, "field": "scripts", "message": "至少选择一个模拟市场启动脚本"})
         elif node.node_type == "order_preparation":
             order_resource = resources.get("order")
             if not order_resource:

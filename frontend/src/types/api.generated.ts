@@ -365,6 +365,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resources/{resource_id}/market-scripts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Market Scripts */
+        get: operations["list_market_scripts_api_v1_resources__resource_id__market_scripts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resources/{resource_id}/order-configs": {
         parameters: {
             query?: never;
@@ -1365,6 +1382,71 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** MarketScriptFileOut */
+        MarketScriptFileOut: {
+            /** Checksum */
+            checksum: string;
+            /** Executable */
+            executable: boolean;
+            /**
+             * Modified At
+             * Format: date-time
+             */
+            modified_at: string;
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+        };
+        /** MarketScriptListOut */
+        MarketScriptListOut: {
+            /** Directory */
+            directory: string;
+            /** Files */
+            files: components["schemas"]["MarketScriptFileOut"][];
+        };
+        /** MarketScriptSelection */
+        MarketScriptSelection: {
+            /** Checksum */
+            checksum: string;
+            /** Filename */
+            filename: string;
+        };
+        /** MarketStartupConfig */
+        MarketStartupConfig: {
+            /** Scripts */
+            scripts?: components["schemas"]["MarketScriptSelection"][];
+        };
+        /** MarketStartupNodeOut */
+        MarketStartupNodeOut: {
+            config?: components["schemas"]["MarketStartupConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "market_startup";
+            /** Position */
+            position: number;
+        };
+        /** MarketStartupNodeWrite */
+        MarketStartupNodeWrite: {
+            config?: components["schemas"]["MarketStartupConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "market_startup";
+        };
         /** MetricOut */
         MetricOut: {
             /** Detail */
@@ -1687,6 +1769,38 @@ export interface components {
         RefreshRequest: {
             /** Refresh Token */
             refresh_token: string;
+        };
+        /** RemStartupConfig */
+        RemStartupConfig: Record<string, unknown>;
+        /** RemStartupNodeOut */
+        RemStartupNodeOut: {
+            config?: components["schemas"]["RemStartupConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "rem_startup";
+            /** Position */
+            position: number;
+        };
+        /** RemStartupNodeWrite */
+        RemStartupNodeWrite: {
+            config?: components["schemas"]["RemStartupConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "rem_startup";
         };
         /** ResourceConnectionTestRequest */
         ResourceConnectionTestRequest: {
@@ -2473,7 +2587,7 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
             /** Nodes */
-            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"] | components["schemas"]["StatisticsNodeWrite"])[];
+            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["RemStartupNodeWrite"] | components["schemas"]["MarketStartupNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"] | components["schemas"]["StatisticsNodeWrite"])[];
             /** Resource Ids */
             resource_ids: number[];
         };
@@ -2487,7 +2601,7 @@ export interface components {
             /** Id */
             id: number;
             /** Nodes */
-            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"] | components["schemas"]["StatisticsNodeOut"])[];
+            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["RemStartupNodeOut"] | components["schemas"]["MarketStartupNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"] | components["schemas"]["StatisticsNodeOut"])[];
             /** Published At */
             published_at: string | null;
             /** Published By */
@@ -3306,6 +3420,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, unknown>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_market_scripts_api_v1_resources__resource_id__market_scripts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketScriptListOut"];
                 };
             };
             /** @description Validation Error */

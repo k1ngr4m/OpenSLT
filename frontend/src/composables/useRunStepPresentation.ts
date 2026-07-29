@@ -97,6 +97,19 @@ export function useRunStepPresentation(
       }
       return rows
     }
+    if (step.node_type === 'rem_startup') {
+      return [
+        { label: 'REM 动作', value: '停止服务 → 清理数据流 → 启动服务' },
+        { label: '固定脚本', value: './stop_rem.sh → ./makeneat.sh → ./start_rem_all.sh', mono: true },
+      ]
+    }
+    if (step.node_type === 'market_startup') {
+      const scripts = Array.isArray(config.scripts) ? config.scripts.filter(isJsonMap) : []
+      return [
+        { label: '启动脚本数量', value: `${scripts.length} 个` },
+        { label: '执行顺序', value: scripts.map(item => stringValue(item.filename, '')).filter(Boolean).join(' → ') || '-', mono: true },
+      ]
+    }
     if (step.node_type === 'parser_parse') {
       return [
         { label: '数据库', value: stringValue(config.database_name) },
@@ -154,6 +167,28 @@ export function useRunStepPresentation(
         { label: '会话状态', value: stringValue(result.session_status) },
         { label: '动作状态', value: stringValue(result.order_action_status) },
         { label: '发单动作', value: stringValue(result.order_action, stringValue(selectedConfig.value.order_action, 'new_order')), mono: true },
+      ]
+    }
+    if (step.node_type === 'rem_startup') {
+      const commands = Array.isArray(result.commands) ? result.commands.filter(isJsonMap) : []
+      return [
+        { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
+        { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
+        { label: '完成命令', value: `${commands.filter(command => command.exit_code === 0).length}/${commands.length || 3}` },
+        { label: '退出码', value: optionalNumber(result.exit_code) ?? '-' },
+        { label: '执行耗时', value: formatDuration(optionalNumber(result.duration_ms)) },
+      ]
+    }
+    if (step.node_type === 'market_startup') {
+      const commands = Array.isArray(result.commands) ? result.commands.filter(isJsonMap) : []
+      const expected = Array.isArray(selectedConfig.value.scripts) ? selectedConfig.value.scripts.length : commands.length
+      return [
+        { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
+        { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
+        { label: '完成脚本', value: `${commands.filter(command => command.exit_code === 0).length}/${expected}` },
+        { label: '执行顺序', value: commands.map(command => stringValue(command.script, '')).filter(Boolean).join(' → ') || '-', mono: true },
+        { label: '退出码', value: optionalNumber(result.exit_code) ?? '-' },
+        { label: '执行耗时', value: formatDuration(optionalNumber(result.duration_ms)) },
       ]
     }
     if (step.node_type.startsWith('slnic_')) {

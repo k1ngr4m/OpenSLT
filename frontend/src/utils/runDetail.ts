@@ -5,6 +5,8 @@ export const nodeTypeText: Record<string, string> = {
   server_config: '服务器配置',
   database_config: '数据库配置',
   wiring_confirmation: '接线确认',
+  rem_startup: '启动rem柜台',
+  market_startup: '启动模拟市场',
   order_preparation: '发单准备',
   slnic_start_capture: '启动 SLNIC',
   slnic_stop_capture: '关闭 SLNIC',

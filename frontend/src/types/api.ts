@@ -17,6 +17,8 @@ export type WorkflowNodeConfig = Partial<
   Schemas['ServerConfig'] &
   Schemas['DatabaseConfig'] &
   Schemas['WiringConfirmationConfig'] &
+  Schemas['RemStartupConfig'] &
+  Schemas['MarketStartupConfig'] &
   Schemas['OrderPreparationConfig'] &
   Schemas['ParserConfig'] &
   Schemas['StatisticsConfig']

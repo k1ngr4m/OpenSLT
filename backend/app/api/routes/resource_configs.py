@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import operators
 from app.api.routes.common import order_config_http_error, order_config_resource, parser_config_resource
 from app.core.database import get_db
-from app.models import User
-from app.schemas import OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, StatisticsScriptListOut
+from app.models import Resource, User
+from app.schemas import MarketScriptListOut, OrderConfigCreate, OrderConfigDetailOut, OrderConfigListOut, OrderConfigRename, OrderConfigUpdate, StatisticsScriptListOut
 from app.services.audit import write_audit
+from app.services.market_scripts import MarketScriptError, market_script_service
 from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
 
@@ -18,6 +19,12 @@ router = APIRouter()
 
 
 def statistics_script_http_error(exc: StatisticsScriptError):
+    from fastapi import HTTPException
+
+    return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message})
+
+
+def market_script_http_error(exc: MarketScriptError):
     from fastapi import HTTPException
 
     return HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message})
@@ -234,6 +241,36 @@ async def list_statistics_scripts(
         actor,
         resource_id,
         "statistics_script.list",
+        detail={"count": len(result["files"])},
+    )
+    return result
+
+
+@router.get("/resources/{resource_id}/market-scripts", response_model=MarketScriptListOut)
+async def list_market_scripts(
+    resource_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict:
+    resource = db.get(Resource, resource_id)
+    if not resource:
+        raise market_script_http_error(
+            MarketScriptError("MARKET_RESOURCE_NOT_FOUND", "模拟市场资源不存在", 404)
+        )
+    try:
+        result = await market_script_service.list(resource)
+    except MarketScriptError as exc:
+        write_order_config_audit(
+            db, request, actor, resource_id, "market_script.list", "failed", {"code": exc.code}
+        )
+        raise market_script_http_error(exc) from exc
+    write_order_config_audit(
+        db,
+        request,
+        actor,
+        resource_id,
+        "market_script.list",
         detail={"count": len(result["files"])},
     )
     return result

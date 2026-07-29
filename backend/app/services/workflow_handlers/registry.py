@@ -4,8 +4,10 @@ import typing
 
 from app.services.workflow_handlers.base import WorkflowExecutionContext, WorkflowNodeHandler
 from app.services.workflow_handlers.capture import HANDLERS as CAPTURE_HANDLERS
+from app.services.workflow_handlers.market import HANDLERS as MARKET_HANDLERS
 from app.services.workflow_handlers.order import HANDLERS as ORDER_HANDLERS
 from app.services.workflow_handlers.parser import HANDLERS as PARSER_HANDLERS
+from app.services.workflow_handlers.rem import HANDLERS as REM_HANDLERS
 from app.services.workflow_handlers.slnic import HANDLERS as SLNIC_HANDLERS
 from app.services.workflow_handlers.statistics import HANDLERS as STATISTICS_HANDLERS
 
@@ -40,5 +42,5 @@ class WorkflowHandlerRegistry:
 
 
 registry = WorkflowHandlerRegistry()
-for registered_handler in (*CAPTURE_HANDLERS, *ORDER_HANDLERS, *SLNIC_HANDLERS, *PARSER_HANDLERS, *STATISTICS_HANDLERS):
+for registered_handler in (*CAPTURE_HANDLERS, *REM_HANDLERS, *MARKET_HANDLERS, *ORDER_HANDLERS, *SLNIC_HANDLERS, *PARSER_HANDLERS, *STATISTICS_HANDLERS):
     registry.register(registered_handler)

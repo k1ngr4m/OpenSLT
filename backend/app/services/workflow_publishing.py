@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
 from app.models import ContractDataFile, ScenarioWorkflowVersion, TestScenario
+from app.services.market_scripts import MarketScriptError, market_script_service
 from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
 from app.services.resource_relations import node_config_with_relations, node_contract_file_ids, sync_scenario_resources, workflow_resource_ids
 from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
@@ -24,6 +25,32 @@ async def validate_publish(
     resources = resource_map(db, version)
     order_config_updates: list[dict[str, typing.Any]] = []
     for node in version.nodes:
+        if node.node_type == "market_startup":
+            resource = resources.get("market")
+            selections = list((node_config_with_relations(node).get("scripts") or []))
+            if resource and selections:
+                try:
+                    details = await market_script_service.read_many(
+                        resource,
+                        [str(item.get("filename") or "") for item in selections],
+                    )
+                    for selection, detail in zip(selections, details):
+                        filename = str(selection.get("filename") or "")
+                        if not detail["executable"]:
+                            raise WorkflowError(
+                                "MARKET_SCRIPT_NOT_EXECUTABLE",
+                                f"模拟市场脚本 {filename} 没有执行权限",
+                                409,
+                            )
+                        if detail["checksum"] != str(selection.get("checksum") or ""):
+                            raise WorkflowError(
+                                "MARKET_SCRIPT_CHANGED",
+                                f"模拟市场脚本 {filename} 已发生变化，请重新选择",
+                                409,
+                            )
+                except (MarketScriptError, WorkflowError) as exc:
+                    errors.append({"node_key": node.node_key, "field": "scripts", "message": str(exc)})
+            continue
         if node.node_type == "data_statistics":
             resource = resources.get("parser")
             config = node_config_with_relations(node)

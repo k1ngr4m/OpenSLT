@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing_extensions import Literal
 
 
@@ -52,6 +52,29 @@ class WiringConfirmationConfig(WorkflowNodeConfig):
     diagram: str = "placeholder"
 
 
+class RemStartupConfig(WorkflowNodeConfig):
+    pass
+
+
+class MarketScriptSelection(WorkflowNodeConfig):
+    filename: str = Field(pattern=r"^[A-Za-z0-9._-]+\.sh$")
+    checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class MarketStartupConfig(WorkflowNodeConfig):
+    scripts: typing.List[MarketScriptSelection] = Field(default_factory=list)
+
+    @field_validator("scripts")
+    @classmethod
+    def reject_duplicate_scripts(
+        cls, value: typing.List[MarketScriptSelection]
+    ) -> typing.List[MarketScriptSelection]:
+        filenames = [item.filename for item in value]
+        if len(filenames) != len(set(filenames)):
+            raise ValueError("模拟市场启动脚本不能重复")
+        return value
+
+
 class OrderPreparationConfig(WorkflowNodeConfig):
     xml_filename: str = ""
     xml_checksum: str = ""
@@ -96,6 +119,8 @@ NodeConfig = typing.Union[
     ServerConfig,
     DatabaseConfig,
     WiringConfirmationConfig,
+    RemStartupConfig,
+    MarketStartupConfig,
     OrderPreparationConfig,
     SlnicStartConfig,
     SlnicStopConfig,
@@ -109,6 +134,8 @@ NODE_CONFIG_MODELS: typing.Dict[str, typing.Type[WorkflowNodeConfig]] = {
     "server_config": ServerConfig,
     "database_config": DatabaseConfig,
     "wiring_confirmation": WiringConfirmationConfig,
+    "rem_startup": RemStartupConfig,
+    "market_startup": MarketStartupConfig,
     "order_preparation": OrderPreparationConfig,
     "slnic_start_capture": SlnicStartConfig,
     "slnic_stop_capture": SlnicStopConfig,

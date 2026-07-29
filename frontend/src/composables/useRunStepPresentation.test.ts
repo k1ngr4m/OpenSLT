@@ -77,4 +77,71 @@ describe('useRunStepPresentation contract preview', () => {
       expect(presentation.configRows.value.every(row => !String(row.value ?? '').includes('checksum'))).toBe(true)
     }
   })
+
+  it('presents the fixed REM startup sequence and execution result', () => {
+    const step = {
+      ...orderStep(),
+      node_type: 'rem_startup',
+      config_snapshot: {},
+      result_summary: {
+        resource_id: 3,
+        resource_name: 'REM-03',
+        remote_workdir: '/home/user0/rem_mm',
+        exit_code: 0,
+        duration_ms: 1250,
+        commands: [
+          { script: './stop_rem.sh', exit_code: 0 },
+          { script: './makeneat.sh', exit_code: 0 },
+          { script: './start_rem_all.sh', exit_code: 0 },
+        ],
+      },
+    } as RunStep
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const presentation = useRunStepPresentation(run, computed(() => step), {})
+
+    expect(presentation.configRows.value).toEqual([
+      { label: 'REM 动作', value: '停止服务 → 清理数据流 → 启动服务' },
+      { label: '固定脚本', value: './stop_rem.sh → ./makeneat.sh → ./start_rem_all.sh', mono: true },
+    ])
+    expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
+      { label: '资源', value: 'REM-03' },
+      { label: '完成命令', value: '3/3' },
+      { label: '退出码', value: 0 },
+    ]))
+  })
+
+  it('presents the ordered market startup scripts and completion count', () => {
+    const step = {
+      ...orderStep(),
+      node_type: 'market_startup',
+      config_snapshot: {
+        scripts: [
+          { filename: 'prepare.sh', checksum: 'a' },
+          { filename: 'start_all.sh', checksum: 'b' },
+        ],
+      },
+      result_summary: {
+        resource_name: 'Market-01',
+        remote_workdir: '/home/user0/rem_mkt/cffex_2.0',
+        exit_code: 0,
+        duration_ms: 2000,
+        commands: [
+          { script: 'prepare.sh', exit_code: 0 },
+          { script: 'start_all.sh', exit_code: 0 },
+        ],
+      },
+    } as RunStep
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const presentation = useRunStepPresentation(run, computed(() => step), {})
+
+    expect(presentation.configRows.value).toEqual([
+      { label: '启动脚本数量', value: '2 个' },
+      { label: '执行顺序', value: 'prepare.sh → start_all.sh', mono: true },
+    ])
+    expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
+      { label: '资源', value: 'Market-01' },
+      { label: '完成脚本', value: '2/2' },
+      { label: '执行顺序', value: 'prepare.sh → start_all.sh', mono: true },
+    ]))
+  })
 })

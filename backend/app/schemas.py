@@ -13,9 +13,11 @@ from app.services.run_state import RunStatus, StepStatus
 from app.workflow_node_configs import (
     ORDER_ACTIONS,
     DatabaseConfig,
+    MarketStartupConfig,
     OrderAction,
     OrderPreparationConfig,
     ParserConfig,
+    RemStartupConfig,
     StatisticsConfig,
     ServerConfig,
     SlnicMergeConfig,
@@ -337,6 +339,15 @@ class StatisticsScriptListOut(BaseModel):
     files: typing.List[StatisticsScriptFileOut]
 
 
+class MarketScriptFileOut(StatisticsScriptFileOut):
+    pass
+
+
+class MarketScriptListOut(BaseModel):
+    directory: str
+    files: typing.List[MarketScriptFileOut]
+
+
 class DatabaseExportRequest(DatabaseSqlRequest):
     format: Literal["csv", "xlsx"]
 
@@ -419,6 +430,16 @@ class WiringConfirmationNodeWrite(WorkflowNodeBase):
     config: WiringConfirmationConfig = Field(default_factory=WiringConfirmationConfig)
 
 
+class RemStartupNodeWrite(WorkflowNodeBase):
+    node_type: Literal["rem_startup"]
+    config: RemStartupConfig = Field(default_factory=RemStartupConfig)
+
+
+class MarketStartupNodeWrite(WorkflowNodeBase):
+    node_type: Literal["market_startup"]
+    config: MarketStartupConfig = Field(default_factory=MarketStartupConfig)
+
+
 class OrderPreparationNodeWrite(WorkflowNodeBase):
     node_type: Literal["order_preparation"]
     config: OrderPreparationConfig = Field(default_factory=OrderPreparationConfig)
@@ -454,6 +475,8 @@ WorkflowNodeWrite = Annotated[
         ServerConfigNodeWrite,
         DatabaseConfigNodeWrite,
         WiringConfirmationNodeWrite,
+        RemStartupNodeWrite,
+        MarketStartupNodeWrite,
         OrderPreparationNodeWrite,
         SlnicStartNodeWrite,
         SlnicStopNodeWrite,
@@ -492,6 +515,14 @@ class WiringConfirmationNodeOut(WiringConfirmationNodeWrite, WorkflowNodeOutFiel
     pass
 
 
+class RemStartupNodeOut(RemStartupNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
+class MarketStartupNodeOut(MarketStartupNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
 class OrderPreparationNodeOut(OrderPreparationNodeWrite, WorkflowNodeOutFields):
     pass
 
@@ -521,6 +552,8 @@ WorkflowNodeOut = Annotated[
         ServerConfigNodeOut,
         DatabaseConfigNodeOut,
         WiringConfirmationNodeOut,
+        RemStartupNodeOut,
+        MarketStartupNodeOut,
         OrderPreparationNodeOut,
         SlnicStartNodeOut,
         SlnicStopNodeOut,
