@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { Search, RefreshRight, Plus, CopyDocument } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, RefreshRight, Plus, CopyDocument, Delete } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiPlan, ApiResource, ApiScenario } from '@/types/api'
@@ -22,10 +22,21 @@ const loading = ref(false)
 const loadError = ref('')
 const drawer = ref(false)
 const creating = ref(false)
+const deletingRunId = ref<number | null>(null)
 const filters = reactive({ keyword: '', business: '', status: '' })
 const form = reactive<{ plan_id: number; scenario_id: number | null }>({ plan_id: 0, scenario_id: null })
 const resourceSelections = reactive<Record<string, number | null>>({})
 const terminalStatuses = new Set(['completed', 'cancelled', 'execution_failed', 'parse_failed', 'precheck_failed', 'timed_out'])
+const deletableStatuses = new Set([
+  ...terminalStatuses,
+  'draft',
+  'awaiting_wiring',
+  'awaiting_review',
+  'awaiting_step_start',
+  'awaiting_step_completion',
+  'awaiting_step_retry',
+  'paused',
+])
 
 const selectedPlan = computed(() => plans.value.find(plan => plan.id === form.plan_id))
 const selectedScenario = computed(() => scenarios.value.find(scenario => scenario.id === form.scenario_id))
@@ -116,6 +127,29 @@ async function copyRunNumber(value: string) {
   ElMessage.success(`已复制运行编号 ${value}`)
 }
 
+async function removeRun(run: RunDetail) {
+  const willCancel = !terminalStatuses.has(run.status)
+  const message = willCancel
+    ? `运行 ${run.run_number} 尚未结束。删除会先取消运行并释放资源，同时永久删除步骤、日志、结果和本地产物。`
+    : `确定永久删除运行 ${run.run_number}？关联的步骤、日志、结果和本地产物也会删除。`
+  try {
+    await ElMessageBox.confirm(message, '删除测速运行', {
+      type: 'warning',
+      confirmButtonText: willCancel ? '取消运行并删除' : '删除',
+      confirmButtonClass: 'el-button--danger',
+    })
+    deletingRunId.value = run.id
+    await api.delete(`/runs/${run.id}`)
+    runs.value = runs.value.filter(item => item.id !== run.id)
+    ElMessage.success('测速运行已删除')
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(errorMessage(error))
+  } finally {
+    deletingRunId.value = null
+  }
+}
+
 async function create() {
   if (!canCreate.value) {
     ElMessage.warning('请为场景所需的每种类型选择一个资源')
@@ -195,7 +229,21 @@ onMounted(async () => {
         <el-table-column label="状态" width="145"><template #default="scope"><StatusBadge :status="scope.row.status" show-raw /></template></el-table-column>
         <el-table-column label="进度" width="165"><template #default="scope"><el-progress :percentage="scope.row.progress" :stroke-width="6" /></template></el-table-column>
         <el-table-column label="创建时间" width="190"><template #default="scope"><span class="table-time">{{ formatBeijingDateTime(scope.row.created_at) }}</span></template></el-table-column>
-        <el-table-column label="操作" width="86" fixed="right"><template #default="scope"><el-button link type="primary" @click.stop="router.push(`/runs/${scope.row.id}`)">查看</el-button></template></el-table-column>
+        <el-table-column label="操作" width="124" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" @click.stop="router.push(`/runs/${scope.row.id}`)">查看</el-button>
+            <el-tooltip v-if="auth.canOperate && deletableStatuses.has(scope.row.status)" content="删除运行" placement="top">
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                :loading="deletingRunId === scope.row.id"
+                aria-label="删除运行"
+                @click.stop="removeRun(scope.row)"
+              />
+            </el-tooltip>
+          </template>
+        </el-table-column>
       </el-table>
       <div v-if="!loading && !runs.length" class="empty-state"><div><strong>尚无测速运行</strong><span>选择方案、场景和资源后即可创建第一条运行。</span><br><el-button v-if="auth.canOperate" class="empty-action" type="primary" @click="open">创建运行</el-button></div></div>
     </section>

@@ -1,19 +1,38 @@
 from __future__ import annotations
 
+import shutil
 import typing
 from datetime import timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, operators
 from app.api.routes.common import load_run, not_found, workflow_http_error, workflow_nodes_snapshot
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.logging import trace_id_ctx
+from app.core.logging import logger, trace_id_ctx
 from app.core.time import beijing_now
-from app.models import Artifact, ConfigurationCaptureSnapshot, LogRecord, Resource, RunStep, TestPlan, TestRun, TestScenario, User, Verdict
+from app.models import (
+    Artifact,
+    ConfigurationCaptureItem,
+    ConfigurationCaptureSnapshot,
+    DurableTask,
+    LogRecord,
+    Metric,
+    Resource,
+    ResourceLock,
+    RunResource,
+    RunStatusTransition,
+    RunStep,
+    TestPlan,
+    TestRun,
+    TestScenario,
+    User,
+    Verdict,
+)
 from app.adapters.database import DatabaseOperationError, validate_database
 from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
@@ -31,6 +50,17 @@ from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
 ORDER_ACTION_HISTORY_LIMIT = 100
+DELETABLE_RUN_STATUSES = TERMINAL_RUN_STATUSES | frozenset(
+    {
+        "draft",
+        "awaiting_wiring",
+        "awaiting_review",
+        "awaiting_step_start",
+        "awaiting_step_completion",
+        "awaiting_step_retry",
+        "paused",
+    }
+)
 
 @router.post("/runs", response_model=RunOut, status_code=201)
 def create_run(payload: RunCreate, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
@@ -131,6 +161,133 @@ def list_runs(business_code: typing.Union[str, None] = None, run_status: typing.
 @router.get("/runs/{run_id}", response_model=RunOut)
 def get_run(run_id: int, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TestRun:
     return load_run(db, run_id)
+
+
+async def _cleanup_run_order_sessions(db: Session, run: TestRun) -> typing.List[str]:
+    failures = []
+    for step in run.steps:
+        summary = dict(step.result_summary or {})
+        if step.node_type != "order_preparation" or not summary.get("process_started"):
+            continue
+        if summary.get("session_status") == "closed":
+            continue
+        try:
+            _step, resource = _order_step_resource(db, run, step.id)
+            session = str(summary.get("tmux_session") or order_session_name(run.id, step.id))
+            await cleanup_order_session(resource, session)
+            step.result_summary = {**summary, "session_status": "closed"}
+        except WorkflowError as exc:
+            step.result_summary = {
+                **summary,
+                "session_status": "cleanup_failed",
+                "session_error": exc.message,
+            }
+            failures.append(step.name)
+    return failures
+
+
+def _delete_run_database_records(db: Session, run_id: int) -> None:
+    snapshot_ids = list(
+        db.scalars(
+            select(ConfigurationCaptureSnapshot.id).where(
+                ConfigurationCaptureSnapshot.run_id == run_id
+            )
+        ).all()
+    )
+    if snapshot_ids:
+        db.execute(
+            delete(ConfigurationCaptureItem).where(
+                ConfigurationCaptureItem.snapshot_id.in_(snapshot_ids)
+            )
+        )
+    for model in (
+        ConfigurationCaptureSnapshot,
+        LogRecord,
+        Artifact,
+        Metric,
+        Verdict,
+        ResourceLock,
+        RunResource,
+        RunStatusTransition,
+    ):
+        db.execute(delete(model).where(model.run_id == run_id))
+    db.execute(delete(RunStep).where(RunStep.run_id == run_id))
+
+    task_ids = [
+        task.id
+        for task in db.scalars(select(DurableTask)).all()
+        if str((task.payload or {}).get("run_id")) == str(run_id)
+    ]
+    if task_ids:
+        db.execute(delete(DurableTask).where(DurableTask.id.in_(task_ids)))
+    db.execute(delete(TestRun).where(TestRun.id == run_id))
+
+
+@router.delete("/runs/{run_id}", status_code=204)
+async def delete_run(
+    run_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> Response:
+    run = load_run(db, run_id)
+    if run.status not in DELETABLE_RUN_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RUN_DELETE_NOT_ALLOWED",
+                "message": "运行正在自动执行或排队，请先取消后再删除",
+            },
+        )
+
+    original_status = run.status
+    if run.status not in TERMINAL_RUN_STATUSES:
+        cleanup_failures = await _cleanup_run_order_sessions(db, run)
+        if cleanup_failures:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "RUN_CLEANUP_FAILED",
+                    "message": "远端运行环境清理失败，请处理后重试删除",
+                },
+            )
+        cancel_run(db, run, reason="run_deleted", actor_id=actor.id)
+
+    run_number = run.run_number
+    artifact_root = settings.artifact_root.resolve()
+    artifact_directory = (
+        artifact_root
+        / run.business_code
+        / str(run.plan_id)
+        / str(run.scenario_id)
+        / run.run_number
+    ).resolve()
+    if artifact_root not in artifact_directory.parents:
+        artifact_directory = None
+
+    _delete_run_database_records(db, run.id)
+    write_audit(
+        db,
+        "run.delete",
+        "test_run",
+        run.id,
+        actor,
+        request,
+        detail={"run_number": run_number, "status": original_status},
+    )
+    db.commit()
+
+    if artifact_directory is not None and artifact_directory.is_dir():
+        try:
+            shutil.rmtree(artifact_directory)
+        except OSError:
+            logger.exception(
+                "run_artifact_cleanup_failed",
+                run_id=run_id,
+                artifact_directory=str(artifact_directory),
+            )
+    broker.publish(run_id, {"type": "deleted", "run_id": run_id})
+    return Response(status_code=204)
 
 
 @router.get("/runs/{run_id}/steps/{step_id}/capture-snapshots", response_model=typing.List[CaptureSnapshotOut])
@@ -540,16 +697,7 @@ async def retry_run_step(run_id: int, step_id: int, request: Request, actor: Use
 async def run_cancel(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
     if run.status in TERMINAL_RUN_STATUSES: raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "运行已结束"})
-    for step in run.steps:
-        if step.node_type != "order_preparation" or not (step.result_summary or {}).get("process_started"):
-            continue
-        try:
-            _step, resource = _order_step_resource(db, run, step.id)
-            session = str((step.result_summary or {}).get("tmux_session") or order_session_name(run.id, step.id))
-            await cleanup_order_session(resource, session)
-            step.result_summary = {**(step.result_summary or {}), "session_status": "closed"}
-        except WorkflowError as exc:
-            step.result_summary = {**(step.result_summary or {}), "session_status": "cleanup_failed", "session_error": exc.message}
+    await _cleanup_run_order_sessions(db, run)
     cancel_run(db, run, actor_id=actor.id); write_audit(db, "run.cancel", "test_run", run.id, actor, request); db.commit(); return load_run(db, run.id)
 
 
