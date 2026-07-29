@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 BUNDLE_ROOT="$SCRIPT_DIR"
-ENV_FILE=""
+ENV_FILE="/etc/openslt/openslt.env"
 PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 INSTALL_RPMS=false
 RPMS_ONLY=false
@@ -13,12 +13,19 @@ DATABASE_MODE=""
 DATABASE_MODE_FILE="/etc/openslt/database-mode"
 SKIP_DATABASE_RPMS=false
 
+[[ -f "$BUNDLE_ROOT/deployment-config.sh" ]] || {
+    printf 'Bundle configuration helper is missing.\n' >&2
+    exit 1
+}
+# shellcheck source=deployment-config.sh
+source "$BUNDLE_ROOT/deployment-config.sh"
+
 usage() {
     cat <<'EOF'
-Usage: install.sh --env-file FILE [options]
+Usage: install.sh [options]
 
 Options:
-  --env-file FILE     Completed production environment file (required)
+  --env-file FILE     Production environment path (default: /etc/openslt/openslt.env)
   --python PATH       Python >=3.8 executable
   --database-mode MODE
                       existing (default), provision, or initialize
@@ -103,22 +110,12 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'OpenSLT offline bundle requires RHEL 7.9.\n' >&2
     exit 1
 }
-environment_has_placeholder() {
-    awk '
-        /^[[:space:]]*#/ { next }
-        /CHANGE_ME/ { found = 1 }
-        END { exit(found ? 0 : 1) }
-    ' "$1"
-}
 if [[ "$RPMS_ONLY" == false ]]; then
-    [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] || {
-        printf -- '--env-file must point to a completed production environment file.\n' >&2
+    [[ -f "$ENV_FILE" ]] || {
+        printf 'Production environment not found: %s\n' "$ENV_FILE" >&2
         exit 1
     }
-    if environment_has_placeholder "$ENV_FILE"; then
-        printf 'The environment file still contains CHANGE_ME placeholders.\n' >&2
-        exit 1
-    fi
+    validate_deployment_environment "$ENV_FILE"
 fi
 [[ -f "$BUNDLE_ROOT/SHA256SUMS" ]] || {
     printf 'SHA256SUMS is missing from the bundle.\n' >&2
@@ -190,17 +187,14 @@ command -v curl >/dev/null 2>&1 || {
 getent group openslt >/dev/null 2>&1 || groupadd --system openslt
 id openslt >/dev/null 2>&1 || useradd --system --gid openslt --home-dir /var/lib/openslt --shell /sbin/nologin openslt
 install -d -o openslt -g openslt -m 0750 /var/lib/openslt /var/lib/openslt/artifacts /var/log/openslt
+install -d -o openslt -g openslt -m 0700 /var/lib/openslt/secrets
 install -d -o root -g openslt -m 0750 /etc/openslt
 install -d -o root -g root -m 0755 /opt/openslt
+install_canonical_environment "$ENV_FILE"
+ENV_FILE="$CANONICAL_ENV_FILE"
 
 printf '[OpenSLT] Installing application files...\n'
 cp -a "$BUNDLE_ROOT/app/." /opt/openslt/
-if [[ "$(readlink -f -- "$ENV_FILE")" == "/etc/openslt/openslt.env" ]]; then
-    chown root:openslt /etc/openslt/openslt.env
-    chmod 0640 /etc/openslt/openslt.env
-else
-    install -o root -g openslt -m 0640 "$ENV_FILE" /etc/openslt/openslt.env
-fi
 
 rm -rf -- /opt/openslt/.venv
 "$PYTHON" -m venv /opt/openslt/.venv
@@ -218,8 +212,7 @@ APP_WHEEL="$(find "$BUNDLE_ROOT/wheelhouse" -maxdepth 1 -type f -name 'openslt-*
 chown -R root:root /opt/openslt
 chown -R openslt:openslt /var/lib/openslt /var/log/openslt
 
-install -o root -g root -m 0644 /opt/openslt/deploy/systemd/openslt-api.service /etc/systemd/system/openslt-api.service
-install -o root -g root -m 0644 /opt/openslt/deploy/nginx/openslt.conf /etc/nginx/conf.d/openslt.conf
+render_runtime_configuration /opt/openslt
 
 if command -v semanage >/dev/null 2>&1; then
     semanage fcontext -a -t httpd_sys_content_t '/opt/openslt/frontend/dist(/.*)?' 2>/dev/null \
@@ -233,23 +226,54 @@ fi
 printf '[OpenSLT] Applying database migrations...\n'
 (
     cd /opt/openslt
-    /opt/openslt/.venv/bin/python - /etc/openslt/openslt.env "$DATABASE_MODE" <<'PY'
+    /opt/openslt/.venv/bin/python - /etc/openslt/openslt.env <<'PY'
 import os
 import sys
 
 from dotenv import dotenv_values
 
-values = dotenv_values(sys.argv[1])
+values = dotenv_values(sys.argv[1], interpolate=False)
 missing = [key for key, value in values.items() if value is None]
 if missing:
     raise SystemExit("Invalid environment entries: " + ", ".join(missing))
 environment = os.environ.copy()
+for key in (
+    "DATABASE_URL",
+    "DATABASE_HOST",
+    "DATABASE_PORT",
+    "DATABASE_NAME",
+    "DATABASE_USER",
+    "DATABASE_PASSWORD",
+    "AUTO_CREATE_DATABASE",
+    "JWT_SECRET",
+    "CREDENTIAL_ENCRYPTION_KEY",
+    "BACKEND_PORT",
+    "FRONTEND_PORT",
+    "INITIAL_ADMIN_USERNAME",
+    "INITIAL_ADMIN_PASSWORD",
+):
+    environment.pop(key, None)
 environment.update(values)
-environment["AUTO_CREATE_DATABASE"] = "false" if sys.argv[2] == "existing" else "true"
+environment.update(
+    {
+        "ENVIRONMENT": "production",
+        "TZ": "Asia/Shanghai",
+        "ARTIFACT_ROOT": "/var/lib/openslt/artifacts",
+        "LOG_DIR": "/var/log/openslt",
+        "LOG_LEVEL": "INFO",
+        "APP_LOG_RETENTION_DAYS": "90",
+        "AUDIT_LOG_RETENTION_DAYS": "365",
+        "ENABLE_INTERNAL_SCHEDULER": "true",
+    }
+)
 alembic = "/opt/openslt/.venv/bin/alembic"
 os.execve(alembic, [alembic, "upgrade", "head"], environment)
 PY
 )
+
+chown -R openslt:openslt /var/lib/openslt /var/log/openslt
+chmod 0700 /var/lib/openslt/secrets
+find /var/lib/openslt/secrets -maxdepth 1 -type f -exec chmod 0600 {} \;
 
 systemctl daemon-reload
 nginx -t
@@ -260,7 +284,10 @@ if [[ "$START_SERVICES" == true ]]; then
     systemctl restart nginx
     printf '[OpenSLT] Waiting for the health endpoint...\n'
     for _ in {1..60}; do
-        if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:4396/health >/dev/null; then
+        if curl --fail --silent --show-error --max-time 2 \
+            "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null \
+            && curl --fail --silent --show-error --max-time 2 \
+                "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null; then
             printf '[OpenSLT] OpenSLT is healthy.\n'
             exit 0
         fi

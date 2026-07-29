@@ -10,6 +10,13 @@ FORCE_INSTALL=false
 DATABASE_MODE=""
 DATABASE_MODE_FILE="/etc/openslt/database-mode"
 
+[[ -f "$BUNDLE_ROOT/deployment-config.sh" ]] || {
+    printf 'Bundle configuration helper is missing.\n' >&2
+    exit 1
+}
+# shellcheck source=deployment-config.sh
+source "$BUNDLE_ROOT/deployment-config.sh"
+
 usage() {
     cat <<'EOF'
 Usage: start.sh [options]
@@ -18,7 +25,7 @@ Install or upgrade the current offline bundle, migrate the database, and
 start the production services. Re-running the same version only restarts them.
 
 Options:
-  --env-file FILE   Production environment path
+  --env-file FILE   Production environment path (default: /etc/openslt/openslt.env)
   --python PATH     Preinstalled Python >=3.8 executable
   --database-mode MODE
                     existing (default), provision, or initialize
@@ -79,6 +86,9 @@ esac
     printf 'Production environment not found. Run ./configure.sh first.\n' >&2
     exit 1
 }
+validate_deployment_environment "$ENV_FILE"
+install_canonical_environment "$ENV_FILE"
+ENV_FILE="$CANONICAL_ENV_FILE"
 [[ -f "$BUNDLE_ROOT/VERSION" ]] || {
     printf 'Bundle VERSION file is missing.\n' >&2
     exit 1
@@ -114,20 +124,47 @@ if [[ "$FORCE_INSTALL" == true || "$INSTALLED_VERSION" != "$BUNDLE_VERSION" \
 else
     printf '[OpenSLT] Bundle version %s is already installed.\n' "$BUNDLE_VERSION"
     printf '[OpenSLT] Applying any pending database migrations...\n'
-    /opt/openslt/.venv/bin/python - "$ENV_FILE" "$DATABASE_MODE" <<'PY'
+    /opt/openslt/.venv/bin/python - "$ENV_FILE" <<'PY'
 import os
 import subprocess
 import sys
 
 from dotenv import dotenv_values
 
-values = dotenv_values(sys.argv[1])
+values = dotenv_values(sys.argv[1], interpolate=False)
 missing = [key for key, value in values.items() if value is None]
 if missing:
     raise SystemExit("Invalid environment entries: " + ", ".join(missing))
 environment = os.environ.copy()
+for key in (
+    "DATABASE_URL",
+    "DATABASE_HOST",
+    "DATABASE_PORT",
+    "DATABASE_NAME",
+    "DATABASE_USER",
+    "DATABASE_PASSWORD",
+    "AUTO_CREATE_DATABASE",
+    "JWT_SECRET",
+    "CREDENTIAL_ENCRYPTION_KEY",
+    "BACKEND_PORT",
+    "FRONTEND_PORT",
+    "INITIAL_ADMIN_USERNAME",
+    "INITIAL_ADMIN_PASSWORD",
+):
+    environment.pop(key, None)
 environment.update(values)
-environment["AUTO_CREATE_DATABASE"] = "false" if sys.argv[2] == "existing" else "true"
+environment.update(
+    {
+        "ENVIRONMENT": "production",
+        "TZ": "Asia/Shanghai",
+        "ARTIFACT_ROOT": "/var/lib/openslt/artifacts",
+        "LOG_DIR": "/var/log/openslt",
+        "LOG_LEVEL": "INFO",
+        "APP_LOG_RETENTION_DAYS": "90",
+        "AUDIT_LOG_RETENTION_DAYS": "365",
+        "ENABLE_INTERNAL_SCHEDULER": "true",
+    }
+)
 subprocess.run(
     ["/opt/openslt/.venv/bin/alembic", "upgrade", "head"],
     cwd="/opt/openslt",
@@ -137,22 +174,28 @@ subprocess.run(
 PY
 fi
 
+install -d -o openslt -g openslt -m 0700 /var/lib/openslt/secrets
+chown -R openslt:openslt /var/lib/openslt /var/log/openslt
+find /var/lib/openslt/secrets -maxdepth 1 -type f -exec chmod 0600 {} \;
+render_runtime_configuration /opt/openslt
+
 systemctl daemon-reload
+nginx -t
 systemctl enable openslt-api nginx
 systemctl restart openslt-api
 systemctl restart nginx
 
 printf '[OpenSLT] Waiting for production services...\n'
 for _ in {1..60}; do
-    if curl --fail --silent --max-time 2 http://127.0.0.1:4396/health >/dev/null \
-        && curl --fail --silent --max-time 2 http://127.0.0.1:7777/ >/dev/null; then
+    if curl --fail --silent --max-time 2 \
+        "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null \
+        && curl --fail --silent --max-time 2 \
+            "http://127.0.0.1:$FRONTEND_PORT/" >/dev/null; then
         install -d -o openslt -g openslt -m 0750 /var/lib/openslt
         install -o root -g root -m 0644 "$BUNDLE_ROOT/VERSION" "$INSTALLED_VERSION_FILE"
         LAN_ADDRESS="$(hostname -I 2>/dev/null | awk '{print $1}')"
-        printf '[OpenSLT] Production service is ready: http://%s:7777/\n' "${LAN_ADDRESS:-127.0.0.1}"
-        if [[ -f /etc/openslt/initial-admin-password ]]; then
-            printf '[OpenSLT] Initial password file: /etc/openslt/initial-admin-password\n'
-        fi
+        printf '[OpenSLT] Production service is ready: http://%s:%s/\n' \
+            "${LAN_ADDRESS:-127.0.0.1}" "$FRONTEND_PORT"
         exit 0
     fi
     sleep 1

@@ -18,6 +18,13 @@ MYSQL_DEFAULTS_FILE_SET=false
 DATABASE_NAME_SET=false
 DATABASE_USER_SET=false
 
+[[ -f "$BUNDLE_ROOT/deployment-config.sh" ]] || {
+    printf 'Bundle configuration helper is missing.\n' >&2
+    exit 1
+}
+# shellcheck source=deployment-config.sh
+source "$BUNDLE_ROOT/deployment-config.sh"
+
 usage() {
     cat <<'EOF'
 Usage: configure.sh [options]
@@ -30,11 +37,11 @@ Options:
   --mysql-defaults-file FILE  Existing MySQL client option file for root/admin
   --database-name NAME        Application database (default: openslt)
   --database-user NAME        Application user (default: openslt)
-  --env-file FILE             Production environment path
+  --env-file FILE             Production environment path (default: /etc/openslt/openslt.env)
   --no-firewall               Do not add firewalld's HTTP service
   -h, --help                  Show this help
 
-If /etc/openslt/openslt.env already exists, its passwords and keys are kept.
+If /etc/openslt/openslt.env already exists, its database credentials are kept.
 EOF
 }
 
@@ -109,13 +116,6 @@ if [[ -n "$MYSQL_DEFAULTS_FILE" && ! -f "$MYSQL_DEFAULTS_FILE" ]]; then
     printf 'MySQL defaults file not found: %s\n' "$MYSQL_DEFAULTS_FILE" >&2
     exit 1
 fi
-environment_has_placeholder() {
-    awk '
-        /^[[:space:]]*#/ { next }
-        /CHANGE_ME/ { found = 1 }
-        END { exit(found ? 0 : 1) }
-    ' "$1"
-}
 if [[ "$DATABASE_MODE" == "existing" ]]; then
     if [[ "$MYSQL_DEFAULTS_FILE_SET" == true \
         || "$DATABASE_NAME_SET" == true \
@@ -123,21 +123,22 @@ if [[ "$DATABASE_MODE" == "existing" ]]; then
         printf 'Database administration options cannot be used in existing mode.\n' >&2
         exit 2
     fi
-    [[ -f "$ENV_FILE" ]] || {
-        printf 'Existing mode requires a completed environment file: %s\n' "$ENV_FILE" >&2
-        exit 1
-    }
-    if environment_has_placeholder "$ENV_FILE"; then
-        printf 'The existing environment file still contains CHANGE_ME placeholders: %s\n' \
+    if [[ ! -f "$ENV_FILE" ]]; then
+        getent group openslt >/dev/null 2>&1 || groupadd --system openslt
+        if [[ "$(dirname -- "$ENV_FILE")" == "/etc/openslt" ]]; then
+            install -d -o root -g openslt -m 0750 /etc/openslt
+        else
+            [[ -d "$(dirname -- "$ENV_FILE")" ]] || {
+                printf 'Environment directory does not exist: %s\n' "$(dirname -- "$ENV_FILE")" >&2
+                exit 1
+            }
+        fi
+        install -o root -g openslt -m 0640 "$BUNDLE_ROOT/openslt.env.example" "$ENV_FILE"
+        printf 'Environment template created at %s. Fill DATABASE_PASSWORD and rerun configure.sh.\n' \
             "$ENV_FILE" >&2
         exit 1
     fi
-    for required_key in DATABASE_URL JWT_SECRET CREDENTIAL_ENCRYPTION_KEY INITIAL_ADMIN_PASSWORD; do
-        grep -Eq "^[[:space:]]*${required_key}=.+" "$ENV_FILE" || {
-            printf 'Required environment entry is missing: %s\n' "$required_key" >&2
-            exit 1
-        }
-    done
+    validate_deployment_environment "$ENV_FILE"
 fi
 
 install_system_rpms() {
@@ -230,7 +231,15 @@ if version < (5, 5, 68):
 print("[OpenSLT] MariaDB server accepted: " + raw)
 PY
 
-    install -d -o root -g root -m 0700 "$(dirname -- "$ENV_FILE")"
+    getent group openslt >/dev/null 2>&1 || groupadd --system openslt
+    if [[ "$(dirname -- "$ENV_FILE")" == "/etc/openslt" ]]; then
+        install -d -o root -g openslt -m 0750 /etc/openslt
+    else
+        [[ -d "$(dirname -- "$ENV_FILE")" ]] || {
+            printf 'Environment directory does not exist: %s\n' "$(dirname -- "$ENV_FILE")" >&2
+            exit 1
+        }
+    fi
 
     if [[ "$DATABASE_MODE" == "initialize" ]]; then
         ROOT_PASSWORD=""
@@ -270,21 +279,12 @@ EOF
     if [[ -f "$ENV_FILE" ]]; then
         printf '[OpenSLT] Existing environment preserved: %s\n' "$ENV_FILE"
     else
-        mapfile -t GENERATED < <("$PYTHON" - <<'PY'
-import base64
-import os
+        DATABASE_PASSWORD="$("$PYTHON" - <<'PY'
 import secrets
 
 print(secrets.token_urlsafe(36))
-print(secrets.token_urlsafe(64))
-print(base64.urlsafe_b64encode(os.urandom(32)).decode())
-print(secrets.token_urlsafe(24))
 PY
-        )
-        DATABASE_PASSWORD="${GENERATED[0]}"
-        JWT_SECRET="${GENERATED[1]}"
-        CREDENTIAL_KEY="${GENERATED[2]}"
-        INITIAL_ADMIN_PASSWORD="${GENERATED[3]}"
+        )"
 
         "${MYSQL[@]}" -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS \`$DATABASE_NAME\`
@@ -294,32 +294,25 @@ GRANT ALL PRIVILEGES ON \`$DATABASE_NAME\`.*
 FLUSH PRIVILEGES;
 SQL
 
-        install -o root -g root -m 0600 /dev/stdin "$ENV_FILE" <<EOF
-ENVIRONMENT=production
-TZ=Asia/Shanghai
-DATABASE_URL="mysql+pymysql://$DATABASE_USER:$DATABASE_PASSWORD@127.0.0.1:3306/$DATABASE_NAME?charset=utf8mb4"
-AUTO_CREATE_DATABASE=true
-JWT_SECRET="$JWT_SECRET"
-CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_KEY"
-ARTIFACT_ROOT=/var/lib/openslt/artifacts
-LOG_DIR=/var/log/openslt
-LOG_LEVEL=INFO
-APP_LOG_RETENTION_DAYS=90
-AUDIT_LOG_RETENTION_DAYS=365
-PORTABLE_MODE=false
-ENABLE_INTERNAL_SCHEDULER=true
-HOST=127.0.0.1
-PORT=4396
-OPEN_BROWSER=false
+        install -o root -g openslt -m 0640 /dev/stdin "$ENV_FILE" <<EOF
+DATABASE_HOST=127.0.0.1
+DATABASE_PORT=3306
+DATABASE_NAME=$DATABASE_NAME
+DATABASE_USER=$DATABASE_USER
+DATABASE_PASSWORD=$DATABASE_PASSWORD
+
+BACKEND_PORT=4396
+FRONTEND_PORT=7777
+
 INITIAL_ADMIN_USERNAME=admin
-INITIAL_ADMIN_PASSWORD="$INITIAL_ADMIN_PASSWORD"
+INITIAL_ADMIN_PASSWORD=shengli123
 EOF
-        install -o root -g root -m 0600 /dev/stdin /etc/openslt/initial-admin-password <<EOF
-$INITIAL_ADMIN_PASSWORD
-EOF
-        printf '[OpenSLT] Initial admin password saved to /etc/openslt/initial-admin-password\n'
     fi
 fi
+
+validate_deployment_environment "$ENV_FILE"
+install_canonical_environment "$ENV_FILE"
+ENV_FILE="$CANONICAL_ENV_FILE"
 
 install -d -o root -g root -m 0755 "$(dirname -- "$DATABASE_MODE_FILE")"
 printf '%s\n' "$DATABASE_MODE" \
@@ -328,7 +321,7 @@ printf '%s\n' "$DATABASE_MODE" \
 if [[ "$OPEN_FIREWALL" == true ]] \
     && command -v firewall-cmd >/dev/null 2>&1 \
     && systemctl is-active --quiet firewalld; then
-    firewall-cmd --permanent --add-port=7777/tcp
+    firewall-cmd --permanent --add-port="$FRONTEND_PORT/tcp"
     firewall-cmd --reload
 fi
 

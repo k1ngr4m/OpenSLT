@@ -8,6 +8,10 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.core.config import _load_or_create_credential_encryption_key, _load_or_create_jwt_secret
+from app.core.database import SessionLocal
+from app.core.security import hash_password, verify_password
+from app.main import seed_database
+from app.models import User
 from conftest import create_resource
 
 
@@ -32,6 +36,26 @@ def test_errors_include_trace_id(client: TestClient):
     assert response.status_code == 401
     assert response.json()["trace_id"]
     assert response.headers["x-trace-id"] == response.json()["trace_id"]
+
+
+def test_database_seed_does_not_reset_existing_admin_password(client: TestClient) -> None:
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.username == "admin").one()
+        admin.password_hash = hash_password("changed-password")
+        db.commit()
+    finally:
+        db.close()
+
+    seed_database()
+
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.username == "admin").one()
+        assert verify_password("changed-password", admin.password_hash)
+        assert not verify_password("shengli123", admin.password_hash)
+    finally:
+        db.close()
 
 
 def test_api_timestamps_are_serialized_in_beijing_time(

@@ -53,17 +53,17 @@ sha256sum -c openslt-offline-rhel7-x86_64-0.1.0.tar.gz.sha256
 tar -xzf openslt-offline-rhel7-x86_64-0.1.0.tar.gz
 cd openslt-offline-rhel7-x86_64-0.1.0
 chmod +x configure.sh start.sh
-install -d -o root -g root -m 0700 /etc/openslt
-install -o root -g root -m 0600 openslt.env.example /etc/openslt/openslt.env
-# 编辑 /etc/openslt/openslt.env，替换全部 CHANGE_ME 并填写现有数据库连接
+# 首次运行会创建 /etc/openslt/openslt.env，然后提示填写数据库密码
+./configure.sh
+vi /etc/openslt/openslt.env
 ./configure.sh
 ./start.sh
 ```
 
 默认 `existing` 模式不会安装 MariaDB RPM、修改数据库配置、启停数据库服务、使用
-root 登录或创建数据库账号。`start.sh` 仍会使用 env 中的应用账号执行 Alembic，只
-创建或升级 OpenSLT 自有表。重复启动同一版本时不会重建虚拟环境，使用新版本压缩包
-时会自动升级。
+root 登录或创建数据库账号。`start.sh` 会使用 env 中的应用账号执行 Alembic；目标
+数据库不存在且账号具有 `CREATE` 权限时会自动创建，然后创建或升级 OpenSLT 自有
+表。重复启动同一版本时不会重建虚拟环境，使用新版本压缩包时会自动升级。
 
 数据库模式如下：
 
@@ -210,34 +210,42 @@ GRANT ALL PRIVILEGES ON openslt.* TO 'openslt'@'127.0.0.1';
 FLUSH PRIVILEGES;
 ```
 
-MariaDB 只需监听本机或受控管理网地址。虽然服务端是 MariaDB，`DATABASE_URL`
-仍使用 `mysql+pymysql://`。数据库密码写入 URL 前必须进行百分号编码，
-避免 `@`、`:`、`/`、`#` 等字符破坏 `DATABASE_URL`。
+MariaDB 只需监听本机或受控管理网地址。生产 env 使用独立的数据库主机、端口、库名、
+用户名和密码字段，应用通过 SQLAlchemy 安全组装 `mysql+pymysql://` URL。密码包含
+`@`、`:`、`/`、`#` 等字符时不需要手工百分号编码，但应使用引号包裹整个值。
 
 ## 5. 生成生产配置
 
-`existing` 模式要求在运行 `configure.sh` 前准备好 env。复制
-`openslt.env.example`，替换所有 `CHANGE_ME`；`AUTO_CREATE_DATABASE=false` 必须
-保留，以保证数据库不存在时直接失败。值必须符合 Bash 赋值语法；包含空格或 shell
-特殊字符时使用双引号。
+`existing` 模式首次执行 `configure.sh` 时，会将 `openslt.env.example` 安装为
+`/etc/openslt/openslt.env`，权限为 `root:openslt 0640`，然后停止并提示填写。配置内容
+如下：
 
-生成 JWT 和凭据加密密钥：
+```dotenv
+DATABASE_HOST=127.0.0.1
+DATABASE_PORT=3306
+DATABASE_NAME=openslt
+DATABASE_USER=openslt
+DATABASE_PASSWORD=CHANGE_ME
 
-```bash
-/opt/rh/rh-python38/root/usr/bin/python3.8 -c \
-  'import secrets; print(secrets.token_urlsafe(64))'
+BACKEND_PORT=4396
+FRONTEND_PORT=7777
 
-/opt/rh/rh-python38/root/usr/bin/python3.8 -c \
-  'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=shengli123
 ```
 
-生产配置至少应满足：
+替换数据库密码后重新运行 `configure.sh`。前后端端口必须在 `1024..65535` 之间且不能
+相同。`AUTO_CREATE_DATABASE` 不需要写入，默认值为 `true`；旧配置显式设置为
+`false` 时仍会禁止自动建库。旧 `DATABASE_URL` 继续兼容，但不能和任何分字段数据库
+配置同时存在。
 
-- `JWT_SECRET`、`CREDENTIAL_ENCRYPTION_KEY` 和初始管理员密码各自独立随机生成。
-- `DATABASE_URL` 使用 OpenSLT 专用数据库账号。
+- 数据库账号必须是 OpenSLT 专用账号；自动建库时需要 `CREATE` 权限。
+- JWT 和 Fernet 凭据加密密钥首次运行时自动生成到 `/var/lib/openslt/secrets`，不会
+  出现在 env 中。
+- 新数据库的默认登录账号为 `admin / shengli123`，首次登录后立即修改密码。
 - 配置文件不进入 Git、邮件或普通聊天记录。
-- 将配置文件和凭据加密密钥纳入加密备份；丢失加密密钥后，已保存的 SSH/MySQL
-  凭据无法恢复。
+- 将 env 和 `/var/lib/openslt/secrets` 纳入加密备份；丢失凭据加密密钥后，已保存的
+  SSH/MySQL 凭据无法恢复。
 
 ## 6. 内网安装
 
@@ -246,7 +254,7 @@ MariaDB 只需监听本机或受控管理网地址。虽然服务端是 MariaDB�
 ```bash
 chmod +x install.sh
 ./install.sh \
-  --env-file /root/openslt-production.env \
+  --env-file /etc/openslt/openslt.env \
   --database-mode existing
 ```
 
@@ -258,6 +266,7 @@ chmod +x install.sh
 /opt/openslt
 /etc/openslt/openslt.env
 /var/lib/openslt/artifacts
+/var/lib/openslt/secrets
 /var/log/openslt
 ```
 
@@ -265,7 +274,8 @@ chmod +x install.sh
 `mariadb-libs`，也不会启动本地 MariaDB。如果希望先检查迁移结果而不启动服务，
 增加 `--no-start`。
 
-安装完成后通过 `http://内网服务器地址:7777/` 访问，立即修改初始管理员密码。
+安装完成后通过配置的 `FRONTEND_PORT` 访问，默认地址为
+`http://内网服务器地址:7777/`。使用 `admin / shengli123` 首次登录并立即修改密码。
 
 ## 7. 网络和远端资源
 
@@ -273,7 +283,7 @@ chmod +x install.sh
 
 | 来源 | 目标 | 端口 | 用途 |
 | --- | --- | --- | --- |
-| 内网用户 | OpenSLT/Nginx | TCP 7777 | Web 和 WebSocket |
+| 内网用户 | OpenSLT/Nginx | TCP `FRONTEND_PORT`（默认 7777） | Web 和 WebSocket |
 | OpenSLT | REM、市场、发单、SLNIC、Coco、解析机 | TCP 22 | SSH/SFTP |
 | OpenSLT | 业务数据库 | TCP 3306 或跳板机 22 | 数据采集与数据库操作 |
 
@@ -293,6 +303,7 @@ Nginx 改为监听 443。
 按顺序完成：
 
 ```bash
+# 默认 BACKEND_PORT=4396；修改端口时同步替换这里的值
 curl -fsS http://127.0.0.1:4396/health
 systemctl status openslt-api nginx
 journalctl -u openslt-api -n 100 --no-pager
@@ -313,8 +324,9 @@ WHERE TABLE_SCHEMA = 'openslt'
   AND UPPER(COALESCE(ENGINE, '')) <> 'INNODB';
 ```
 
-每天使用 `mysqldump` 备份 MariaDB，同时备份 `/var/lib/openslt/artifacts` 和
-`/etc/openslt/openslt.env`。备份应放到另一存储设备并定期执行恢复演练。
+每天使用 `mysqldump` 备份 MariaDB，同时备份 `/var/lib/openslt/artifacts`、
+`/var/lib/openslt/secrets` 和 `/etc/openslt/openslt.env`。备份应放到另一存储设备并
+定期执行恢复演练。
 
 WeasyPrint 在 RHEL 7 上可能因系统 Pango 版本较旧而退回简化 PDF。若正式中文
 PDF 是验收项，需要在外网同环境机器上单独验证 Pango/Cairo/中文字体组合。

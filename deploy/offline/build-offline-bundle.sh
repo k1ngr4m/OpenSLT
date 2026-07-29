@@ -203,6 +203,7 @@ fi
 cp -p "$SCRIPT_DIR/install-offline.sh" "$STAGING/install.sh"
 cp -p "$SCRIPT_DIR/configure-intranet-host.sh" "$STAGING/configure.sh"
 cp -p "$SCRIPT_DIR/start-production.sh" "$STAGING/start.sh"
+cp -p "$SCRIPT_DIR/deployment-config.sh" "$STAGING/deployment-config.sh"
 cp -p "$SCRIPT_DIR/openslt.env.example" "$STAGING/openslt.env.example"
 cp -p "$SCRIPT_DIR/README-OFFLINE.md" "$STAGING/README-OFFLINE.md"
 chmod 0755 "$STAGING/install.sh" "$STAGING/configure.sh" "$STAGING/start.sh"

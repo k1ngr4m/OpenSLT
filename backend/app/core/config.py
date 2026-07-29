@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import os
+import secrets
 import typing
 from functools import lru_cache
 from pathlib import Path
-import os
-import secrets
 
 from cryptography.fernet import Fernet
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
@@ -17,7 +18,12 @@ class Settings(BaseSettings):
     app_name: str = "OpenSLT"
     environment: str = "development"
     api_v1_prefix: str = "/api/v1"
-    database_url: str = "sqlite:///./backend/data/openslt.sqlite3"
+    database_url: str = ""
+    database_host: typing.Union[str, None] = None
+    database_port: int = Field(default=3306, ge=1, le=65535)
+    database_name: typing.Union[str, None] = None
+    database_user: typing.Union[str, None] = None
+    database_password: typing.Union[str, None] = None
     auto_create_database: bool = True
     jwt_secret: typing.Union[str, None] = None
     jwt_algorithm: str = "HS256"
@@ -33,11 +39,47 @@ class Settings(BaseSettings):
     task_lease_seconds: int = Field(default=60, ge=10, le=3600)
     task_heartbeat_seconds: int = Field(default=20, ge=3, le=1200)
     frontend_dist: typing.Union[Path, None] = None
+    backend_port: int = Field(default=4396, ge=1024, le=65535)
+    frontend_port: int = Field(default=7777, ge=1024, le=65535)
     initial_admin_username: str = "admin"
     initial_admin_password: str = "shengli123"
 
     @model_validator(mode="after")
     def ensure_directories(self) -> "Settings":
+        split_database_values = {
+            "DATABASE_HOST": self.database_host,
+            "DATABASE_NAME": self.database_name,
+            "DATABASE_USER": self.database_user,
+            "DATABASE_PASSWORD": self.database_password,
+        }
+        has_split_database = any(value is not None for value in split_database_values.values())
+        if self.database_url.strip() and has_split_database:
+            raise ValueError(
+                "DATABASE_URL cannot be combined with DATABASE_HOST/NAME/USER/PASSWORD"
+            )
+        if has_split_database:
+            missing = [
+                key
+                for key, value in split_database_values.items()
+                if value is None or not str(value).strip()
+            ]
+            if missing:
+                raise ValueError(
+                    "Incomplete split database configuration: " + ", ".join(missing)
+                )
+            self.database_url = URL.create(
+                drivername="mysql+pymysql",
+                username=self.database_user,
+                password=self.database_password,
+                host=self.database_host,
+                port=self.database_port,
+                database=self.database_name,
+                query={"charset": "utf8mb4"},
+            ).render_as_string(hide_password=False)
+        elif not self.database_url.strip():
+            self.database_url = "sqlite:///./backend/data/openslt.sqlite3"
+        if self.backend_port == self.frontend_port:
+            raise ValueError("BACKEND_PORT and FRONTEND_PORT must be different")
         if self.frontend_dist is None:
             candidate = Path(__file__).resolve().parents[3] / "frontend" / "dist"
             self.frontend_dist = candidate if candidate.is_dir() else None
