@@ -481,6 +481,30 @@
         "title": "DatabaseConfig",
         "type": "object"
       },
+      "DatabaseConfigItemOut": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "DatabaseConfigItemOut",
+        "type": "object"
+      },
       "DatabaseConfigNodeOut": {
         "additionalProperties": false,
         "properties": {
@@ -553,6 +577,84 @@
           "node_type"
         ],
         "title": "DatabaseConfigNodeWrite",
+        "type": "object"
+      },
+      "DatabaseConfigTemplateCreate": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Keys",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "keys"
+        ],
+        "title": "DatabaseConfigTemplateCreate",
+        "type": "object"
+      },
+      "DatabaseConfigTemplateOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "keys",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DatabaseConfigTemplateOut",
+        "type": "object"
+      },
+      "DatabaseConfigTemplateRename": {
+        "properties": {
+          "new_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "New Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "title": "DatabaseConfigTemplateRename",
         "type": "object"
       },
       "DatabaseDiscoveryOut": {
@@ -4685,6 +4787,163 @@
         "summary": "List Business Types"
       }
     },
+    "/api/v1/database-config-templates": {
+      "get": {
+        "operationId": "list_database_config_templates_api_v1_database_config_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseConfigTemplateOut"
+                  },
+                  "title": "Response List Database Config Templates Api V1 Database Config Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Database Config Templates"
+      },
+      "post": {
+        "operationId": "create_database_config_template_api_v1_database_config_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseConfigTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseConfigTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Database Config Template"
+      }
+    },
+    "/api/v1/database-config-templates/{template_id}": {
+      "delete": {
+        "operationId": "delete_database_config_template_api_v1_database_config_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Database Config Template"
+      },
+      "patch": {
+        "operationId": "rename_database_config_template_api_v1_database_config_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseConfigTemplateRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseConfigTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Database Config Template"
+      }
+    },
     "/api/v1/logs": {
       "get": {
         "operationId": "query_logs_api_v1_logs_get",
@@ -5303,6 +5562,63 @@
           }
         ],
         "summary": "Update Resource"
+      }
+    },
+    "/api/v1/resources/{resource_id}/database/config-items": {
+      "get": {
+        "operationId": "database_config_items_api_v1_resources__resource_id__database_config_items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "database_name",
+            "required": true,
+            "schema": {
+              "title": "Database Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseConfigItemOut"
+                  },
+                  "title": "Response Database Config Items Api V1 Resources  Resource Id  Database Config Items Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Database Config Items"
       }
     },
     "/api/v1/resources/{resource_id}/database/export": {

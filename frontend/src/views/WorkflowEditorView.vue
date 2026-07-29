@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Bottom, Check, Connection, Delete, Document, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, Bottom, Check, Connection, Delete, Document, Edit, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -11,6 +11,13 @@ import { resourceText } from '@/utils/status'
 import { buildWiringSnapshot } from '@/utils/wiring'
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
+import {
+  applyDatabaseConfigTemplate,
+  filterDatabaseConfigItems,
+  staleDatabaseConfigKeys,
+  type DatabaseConfigItem,
+  type DatabaseConfigTemplate,
+} from '@/utils/databaseConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,6 +50,14 @@ const fetchingContracts = ref(false)
 const scanningContracts = ref(false)
 let contractFilesRequestId = 0
 const globalKeySearch = ref('')
+const databaseConfigItems = ref<DatabaseConfigItem[]>([])
+const databaseConfigCatalogLoading = ref(false)
+const databaseConfigCatalogLoaded = ref(false)
+const databaseConfigCatalogError = ref('')
+const databaseConfigTemplates = ref<DatabaseConfigTemplate[]>([])
+const databaseConfigTemplatesLoading = ref(false)
+const selectedDatabaseConfigTemplateId = ref<number | null>(null)
+let databaseConfigCatalogRequestId = 0
 const resourceTypes = Object.keys(resourceText)
 const slnicNodeTypes = new Set(['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'])
 const nodeCategories = [
@@ -53,14 +68,6 @@ const nodeCategories = [
   { title: '数据处理', types: ['parser_parse', 'data_statistics'] },
 ]
 
-const GLOBAL_KEYS = [
-  'CLIENT_REQ_BIND_CPU', 'MARKET_RESP_BIND_CPU', 'RINGBUFFER_RSP_BIND_CPU', 'TCP_SERVER_BIND_CPU',
-  'CLIENT_REQ_ENABLE', 'CLIENT_REQ_USING_DEV', 'MARKET_RESP_ENABLE', 'MARKET_RESQ_DEV',
-  'REM_TO_MKT_MESSAGE_DROPCOPY_ENABLE', 'CLIENT_TO_REM_MESSAGE_DROPCOPY_ENABLE',
-  'MARKET_SESSION_IDLE_REPROT_LOG', 'ACCOUNT_QUANTITY', 'WARM_ORDER_REPORT_USEC', 'ENABLE_PERF_COUNTER',
-  'ENABLE_RINGBUFFER_RSP', 'ENABLE_RINGBUFFER_REQ', 'ASYNC_MKT_MSG_PROC', 'USER_TOKEN_CANCEL_ENABLE',
-  'CLIENT_OT_CONNECT_MODE', 'EXANIC_IP_FILTER_FLAG', 'ENABLE_REPORT_TIMESTAMP', 'X25_KEY_VALUE',
-]
 const SERVER_FIELD_OPTIONS: Record<string, { value: string; label: string }[]> = {
   rem: [
     { value: 'ip', label: 'IP 地址' }, { value: 'nic_model', label: '网卡型号' },
@@ -75,13 +82,21 @@ const scenario = computed(() => documentData.value?.scenario)
 const draft = computed(() => documentData.value?.draft)
 const selectedNode = computed(() => nodes.value.find(item => item.node_key === selectedKey.value) || null)
 const editable = computed(() => auth.canOperate && draft.value?.status === 'draft')
+const displayedDatabaseConfigItems = computed<DatabaseConfigItem[]>(() => {
+  if (databaseConfigCatalogLoaded.value) return databaseConfigItems.value
+  return (selectedNode.value?.config.keys || []).map(key => ({ key, description: null }))
+})
 const filteredGlobalKeys = computed(() => {
-  const query = globalKeySearch.value.trim().toLowerCase()
-  return query ? GLOBAL_KEYS.filter(key => key.toLowerCase().includes(query)) : GLOBAL_KEYS
+  return filterDatabaseConfigItems(displayedDatabaseConfigItems.value, globalKeySearch.value)
+})
+const staleGlobalKeys = computed(() => {
+  if (!databaseConfigCatalogLoaded.value) return []
+  return staleDatabaseConfigKeys(selectedNode.value?.config.keys || [], databaseConfigItems.value)
 })
 const allGlobalKeysSelected = computed(() => {
   const keys = selectedNode.value?.config.keys || []
-  return GLOBAL_KEYS.every(key => keys.includes(key))
+  return databaseConfigItems.value.length > 0
+    && databaseConfigItems.value.every(item => keys.includes(item.key))
 })
 const selectedPlan = computed(() => plans.value.find(item => item.id === scenario.value?.plan_id))
 const selectedResources = computed(() => resourceTypes.map(type => resources.value.find(item => item.id === resourceSelections[type])).filter(Boolean))
@@ -172,7 +187,134 @@ function markDirty() { if (editable.value) dirty.value = true }
 
 function toggleAllGlobalKeys() {
   if (!editable.value || selectedNode.value?.node_type !== 'database_config') return
-  selectedNode.value.config.keys = allGlobalKeysSelected.value ? [] : [...GLOBAL_KEYS]
+  selectedNode.value.config.keys = allGlobalKeysSelected.value
+    ? []
+    : [...databaseConfigItems.value.map(item => item.key), ...staleGlobalKeys.value]
+  markDirty()
+}
+
+async function loadDatabaseConfigItems() {
+  const requestId = ++databaseConfigCatalogRequestId
+  const resource = selectedResourceMap.value.database
+  const databaseName = String(selectedNode.value?.config.database_name || '')
+  databaseConfigCatalogError.value = ''
+  databaseConfigCatalogLoaded.value = false
+  if (!editable.value || selectedNode.value?.node_type !== 'database_config' || !resource || !databaseName) {
+    databaseConfigItems.value = []
+    databaseConfigCatalogLoading.value = false
+    return
+  }
+  databaseConfigCatalogLoading.value = true
+  try {
+    const response = await api.get(`/resources/${resource.id}/database/config-items`, {
+      params: { database_name: databaseName },
+    })
+    if (requestId !== databaseConfigCatalogRequestId) return
+    databaseConfigItems.value = response.data || []
+    databaseConfigCatalogLoaded.value = true
+  } catch (error) {
+    if (requestId !== databaseConfigCatalogRequestId) return
+    databaseConfigItems.value = []
+    databaseConfigCatalogError.value = errorMessage(error)
+  } finally {
+    if (requestId === databaseConfigCatalogRequestId) databaseConfigCatalogLoading.value = false
+  }
+}
+
+async function loadDatabaseConfigTemplates() {
+  if (!editable.value) return
+  databaseConfigTemplatesLoading.value = true
+  try {
+    databaseConfigTemplates.value = (await api.get('/database-config-templates')).data || []
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  } finally {
+    databaseConfigTemplatesLoading.value = false
+  }
+}
+
+function selectDatabaseConfigDatabase() {
+  selectedDatabaseConfigTemplateId.value = null
+  markDirty()
+}
+
+function applySelectedDatabaseConfigTemplate() {
+  const template = databaseConfigTemplates.value.find(
+    item => item.id === selectedDatabaseConfigTemplateId.value,
+  )
+  if (!template || !selectedNode.value || !databaseConfigCatalogLoaded.value) return
+  const result = applyDatabaseConfigTemplate(template.keys, databaseConfigItems.value)
+  selectedNode.value.config.keys = result.selected
+  markDirty()
+  if (result.missing.length) {
+    ElMessage.warning(`已应用 ${result.selected.length} 项，跳过 ${result.missing.length} 个当前库不存在的配置项`)
+  } else {
+    ElMessage.success(`已应用模板“${template.name}”`)
+  }
+}
+
+async function saveDatabaseConfigTemplate() {
+  const keys = selectedNode.value?.config.keys || []
+  if (!keys.length) { ElMessage.warning('请先选择至少一个配置项'); return }
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `将当前选择的 ${keys.length} 个配置项保存为个人模板`,
+      '保存配置模板',
+      { confirmButtonText: '保存', cancelButtonText: '取消', inputPlaceholder: '模板名称', inputValidator: value => Boolean(value.trim()) || '请输入模板名称' },
+    )
+    const response = await api.post('/database-config-templates', { name: value, keys })
+    await loadDatabaseConfigTemplates()
+    selectedDatabaseConfigTemplateId.value = response.data.id
+    ElMessage.success('模板已保存')
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+async function renameDatabaseConfigTemplate() {
+  const template = databaseConfigTemplates.value.find(
+    item => item.id === selectedDatabaseConfigTemplateId.value,
+  )
+  if (!template) return
+  try {
+    const { value } = await ElMessageBox.prompt('输入新的模板名称', '重命名配置模板', {
+      confirmButtonText: '保存', cancelButtonText: '取消', inputValue: template.name,
+      inputValidator: value => Boolean(value.trim()) || '请输入模板名称',
+    })
+    await api.patch(`/database-config-templates/${template.id}`, { new_name: value })
+    await loadDatabaseConfigTemplates()
+    selectedDatabaseConfigTemplateId.value = template.id
+    ElMessage.success('模板已重命名')
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+async function deleteDatabaseConfigTemplate() {
+  const template = databaseConfigTemplates.value.find(
+    item => item.id === selectedDatabaseConfigTemplateId.value,
+  )
+  if (!template) return
+  try {
+    await ElMessageBox.confirm(`确定删除模板“${template.name}”？`, '删除配置模板', {
+      type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消',
+    })
+    await api.delete(`/database-config-templates/${template.id}`)
+    selectedDatabaseConfigTemplateId.value = null
+    await loadDatabaseConfigTemplates()
+    ElMessage.success('模板已删除')
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(errorMessage(error))
+  }
+}
+
+function removeStaleGlobalKeys() {
+  if (!selectedNode.value) return
+  const stale = new Set(staleGlobalKeys.value)
+  selectedNode.value.config.keys = (selectedNode.value.config.keys || []).filter(key => !stale.has(key))
   markDirty()
 }
 
@@ -616,11 +758,23 @@ async function fetchContracts(contractTypes: string[]) {
 watch(selectedNode, async node => {
   previewSnapshots.value = []
   globalKeySearch.value = ''
+  selectedDatabaseConfigTemplateId.value = null
+  if (node?.node_type === 'database_config') await loadDatabaseConfigTemplates()
   if (node?.node_type === 'order_preparation') { await loadOrderConfigs(); await loadContractFiles() }
   if (node?.node_type === 'parser_parse') { await loadParserConfigs(); await ensureParserXmlSelections() }
   if (node?.node_type === 'data_statistics') { await loadStatisticsScripts(); ensureStatisticsScriptSelection() }
   if (node?.node_type === 'market_startup') await loadMarketScripts()
 })
+watch(
+  () => [
+    selectedNode.value?.node_type,
+    selectedNode.value?.config.database_name,
+    selectedResourceMap.value.database?.id,
+  ],
+  async () => {
+    await loadDatabaseConfigItems()
+  },
+)
 watch(() => selectedResourceMap.value.parser?.id, async () => {
   if (selectedNode.value?.node_type === 'parser_parse') {
     await loadParserConfigs()
@@ -697,10 +851,23 @@ onMounted(load)
           </template>
 
           <template v-else-if="selectedNode.node_type === 'database_config'">
-            <label class="field"><span>配置数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select></label>
+            <label class="field"><span>配置数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable" filterable @change="selectDatabaseConfigDatabase"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select></label>
+            <template v-if="editable">
+              <div class="section-label">个人模板</div>
+              <div class="template-toolbar">
+                <el-select v-model="selectedDatabaseConfigTemplateId" :loading="databaseConfigTemplatesLoading" clearable placeholder="选择模板快速应用" :disabled="!databaseConfigCatalogLoaded" @change="applySelectedDatabaseConfigTemplate">
+                  <el-option v-for="item in databaseConfigTemplates" :key="item.id" :label="`${item.name}（${item.keys.length} 项）`" :value="item.id" />
+                </el-select>
+                <el-button :icon="Plus" circle title="保存当前选择为模板" aria-label="保存当前选择为模板" :disabled="!(selectedNode.config.keys?.length)" @click="saveDatabaseConfigTemplate" />
+                <el-button :icon="Edit" circle title="重命名模板" aria-label="重命名模板" :disabled="!selectedDatabaseConfigTemplateId" @click="renameDatabaseConfigTemplate" />
+                <el-button :icon="Delete" circle type="danger" title="删除模板" aria-label="删除模板" :disabled="!selectedDatabaseConfigTemplateId" @click="deleteDatabaseConfigTemplate" />
+              </div>
+            </template>
             <div class="section-label">t_global_settings 配置项</div>
-            <div class="key-toolbar"><el-input v-model="globalKeySearch" :prefix-icon="Search" clearable placeholder="搜索配置项" /><el-button size="small" :disabled="!editable" @click="toggleAllGlobalKeys">{{ allGlobalKeysSelected ? '取消全选' : '全选' }}</el-button></div>
-            <div class="key-grid"><el-checkbox-group v-if="filteredGlobalKeys.length" v-model="selectedNode.config.keys" class="key-options" :disabled="!editable" @change="markDirty"><el-checkbox v-for="key in filteredGlobalKeys" :key="key" :label="key">{{ key }}</el-checkbox></el-checkbox-group><div v-else class="key-grid-empty">无匹配配置项</div></div>
+            <div class="key-toolbar"><el-input v-model="globalKeySearch" :prefix-icon="Search" clearable placeholder="搜索键名或描述" /><el-button size="small" :disabled="!editable || !databaseConfigItems.length" @click="toggleAllGlobalKeys">{{ allGlobalKeysSelected ? '取消全选' : '全选' }}</el-button></div>
+            <el-alert v-if="databaseConfigCatalogError" class="catalog-alert" :title="databaseConfigCatalogError" type="error" :closable="false" show-icon><el-button size="small" @click="loadDatabaseConfigItems">重试</el-button></el-alert>
+            <div v-if="staleGlobalKeys.length" class="stale-key-row"><span>{{ staleGlobalKeys.length }} 个已选配置项在当前数据库中不存在</span><el-button size="small" type="warning" plain @click="removeStaleGlobalKeys">清理失效项</el-button></div>
+            <div class="key-grid" v-loading="databaseConfigCatalogLoading"><el-checkbox-group v-if="filteredGlobalKeys.length" v-model="selectedNode.config.keys" class="key-options" :disabled="!editable" @change="markDirty"><el-checkbox v-for="item in filteredGlobalKeys" :key="item.key" :label="item.key"><span class="key-option-copy"><strong>{{ item.key }}</strong><small>{{ item.description || '暂无描述' }}</small></span></el-checkbox></el-checkbox-group><div v-else class="key-grid-empty">{{ databaseConfigCatalogLoading ? '正在读取配置项' : '无匹配配置项' }}</div></div>
             <el-button :icon="Refresh" :loading="previewing" :disabled="!editable" @click="previewNode">预采集并保存</el-button>
           </template>
 
@@ -870,6 +1037,8 @@ onMounted(load)
 .contract-empty{min-height:96px;margin-top:10px;border:1px dashed #ccd8dd;border-radius:8px;display:grid;place-items:center;color:#829099;font-size:11px}
 .flow-node.violet{border-left-color:#7669b5}.node-icon.violet{background:#eeebf8;color:#6556a5}.node-catalog{display:grid;gap:22px}.node-category h3{margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid #e6ebee;color:#697780;font-size:12px;font-weight:600}.slnic-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 14px}.slnic-summary>div{padding:11px;border:1px solid #e3e0ef;border-radius:8px;background:#f8f7fc}.slnic-summary .wide{grid-column:1/-1}.slnic-summary span,.slnic-summary strong,.slnic-summary code{display:block}.slnic-summary span{font-size:10px;color:#7f8991}.slnic-summary strong,.slnic-summary code{margin-top:5px;font-size:12px;overflow-wrap:anywhere}.slnic-commands{display:grid;gap:7px}.slnic-commands code{padding:10px;border-radius:7px;background:#242632;color:#d9e6df;font-size:11px;line-height:1.45;overflow-wrap:anywhere}.slnic-note{color:#7c8991;font-size:11px;line-height:1.6}
 .market-script-options{display:grid;max-height:190px;margin-top:10px;overflow:auto;border:1px solid #e0e7ea;border-radius:8px}.market-script-options :deep(.el-checkbox){height:auto;margin:0;padding:9px 11px;border-bottom:1px solid #edf1f3}.market-script-options :deep(.el-checkbox:last-of-type){border-bottom:0}.market-script-options strong,.market-script-options small{display:block}.market-script-options small{margin-top:3px;color:#85929a;font-size:10px}.market-script-order{display:grid;gap:7px}.market-script-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px;border:1px solid #dfe6ea;border-radius:7px}.market-script-row.invalid{border-color:#e3b268;background:#fffaf1}.market-script-row strong,.market-script-row small{display:block;overflow-wrap:anywhere}.market-script-row small{margin-top:3px;color:#85929a;font-size:10px}.market-script-row.invalid small{color:#a66e20}.market-script-index{display:grid;width:22px;height:22px;place-items:center;border-radius:5px;background:#edf3f4;color:#627078;font-size:10px;font-weight:700}.market-script-actions{display:flex;align-items:center}.market-script-actions :deep(.el-button){margin:0}
+
+.template-toolbar{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,32px);gap:6px;align-items:center}.template-toolbar :deep(.el-button){width:32px;height:32px;margin:0}.catalog-alert{margin-bottom:8px}.catalog-alert :deep(.el-alert__content){min-width:0}.stale-key-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:8px 10px;border:1px solid #efd39a;border-radius:6px;background:#fff9ec;color:#8a641f;font-size:11px}.stale-key-row :deep(.el-button){flex:0 0 auto}.key-grid{min-height:94px}.key-options :deep(.el-checkbox){height:auto;min-height:36px;padding:5px 0;align-items:flex-start}.key-options :deep(.el-checkbox__input){margin-top:2px}.key-options :deep(.el-checkbox__label){min-width:0;white-space:normal;font-family:inherit}.key-option-copy,.key-option-copy strong,.key-option-copy small{display:block}.key-option-copy strong{font:11px/1.4 Cascadia Code,Consolas,monospace;overflow-wrap:anywhere}.key-option-copy small{margin-top:2px;color:#839099;font-size:10px;line-height:1.45}
 
 /* Professional console theme and compact-window fallback */
 .workflow-page{min-height:calc(100dvh - 52px);overflow:hidden;background:var(--ui-surface-subtle);color:var(--ui-text-primary)}

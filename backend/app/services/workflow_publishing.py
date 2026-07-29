@@ -7,8 +7,10 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.adapters.database import DatabaseOperationError
 from app.core.time import beijing_now
 from app.models import ContractDataFile, ScenarioWorkflowVersion, TestScenario
+from app.services.database_config_catalog import list_database_config_items
 from app.services.market_scripts import MarketScriptError, market_script_service
 from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
 from app.services.resource_relations import node_config_with_relations, node_contract_file_ids, sync_scenario_resources, workflow_resource_ids
@@ -50,6 +52,29 @@ async def validate_publish(
                             )
                 except (MarketScriptError, WorkflowError) as exc:
                     errors.append({"node_key": node.node_key, "field": "scripts", "message": str(exc)})
+            continue
+        if node.node_type == "database_config":
+            resource = resources.get("database")
+            config = node_config_with_relations(node)
+            database_name = str(config.get("database_name") or "")
+            keys = list(config.get("keys") or [])
+            if resource and database_name and keys:
+                try:
+                    items = await list_database_config_items(resource, database_name)
+                    available = {str(item["key"]) for item in items}
+                    missing = [key for key in keys if key not in available]
+                    if missing:
+                        errors.append({
+                            "node_key": node.node_key,
+                            "field": "keys",
+                            "message": "配置项已不存在：" + "、".join(missing),
+                        })
+                except DatabaseOperationError as exc:
+                    errors.append({
+                        "node_key": node.node_key,
+                        "field": "keys",
+                        "message": exc.message,
+                    })
             continue
         if node.node_type == "data_statistics":
             resource = resources.get("parser")

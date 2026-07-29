@@ -140,6 +140,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/database-config-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Database Config Templates */
+        get: operations["list_database_config_templates_api_v1_database_config_templates_get"];
+        put?: never;
+        /** Create Database Config Template */
+        post: operations["create_database_config_template_api_v1_database_config_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/database-config-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Database Config Template */
+        delete: operations["delete_database_config_template_api_v1_database_config_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Database Config Template */
+        patch: operations["rename_database_config_template_api_v1_database_config_templates__template_id__patch"];
+        trace?: never;
+    };
     "/api/v1/logs": {
         parameters: {
             query?: never;
@@ -275,6 +311,23 @@ export interface paths {
         post?: never;
         /** Delete Resource */
         delete: operations["delete_resource_api_v1_resources__resource_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources/{resource_id}/database/config-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Database Config Items */
+        get: operations["database_config_items_api_v1_resources__resource_id__database_config_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1219,6 +1272,13 @@ export interface components {
             /** Keys */
             keys?: string[];
         };
+        /** DatabaseConfigItemOut */
+        DatabaseConfigItemOut: {
+            /** Description */
+            description?: string | null;
+            /** Key */
+            key: string;
+        };
         /** DatabaseConfigNodeOut */
         DatabaseConfigNodeOut: {
             config?: components["schemas"]["DatabaseConfig"];
@@ -1248,6 +1308,37 @@ export interface components {
              * @enum {string}
              */
             node_type: "database_config";
+        };
+        /** DatabaseConfigTemplateCreate */
+        DatabaseConfigTemplateCreate: {
+            /** Keys */
+            keys: string[];
+            /** Name */
+            name: string;
+        };
+        /** DatabaseConfigTemplateOut */
+        DatabaseConfigTemplateOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Keys */
+            keys: string[];
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** DatabaseConfigTemplateRename */
+        DatabaseConfigTemplateRename: {
+            /** New Name */
+            new_name: string;
         };
         /** DatabaseDiscoveryOut */
         DatabaseDiscoveryOut: {
@@ -2874,6 +2965,123 @@ export interface operations {
             };
         };
     };
+    list_database_config_templates_api_v1_database_config_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigTemplateOut"][];
+                };
+            };
+        };
+    };
+    create_database_config_template_api_v1_database_config_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseConfigTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_database_config_template_api_v1_database_config_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_database_config_template_api_v1_database_config_templates__template_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseConfigTemplateRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     query_logs_api_v1_logs_get: {
         parameters: {
             query?: {
@@ -3250,6 +3458,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    database_config_items_api_v1_resources__resource_id__database_config_items_get: {
+        parameters: {
+            query: {
+                database_name: string;
+            };
+            header?: never;
+            path: {
+                resource_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigItemOut"][];
+                };
             };
             /** @description Validation Error */
             422: {

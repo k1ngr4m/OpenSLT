@@ -13,8 +13,15 @@ from app.api.routes.common import database_http_error, database_resource, not_fo
 from app.core.database import get_db
 from app.core.security import decrypt_secret
 from app.models import Resource, User
-from app.schemas import DatabaseDiscoveryOut, DatabaseDiscoveryRequest, DatabaseExportRequest, DatabaseSqlRequest
+from app.schemas import (
+    DatabaseConfigItemOut,
+    DatabaseDiscoveryOut,
+    DatabaseDiscoveryRequest,
+    DatabaseExportRequest,
+    DatabaseSqlRequest,
+)
 from app.services.audit import write_audit
+from app.services.database_config_catalog import list_database_config_items
 
 router = APIRouter()
 
@@ -135,6 +142,47 @@ async def discover_resource_databases(
         "databases": databases,
         "filtered_system_count": filtered_system_count,
     }
+
+
+@router.get(
+    "/resources/{resource_id}/database/config-items",
+    response_model=typing.List[DatabaseConfigItemOut],
+)
+async def database_config_items(
+    resource_id: int,
+    database_name: str,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> list[dict[str, typing.Optional[str]]]:
+    resource, database_name = database_resource(db, resource_id, database_name)
+    try:
+        items = await list_database_config_items(resource, database_name)
+    except DatabaseOperationError as exc:
+        write_audit(
+            db,
+            "database.config_items",
+            "resource",
+            resource.id,
+            actor,
+            request,
+            result="failed",
+            detail={"database": database_name, "code": exc.code},
+        )
+        db.commit()
+        raise database_http_error(exc) from exc
+    write_audit(
+        db,
+        "database.config_items",
+        "resource",
+        resource.id,
+        actor,
+        request,
+        detail={"database": database_name, "count": len(items)},
+    )
+    db.commit()
+    return items
+
 
 @router.post("/resources/{resource_id}/database/select")
 async def database_select(

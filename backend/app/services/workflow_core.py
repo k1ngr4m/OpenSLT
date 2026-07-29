@@ -53,18 +53,6 @@ SERVER_COMMANDS = {
     "os_version": "cat /etc/redhat-release 2>/dev/null || . /etc/os-release && printf '%s %s\\n' \"$NAME\" \"$VERSION\"",
     "cpu_model": "lscpu | grep -E '^(Model name|CPU\\(s\\)|CPU max MHz):'",
 }
-GLOBAL_SETTING_KEYS = [
-    "CLIENT_REQ_BIND_CPU", "MARKET_RESP_BIND_CPU", "RINGBUFFER_RSP_BIND_CPU",
-    "TCP_SERVER_BIND_CPU", "CLIENT_REQ_ENABLE", "CLIENT_REQ_USING_DEV",
-    "MARKET_RESP_ENABLE", "MARKET_RESQ_DEV", "REM_TO_MKT_MESSAGE_DROPCOPY_ENABLE",
-    "CLIENT_TO_REM_MESSAGE_DROPCOPY_ENABLE", "MARKET_SESSION_IDLE_REPROT_LOG",
-    "ACCOUNT_QUANTITY", "WARM_ORDER_REPORT_USEC", "ENABLE_PERF_COUNTER",
-    "ENABLE_RINGBUFFER_RSP", "ENABLE_RINGBUFFER_REQ", "ASYNC_MKT_MSG_PROC",
-    "USER_TOKEN_CANCEL_ENABLE", "CLIENT_OT_CONNECT_MODE", "EXANIC_IP_FILTER_FLAG",
-    "ENABLE_REPORT_TIMESTAMP", "X25_KEY_VALUE",
-]
-KEY_COLUMN_CANDIDATES = ["setting_name", "name", "setting_key", "key", "param_name"]
-VALUE_COLUMN_CANDIDATES = ["setting_value", "value", "param_value"]
 INTERFACE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
 CONTRACT_TABLES = {"futures": "t_close_report", "options": "t_close_report_opt"}
 CONTRACT_TYPE_LABELS = {"futures": "期货", "options": "期权"}
@@ -185,8 +173,14 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少数据库资源"})
             elif database_name not in (resource.database_names or []):
                 errors.append({**prefix, "field": "database_name", "message": "配置数据库不在资源白名单中"})
-            if not keys or any(key not in GLOBAL_SETTING_KEYS for key in keys):
-                errors.append({**prefix, "field": "keys", "message": "至少选择一个受支持的配置项"})
+            if not keys:
+                errors.append({**prefix, "field": "keys", "message": "至少选择一个配置项"})
+            elif len(keys) > 1000:
+                errors.append({**prefix, "field": "keys", "message": "配置项不能超过 1000 个"})
+            elif len(keys) != len(set(keys)):
+                errors.append({**prefix, "field": "keys", "message": "配置项不能重复"})
+            elif any(not isinstance(key, str) or not key.strip() or len(key) > 255 for key in keys):
+                errors.append({**prefix, "field": "keys", "message": "配置项格式无效"})
         elif node.node_type == "wiring_confirmation":
             if str(config.get("diagram") or "placeholder") == "resource":
                 rem_resource = resources.get("rem")
