@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from typing_extensions import Literal
 
 from app.core.config import settings
-from app.core.time import beijing_now
+from app.core.time import beijing_now, from_unix_timestamp
 from app.models import Artifact, Metric, Resource, RunStep, ScenarioWorkflowNode, TestRun
 from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
 from app.services.workflow_capture import _ssh_options
@@ -70,21 +70,6 @@ class StatisticsScriptOutput(BaseModel):
         return self
 
 
-def _source_parser_step(run: TestRun, step: RunStep, parser_node_key: str) -> RunStep:
-    source = next(
-        (
-            item for item in run.steps
-            if item.code == parser_node_key
-            and item.node_type == "parser_parse"
-            and item.position < step.position
-        ),
-        None,
-    )
-    if source is None:
-        raise WorkflowError("STATISTICS_PARSER_STEP_REQUIRED", "未找到配置的前置数据解析节点", 409)
-    return source
-
-
 def _validated_input_artifacts(
     db: Session,
     run: TestRun,
@@ -96,10 +81,6 @@ def _validated_input_artifacts(
         raise WorkflowError("STATISTICS_INPUTS_REQUIRED", "请至少选择一个解析 CSV", 409)
     if len(ids) != len(set(ids)):
         raise WorkflowError("STATISTICS_INPUTS_DUPLICATE", "统计输入不能重复", 400)
-    config = typing.cast(
-        StatisticsConfig, parse_node_config("data_statistics", step.config_snapshot or {})
-    )
-    source = _source_parser_step(run, step, config.parser_node_key)
     artifacts = list(db.scalars(select(Artifact).where(Artifact.id.in_(ids))).all())
     by_id = {item.id: item for item in artifacts}
     ordered: list[Artifact] = []
@@ -108,12 +89,11 @@ def _validated_input_artifacts(
         if (
             artifact is None
             or artifact.run_id != run.id
-            or artifact.step_id != source.id
             or artifact.artifact_type != "parsed_csv"
             or not artifact.is_immutable
         ):
             raise WorkflowError(
-                "STATISTICS_INPUT_INVALID", "只能选择关联数据解析节点生成的不可变 CSV", 409
+                "STATISTICS_INPUT_INVALID", "历史统计输入必须是本次运行归档的不可变 CSV", 409
             )
         path = Path(artifact.path)
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.checksum:
@@ -124,24 +104,116 @@ def _validated_input_artifacts(
     return ordered
 
 
-def select_statistics_inputs(
+def _remote_csv_detail(
+    relative_path: str,
+    filename: str,
+    source: str,
+    attrs: typing.Any,
+) -> dict[str, typing.Any]:
+    return {
+        "relative_path": relative_path,
+        "filename": filename,
+        "source": source,
+        "size": int(attrs.size or 0),
+        "modified_at": from_unix_timestamp(attrs.mtime or 0).isoformat(),
+    }
+
+
+async def list_statistics_csv_files(
+    resource: Resource,
+    run: TestRun,
+) -> dict[str, typing.Any]:
+    if resource.is_deleted or not resource.is_enabled or resource.resource_type != "parser":
+        raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
+    directory = resource.remote_path.strip().rstrip("/")
+    if not directory:
+        raise WorkflowError("STATISTICS_SOURCE_PATH_REQUIRED", "解析工具远端路径不能为空", 409)
+
+    parser_step_ids = {
+        item.id for item in run.steps if item.node_type == "parser_parse"
+    }
+    allowed_run_prefixes = tuple(
+        f"r{run.id}-s{step_id}-a" for step_id in sorted(parser_step_ids)
+    )
+    rows: list[dict[str, typing.Any]] = []
+    connection = None
+    sftp = None
+    try:
+        connection = await asyncssh.connect(**_ssh_options(resource))
+        sftp = await connection.start_sftp_client()
+        async for entry in sftp.scandir(directory):
+            if (
+                entry.filename.lower().endswith(".csv")
+                and entry.attrs.type == asyncssh.FILEXFER_TYPE_REGULAR
+            ):
+                rows.append(_remote_csv_detail(
+                    entry.filename, entry.filename, "root", entry.attrs
+                ))
+
+        runs_directory = posixpath.join(directory, ".openslt-runs")
+        try:
+            run_entries = [entry async for entry in sftp.scandir(runs_directory)]
+        except (asyncssh.SFTPError, OSError):
+            run_entries = []
+        for run_entry in run_entries:
+            if (
+                run_entry.attrs.type != asyncssh.FILEXFER_TYPE_DIRECTORY
+                or not allowed_run_prefixes
+                or not run_entry.filename.startswith(allowed_run_prefixes)
+            ):
+                continue
+            remote_run_directory = posixpath.join(runs_directory, run_entry.filename)
+            async for entry in sftp.scandir(remote_run_directory):
+                if (
+                    not entry.filename.lower().endswith(".csv")
+                    or entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR
+                ):
+                    continue
+                relative_path = posixpath.join(
+                    ".openslt-runs", run_entry.filename, entry.filename
+                )
+                rows.append(_remote_csv_detail(
+                    relative_path, entry.filename, "current_run", entry.attrs
+                ))
+    except WorkflowError:
+        raise
+    except (asyncssh.Error, OSError) as exc:
+        raise WorkflowError(
+            "STATISTICS_SOURCE_LIST_FAILED", f"读取远端统计 CSV 失败：{exc}", 409
+        ) from exc
+    finally:
+        if sftp:
+            with suppress(Exception):
+                sftp.exit()
+        if connection:
+            connection.close()
+            with suppress(Exception):
+                await connection.wait_closed()
+    rows.sort(key=lambda item: (item["source"] != "root", item["relative_path"]))
+    return {"directory": directory, "files": rows}
+
+
+async def select_statistics_inputs(
     db: Session,
     run: TestRun,
     step: RunStep,
-    artifact_ids: list[int],
+    resource: Resource,
+    relative_paths: list[str],
     actor_id: int,
 ) -> dict[str, typing.Any]:
-    artifacts = _validated_input_artifacts(db, run, step, artifact_ids)
+    if not relative_paths:
+        raise WorkflowError("STATISTICS_INPUTS_REQUIRED", "请至少选择一个统计 CSV", 409)
+    if len(relative_paths) != len(set(relative_paths)):
+        raise WorkflowError("STATISTICS_INPUTS_DUPLICATE", "统计输入不能重复", 400)
+    listing = await list_statistics_csv_files(resource, run)
+    available = {item["relative_path"]: item for item in listing["files"]}
+    try:
+        inputs = [dict(available[path]) for path in relative_paths]
+    except (KeyError, TypeError) as exc:
+        raise WorkflowError(
+            "STATISTICS_INPUT_INVALID", "只能选择当前列表中的远端 CSV", 409
+        ) from exc
     selected_at = beijing_now()
-    inputs = [
-        {
-            "artifact_id": item.id,
-            "filename": item.name,
-            "size": item.size,
-            "checksum": item.checksum,
-        }
-        for item in artifacts
-    ]
     selection = {
         "inputs": inputs,
         "selected_by": actor_id,
@@ -155,12 +227,64 @@ def select_statistics_inputs(
     return selection
 
 
-def require_statistics_selection(db: Session, run: TestRun, step: RunStep) -> list[Artifact]:
+def require_statistics_selection(
+    db: Session, run: TestRun, step: RunStep
+) -> list[dict[str, typing.Any]]:
     selection = (step.result_summary or {}).get("statistics_selection") or {}
-    artifact_ids = [item.get("artifact_id") for item in selection.get("inputs") or []]
-    if any(not isinstance(item, int) for item in artifact_ids):
+    raw_inputs = selection.get("inputs") or []
+    if not isinstance(raw_inputs, list) or not raw_inputs:
         raise WorkflowError("STATISTICS_INPUTS_REQUIRED", "请重新选择统计输入", 409)
-    return _validated_input_artifacts(db, run, step, typing.cast(typing.List[int], artifact_ids))
+    if all(isinstance(item, dict) and isinstance(item.get("relative_path"), str) for item in raw_inputs):
+        relative_paths = [str(item["relative_path"]) for item in raw_inputs]
+        if len(relative_paths) != len(set(relative_paths)):
+            raise WorkflowError("STATISTICS_INPUTS_DUPLICATE", "统计输入不能重复", 400)
+        return [dict(item) for item in raw_inputs]
+    artifact_ids = [item.get("artifact_id") for item in raw_inputs if isinstance(item, dict)]
+    if len(artifact_ids) != len(raw_inputs) or any(not isinstance(item, int) for item in artifact_ids):
+        raise WorkflowError("STATISTICS_INPUTS_REQUIRED", "请重新选择统计输入", 409)
+    artifacts = _validated_input_artifacts(
+        db, run, step, typing.cast(typing.List[int], artifact_ids)
+    )
+    return [
+        {
+            "artifact": artifact,
+            "artifact_id": artifact.id,
+            "filename": artifact.name,
+            "source_path": artifact.name,
+            "size": artifact.size,
+            "checksum": artifact.checksum,
+        }
+        for artifact in artifacts
+    ]
+
+
+async def _execution_inputs(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    resource: Resource,
+) -> list[dict[str, typing.Any]]:
+    selected = require_statistics_selection(db, run, step)
+    if all("artifact" in item for item in selected):
+        return selected
+    listing = await list_statistics_csv_files(resource, run)
+    available = {item["relative_path"]: item for item in listing["files"]}
+    resolved: list[dict[str, typing.Any]] = []
+    for item in selected:
+        relative_path = str(item.get("relative_path") or "")
+        current = available.get(relative_path)
+        if current is None:
+            raise WorkflowError(
+                "STATISTICS_INPUT_CHANGED", f"远端统计输入 {relative_path} 已不存在", 409
+            )
+        resolved.append({
+            **current,
+            "source_path": relative_path,
+            "absolute_path": posixpath.join(
+                resource.remote_path.strip().rstrip("/"), relative_path
+            ),
+        })
+    return resolved
 
 
 def _artifact_directory(run: TestRun, step: RunStep) -> Path:
@@ -220,8 +344,7 @@ def _replace_metrics(
     db: Session,
     run: TestRun,
     step: RunStep,
-    artifacts: dict[str, Artifact],
-    results: list[StatisticsScriptOutput],
+    executions: list[tuple[dict[str, typing.Any], StatisticsScriptOutput]],
     script_detail: dict[str, typing.Any],
     max_latency_ns: int,
 ) -> None:
@@ -230,21 +353,23 @@ def _replace_metrics(
         if (metric.detail or {}).get("statistics_step_id") == step.id:
             db.delete(metric)
     db.flush()
-    for result in results:
-        artifact = artifacts[result.source_file]
+    for source, result in executions:
+        source_path = str(source["source_path"])
+        artifact = source.get("artifact")
         excluded = result.excluded_counts.model_dump()
         for item in result.metrics:
             db.add(
                 Metric(
                     run_id=run.id,
-                    name=_metric_name(step, result.source_file, item),
+                    name=_metric_name(step, source_path, item),
                     value=item.value,
                     unit="ns",
                     sample_count=result.sample_count,
                     detail={
                         "statistics_step_id": step.id,
-                        "source_artifact_id": artifact.id,
+                        "source_artifact_id": artifact.id if artifact else None,
                         "source_file": result.source_file,
+                        "source_path": source_path,
                         "metric_key": item.key,
                         "metric_label": item.label,
                         "script_filename": script_detail["name"],
@@ -280,7 +405,7 @@ async def execute_statistics_node(
     config = typing.cast(
         StatisticsConfig, parse_node_config(node.node_type, step.config_snapshot or node.config or {})
     )
-    inputs = require_statistics_selection(db, run, step)
+    inputs = await _execution_inputs(db, run, step, resource)
     try:
         script_detail = await statistics_script_service.read(resource, config.script_filename)
     except StatisticsScriptError as exc:
@@ -290,23 +415,30 @@ async def execute_statistics_node(
     if script_detail["checksum"] != config.script_checksum:
         raise WorkflowError("STATISTICS_SCRIPT_CHANGED", "统计脚本已发生变化，请重新发布工作流", 409)
 
+    legacy_inputs = any("artifact" in item for item in inputs)
     remote_workdir = posixpath.join(
-        resource.remote_path.rstrip("/"),
-        ".openslt-runs",
+        resource.remote_path.rstrip("/"), ".openslt-runs",
         f"r{run.id}-s{step.id}-statistics-a{step.retry_count}-{uuid4().hex[:8]}",
-    )
+    ) if legacy_inputs else ""
     attempts: list[dict[str, typing.Any]] = []
-    parsed_results: list[StatisticsScriptOutput] = []
+    parsed_results: list[tuple[dict[str, typing.Any], StatisticsScriptOutput]] = []
     connection = None
     sftp = None
     started_at = beijing_now()
     try:
         connection = await asyncssh.connect(**_ssh_options(resource))
         sftp = await connection.start_sftp_client()
-        await sftp.makedirs(remote_workdir, exist_ok=True)
-        for artifact in inputs:
-            remote_csv = posixpath.join(remote_workdir, artifact.name)
-            await _upload(sftp, remote_csv, Path(artifact.path))
+        if legacy_inputs:
+            await sftp.makedirs(remote_workdir, exist_ok=True)
+        for source in inputs:
+            artifact = source.get("artifact")
+            if artifact:
+                remote_csv = posixpath.join(remote_workdir, artifact.name)
+                await _upload(sftp, remote_csv, Path(artifact.path))
+            else:
+                remote_csv = str(source["absolute_path"])
+            filename = str(source["filename"])
+            source_path = str(source["source_path"])
             command = " ".join(
                 (
                     shlex.quote(str(script_detail["path"])),
@@ -318,8 +450,11 @@ async def execute_statistics_node(
             stdout = str(result.stdout or "")
             stderr = str(result.stderr or "")
             attempt = {
-                "artifact_id": artifact.id,
-                "source_file": artifact.name,
+                "artifact_id": artifact.id if artifact else None,
+                "source_file": filename,
+                "source_path": source_path,
+                "size": source.get("size"),
+                "modified_at": source.get("modified_at"),
                 "command": command,
                 "exit_code": result.exit_status,
                 "stdout": stdout[-4000:],
@@ -330,7 +465,7 @@ async def execute_statistics_node(
             if result.exit_status != 0:
                 raise WorkflowError(
                     "STATISTICS_SCRIPT_FAILED",
-                    f"统计 {artifact.name} 失败（退出码 {result.exit_status}）",
+                    f"统计 {source_path} 失败（退出码 {result.exit_status}）",
                     409,
                 )
             if len(stdout.encode("utf-8")) > MAX_STATISTICS_OUTPUT_BYTES:
@@ -339,15 +474,15 @@ async def execute_statistics_node(
                 parsed = StatisticsScriptOutput.model_validate_json(stdout)
             except ValidationError as exc:
                 raise WorkflowError(
-                    "STATISTICS_OUTPUT_INVALID", f"统计 {artifact.name} 的 JSON 输出不合法：{exc.errors()[0]['msg']}", 409
+                    "STATISTICS_OUTPUT_INVALID", f"统计 {source_path} 的 JSON 输出不合法：{exc.errors()[0]['msg']}", 409
                 ) from exc
-            if parsed.source_file != artifact.name:
+            if parsed.source_file != filename:
                 raise WorkflowError(
-                    "STATISTICS_OUTPUT_FILE_MISMATCH", f"统计脚本返回的 source_file 与 {artifact.name} 不一致", 409
+                    "STATISTICS_OUTPUT_FILE_MISMATCH", f"统计脚本返回的 source_file 与 {filename} 不一致", 409
                 )
             attempt["status"] = "succeeded"
-            attempt["result"] = parsed.model_dump()
-            parsed_results.append(parsed)
+            attempt["result"] = {**parsed.model_dump(), "source_path": source_path}
+            parsed_results.append((source, parsed))
     except WorkflowError:
         step.result_summary = {
             **(step.result_summary or {}),
@@ -356,7 +491,7 @@ async def execute_statistics_node(
                 "checksum": script_detail["checksum"],
             },
             "statistics_attempts": attempts,
-            "remote_workdir": remote_workdir,
+            "remote_workdir": remote_workdir or None,
         }
         db.flush()
         raise
@@ -368,7 +503,7 @@ async def execute_statistics_node(
                 "checksum": script_detail["checksum"],
             },
             "statistics_attempts": attempts,
-            "remote_workdir": remote_workdir,
+            "remote_workdir": remote_workdir or None,
         }
         db.flush()
         raise WorkflowError("STATISTICS_EXECUTION_FAILED", f"数据统计执行失败：{exc}", 409) from exc
@@ -381,7 +516,6 @@ async def execute_statistics_node(
             with suppress(Exception):
                 await connection.wait_closed()
 
-    by_name = {item.name: item for item in inputs}
     duration_ms = int((beijing_now() - started_at).total_seconds() * 1000)
     consolidated = {
         "schema_version": 1,
@@ -391,14 +525,24 @@ async def execute_statistics_node(
         },
         "max_latency_ns": config.max_latency_ns,
         "inputs": [
-            {"artifact_id": item.id, "filename": item.name, "checksum": item.checksum}
+            {
+                key: item[key]
+                for key in (
+                    "artifact_id", "relative_path", "filename", "source", "size",
+                    "modified_at", "checksum",
+                )
+                if key in item
+            }
             for item in inputs
         ],
-        "results": [item.model_dump() for item in parsed_results],
+        "results": [
+            {**result.model_dump(), "source_path": source["source_path"]}
+            for source, result in parsed_results
+        ],
         "duration_ms": duration_ms,
     }
     result_artifact = _register_result_artifact(db, run, step, consolidated)
-    _replace_metrics(db, run, step, by_name, parsed_results, script_detail, config.max_latency_ns)
+    _replace_metrics(db, run, step, parsed_results, script_detail, config.max_latency_ns)
     return {
         **(step.result_summary or {}),
         "statistics_script": consolidated["script"],
@@ -406,6 +550,6 @@ async def execute_statistics_node(
         "statistics_attempts": attempts,
         "statistics_results": consolidated["results"],
         "statistics_artifact_id": result_artifact.id,
-        "remote_workdir": remote_workdir,
+        "remote_workdir": remote_workdir or None,
         "duration_ms": duration_ms,
     }

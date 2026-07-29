@@ -481,6 +481,30 @@
         "title": "DatabaseConfig",
         "type": "object"
       },
+      "DatabaseConfigItemOut": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "DatabaseConfigItemOut",
+        "type": "object"
+      },
       "DatabaseConfigNodeOut": {
         "additionalProperties": false,
         "properties": {
@@ -553,6 +577,84 @@
           "node_type"
         ],
         "title": "DatabaseConfigNodeWrite",
+        "type": "object"
+      },
+      "DatabaseConfigTemplateCreate": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Keys",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "keys"
+        ],
+        "title": "DatabaseConfigTemplateCreate",
+        "type": "object"
+      },
+      "DatabaseConfigTemplateOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "keys",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DatabaseConfigTemplateOut",
+        "type": "object"
+      },
+      "DatabaseConfigTemplateRename": {
+        "properties": {
+          "new_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "New Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "title": "DatabaseConfigTemplateRename",
         "type": "object"
       },
       "DatabaseDiscoveryOut": {
@@ -1829,6 +1931,86 @@
           "node_type"
         ],
         "title": "RemStartupNodeWrite",
+        "type": "object"
+      },
+      "ReportGenerationConfig": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "ReportGenerationConfig",
+        "type": "object"
+      },
+      "ReportGenerationNodeOut": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ReportGenerationConfig"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "report_generation",
+            "title": "Node Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "position",
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "ReportGenerationNodeOut",
+        "type": "object"
+      },
+      "ReportGenerationNodeWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/ReportGenerationConfig"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "node_key": {
+            "maxLength": 36,
+            "minLength": 1,
+            "title": "Node Key",
+            "type": "string"
+          },
+          "node_type": {
+            "const": "report_generation",
+            "title": "Node Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_key",
+          "name",
+          "node_type"
+        ],
+        "title": "ReportGenerationNodeWrite",
         "type": "object"
       },
       "ResourceConnectionTestRequest": {
@@ -3331,30 +3513,61 @@
         "title": "StatisticsConfig",
         "type": "object"
       },
-      "StatisticsInputOut": {
+      "StatisticsCsvFilesOut": {
         "properties": {
-          "artifact_id": {
-            "title": "Artifact Id",
-            "type": "integer"
-          },
-          "checksum": {
-            "title": "Checksum",
+          "directory": {
+            "title": "Directory",
             "type": "string"
           },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsInputOut"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "directory",
+          "files"
+        ],
+        "title": "StatisticsCsvFilesOut",
+        "type": "object"
+      },
+      "StatisticsInputOut": {
+        "properties": {
           "filename": {
             "title": "Filename",
+            "type": "string"
+          },
+          "modified_at": {
+            "format": "date-time",
+            "title": "Modified At",
+            "type": "string"
+          },
+          "relative_path": {
+            "title": "Relative Path",
             "type": "string"
           },
           "size": {
             "title": "Size",
             "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "root",
+              "current_run"
+            ],
+            "title": "Source",
+            "type": "string"
           }
         },
         "required": [
-          "artifact_id",
+          "relative_path",
           "filename",
+          "source",
           "size",
-          "checksum"
+          "modified_at"
         ],
         "title": "StatisticsInputOut",
         "type": "object"
@@ -3388,17 +3601,17 @@
       },
       "StatisticsInputSelectionRequest": {
         "properties": {
-          "artifact_ids": {
+          "relative_paths": {
             "items": {
-              "type": "integer"
+              "type": "string"
             },
             "minItems": 1,
-            "title": "Artifact Ids",
+            "title": "Relative Paths",
             "type": "array"
           }
         },
         "required": [
-          "artifact_ids"
+          "relative_paths"
         ],
         "title": "StatisticsInputSelectionRequest",
         "type": "object"
@@ -4103,6 +4316,7 @@
                   "order_preparation": "#/components/schemas/OrderPreparationNodeWrite",
                   "parser_parse": "#/components/schemas/ParserNodeWrite",
                   "rem_startup": "#/components/schemas/RemStartupNodeWrite",
+                  "report_generation": "#/components/schemas/ReportGenerationNodeWrite",
                   "server_config": "#/components/schemas/ServerConfigNodeWrite",
                   "slnic_merge_capture": "#/components/schemas/SlnicMergeNodeWrite",
                   "slnic_start_capture": "#/components/schemas/SlnicStartNodeWrite",
@@ -4144,6 +4358,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/StatisticsNodeWrite"
+                },
+                {
+                  "$ref": "#/components/schemas/ReportGenerationNodeWrite"
                 }
               ]
             },
@@ -4187,6 +4404,7 @@
                   "order_preparation": "#/components/schemas/OrderPreparationNodeOut",
                   "parser_parse": "#/components/schemas/ParserNodeOut",
                   "rem_startup": "#/components/schemas/RemStartupNodeOut",
+                  "report_generation": "#/components/schemas/ReportGenerationNodeOut",
                   "server_config": "#/components/schemas/ServerConfigNodeOut",
                   "slnic_merge_capture": "#/components/schemas/SlnicMergeNodeOut",
                   "slnic_start_capture": "#/components/schemas/SlnicStartNodeOut",
@@ -4228,6 +4446,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/StatisticsNodeOut"
+                },
+                {
+                  "$ref": "#/components/schemas/ReportGenerationNodeOut"
                 }
               ]
             },
@@ -4683,6 +4904,163 @@
           }
         ],
         "summary": "List Business Types"
+      }
+    },
+    "/api/v1/database-config-templates": {
+      "get": {
+        "operationId": "list_database_config_templates_api_v1_database_config_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseConfigTemplateOut"
+                  },
+                  "title": "Response List Database Config Templates Api V1 Database Config Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Database Config Templates"
+      },
+      "post": {
+        "operationId": "create_database_config_template_api_v1_database_config_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseConfigTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseConfigTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Database Config Template"
+      }
+    },
+    "/api/v1/database-config-templates/{template_id}": {
+      "delete": {
+        "operationId": "delete_database_config_template_api_v1_database_config_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Database Config Template"
+      },
+      "patch": {
+        "operationId": "rename_database_config_template_api_v1_database_config_templates__template_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseConfigTemplateRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseConfigTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename Database Config Template"
       }
     },
     "/api/v1/logs": {
@@ -5303,6 +5681,63 @@
           }
         ],
         "summary": "Update Resource"
+      }
+    },
+    "/api/v1/resources/{resource_id}/database/config-items": {
+      "get": {
+        "operationId": "database_config_items_api_v1_resources__resource_id__database_config_items_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "database_name",
+            "required": true,
+            "schema": {
+              "title": "Database Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatabaseConfigItemOut"
+                  },
+                  "title": "Response Database Config Items Api V1 Resources  Resource Id  Database Config Items Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Database Config Items"
       }
     },
     "/api/v1/resources/{resource_id}/database/export": {
@@ -7373,6 +7808,59 @@
           }
         ],
         "summary": "Start Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-csv-files": {
+      "get": {
+        "operationId": "get_statistics_csv_files_api_v1_runs__run_id__steps__step_id__statistics_csv_files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsCsvFilesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Statistics Csv Files"
       }
     },
     "/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs": {

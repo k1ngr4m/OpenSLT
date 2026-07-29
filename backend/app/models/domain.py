@@ -27,6 +27,24 @@ class User(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_login_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
     refresh_tokens: Mapped[typing.List['RefreshToken']] = relationship(back_populates="user", cascade="all, delete-orphan")
+    database_config_templates: Mapped[typing.List['DatabaseConfigTemplate']] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class DatabaseConfigTemplate(TimestampMixin, Base):
+    __tablename__ = "t_database_config_templates"
+    __table_args__ = (
+        UniqueConstraint("user_id", "normalized_name", name="uq_database_config_template_user_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    normalized_name: Mapped[str] = mapped_column(String(128))
+    keys: Mapped[typing.List[str]] = mapped_column(JSONText(), default=list)
+
+    user: Mapped['User'] = relationship(back_populates="database_config_templates")
 
 
 class RefreshToken(Base):

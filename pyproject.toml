@@ -19,7 +19,7 @@ dependencies = [
   "pandas>=2.0,<2.1",
   "openpyxl>=3.1,<4",
   "jinja2>=3.1,<4",
-  "weasyprint>=61,<62",
+  "reportlab>=4.0,<4.3",
 ]
 
 [build-system]

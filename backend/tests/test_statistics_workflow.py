@@ -11,11 +11,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.database import SessionLocal
-from app.models import Artifact, Metric, Resource, RunStep, TestRun as RunModel
+from app.models import Artifact, Metric, Resource, RunResource, RunStep, TestRun as RunModel
 from app.services import statistics_execution
 from app.services.statistics_execution import (
     StatisticsScriptOutput,
     execute_statistics_node,
+    list_statistics_csv_files,
+    require_statistics_selection,
     select_statistics_inputs,
 )
 from app.services.statistics_scripts import validate_filename
@@ -78,10 +80,14 @@ def create_statistics_run(
 
 
 class FakeSFTP:
+    def __init__(self):
+        self.put_calls = []
+
     async def makedirs(self, _path, exist_ok=False):
         return None
 
     async def put(self, _local, _remote):
+        self.put_calls.append((_local, _remote))
         return None
 
     async def posix_rename(self, _source, _target):
@@ -112,9 +118,13 @@ class FakeConnection:
         return None
 
 
-def install_statistics_fakes(monkeypatch, handler, checksum: str = "a" * 64) -> None:
+def install_statistics_fakes(monkeypatch, handler, checksum: str = "a" * 64):
+    connections = []
+
     async def fake_connect(**_kwargs):
-        return FakeConnection(handler)
+        connection = FakeConnection(handler)
+        connections.append(connection)
+        return connection
 
     async def fake_read(_resource, filename):
         return {
@@ -124,6 +134,7 @@ def install_statistics_fakes(monkeypatch, handler, checksum: str = "a" * 64) -> 
 
     monkeypatch.setattr(statistics_execution.asyncssh, "connect", fake_connect)
     monkeypatch.setattr(statistics_execution.statistics_script_service, "read", fake_read)
+    return connections
 
 
 def statistics_payload(filename: str, value: float = 1234.5) -> dict[str, typing.Any]:
@@ -153,12 +164,100 @@ def add_parsed_csv_artifact(db, run, parser, tmp_path: Path, filename: str) -> A
     return artifact
 
 
+def select_legacy_inputs(step: RunStep, *artifacts: Artifact) -> dict[str, typing.Any]:
+    selection = {
+        "inputs": [
+            {
+                "artifact_id": artifact.id,
+                "filename": artifact.name,
+                "size": artifact.size,
+                "checksum": artifact.checksum,
+            }
+            for artifact in artifacts
+        ],
+        "selected_by": 1,
+        "selected_at": "2026-07-28T10:00:00+08:00",
+    }
+    step.result_summary = {**(step.result_summary or {}), "statistics_selection": selection}
+    return selection
+
+
 def response_error_code(response) -> str:
     payload = response.json()
     detail = payload.get("detail")
     if isinstance(detail, dict):
         return detail["code"]
     return payload["code"]
+
+
+@pytest.mark.asyncio
+async def test_statistics_csv_listing_filters_scope_and_file_types(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, parser, _step, _artifact = create_statistics_run(
+            db, plan["id"], scenario["id"], tmp_path
+        )
+        resource = db.get(Resource, parser_data["id"])
+        current_directory = f"r{run.id}-s{parser.id}-a0-current"
+        other_directory = f"r{run.id + 1}-s{parser.id}-a0-other"
+
+        def entry(name, file_type, size=10):
+            return SimpleNamespace(
+                filename=name,
+                attrs=SimpleNamespace(type=file_type, size=size, mtime=100),
+            )
+
+        regular = statistics_execution.asyncssh.FILEXFER_TYPE_REGULAR
+        directory = statistics_execution.asyncssh.FILEXFER_TYPE_DIRECTORY
+        paths = {
+            "/tmp/parser": [
+                entry("root.csv", regular), entry("note.txt", regular),
+                entry("fake.csv", directory), entry(".openslt-runs", directory),
+            ],
+            "/tmp/parser/.openslt-runs": [
+                entry(current_directory, directory),
+                entry(other_directory, directory),
+                entry(f"r{run.id}-s999-a0-unrelated", directory),
+            ],
+            f"/tmp/parser/.openslt-runs/{current_directory}": [
+                entry("result.csv", regular), entry("UPPER.CSV", regular),
+                entry("nested.csv", directory),
+            ],
+        }
+
+        class ListingSFTP:
+            def scandir(self, path):
+                async def generate():
+                    for item in paths.get(path, []):
+                        yield item
+                return generate()
+
+            def exit(self):
+                return None
+
+        class ListingConnection:
+            async def start_sftp_client(self):
+                return ListingSFTP()
+
+            def close(self):
+                return None
+
+            async def wait_closed(self):
+                return None
+
+        async def fake_connect(**_kwargs):
+            return ListingConnection()
+
+        monkeypatch.setattr(statistics_execution.asyncssh, "connect", fake_connect)
+        listing = await list_statistics_csv_files(resource, run)
+        assert [item["relative_path"] for item in listing["files"]] == [
+            "root.csv",
+            f".openslt-runs/{current_directory}/UPPER.CSV",
+            f".openslt-runs/{current_directory}/result.csv",
+        ]
 
 
 def test_statistics_output_contract_and_script_name_validation():
@@ -189,46 +288,74 @@ def test_statistics_output_contract_and_script_name_validation():
         validate_filename("../statistics.py")
 
 
-def test_statistics_input_selection_rejects_other_artifacts(client, admin_headers, tmp_path):
+def test_legacy_statistics_input_selection_rejects_other_artifacts(client, admin_headers, tmp_path):
     plan, scenario = create_plan_scenario(client, admin_headers)
     with SessionLocal() as db:
         run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
-        selection = select_statistics_inputs(db, run, step, [artifact.id], actor_id=1)
-        assert selection["inputs"][0]["filename"] == artifact.name
+        select_legacy_inputs(step, artifact)
+        selection = require_statistics_selection(db, run, step)
+        assert selection[0]["filename"] == artifact.name
         other = Artifact(
-            run_id=run.id, step_id=step.id, artifact_type="parsed_csv", name="wrong.csv",
+            run_id=run.id, step_id=step.id, artifact_type="statistics_result_json", name="wrong.csv",
             path=artifact.path, content_type="text/csv", size=artifact.size,
             checksum=artifact.checksum, is_immutable=True,
         )
         db.add(other)
         db.flush()
         with pytest.raises(WorkflowError) as changed:
-            select_statistics_inputs(db, run, step, [other.id], actor_id=1)
+            select_legacy_inputs(step, other)
+            require_statistics_selection(db, run, step)
         assert changed.value.code == "STATISTICS_INPUT_INVALID"
 
 
-def test_statistics_inputs_endpoint_rejects_wrong_state_and_foreign_artifact(
-    client, admin_headers, tmp_path
+def test_statistics_inputs_endpoint_rejects_invalid_path_and_wrong_state(
+    client, admin_headers, tmp_path, monkeypatch
 ):
+    parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
+
+    async def fake_list(_resource, _run):
+        return {
+            "directory": "/tmp/parser",
+            "files": [{
+                "relative_path": "latency.csv", "filename": "latency.csv",
+                "source": "root", "size": 12,
+                "modified_at": "2026-07-28T10:00:00+08:00",
+            }],
+        }
+
+    monkeypatch.setattr(statistics_execution, "list_statistics_csv_files", fake_list)
+    from app.api.routes import runs as run_routes
+    monkeypatch.setattr(run_routes, "list_statistics_csv_files", fake_list)
     with SessionLocal() as db:
-        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
-        _other_run, _other_parser, _other_step, other_artifact = create_statistics_run(
-            db, plan["id"], scenario["id"], tmp_path, "R-STATISTICS-2"
-        )
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        db.add(RunResource(run_id=run.id, resource_id=parser_data["id"], position=1))
         db.commit()
         run_id = run.id
         step_id = step.id
-        artifact_id = artifact.id
-        other_artifact_id = other_artifact.id
+
+    response = client.get(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-csv-files",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["files"][0]["relative_path"] == "latency.csv"
 
     response = client.put(
         f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs",
         headers=admin_headers,
-        json={"artifact_ids": [other_artifact_id]},
+        json={"relative_paths": ["../outside.csv"]},
     )
     assert response.status_code == 409
     assert response_error_code(response) == "STATISTICS_INPUT_INVALID"
+
+    response = client.put(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs",
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["inputs"][0]["relative_path"] == "latency.csv"
 
     with SessionLocal() as db:
         stored = db.get(RunModel, run_id)
@@ -238,7 +365,7 @@ def test_statistics_inputs_endpoint_rejects_wrong_state_and_foreign_artifact(
     response = client.put(
         f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs",
         headers=admin_headers,
-        json={"artifact_ids": [artifact_id]},
+        json={"relative_paths": ["latency.csv"]},
     )
     assert response.status_code == 409
     assert response_error_code(response) == "STATISTICS_SELECTION_NOT_ALLOWED"
@@ -261,7 +388,7 @@ async def test_statistics_execution_creates_metrics_and_json_artifact(
     with SessionLocal() as db:
         run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
         resource = db.get(Resource, parser_data["id"])
-        select_statistics_inputs(db, run, step, [artifact.id], actor_id=1)
+        select_legacy_inputs(step, artifact)
         result = await execute_statistics_node(
             db,
             run,
@@ -303,7 +430,7 @@ async def test_statistics_execution_rejects_failed_or_invalid_script_output(
     with SessionLocal() as db:
         run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
         resource = db.get(Resource, parser_data["id"])
-        select_statistics_inputs(db, run, step, [artifact.id], actor_id=1)
+        select_legacy_inputs(step, artifact)
         with pytest.raises(WorkflowError) as exc:
             await execute_statistics_node(
                 db,
@@ -345,7 +472,7 @@ async def test_statistics_multifile_failure_does_not_keep_partial_metrics(
         run, parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
         second = add_parsed_csv_artifact(db, run, parser, tmp_path, "second.csv")
         resource = db.get(Resource, parser_data["id"])
-        select_statistics_inputs(db, run, step, [artifact.id, second.id], actor_id=1)
+        select_legacy_inputs(step, artifact, second)
         with pytest.raises(WorkflowError) as exc:
             await execute_statistics_node(
                 db,
@@ -382,7 +509,7 @@ async def test_statistics_retry_replaces_previous_metrics(
     with SessionLocal() as db:
         run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
         resource = db.get(Resource, parser_data["id"])
-        select_statistics_inputs(db, run, step, [artifact.id], actor_id=1)
+        select_legacy_inputs(step, artifact)
         for _ in range(2):
             await execute_statistics_node(
                 db,
@@ -397,6 +524,57 @@ async def test_statistics_retry_replaces_previous_metrics(
             "average": 250.0,
             "p99": 350.0,
         }
+
+
+@pytest.mark.asyncio
+async def test_statistics_executes_selected_remote_csv_without_upload(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    listing = {
+        "directory": "/tmp/parser",
+        "files": [{
+            "relative_path": "latency.csv", "filename": "latency.csv",
+            "source": "root", "size": 12,
+            "modified_at": "2026-07-28T10:00:00+08:00",
+        }],
+    }
+
+    async def fake_list(_resource, _run):
+        return listing
+
+    commands = []
+
+    def handler(command):
+        commands.append(command)
+        return SimpleNamespace(
+            exit_status=0,
+            stdout=json.dumps(statistics_payload("latency.csv", 100)),
+            stderr="",
+        )
+
+    monkeypatch.setattr(statistics_execution, "list_statistics_csv_files", fake_list)
+    connections = install_statistics_fakes(monkeypatch, handler)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(
+            db, plan["id"], scenario["id"], tmp_path
+        )
+        resource = db.get(Resource, parser_data["id"])
+        await select_statistics_inputs(
+            db, run, step, resource, ["latency.csv"], actor_id=1
+        )
+        result = await execute_statistics_node(
+            db, run, step,
+            SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+            {"parser": resource},
+        )
+        assert shlex.split(commands[0])[1] == "/tmp/parser/latency.csv"
+        assert connections[-1].sftp.put_calls == []
+        assert result["statistics_results"][0]["source_path"] == "latency.csv"
+        metric = db.query(Metric).filter(Metric.run_id == run.id).first()
+        assert metric.detail["source_path"] == "latency.csv"
+        assert metric.detail["source_artifact_id"] is None
 
 
 def test_statistics_script_list_endpoint(client, admin_headers, monkeypatch):

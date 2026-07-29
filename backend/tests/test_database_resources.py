@@ -62,6 +62,43 @@ def test_database_resource_normalizes_names_and_hides_secret(client: TestClient,
     assert edited.json()["has_database_password"] is True
 
 
+def test_database_config_items_use_dynamic_catalog(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch,
+):
+    resource = create_database(client, admin_headers)
+
+    async def fake_list(configured_resource, database_name):
+        assert configured_resource.id == resource["id"]
+        assert database_name == "rem_core"
+        return [
+            {"key": "SETTING_A", "description": "配置 A"},
+            {"key": "SETTING_B", "description": None},
+        ]
+
+    router_module = importlib.import_module("app.api.routes.database_resources")
+    monkeypatch.setattr(router_module, "list_database_config_items", fake_list)
+    response = client.get(
+        f"/api/v1/resources/{resource['id']}/database/config-items",
+        headers=admin_headers,
+        params={"database_name": "rem_core"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == [
+        {"key": "SETTING_A", "description": "配置 A"},
+        {"key": "SETTING_B", "description": None},
+    ]
+
+    invalid = client.get(
+        f"/api/v1/resources/{resource['id']}/database/config-items",
+        headers=admin_headers,
+        params={"database_name": "not_configured"},
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["code"] == "DATABASE_NOT_CONFIGURED"
+
+
 def test_tunnel_requires_ssh_endpoint(client: TestClient, admin_headers: typing.Dict[str, str]):
     invalid = client.post(
         "/api/v1/resources",

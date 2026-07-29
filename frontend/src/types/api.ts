@@ -21,7 +21,8 @@ export type WorkflowNodeConfig = Partial<
   Schemas['MarketStartupConfig'] &
   Schemas['OrderPreparationConfig'] &
   Schemas['ParserConfig'] &
-  Schemas['StatisticsConfig']
+  Schemas['StatisticsConfig'] &
+  Schemas['ReportGenerationConfig']
 >
 export type EditableWorkflowNode = {
   id?: number

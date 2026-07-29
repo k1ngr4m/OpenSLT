@@ -21,7 +21,16 @@ from sqlalchemy.orm import Session
 from app.adapters.database import mysql_adapter, validate_database
 from app.core.compat import to_thread
 from app.core.config import settings
-from app.models import ContractDataFile, Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestScenario
+from app.models import (
+    Artifact,
+    ContractDataFile,
+    Resource,
+    RunStep,
+    ScenarioWorkflowNode,
+    ScenarioWorkflowVersion,
+    TestRun,
+    TestScenario,
+)
 from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.resource_relations import node_config_with_relations, node_contract_file_ids
 from app.services.workflow_capture import _ssh_options
@@ -30,6 +39,68 @@ from app.workflow_node_configs import OrderPreparationConfig, parse_node_config
 
 
 MAX_CONTRACT_CSV_BYTES = 50 * 1024 * 1024
+
+
+def _archive_order_config(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    filename: str,
+    content: str,
+    checksum: str,
+) -> Artifact:
+    data = content.encode("utf-8")
+    actual_checksum = hashlib.sha256(data).hexdigest()
+    if actual_checksum != checksum:
+        raise WorkflowError("ORDER_CONFIG_CHECKSUM_INVALID", "发单 XML 内容校验失败", 409)
+    existing = db.scalar(
+        select(Artifact).where(
+            Artifact.run_id == run.id,
+            Artifact.step_id == step.id,
+            Artifact.artifact_type == "order_config_xml",
+        )
+    )
+    if existing is not None:
+        existing_path = Path(existing.path)
+        if (
+            existing.checksum != checksum
+            or not existing_path.is_file()
+            or hashlib.sha256(existing_path.read_bytes()).hexdigest() != checksum
+        ):
+            raise WorkflowError("ORDER_CONFIG_ARCHIVE_CHANGED", "已归档的发单 XML 已丢失或发生变化", 409)
+        return existing
+
+    directory = (
+        settings.artifact_root
+        / run.business_code
+        / str(run.plan_id)
+        / str(run.scenario_id)
+        / run.run_number
+        / "order"
+        / str(step.id)
+    )
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / "order-config.xml"
+    temporary = directory / f".{target.name}.{uuid4().hex}.tmp"
+    try:
+        temporary.write_bytes(data)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    artifact = Artifact(
+        run_id=run.id,
+        step_id=step.id,
+        artifact_type="order_config_xml",
+        name=filename,
+        path=str(target),
+        content_type="application/xml; charset=utf-8",
+        size=len(data),
+        checksum=checksum,
+        is_immutable=True,
+    )
+    db.add(artifact)
+    db.flush()
+    return artifact
 
 def parse_read_symbol_csv(document: dict) -> int:
     matches: list[str] = []
@@ -314,6 +385,9 @@ async def prepare_order_node(
     version: ScenarioWorkflowVersion,
     node: ScenarioWorkflowNode,
     run_resources: dict[str, Resource],
+    *,
+    run: typing.Optional[TestRun] = None,
+    step: typing.Optional[RunStep] = None,
 ) -> dict:
     resource = run_resources.get("order")
     if not resource:
@@ -329,6 +403,16 @@ async def prepare_order_node(
     expected = config.xml_checksum
     if expected and detail["checksum"] != expected:
         raise WorkflowError("ORDER_CONFIG_CHANGED", "XML 配置校验值与发布版本不一致", 409)
+    xml_artifact = None
+    if run is not None and step is not None:
+        xml_artifact = _archive_order_config(
+            db,
+            run,
+            step,
+            str(detail["name"]),
+            str(detail["content"]),
+            str(detail["checksum"]),
+        )
     read_csv = parse_read_symbol_csv(detail["document"])
     file_summaries = []
     if read_csv:
@@ -357,6 +441,7 @@ async def prepare_order_node(
         "prepared": True,
         "xml_filename": detail["name"],
         "xml_checksum": detail["checksum"],
+        "xml_artifact_id": xml_artifact.id if xml_artifact else None,
         "read_symbol_csv": read_csv,
         "network_interface": interface or None,
         "order_action": config.order_action,

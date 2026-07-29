@@ -77,7 +77,7 @@ def execute_and_complete_current_step(client, headers, run_id):
     return complete_current_step(client, headers, run_id)
 
 
-def test_slnic_publish_rejects_invalid_sequence(client, admin_headers):
+def test_slnic_publish_allows_any_node_type_sequence(client, admin_headers):
     resource = create_resource(client, admin_headers, "SLNIC-order", resource_type="slnic")
     _, scenario = create_plan_scenario(
         client, admin_headers, required_types=["slnic"], resource_ids=[resource["id"]]
@@ -91,18 +91,24 @@ def test_slnic_publish_rejects_invalid_sequence(client, admin_headers):
         json={
             "expected_revision": document["draft"]["revision"],
             "resource_ids": [resource["id"]],
-            "nodes": [slnic_nodes()[1], slnic_nodes()[2]],
+            "nodes": [
+                {
+                    "node_key": "report",
+                    "node_type": "report_generation",
+                    "name": "生成报告",
+                    "config": {},
+                },
+                slnic_nodes()[1],
+                slnic_nodes()[2],
+            ],
         },
     )
     assert response.status_code == 200, response.text
-    messages = {item["message"] for item in response.json()["validation_errors"]}
-    assert "关闭 SLNIC 节点前需要先启动抓包" in messages
-    assert "合并 pcapng 前需要先关闭 SLNIC 抓包" in messages
+    assert response.json()["validation_errors"] == []
     published = client.post(
         f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers
     )
-    assert published.status_code == 422
-    assert published.json()["code"] == "WORKFLOW_VALIDATION_FAILED"
+    assert published.status_code == 200, published.text
 
 
 def test_remote_slnic_run_executes_fixed_commands_and_downloads(

@@ -11,6 +11,11 @@ VERSION=""
 SKIP_TESTS=false
 BUNDLE_PYTHON=false
 PYTHON_RUNTIME_ROOT="/opt/rh/rh-python38"
+BUNDLE_NODE=false
+NODE_VERSION="20.20.2"
+NODE_BASE_URL="https://unofficial-builds.nodejs.org/download/release"
+NODE_ARCHIVE=""
+NODE_SHASUMS=""
 
 usage() {
     cat <<'EOF'
@@ -22,11 +27,16 @@ Options:
   --output DIR        Output directory (default: release/)
   --version VERSION   Bundle version label
   --bundle-python     Include /opt/rh/rh-python38 for Python bootstrap
-  --skip-tests        Skip the offline wheel reinstall and backend tests
+  --bundle-node       Include Node.js, npm, and a verified offline npm cache
+  --node-version VER  linux-x64-glibc-217 Node version (default: 20.20.2)
+  --node-base-url URL Unofficial Node.js release base URL
+  --node-archive FILE Use a predownloaded Node .tar.gz archive
+  --node-shasums FILE Use a predownloaded SHASUMS256.txt (required with archive)
+  --skip-tests        Skip Python wheel validation and test suites
   -h, --help          Show this help
 
-frontend/dist must already contain a current production build. Build it on a
-supported Node.js 20 host before running this script.
+Without --bundle-node, frontend/dist must already contain a current production
+build. With --bundle-node, the bundled runtime builds and validates it.
 EOF
 }
 
@@ -51,6 +61,26 @@ while (($#)); do
         --bundle-python)
             BUNDLE_PYTHON=true
             shift
+            ;;
+        --bundle-node)
+            BUNDLE_NODE=true
+            shift
+            ;;
+        --node-version)
+            NODE_VERSION="$2"
+            shift 2
+            ;;
+        --node-base-url)
+            NODE_BASE_URL="$2"
+            shift 2
+            ;;
+        --node-archive)
+            NODE_ARCHIVE="$2"
+            shift 2
+            ;;
+        --node-shasums)
+            NODE_SHASUMS="$2"
+            shift 2
             ;;
         --skip-tests)
             SKIP_TESTS=true
@@ -96,28 +126,47 @@ if [[ "$BUNDLE_PYTHON" == true ]]; then
         exit 1
     }
 fi
-[[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
-    printf 'frontend/dist is missing. Build the frontend before creating the bundle.\n' >&2
-    exit 1
-}
-if find \
-    "$PROJECT_ROOT/frontend/src" \
-    "$PROJECT_ROOT/frontend/public" \
-    "$PROJECT_ROOT/frontend/index.html" \
-    "$PROJECT_ROOT/frontend/package.json" \
-    "$PROJECT_ROOT/frontend/package-lock.json" \
-    "$PROJECT_ROOT/frontend/vite.config.ts" \
-    -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print -quit | grep -q .; then
-    printf 'frontend/dist is older than one or more frontend source files. Rebuild it first.\n' >&2
-    find \
+if [[ "$BUNDLE_NODE" == true ]]; then
+    NODE_VERSION="${NODE_VERSION#v}"
+    [[ "$NODE_VERSION" =~ ^20\.[0-9]+\.[0-9]+$ ]] || {
+        printf 'Node version must be a complete Node.js 20 release such as 20.20.2.\n' >&2
+        exit 2
+    }
+    if [[ -n "$NODE_ARCHIVE" || -n "$NODE_SHASUMS" ]]; then
+        [[ -f "$NODE_ARCHIVE" && -f "$NODE_SHASUMS" ]] || {
+            printf -- '--node-archive and --node-shasums must name existing files together.\n' >&2
+            exit 2
+        }
+    fi
+else
+    if [[ -n "$NODE_ARCHIVE" || -n "$NODE_SHASUMS" || "$NODE_VERSION" != "20.20.2" \
+        || "$NODE_BASE_URL" != "https://unofficial-builds.nodejs.org/download/release" ]]; then
+        printf 'Node download options require --bundle-node.\n' >&2
+        exit 2
+    fi
+    [[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
+        printf 'frontend/dist is missing. Build the frontend before creating the bundle.\n' >&2
+        exit 1
+    }
+    if find \
         "$PROJECT_ROOT/frontend/src" \
         "$PROJECT_ROOT/frontend/public" \
         "$PROJECT_ROOT/frontend/index.html" \
         "$PROJECT_ROOT/frontend/package.json" \
         "$PROJECT_ROOT/frontend/package-lock.json" \
         "$PROJECT_ROOT/frontend/vite.config.ts" \
-        -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print >&2
-    exit 1
+        -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print -quit | grep -q .; then
+        printf 'frontend/dist is older than one or more frontend source files. Rebuild it first.\n' >&2
+        find \
+            "$PROJECT_ROOT/frontend/src" \
+            "$PROJECT_ROOT/frontend/public" \
+            "$PROJECT_ROOT/frontend/index.html" \
+            "$PROJECT_ROOT/frontend/package.json" \
+            "$PROJECT_ROOT/frontend/package-lock.json" \
+            "$PROJECT_ROOT/frontend/vite.config.ts" \
+            -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print >&2
+        exit 1
+    fi
 fi
 
 if [[ -z "$VERSION" ]]; then
@@ -155,9 +204,101 @@ tar -C "$PROJECT_ROOT" \
     --exclude='./backend/logs' \
     --exclude='./frontend/node_modules' \
     --exclude='./frontend/.vite' \
+    --exclude='./frontend/*.tsbuildinfo' \
     --exclude='__pycache__' \
     --exclude='*.pyc' \
     -cf - . | tar -C "$STAGING/app" -xf -
+
+if [[ "$BUNDLE_NODE" == true ]]; then
+    NODE_ARCHIVE_NAME="node-v${NODE_VERSION}-linux-x64-glibc-217.tar.gz"
+    NODE_RELEASE_URL="${NODE_BASE_URL%/}/v${NODE_VERSION}"
+    DOWNLOADED_NODE_ARCHIVE="$BUILD_ROOT/$NODE_ARCHIVE_NAME"
+    DOWNLOADED_NODE_SHASUMS="$BUILD_ROOT/SHASUMS256.txt"
+
+    if [[ -n "$NODE_ARCHIVE" ]]; then
+        cp -p "$NODE_ARCHIVE" "$DOWNLOADED_NODE_ARCHIVE"
+        cp -p "$NODE_SHASUMS" "$DOWNLOADED_NODE_SHASUMS"
+        NODE_SOURCE="local:$NODE_ARCHIVE_NAME"
+    else
+        command -v curl >/dev/null 2>&1 || {
+            printf 'curl is required to download the Node.js runtime.\n' >&2
+            exit 1
+        }
+        printf '[OpenSLT] Downloading the unofficial Node.js glibc 2.17 runtime...\n'
+        curl --fail --location --show-error --silent --retry 3 --connect-timeout 30 \
+            --output "$DOWNLOADED_NODE_SHASUMS" "$NODE_RELEASE_URL/SHASUMS256.txt"
+        curl --fail --location --show-error --silent --retry 3 --connect-timeout 30 \
+            --output "$DOWNLOADED_NODE_ARCHIVE" "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
+        NODE_SOURCE="$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
+    fi
+
+    NODE_EXPECTED_SHA="$(awk -v filename="$NODE_ARCHIVE_NAME" \
+        '$2 == filename { print $1 }' "$DOWNLOADED_NODE_SHASUMS")"
+    [[ "$NODE_EXPECTED_SHA" =~ ^[0-9a-fA-F]{64}$ ]] || {
+        printf 'No unique SHA-256 entry for %s was found in SHASUMS256.txt.\n' \
+            "$NODE_ARCHIVE_NAME" >&2
+        exit 1
+    }
+    NODE_ACTUAL_SHA="$(sha256sum "$DOWNLOADED_NODE_ARCHIVE" | awk '{print $1}')"
+    [[ "${NODE_ACTUAL_SHA,,}" == "${NODE_EXPECTED_SHA,,}" ]] || {
+        printf 'Node.js archive SHA-256 mismatch for %s.\n' "$NODE_ARCHIVE_NAME" >&2
+        printf 'Expected: %s\nActual:   %s\n' "$NODE_EXPECTED_SHA" "$NODE_ACTUAL_SHA" >&2
+        exit 1
+    }
+
+    printf '[OpenSLT] Extracting and validating Node.js %s...\n' "$NODE_VERSION"
+    mkdir -p "$STAGING/node-runtime"
+    tar -xzf "$DOWNLOADED_NODE_ARCHIVE" \
+        --strip-components=1 -C "$STAGING/node-runtime"
+    NODE_BIN="$STAGING/node-runtime/bin/node"
+    NPM_BIN="$STAGING/node-runtime/bin/npm"
+    [[ -x "$NODE_BIN" && -x "$NPM_BIN" ]] || {
+        printf 'The Node.js archive does not contain executable node and npm binaries.\n' >&2
+        exit 1
+    }
+    export PATH="$STAGING/node-runtime/bin:$PATH"
+    ACTUAL_NODE_VERSION="$($NODE_BIN --version)"
+    [[ "$ACTUAL_NODE_VERSION" == "v$NODE_VERSION" ]] || {
+        printf 'Extracted Node.js version mismatch: expected v%s, found %s.\n' \
+            "$NODE_VERSION" "$ACTUAL_NODE_VERSION" >&2
+        exit 1
+    }
+    NPM_VERSION="$($NPM_BIN --version)"
+    NPM_MAJOR="${NPM_VERSION%%.*}"
+    [[ "$NPM_MAJOR" =~ ^[0-9]+$ && "$NPM_MAJOR" -ge 10 ]] || {
+        printf 'OpenSLT frontend requires npm >=10; bundled Node contains npm %s.\n' \
+            "$NPM_VERSION" >&2
+        exit 1
+    }
+
+    FRONTEND_DIR="$STAGING/app/frontend"
+    NPM_CACHE_DIR="$STAGING/npm-cache"
+    mkdir -p "$NPM_CACHE_DIR"
+    printf '[OpenSLT] Populating the npm cache from package-lock.json...\n'
+    "$NPM_BIN" --prefix "$FRONTEND_DIR" ci \
+        --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund
+    rm -rf -- "$FRONTEND_DIR/node_modules"
+    printf '[OpenSLT] Validating a network-free npm installation...\n'
+    "$NPM_BIN" --prefix "$FRONTEND_DIR" ci --offline \
+        --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund
+    if [[ "$SKIP_TESTS" == false ]]; then
+        "$NPM_BIN" --prefix "$FRONTEND_DIR" run test
+    fi
+    "$NPM_BIN" --prefix "$FRONTEND_DIR" run build
+    rm -rf -- "$FRONTEND_DIR/node_modules" "$NPM_CACHE_DIR/_logs"
+
+    PACKAGE_LOCK_SHA="$(sha256sum "$FRONTEND_DIR/package-lock.json" | awk '{print $1}')"
+    cat >"$STAGING/node-runtime/METADATA" <<EOF
+node_version=$NODE_VERSION
+npm_version=$NPM_VERSION
+platform=linux-x64-glibc-217
+source=$NODE_SOURCE
+archive_filename=$NODE_ARCHIVE_NAME
+archive_sha256=$NODE_ACTUAL_SHA
+package_lock_sha256=$PACKAGE_LOCK_SHA
+warning=Experimental community build; not an official Node.js release binary.
+EOF
+fi
 
 BUILD_VENV="$BUILD_ROOT/build-venv"
 "$PYTHON" -m venv "$BUILD_VENV"
@@ -203,10 +344,13 @@ fi
 cp -p "$SCRIPT_DIR/install-offline.sh" "$STAGING/install.sh"
 cp -p "$SCRIPT_DIR/configure-intranet-host.sh" "$STAGING/configure.sh"
 cp -p "$SCRIPT_DIR/start-production.sh" "$STAGING/start.sh"
+cp -p "$SCRIPT_DIR/build-frontend-intranet.sh" "$STAGING/build-frontend.sh"
 cp -p "$SCRIPT_DIR/deployment-config.sh" "$STAGING/deployment-config.sh"
 cp -p "$SCRIPT_DIR/openslt.env.example" "$STAGING/openslt.env.example"
 cp -p "$SCRIPT_DIR/README-OFFLINE.md" "$STAGING/README-OFFLINE.md"
-chmod 0755 "$STAGING/install.sh" "$STAGING/configure.sh" "$STAGING/start.sh"
+chmod 0755 \
+    "$STAGING/install.sh" "$STAGING/configure.sh" "$STAGING/start.sh" \
+    "$STAGING/build-frontend.sh"
 
 printf '%s\n' "$VERSION" >"$STAGING/VERSION"
 (

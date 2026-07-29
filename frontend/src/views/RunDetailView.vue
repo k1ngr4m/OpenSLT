@@ -47,6 +47,14 @@ const contractPreviewError = ref('')
 const contractPreviewCache = reactive<Record<number, ContractFilePreview>>({})
 
 const canStart = computed(() => ['draft', 'resource_queue'].includes(run.value?.status || ''))
+const isWorkflowRun = computed(() => Boolean(run.value?.config_snapshot?.workflow))
+const canEditVerdict = computed(() => Boolean(
+  auth.canOperate && run.value
+  && (run.value.status === 'awaiting_review' || (run.value.status === 'completed' && isWorkflowRun.value)),
+))
+const canRegenerateReports = computed(() => Boolean(
+  auth.canOperate && run.value?.status === 'completed' && isWorkflowRun.value,
+))
 const isTerminalRunStatus = computed(() => ['completed', 'cancelled', 'execution_failed', 'parse_failed', 'precheck_failed', 'timed_out'].includes(run.value?.status || ''))
 const currentStep = computed(() => findCurrentStep(run.value?.steps || []))
 const selectedStep = computed(() => {
@@ -85,6 +93,9 @@ const {
   action,
   cancel,
   download,
+  openVerdict,
+  regenerateReports,
+  regeneratingReports,
   stepAction,
   submitVerdict,
   verdict,
@@ -134,10 +145,13 @@ const {
 const {
   canSelectStatisticsInputs,
   displayStatisticsValue,
+  displayedStatisticsCsvFiles,
+  loadingStatisticsCsvFiles,
+  refreshStatisticsCsvFiles,
   saveStatisticsInputs,
   savingStatisticsInputs,
-  selectedArtifactIds,
-  statisticsInputArtifacts,
+  selectedRelativePaths,
+  statisticsCsvDirectory,
   statisticsResults,
   statisticsSelectionDirty,
   statisticsSelectionReady,
@@ -179,6 +193,11 @@ const stepLogsCount = computed(() => {
 const selectedCaptureSignature = computed(() => selectedStep.value ? snapshotSignature(selectedStep.value) : '')
 const selectedCaptureState = computed(() => selectedStep.value ? captureStates[selectedStep.value.id] : undefined)
 const captureSnapshots = computed(() => selectedCaptureState.value?.data || [])
+const sensitiveArtifactTypes = new Set(['web_report', 'excel_report', 'pdf_report', 'order_config_xml'])
+
+function canDownloadArtifact(artifactType: string) {
+  return auth.canOperate || !sensitiveArtifactTypes.has(artifactType)
+}
 
 function findCurrentStep(steps: RunStep[]) {
   return steps.find(step => step.status !== 'succeeded') || steps[steps.length - 1] || null
@@ -338,7 +357,7 @@ watch(
           :disabled="Boolean(exportingTable) || statisticsActionBlocked"
           @click="currentStep && stepAction(currentStep, 'retry')"
         >重试</el-button>
-        <el-button v-if="run.status === 'awaiting_review'" type="success" @click="verdictDialog = true">提交人工结论</el-button>
+        <el-button v-if="canEditVerdict" type="success" @click="openVerdict(run.verdict)">{{ run.verdict ? '更新人工结论' : '提交人工结论' }}</el-button>
         <el-button v-if="!isTerminalRunStatus" type="danger" plain @click="cancel">取消</el-button>
       </div>
     </div>
@@ -418,22 +437,26 @@ watch(
                 <div class="section-heading">
                   <div>
                     <h3>统计输入 CSV</h3>
-                    <p class="muted">从绑定的数据解析节点产物中选择；保存选择后才能开始或重试。</p>
+                    <p class="muted">从解析资源根目录及本次运行的解析目录中选择；统计脚本将直接读取远端文件。</p>
                   </div>
-                  <el-tag v-if="canSelectStatisticsInputs" type="success" effect="plain">可选择</el-tag>
+                  <div class="parser-export-actions">
+                    <el-tag v-if="canSelectStatisticsInputs" type="success" effect="plain">可选择</el-tag>
+                    <el-button v-if="canSelectStatisticsInputs" :icon="Refresh" :loading="loadingStatisticsCsvFiles" circle plain aria-label="刷新统计 CSV" @click="refreshStatisticsCsvFiles" />
+                  </div>
                 </div>
-                <el-checkbox-group v-model="selectedArtifactIds" class="statistics-input-list" :disabled="!canSelectStatisticsInputs">
-                  <el-checkbox v-for="artifact in statisticsInputArtifacts" :key="artifact.id" :label="artifact.id">
+                <p v-if="statisticsCsvDirectory" class="muted mono">{{ statisticsCsvDirectory }}</p>
+                <el-checkbox-group v-model="selectedRelativePaths" class="statistics-input-list" :disabled="!canSelectStatisticsInputs" v-loading="loadingStatisticsCsvFiles">
+                  <el-checkbox v-for="file in displayedStatisticsCsvFiles" :key="file.relative_path" :value="file.relative_path">
                     <span class="statistics-input-copy">
-                      <strong>{{ artifact.name }}</strong>
-                      <small>{{ formatBytes(artifact.size) }} · {{ artifact.checksum.slice(0, 12) }}…</small>
+                      <strong>{{ file.relative_path }}</strong>
+                      <small>{{ file.source === 'root' ? '解析资源根目录' : '本次运行解析目录' }} · {{ formatBytes(file.size) }} · {{ formatDate(file.modified_at) }}</small>
                     </span>
                   </el-checkbox>
                 </el-checkbox-group>
-                <div v-if="!statisticsInputArtifacts.length" class="empty-line">前置解析节点暂无可统计的 CSV 产物</div>
+                <div v-if="!loadingStatisticsCsvFiles && !displayedStatisticsCsvFiles.length" class="empty-line">允许范围内暂无可统计的远端 CSV</div>
                 <div v-if="auth.canOperate && canSelectStatisticsInputs" class="statistics-selection-actions">
-                  <span class="muted">已勾选 {{ selectedArtifactIds.length }} 个<span v-if="statisticsSelectionDirty"> · 尚未保存</span></span>
-                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!selectedArtifactIds.length || !statisticsSelectionDirty" @click="saveStatisticsInputs">保存输入选择</el-button>
+                  <span class="muted">已勾选 {{ selectedRelativePaths.length }} 个<span v-if="statisticsSelectionDirty"> · 尚未保存</span></span>
+                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!selectedRelativePaths.length || !statisticsSelectionDirty" @click="saveStatisticsInputs">保存输入选择</el-button>
                 </div>
               </section>
 
@@ -584,9 +607,9 @@ watch(
                       <el-radio-button value="us">us</el-radio-button>
                     </el-radio-group>
                   </div>
-                  <section v-for="result in statisticsResults" :key="String(result.source_file)" class="statistics-result-card">
+                  <section v-for="result in statisticsResults" :key="String(result.source_path || result.source_file)" class="statistics-result-card">
                     <div class="statistics-result-title">
-                      <div><strong>{{ result.source_file }}</strong><span class="muted">{{ result.sample_count }} 个有效样本</span></div>
+                      <div><strong>{{ result.source_path || result.source_file }}</strong><span class="muted">{{ result.sample_count }} 个有效样本</span></div>
                       <el-tag effect="plain">{{ statisticsUnit }}</el-tag>
                     </div>
                     <div class="statistics-excluded">
@@ -604,9 +627,12 @@ watch(
                 </div>
 
                 <div v-if="selectedArtifacts.length" class="artifact-links">
-                  <el-button v-for="artifact in selectedArtifacts" :key="artifact.id" link type="primary" @click="download(artifact.id)">
-                    下载 {{ artifact.name }}
-                  </el-button>
+                  <template v-for="artifact in selectedArtifacts" :key="artifact.id">
+                    <el-button v-if="canDownloadArtifact(artifact.artifact_type)" link type="primary" @click="download(artifact.id)">
+                      下载 {{ artifact.name }}
+                    </el-button>
+                    <el-tag v-else type="info" effect="plain">{{ artifact.name }} · 受限</el-tag>
+                  </template>
                 </div>
 
                 <details v-if="showRawResult" class="json-fold">
@@ -643,12 +669,19 @@ watch(
           </el-tab-pane>
 
           <el-tab-pane label="产物与报告" name="artifacts">
+            <div v-if="canRegenerateReports" class="section-heading">
+              <div><h3>报告版本</h3><p class="muted">重新生成会创建下一版本，历史文件保持不变。</p></div>
+              <el-button :icon="Refresh" :loading="regeneratingReports" @click="regenerateReports">重新生成报告</el-button>
+            </div>
             <el-table :data="run.artifacts" empty-text="暂无产物">
               <el-table-column prop="name" label="文件" />
               <el-table-column prop="artifact_type" label="类型" width="140" />
               <el-table-column label="大小" width="110"><template #default="scope">{{ formatBytes(scope.row.size) }}</template></el-table-column>
               <el-table-column prop="checksum" label="SHA-256" show-overflow-tooltip />
-              <el-table-column width="90"><template #default="scope"><el-button link type="primary" @click="download(scope.row.id)">下载</el-button></template></el-table-column>
+              <el-table-column width="90"><template #default="scope">
+                <el-button v-if="canDownloadArtifact(scope.row.artifact_type)" link type="primary" @click="download(scope.row.id)">下载</el-button>
+                <el-tag v-else type="info" effect="plain" size="small">受限</el-tag>
+              </template></el-table-column>
             </el-table>
           </el-tab-pane>
         </el-tabs>
@@ -664,7 +697,7 @@ watch(
       />
     </div>
 
-    <el-dialog v-model="verdictDialog" title="提交人工复核结论" width="600px">
+    <el-dialog v-model="verdictDialog" :title="run.verdict ? '更新人工复核结论' : '提交人工复核结论'" width="600px">
       <el-form label-width="100px">
         <el-form-item label="最终结论">
           <el-radio-group v-model="verdict.final_result">

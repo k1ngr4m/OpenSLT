@@ -16,6 +16,8 @@ class OrderPreparationHandler:
             context.workflow,
             context.node,
             context.resources,
+            run=context.run,
+            step=context.step,
         )
         resource = context.resources["order"]
         session = await launch_order_session(

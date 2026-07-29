@@ -59,14 +59,14 @@ def _database_foreign_keys(inspector: sa.Inspector, table_name: str):
     }
 
 
-def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path) -> None:
+def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     database_path = tmp_path / "fresh.sqlite3"
     _alembic(database_path, "upgrade", "head")
 
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 27
+    assert len(model_table_names) == 28
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -110,7 +110,7 @@ def test_single_baseline_migration_matches_models_and_downgrades(tmp_path: Path)
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0001"
+        ).scalar_one() == "0002"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -139,13 +139,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 28
+    assert len(created_tables) == 29
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 27
-    assert sql.count("CHARSET=utf8mb4") == 27
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 27
+    assert sql.count("ENGINE=InnoDB") == 28
+    assert sql.count("CHARSET=utf8mb4") == 28
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 28
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert (
@@ -154,13 +154,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     ) in sql
 
 
-def test_only_single_baseline_revision_remains() -> None:
+def test_expected_migration_revisions_remain() -> None:
     revision_files = {
         path.name
         for path in (REPOSITORY_ROOT / "backend" / "migrations" / "versions").glob("*.py")
         if path.name != "__init__.py"
     }
-    assert revision_files == {"0001_initial.py"}
+    assert revision_files == {"0001_initial.py", "0002_database_config_templates.py"}
 
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"],
@@ -169,4 +169,4 @@ def test_only_single_baseline_revision_remains() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0001 (head)"
+    assert completed.stdout.strip() == "0002 (head)"

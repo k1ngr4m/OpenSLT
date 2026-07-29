@@ -140,6 +140,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/database-config-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Database Config Templates */
+        get: operations["list_database_config_templates_api_v1_database_config_templates_get"];
+        put?: never;
+        /** Create Database Config Template */
+        post: operations["create_database_config_template_api_v1_database_config_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/database-config-templates/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Database Config Template */
+        delete: operations["delete_database_config_template_api_v1_database_config_templates__template_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Database Config Template */
+        patch: operations["rename_database_config_template_api_v1_database_config_templates__template_id__patch"];
+        trace?: never;
+    };
     "/api/v1/logs": {
         parameters: {
             query?: never;
@@ -275,6 +311,23 @@ export interface paths {
         post?: never;
         /** Delete Resource */
         delete: operations["delete_resource_api_v1_resources__resource_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/resources/{resource_id}/database/config-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Database Config Items */
+        get: operations["database_config_items_api_v1_resources__resource_id__database_config_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -783,6 +836,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-csv-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Statistics Csv Files */
+        get: operations["get_statistics_csv_files_api_v1_runs__run_id__steps__step_id__statistics_csv_files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs": {
         parameters: {
             query?: never;
@@ -1219,6 +1289,13 @@ export interface components {
             /** Keys */
             keys?: string[];
         };
+        /** DatabaseConfigItemOut */
+        DatabaseConfigItemOut: {
+            /** Description */
+            description?: string | null;
+            /** Key */
+            key: string;
+        };
         /** DatabaseConfigNodeOut */
         DatabaseConfigNodeOut: {
             config?: components["schemas"]["DatabaseConfig"];
@@ -1248,6 +1325,37 @@ export interface components {
              * @enum {string}
              */
             node_type: "database_config";
+        };
+        /** DatabaseConfigTemplateCreate */
+        DatabaseConfigTemplateCreate: {
+            /** Keys */
+            keys: string[];
+            /** Name */
+            name: string;
+        };
+        /** DatabaseConfigTemplateOut */
+        DatabaseConfigTemplateOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Keys */
+            keys: string[];
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** DatabaseConfigTemplateRename */
+        DatabaseConfigTemplateRename: {
+            /** New Name */
+            new_name: string;
         };
         /** DatabaseDiscoveryOut */
         DatabaseDiscoveryOut: {
@@ -1802,6 +1910,38 @@ export interface components {
              */
             node_type: "rem_startup";
         };
+        /** ReportGenerationConfig */
+        ReportGenerationConfig: Record<string, unknown>;
+        /** ReportGenerationNodeOut */
+        ReportGenerationNodeOut: {
+            config?: components["schemas"]["ReportGenerationConfig"];
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "report_generation";
+            /** Position */
+            position: number;
+        };
+        /** ReportGenerationNodeWrite */
+        ReportGenerationNodeWrite: {
+            config?: components["schemas"]["ReportGenerationConfig"];
+            /** Name */
+            name: string;
+            /** Node Key */
+            node_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            node_type: "report_generation";
+        };
         /** ResourceConnectionTestRequest */
         ResourceConnectionTestRequest: {
             /**
@@ -2310,16 +2450,31 @@ export interface components {
              */
             script_filename: string;
         };
+        /** StatisticsCsvFilesOut */
+        StatisticsCsvFilesOut: {
+            /** Directory */
+            directory: string;
+            /** Files */
+            files: components["schemas"]["StatisticsInputOut"][];
+        };
         /** StatisticsInputOut */
         StatisticsInputOut: {
-            /** Artifact Id */
-            artifact_id: number;
-            /** Checksum */
-            checksum: string;
             /** Filename */
             filename: string;
+            /**
+             * Modified At
+             * Format: date-time
+             */
+            modified_at: string;
+            /** Relative Path */
+            relative_path: string;
             /** Size */
             size: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "root" | "current_run";
         };
         /** StatisticsInputSelectionOut */
         StatisticsInputSelectionOut: {
@@ -2335,8 +2490,8 @@ export interface components {
         };
         /** StatisticsInputSelectionRequest */
         StatisticsInputSelectionRequest: {
-            /** Artifact Ids */
-            artifact_ids: number[];
+            /** Relative Paths */
+            relative_paths: string[];
         };
         /** StatisticsNodeOut */
         StatisticsNodeOut: {
@@ -2587,7 +2742,7 @@ export interface components {
             /** Expected Revision */
             expected_revision: number;
             /** Nodes */
-            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["RemStartupNodeWrite"] | components["schemas"]["MarketStartupNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"] | components["schemas"]["StatisticsNodeWrite"])[];
+            nodes?: (components["schemas"]["ServerConfigNodeWrite"] | components["schemas"]["DatabaseConfigNodeWrite"] | components["schemas"]["WiringConfirmationNodeWrite"] | components["schemas"]["RemStartupNodeWrite"] | components["schemas"]["MarketStartupNodeWrite"] | components["schemas"]["OrderPreparationNodeWrite"] | components["schemas"]["SlnicStartNodeWrite"] | components["schemas"]["SlnicStopNodeWrite"] | components["schemas"]["SlnicMergeNodeWrite"] | components["schemas"]["ParserNodeWrite"] | components["schemas"]["StatisticsNodeWrite"] | components["schemas"]["ReportGenerationNodeWrite"])[];
             /** Resource Ids */
             resource_ids: number[];
         };
@@ -2601,7 +2756,7 @@ export interface components {
             /** Id */
             id: number;
             /** Nodes */
-            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["RemStartupNodeOut"] | components["schemas"]["MarketStartupNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"] | components["schemas"]["StatisticsNodeOut"])[];
+            nodes?: (components["schemas"]["ServerConfigNodeOut"] | components["schemas"]["DatabaseConfigNodeOut"] | components["schemas"]["WiringConfirmationNodeOut"] | components["schemas"]["RemStartupNodeOut"] | components["schemas"]["MarketStartupNodeOut"] | components["schemas"]["OrderPreparationNodeOut"] | components["schemas"]["SlnicStartNodeOut"] | components["schemas"]["SlnicStopNodeOut"] | components["schemas"]["SlnicMergeNodeOut"] | components["schemas"]["ParserNodeOut"] | components["schemas"]["StatisticsNodeOut"] | components["schemas"]["ReportGenerationNodeOut"])[];
             /** Published At */
             published_at: string | null;
             /** Published By */
@@ -2870,6 +3025,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, unknown>[];
+                };
+            };
+        };
+    };
+    list_database_config_templates_api_v1_database_config_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigTemplateOut"][];
+                };
+            };
+        };
+    };
+    create_database_config_template_api_v1_database_config_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseConfigTemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_database_config_template_api_v1_database_config_templates__template_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_database_config_template_api_v1_database_config_templates__template_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseConfigTemplateRename"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3250,6 +3522,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    database_config_items_api_v1_resources__resource_id__database_config_items_get: {
+        parameters: {
+            query: {
+                database_name: string;
+            };
+            header?: never;
+            path: {
+                resource_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatabaseConfigItemOut"][];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -4528,6 +4833,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_statistics_csv_files_api_v1_runs__run_id__steps__step_id__statistics_csv_files_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatisticsCsvFilesOut"];
                 };
             };
             /** @description Validation Error */

@@ -110,11 +110,20 @@ else
     printf '[OpenSLT] Existing database mode: local MariaDB service management skipped.\n'
 fi
 
+NODE_REINSTALL_REQUIRED=false
+if [[ -d "$BUNDLE_ROOT/node-runtime" ]] \
+    && { [[ ! -x /opt/openslt-node/bin/node ]] \
+        || [[ ! -f /opt/openslt-node/METADATA ]] \
+        || [[ ! -d /var/cache/openslt/npm/_cacache ]] \
+        || [[ ! -x /opt/openslt/build-frontend.sh ]]; }; then
+    NODE_REINSTALL_REQUIRED=true
+fi
 if [[ "$FORCE_INSTALL" == true || "$INSTALLED_VERSION" != "$BUNDLE_VERSION" \
     || ! -x /opt/openslt/.venv/bin/uvicorn \
     || ! -f /etc/systemd/system/openslt-api.service \
     || ! -f /etc/nginx/conf.d/openslt.conf \
-    || ! -f /opt/openslt/frontend/dist/index.html ]]; then
+    || ! -f /opt/openslt/frontend/dist/index.html \
+    || "$NODE_REINSTALL_REQUIRED" == true ]]; then
     printf '[OpenSLT] Installing bundle version %s...\n' "$BUNDLE_VERSION"
     "$BUNDLE_ROOT/install.sh" \
         --env-file "$ENV_FILE" \

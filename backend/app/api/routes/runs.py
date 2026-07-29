@@ -34,7 +34,7 @@ from app.models import (
     Verdict,
 )
 from app.adapters.database import DatabaseOperationError, validate_database
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -43,7 +43,7 @@ from app.services.order_sessions import cleanup_order_session, order_session_nam
 from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
-from app.services.statistics_execution import select_statistics_inputs
+from app.services.statistics_execution import list_statistics_csv_files, select_statistics_inputs
 from app.services.parser_inputs import PARSER_TABLES
 from app.services.workflows import WorkflowError, export_parser_table_snapshot, load_version, resolve_parser_table_database, resource_map
 from app.wiring_profiles import build_wiring_snapshot
@@ -428,7 +428,7 @@ async def export_run_parser_table(
     "/runs/{run_id}/steps/{step_id}/statistics-inputs",
     response_model=StatisticsInputSelectionOut,
 )
-def update_statistics_inputs(
+async def update_statistics_inputs(
     run_id: int,
     step_id: int,
     payload: StatisticsInputSelectionRequest,
@@ -449,10 +449,18 @@ def update_statistics_inputs(
         )
         if not allowed or not current or current.id != step.id:
             raise WorkflowError("STATISTICS_SELECTION_NOT_ALLOWED", "当前数据统计节点不能选择输入", 409)
-        result = select_statistics_inputs(db, run, step, payload.artifact_ids, actor.id)
+        parser_resource = db.scalar(select(Resource).where(
+            Resource.id.in_(run_resource_ids(run)),
+            Resource.resource_type == "parser",
+        ))
+        if not parser_resource:
+            raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
+        result = await select_statistics_inputs(
+            db, run, step, parser_resource, payload.relative_paths, actor.id
+        )
         detail = {
             "run_id": run.id,
-            "artifact_ids": [item["artifact_id"] for item in result["inputs"]],
+            "relative_paths": [item["relative_path"] for item in result["inputs"]],
         }
         append_log(
             db,
@@ -477,9 +485,43 @@ def update_statistics_inputs(
             actor,
             request,
             result="failed",
-            detail={"run_id": run.id, "artifact_ids": payload.artifact_ids, "code": exc.code},
+            detail={"run_id": run.id, "relative_paths": payload.relative_paths, "code": exc.code},
         )
         db.commit()
+        raise workflow_http_error(exc) from exc
+
+
+@router.get(
+    "/runs/{run_id}/steps/{step_id}/statistics-csv-files",
+    response_model=StatisticsCsvFilesOut,
+)
+async def get_statistics_csv_files(
+    run_id: int,
+    step_id: int,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    _ = actor
+    run = load_run(db, run_id)
+    step = next((item for item in run.steps if item.id == step_id), None)
+    try:
+        if not step or step.node_type != "data_statistics":
+            raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
+        current = next((item for item in run.steps if item.status != "succeeded"), None)
+        allowed = (
+            (run.status == "awaiting_step_start" and step.status == "pending")
+            or (run.status == "awaiting_step_retry" and step.status == "failed")
+        )
+        if not allowed or not current or current.id != step.id:
+            raise WorkflowError("STATISTICS_SELECTION_NOT_ALLOWED", "当前数据统计节点不能选择输入", 409)
+        parser_resource = db.scalar(select(Resource).where(
+            Resource.id.in_(run_resource_ids(run)),
+            Resource.resource_type == "parser",
+        ))
+        if not parser_resource:
+            raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
+        return await list_statistics_csv_files(parser_resource, run)
+    except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
 
 
@@ -753,20 +795,31 @@ def submit_verdict(run_id: int, payload: VerdictWrite, request: Request, actor: 
     if run.status not in {"awaiting_review", "completed"}: raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前状态不能提交结论"})
     verdict = run.verdict or Verdict(run_id=run.id)
     verdict.final_result = payload.final_result; verdict.issue_description = payload.issue_description; verdict.notes = payload.notes; verdict.reviewed_by = actor.id; verdict.reviewed_at = beijing_now()
-    if not run.verdict: db.add(verdict)
-    review = next(step for step in run.steps if step.code == "manual_review"); transition_step(review, "succeeded"); review.progress = 100; review.started_at = review.started_at or verdict.reviewed_at; review.finished_at = verdict.reviewed_at; review.duration_ms = 0
-    report_step = next(step for step in run.steps if step.code == "reporting"); transition_step(report_step, "running"); report_step.started_at = beijing_now()
-    db.flush(); generate_reports(db, run)
-    transition_step(report_step, "succeeded"); report_step.progress = 100; report_step.finished_at = beijing_now(); report_step.duration_ms = int((report_step.finished_at - report_step.started_at).total_seconds() * 1000)
-    transition_run(run, "completed", source="api", actor_id=actor.id, reason="verdict submitted"); run.progress = 100; run.finished_at = beijing_now(); release_locks(db, run.id, "completed")
-    write_audit(db, "run.verdict_submit", "test_run", run.id, actor, request, detail={"final_result": payload.final_result}); db.commit(); broker.publish(run.id, {"type": "status", "status": "completed", "progress": 100}); return verdict
+    if not run.verdict:
+        run.verdict = verdict
+    db.flush()
+    if run.workflow_version_id:
+        report_step = next((step for step in run.steps if step.node_type == "report_generation"), None)
+        report_result = generate_reports(db, run, step=report_step, reason="verdict")
+    else:
+        review = next(step for step in run.steps if step.code == "manual_review")
+        transition_step(review, "succeeded"); review.progress = 100; review.started_at = review.started_at or verdict.reviewed_at; review.finished_at = verdict.reviewed_at; review.duration_ms = 0
+        report_step = next(step for step in run.steps if step.code == "reporting")
+        transition_step(report_step, "running"); report_step.started_at = beijing_now()
+        report_result = generate_reports(db, run, step=report_step, reason="verdict")
+        transition_step(report_step, "succeeded"); report_step.progress = 100; report_step.finished_at = beijing_now(); report_step.duration_ms = int((report_step.finished_at - report_step.started_at).total_seconds() * 1000)
+        transition_run(run, "completed", source="api", actor_id=actor.id, reason="verdict submitted"); run.progress = 100; run.finished_at = beijing_now(); release_locks(db, run.id, "completed")
+    write_audit(db, "run.verdict_submit", "test_run", run.id, actor, request, detail={"final_result": payload.final_result, "report_version": report_result["report_version"]}); db.commit(); broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress}); return verdict
 
 
 @router.post("/runs/{run_id}/reports", response_model=typing.List[ArtifactOut])
 def regenerate_reports(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> typing.List[Artifact]:
     run = load_run(db, run_id)
     if run.status != "completed": raise HTTPException(status_code=409, detail={"code": "RUN_NOT_COMPLETE", "message": "运行完成后才能生成报告"})
-    artifacts = generate_reports(db, run); write_audit(db, "report.regenerate", "test_run", run.id, actor, request); db.commit(); return artifacts
+    report_step = next((step for step in run.steps if step.node_type == "report_generation"), None)
+    result = generate_reports(db, run, step=report_step, reason="manual")
+    artifacts = list(db.scalars(select(Artifact).where(Artifact.id.in_(result["artifact_ids"]))).all())
+    write_audit(db, "report.regenerate", "test_run", run.id, actor, request, detail={"report_version": result["report_version"]}); db.commit(); return artifacts
 
 
 @router.get("/runs/{run_id}/logs", response_model=typing.List[LogOut])

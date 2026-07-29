@@ -17,14 +17,15 @@
 | 外网制包机 | RHEL 7.9、x86_64、glibc 2.17、可访问 yum/PyPI |
 | 内网目标机 | RHEL 7.9、x86_64、glibc 2.17、systemd |
 | Python | 3.8+；默认路径 `/opt/rh/rh-python38/root/usr/bin/python3.8` |
-| 前端构建机 | Node.js 20+、npm 10+，可以不是 RHEL 7 |
+| 前端构建 | 普通包使用 Node.js 20+/npm 10+ 构建机；内网开发包可使用 `--bundle-node` |
 | Web 服务 | Nginx，默认对外端口 `7777` |
 | API 服务 | 单个 Uvicorn 进程，仅监听 `127.0.0.1:4396` |
 | 数据库 | MariaDB 5.5.68+ 或 MySQL 5.5.3+；重点验证 MariaDB 5.5.68 和 MySQL 8 |
 
 本文不宣称离线包支持 RHEL 8/9、CentOS、ARM、容器平台或其他未经验证的系统。
-RHEL 7.9 上通常不能直接运行官方 Node.js 20 Linux 发行包，因此前端应在兼容的外网
-主机上构建，再将静态产物同步到 RHEL 制包机。
+RHEL 7.9 上通常不能直接运行官方 Node.js 20 Linux 发行包。普通生产包应在兼容的
+外网主机上构建前端；需要内网前端开发时，可由制包脚本下载并验证
+`linux-x64-glibc-217` 社区构建及 npm 依赖缓存。
 
 不要在内网服务器运行仓库根目录的 `start-web.sh` 或
 `deploy/scripts/install.sh`。它们面向开发或在线环境，可能访问 PyPI 和 npm registry。
@@ -33,7 +34,7 @@ RHEL 7.9 上通常不能直接运行官方 Node.js 20 Linux 发行包，因此�
 
 ```mermaid
 flowchart LR
-    Build["Node.js 20+ 主机构建 frontend/dist"] --> Sync["同步源码和 dist 到外网 RHEL 7.9"]
+    Build["构建 frontend/dist，或选择 --bundle-node"] --> Sync["同步源码到外网 RHEL 7.9"]
     Sync --> Package["收集 RPM、wheel 并生成离线包"]
     Package --> Verify1["校验 tar.gz 和 sha256"]
     Verify1 --> Transfer["通过受控介质传入内网"]
@@ -74,7 +75,9 @@ yum repolist enabled
 - Python 可执行且版本不低于 3.8。
 - RHEL 7 基础仓库可用，并能取得离线清单中的系统依赖。
 - 能访问 PyPI；制包过程需要生成完整 Python wheelhouse。
-- 仓库工作树是准备发布的版本，且 `frontend/dist` 与前端源码一致。
+- 使用 `--bundle-node` 时，还能访问 Node unofficial-builds 及 lock 文件引用的 npm
+  registry；单位镜像或预下载文件按第 5.3 节配置。
+- 仓库工作树是准备发布的版本；普通包还要求 `frontend/dist` 与前端源码一致。
 
 一键脚本缺少 `repotrack` 或 `createrepo` 时会通过 yum 安装 `yum-utils` 和
 `createrepo`，这一步需要 root 权限和可用的软件源。
@@ -91,7 +94,9 @@ yum repolist enabled
 - `existing` 模式下，数据库地址、账号和密码已经准备完毕。
 - 已明确数据库、配置、密钥和产物的备份责任人与保存位置。
 
-## 4. 构建前端
+## 4. 准备前端
+
+### 4.1 普通生产包
 
 在支持 Node.js 20+ 和 npm 10+ 的外网开发机上，从准备发布的源码执行：
 
@@ -111,6 +116,24 @@ test -f frontend/dist/index.html
 `dist`，也不要复用其他提交生成的旧前端。制包脚本会比较前端源码和
 `frontend/dist/index.html` 的修改时间，发现产物过旧时拒绝制包。
 
+### 4.2 内网前端开发包
+
+如果内网机需要直接修改 Vue、TypeScript 或 CSS，可跳过预构建 `frontend/dist`，在
+制包命令中使用 `--bundle-node`。该模式会在 RHEL 7.9 制包机上：
+
+1. 下载固定版本的 `node-v20.20.2-linux-x64-glibc-217.tar.gz` 和
+   `SHASUMS256.txt`。
+2. 精确匹配文件名并校验 SHA-256，解压后实际运行 `node` 和 `npm`。
+3. 从空缓存执行 `npm ci`，收集当前 `package-lock.json` 的全部依赖。
+4. 删除 `node_modules`，再执行 `npm ci --offline` 验证断网回装。
+5. 执行前端测试和生产构建，并把 Node、npm、来源、归档摘要及 lock 文件摘要写入
+   `node-runtime/METADATA`。
+
+> `linux-x64-glibc-217` 来自
+> [Node.js unofficial-builds](https://unofficial-builds.nodejs.org/)，属于实验性社区构建，
+> 不是 Node.js 官方发布二进制，也不提供与官方发行包相同的支持承诺。正式交付前必须
+> 在与生产一致的 RHEL 7.9 测试机验证。
+
 ## 5. 在外网生成离线包
 
 ### 5.1 一键制包
@@ -121,7 +144,8 @@ test -f frontend/dist/index.html
 chmod +x deploy/offline/*.sh
 deploy/offline/make-offline-package.sh \
   --python "${PYTHON}" \
-  --version "${VERSION}"
+  --version "${VERSION}" \
+  --bundle-node
 ```
 
 脚本会依次：
@@ -130,8 +154,9 @@ deploy/offline/make-offline-package.sh \
 2. 构建 OpenSLT wheel 和全部 Python 依赖的 wheelhouse。
 3. 在新虚拟环境中使用 `--no-index` 回装 wheelhouse。
 4. 执行 `pip check` 和后端测试。
-5. 复制应用、前端产物、RPM、安装脚本和文档。
-6. 生成包内 `SHA256SUMS`、压缩包和压缩包校验文件。
+5. 使用 `--bundle-node` 时，校验 Node、生成 npm 缓存并完成断网回装和前端构建。
+6. 复制应用、前端产物、RPM、安装脚本和文档。
+7. 生成包内 `SHA256SUMS`、压缩包和压缩包校验文件。
 
 默认输出到项目根目录的 `release/`：
 
@@ -140,8 +165,12 @@ release/openslt-offline-rhel7-x86_64-${VERSION}.tar.gz
 release/openslt-offline-rhel7-x86_64-${VERSION}.tar.gz.sha256
 ```
 
-可以使用 `--output /指定目录` 修改输出目录。`--skip-tests` 会跳过离线回装验证和
-后端测试，只应用于临时诊断包，不应作为正式交付包。
+可以使用 `--output /指定目录` 修改输出目录。`--skip-tests` 会跳过 Python wheelhouse
+回装、后端测试和前端测试；带 Node 的包仍必须通过 `npm ci --offline` 和生产构建验证。
+该选项只应用于临时诊断包，不应作为正式交付包。
+
+不需要在内网修改前端时，可以不传 `--bundle-node`，但必须提前按第 4.1 节生成当前
+`frontend/dist`。
 
 ### 5.2 目标机没有 Python
 
@@ -164,7 +193,43 @@ deploy/offline/make-offline-package.sh \
 制包机和目标机直接使用预装 Python 时，建议使用相同主次版本，以降低二进制 wheel
 兼容风险。
 
-### 5.3 Nginx 仓库
+### 5.3 Node 版本、镜像与预下载文件
+
+默认 Node 版本固定为 `20.20.2`，不会在每次制包时静默选择新版本。升级前应先在
+RHEL 7.9 测试机验证，新版本必须是带 `linux-x64-glibc-217` 产物的完整 Node 20
+版本：
+
+```bash
+deploy/offline/make-offline-package.sh \
+  --python "${PYTHON}" \
+  --version "${VERSION}" \
+  --bundle-node \
+  --node-version 20.20.2
+```
+
+通过单位镜像下载时，镜像目录结构必须保留 `v版本/SHASUMS256.txt` 和归档文件：
+
+```bash
+deploy/offline/make-offline-package.sh \
+  --python "${PYTHON}" \
+  --version "${VERSION}" \
+  --bundle-node \
+  --node-base-url 'https://mirror.example.internal/node-unofficial/release'
+```
+
+也可以传入预下载的两个文件。两者必须同时提供，归档内容仍按清单校验，不能通过改名
+绕过：
+
+```bash
+deploy/offline/make-offline-package.sh \
+  --python "${PYTHON}" \
+  --version "${VERSION}" \
+  --bundle-node \
+  --node-archive /safe/node-v20.20.2-linux-x64-glibc-217.tar.gz \
+  --node-shasums /safe/SHASUMS256.txt
+```
+
+### 5.4 Nginx 仓库
 
 如果已启用仓库没有 `nginx`，脚本会临时启用 nginx.org 的 RHEL 7 官方仓库，结束时
 删除临时 repo 文件，不修改原有仓库配置。
@@ -185,7 +250,7 @@ deploy/offline/make-offline-package.sh \
 curl -I 'http://实际镜像地址/nginx/rhel/7/x86_64/'
 ```
 
-### 5.4 分步制包
+### 5.5 分步制包
 
 一键脚本失败时，可以分步定位问题：
 
@@ -196,7 +261,8 @@ deploy/offline/collect-rpms-rhel7.sh \
 deploy/offline/build-offline-bundle.sh \
   --python "${PYTHON}" \
   --rpm-dir /tmp/openslt-rpms \
-  --version "${VERSION}"
+  --version "${VERSION}" \
+  --bundle-node
 ```
 
 如需自定义 RPM 清单，复制 `deploy/offline/rpm-packages-rhel7.txt` 后通过
@@ -218,6 +284,13 @@ sha256sum -c "${PACKAGE}.tar.gz.sha256"
 cd ..
 ```
 
+带 `--bundle-node` 的包还应确认以下条目存在：
+
+```bash
+tar -tzf "release/${PACKAGE}.tar.gz" | grep -E \
+  '/(node-runtime/METADATA|npm-cache/_cacache/|build-frontend.sh)$'
+```
+
 将 `.tar.gz` 和对应 `.tar.gz.sha256` 一起通过受控介质传入内网。不要重新打包或修改
 其中任何文件。
 
@@ -231,7 +304,7 @@ sha256sum -c "${PACKAGE}.tar.gz.sha256"
 tar -xzf "${PACKAGE}.tar.gz"
 cd "${PACKAGE}"
 sha256sum -c SHA256SUMS
-chmod +x configure.sh install.sh start.sh
+chmod +x configure.sh install.sh start.sh build-frontend.sh
 ```
 
 `configure.sh`、`install.sh` 和 `start.sh` 也会在执行时校验包内文件。校验失败必须停止
@@ -445,7 +518,7 @@ MariaDB root 需要认证时，给第一条命令增加 `--mysql-defaults-file`�
 
 该选项只阻止脚本修改 firewalld，不影响 Nginx 监听端口。
 
-## 10. 三个内网脚本的职责
+## 10. 四个内网脚本的职责
 
 ### configure.sh
 
@@ -496,6 +569,27 @@ MariaDB root 需要认证时，给第一条命令增加 `--mysql-defaults-file`�
 ./start.sh --reinstall
 ```
 
+### build-frontend.sh
+
+该脚本只在使用 `--bundle-node` 制包时可用。安装后推荐从固定路径执行：
+
+```bash
+/opt/openslt/build-frontend.sh
+```
+
+它会核对当前 `package-lock.json` 与缓存绑定的 SHA-256，使用
+`npm ci --offline` 重建 `node_modules`，运行前端测试和生产构建，执行 `nginx -t`
+并 reload Nginx。常用参数：
+
+```text
+--project-root DIR
+--skip-tests
+--no-reload
+```
+
+`--skip-tests` 只适合临时诊断。`--no-reload` 会保留构建结果并验证 Nginx 配置，但不
+reload 服务。
+
 ## 11. 安装结果与日常管理
 
 ### 11.1 路径和权限
@@ -503,6 +597,9 @@ MariaDB root 需要认证时，给第一条命令增加 `--mysql-defaults-file`�
 | 路径 | 用途 | 关键权限或归属 |
 | --- | --- | --- |
 | `/opt/openslt` | 当前应用、前端和虚拟环境 | 应用文件 `root:root` |
+| `/opt/openslt-node` | 可选的 glibc 2.17 Node.js/npm 与校验元数据 | `root:root`，不替换系统 Node |
+| `/var/cache/openslt/npm` | 与制包时 lock 文件绑定的 npm 离线缓存 | `root:root` |
+| `/etc/profile.d/openslt-node.sh` | 将隔离 Node 加入新登录 Shell 的 PATH | `root:root 0644` |
 | `/etc/openslt/openslt.env` | 数据库、端口和初始管理员配置 | `root:openslt 0640` |
 | `/etc/openslt/database-mode` | 持久化数据库模式 | `root:root 0644` |
 | `/var/lib/openslt/artifacts` | 抓包、解析、统计和报告产物 | `openslt:openslt` |
@@ -529,6 +626,36 @@ journalctl -u mariadb -n 100 --no-pager
 ```
 
 `existing` 模式下不要因为 OpenSLT 故障而擅自启停外部或共享数据库。
+
+### 11.3 在内网修改并构建前端
+
+带 `--bundle-node` 的包部署后，新登录 Shell 可以直接查看隔离运行时：
+
+```bash
+node --version
+npm --version
+cat /opt/openslt-node/METADATA
+```
+
+修改 `/opt/openslt/frontend/src` 中的 Vue、TypeScript 或 CSS 后执行：
+
+```bash
+/opt/openslt/build-frontend.sh
+```
+
+该命令必须以 root 运行，因为生产源码和 npm 缓存属于 root。它不连接 npm registry，
+成功后 Nginx 会提供新的 `frontend/dist`。仅修改后端 Python 时不需要 Node，完成测试后
+执行 `systemctl restart openslt-api`。
+
+以下变更不能依赖旧缓存：
+
+- 修改 `frontend/package.json` 中的依赖。
+- 运行 `npm install` 导致 `package-lock.json` 改变。
+- 引入 lock 文件中不存在的构建工具或平台二进制。
+
+发生上述变化时，必须在外网更新 lock 文件并重新生成 `--bundle-node` 离线包。生产机
+上的直接改动也会被后续 `start.sh` 升级覆盖，应同步回受版本控制的外网源码，不能把
+生产目录作为唯一代码副本。
 
 ## 12. 网络、Nginx、SELinux 与远端资源
 
@@ -861,6 +988,27 @@ Pango、Cairo、WeasyPrint 和字体组合。Excel、HTML 正常不代表 PDF �
 
 检查 `/var/lib/openslt/secrets/credential_encryption_key` 是否被删除、覆盖或从不同
 恢复点还原。不要生成新密钥覆盖原文件；从与数据库一致的备份恢复密钥。
+
+### 17.12 Node、npm 或离线前端构建失败
+
+先确认当前包确实使用了 `--bundle-node`：
+
+```bash
+ls -l /opt/openslt-node/bin/node /opt/openslt-node/bin/npm
+test -d /var/cache/openslt/npm/_cacache
+cat /opt/openslt-node/METADATA
+sha256sum /opt/openslt/frontend/package-lock.json
+```
+
+- 提示找不到 Node 或缓存时，使用带 `--bundle-node` 的原始离线包执行
+  `./start.sh --reinstall`。
+- 提示 `package-lock.json does not match` 时，说明依赖锁已改变，必须在外网重新制包；
+  不要删除元数据或改写摘要绕过检查。
+- 制包时提示 SHA-256 mismatch，立即丢弃该 Node 归档，检查镜像同步和传输过程。
+- 制包时 Node 无法在 RHEL 7.9 执行，不能继续交付。确认使用的文件名包含
+  `linux-x64-glibc-217`，而不是官方 `linux-x64` 包。
+- `npm ci --offline` 报 cache miss，表示缓存不完整或 lock 文件引用发生变化；在可联网
+  制包机重新运行完整制包，不要在内网临时开放互联网补依赖。
 
 ## 18. 运维基线
 

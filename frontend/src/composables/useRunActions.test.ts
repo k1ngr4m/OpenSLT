@@ -110,4 +110,47 @@ describe('useRunActions', () => {
     expect(actions.verdictDialog.value).toBe(false)
     expect(reload).toHaveBeenCalled()
   })
+
+  it('prefills an existing verdict before editing', () => {
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+    })
+
+    actions.openVerdict({
+      id: 4,
+      run_id: 11,
+      final_result: 'conditional',
+      issue_description: '存在抖动',
+      notes: '复测确认',
+      reviewed_by: 2,
+      reviewed_at: '2026-07-29T10:00:00+08:00',
+      created_at: '2026-07-29T10:00:00+08:00',
+      updated_at: '2026-07-29T10:00:00+08:00',
+    })
+
+    expect(actions.verdict).toMatchObject({
+      final_result: 'conditional',
+      issue_description: '存在抖动',
+      notes: '复测确认',
+    })
+    expect(actions.verdictDialog.value).toBe(true)
+  })
+
+  it('creates a new report version and reloads the run', async () => {
+    const reload = vi.fn().mockResolvedValue(undefined)
+    const actions = useRunActions({
+      runId: 11,
+      reload,
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+    })
+
+    await actions.regenerateReports()
+
+    expect(api.post).toHaveBeenCalledWith('/runs/11/reports')
+    expect(message.success).toHaveBeenCalledWith('新报告版本已生成')
+    expect(reload).toHaveBeenCalled()
+    expect(actions.regeneratingReports.value).toBe(false)
+  })
 })

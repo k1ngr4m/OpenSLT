@@ -10,6 +10,11 @@ VERSION=""
 SKIP_TESTS=false
 NGINX_REPO_URL=""
 BUNDLE_PYTHON=false
+BUNDLE_NODE=false
+NODE_VERSION="20.20.2"
+NODE_BASE_URL="https://unofficial-builds.nodejs.org/download/release"
+NODE_ARCHIVE=""
+NODE_SHASUMS=""
 
 usage() {
     cat <<'EOF'
@@ -24,10 +29,16 @@ Options:
   --nginx-repo-url URL
                       Alternate RHEL 7 Nginx repository base URL
   --bundle-python     Include the installed RHEL 7 rh-python38 runtime
-  --skip-tests        Skip backend tests during packaging
+  --bundle-node       Include Node.js, npm, and a verified offline npm cache
+  --node-version VER  linux-x64-glibc-217 Node version (default: 20.20.2)
+  --node-base-url URL Unofficial Node.js release base URL
+  --node-archive FILE Use a predownloaded Node .tar.gz archive
+  --node-shasums FILE Use a predownloaded SHASUMS256.txt (required with archive)
+  --skip-tests        Skip Python wheel validation and test suites
   -h, --help          Show this help
 
-The current frontend/dist must already have been built on a Node.js 20+ host.
+Without --bundle-node, frontend/dist must already have been built on a Node.js
+20+ host. With --bundle-node, the bundled runtime builds and validates it.
 EOF
 }
 
@@ -53,6 +64,26 @@ while (($#)); do
             BUNDLE_PYTHON=true
             shift
             ;;
+        --bundle-node)
+            BUNDLE_NODE=true
+            shift
+            ;;
+        --node-version)
+            NODE_VERSION="$2"
+            shift 2
+            ;;
+        --node-base-url)
+            NODE_BASE_URL="$2"
+            shift 2
+            ;;
+        --node-archive)
+            NODE_ARCHIVE="$2"
+            shift 2
+            ;;
+        --node-shasums)
+            NODE_SHASUMS="$2"
+            shift 2
+            ;;
         --skip-tests)
             SKIP_TESTS=true
             shift
@@ -77,24 +108,43 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'This script must run on RHEL 7.9.\n' >&2
     exit 1
 }
-[[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
-    printf 'frontend/dist is missing. Build it on a Node.js 20+ host first.\n' >&2
-    exit 1
-}
 [[ -x "$PYTHON" ]] || {
     printf 'Python executable not found: %s\n' "$PYTHON" >&2
     exit 1
 }
-if find \
-    "$PROJECT_ROOT/frontend/src" \
-    "$PROJECT_ROOT/frontend/public" \
-    "$PROJECT_ROOT/frontend/index.html" \
-    "$PROJECT_ROOT/frontend/package.json" \
-    "$PROJECT_ROOT/frontend/package-lock.json" \
-    "$PROJECT_ROOT/frontend/vite.config.ts" \
-    -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print -quit | grep -q .; then
-    printf 'frontend/dist is stale. Rebuild it on the Node.js host first.\n' >&2
-    exit 1
+if [[ "$BUNDLE_NODE" == false ]]; then
+    [[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
+        printf 'frontend/dist is missing. Build it on a Node.js 20+ host first.\n' >&2
+        exit 1
+    }
+    if find \
+        "$PROJECT_ROOT/frontend/src" \
+        "$PROJECT_ROOT/frontend/public" \
+        "$PROJECT_ROOT/frontend/index.html" \
+        "$PROJECT_ROOT/frontend/package.json" \
+        "$PROJECT_ROOT/frontend/package-lock.json" \
+        "$PROJECT_ROOT/frontend/vite.config.ts" \
+        -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print -quit | grep -q .; then
+        printf 'frontend/dist is stale. Rebuild it on the Node.js host first.\n' >&2
+        exit 1
+    fi
+    if [[ -n "$NODE_ARCHIVE" || -n "$NODE_SHASUMS" || "$NODE_VERSION" != "20.20.2" \
+        || "$NODE_BASE_URL" != "https://unofficial-builds.nodejs.org/download/release" ]]; then
+        printf 'Node download options require --bundle-node.\n' >&2
+        exit 2
+    fi
+else
+    NORMALIZED_NODE_VERSION="${NODE_VERSION#v}"
+    [[ "$NORMALIZED_NODE_VERSION" =~ ^20\.[0-9]+\.[0-9]+$ ]] || {
+        printf 'Node version must be a complete Node.js 20 release such as 20.20.2.\n' >&2
+        exit 2
+    }
+    if [[ -n "$NODE_ARCHIVE" || -n "$NODE_SHASUMS" ]]; then
+        [[ -f "$NODE_ARCHIVE" && -f "$NODE_SHASUMS" ]] || {
+            printf -- '--node-archive and --node-shasums must name existing files together.\n' >&2
+            exit 2
+        }
+    fi
 fi
 
 if ! command -v repotrack >/dev/null 2>&1 || ! command -v createrepo >/dev/null 2>&1; then
@@ -123,6 +173,11 @@ BUILD_ARGS=(
 [[ -n "$VERSION" ]] && BUILD_ARGS+=(--version "$VERSION")
 [[ "$SKIP_TESTS" == true ]] && BUILD_ARGS+=(--skip-tests)
 [[ "$BUNDLE_PYTHON" == true ]] && BUILD_ARGS+=(--bundle-python)
+if [[ "$BUNDLE_NODE" == true ]]; then
+    BUILD_ARGS+=(--bundle-node --node-version "$NODE_VERSION" --node-base-url "$NODE_BASE_URL")
+    [[ -n "$NODE_ARCHIVE" ]] && BUILD_ARGS+=(--node-archive "$NODE_ARCHIVE")
+    [[ -n "$NODE_SHASUMS" ]] && BUILD_ARGS+=(--node-shasums "$NODE_SHASUMS")
+fi
 
 printf '[OpenSLT] Building and validating the offline application bundle...\n'
 "$SCRIPT_DIR/build-offline-bundle.sh" "${BUILD_ARGS[@]}"

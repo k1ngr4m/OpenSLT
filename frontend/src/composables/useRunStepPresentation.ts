@@ -120,9 +120,15 @@ export function useRunStepPresentation(
     }
     if (step.node_type === 'data_statistics') {
       return [
-        { label: '前置解析节点', value: stringValue(config.parser_node_key), mono: true },
         { label: '统计脚本', value: stringValue(config.script_filename), mono: true },
         { label: '异常大值上限', value: `${optionalNumber(config.max_latency_ns) ?? 999999999} ns` },
+        { label: '输入来源', value: '运行详情页选择远端 CSV' },
+      ]
+    }
+    if (step.node_type === 'report_generation') {
+      return [
+        { label: '报告格式', value: 'HTML、Excel、PDF' },
+        { label: '汇总范围', value: '全部前置配置、发单与统计节点' },
       ]
     }
     if (step.node_type.startsWith('slnic_')) {
@@ -223,6 +229,22 @@ export function useRunStepPresentation(
         { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
         { label: '执行耗时', value: formatDuration(optionalNumber(result.duration_ms)) },
         { label: '结果产物 ID', value: optionalNumber(result.statistics_artifact_id) ?? '-' },
+      ]
+    }
+    if (step.node_type === 'report_generation') {
+      const version = optionalNumber(result.report_version)
+      const missingSections = Array.isArray(result.missing_sections) ? result.missing_sections.map(String) : []
+      const reasonLabels: Record<string, string> = {
+        workflow_node: '节点执行',
+        verdict: '人工结论更新',
+        manual: '手动重新生成',
+      }
+      return [
+        { label: '报告版本', value: version != null ? `v${String(version).padStart(3, '0')}` : '-' },
+        { label: '生成时间', value: formatDate(optionalString(result.generated_at)) },
+        { label: '生成原因', value: reasonLabels[stringValue(result.reason, '')] || stringValue(result.reason) },
+        { label: '报告产物', value: Array.isArray(result.artifact_ids) ? `${result.artifact_ids.length} 个` : '-' },
+        { label: '缺失章节', value: missingSections.length ? missingSections.join('、') : '无' },
       ]
     }
     return objectRows(result)

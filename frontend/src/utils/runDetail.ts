@@ -13,6 +13,7 @@ export const nodeTypeText: Record<string, string> = {
   slnic_merge_capture: '合并 pcapng',
   parser_parse: '数据解析',
   data_statistics: '数据统计',
+  report_generation: '生成报告',
 }
 
 export function statusClass(status: string) {

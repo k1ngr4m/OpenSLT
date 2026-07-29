@@ -32,6 +32,7 @@ NODE_TYPES = {
     "order_preparation",
     "parser_parse",
     "data_statistics",
+    "report_generation",
     *SLNIC_NODE_TYPES,
 }
 SERVER_FIELDS = {
@@ -53,18 +54,6 @@ SERVER_COMMANDS = {
     "os_version": "cat /etc/redhat-release 2>/dev/null || . /etc/os-release && printf '%s %s\\n' \"$NAME\" \"$VERSION\"",
     "cpu_model": "lscpu | grep -E '^(Model name|CPU\\(s\\)|CPU max MHz):'",
 }
-GLOBAL_SETTING_KEYS = [
-    "CLIENT_REQ_BIND_CPU", "MARKET_RESP_BIND_CPU", "RINGBUFFER_RSP_BIND_CPU",
-    "TCP_SERVER_BIND_CPU", "CLIENT_REQ_ENABLE", "CLIENT_REQ_USING_DEV",
-    "MARKET_RESP_ENABLE", "MARKET_RESQ_DEV", "REM_TO_MKT_MESSAGE_DROPCOPY_ENABLE",
-    "CLIENT_TO_REM_MESSAGE_DROPCOPY_ENABLE", "MARKET_SESSION_IDLE_REPROT_LOG",
-    "ACCOUNT_QUANTITY", "WARM_ORDER_REPORT_USEC", "ENABLE_PERF_COUNTER",
-    "ENABLE_RINGBUFFER_RSP", "ENABLE_RINGBUFFER_REQ", "ASYNC_MKT_MSG_PROC",
-    "USER_TOKEN_CANCEL_ENABLE", "CLIENT_OT_CONNECT_MODE", "EXANIC_IP_FILTER_FLAG",
-    "ENABLE_REPORT_TIMESTAMP", "X25_KEY_VALUE",
-]
-KEY_COLUMN_CANDIDATES = ["setting_name", "name", "setting_key", "key", "param_name"]
-VALUE_COLUMN_CANDIDATES = ["setting_value", "value", "param_value"]
 INTERFACE_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
 CONTRACT_TABLES = {"futures": "t_close_report", "options": "t_close_report_opt"}
 CONTRACT_TYPE_LABELS = {"futures": "期货", "options": "期权"}
@@ -151,9 +140,16 @@ def resource_map(db: Session, version: ScenarioWorkflowVersion) -> dict[str, Res
 def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWorkflowVersion) -> list[dict]:
     errors: list[dict] = []
     resources = resource_map(db, version)
-    slnic_state = "idle"
     if not version.nodes:
         errors.append({"field": "nodes", "message": "主流程至少需要一个节点"})
+    report_nodes = [item for item in version.nodes if item.node_type == "report_generation"]
+    if len(report_nodes) > 1:
+        for report_node in report_nodes[1:]:
+            errors.append({
+                "node_key": report_node.node_key,
+                "field": "node_type",
+                "message": "每个工作流最多只能有一个报告生成节点",
+            })
     for node in version.nodes:
         config = node_config_with_relations(node)
         prefix = {"node_key": node.node_key}
@@ -185,8 +181,14 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少数据库资源"})
             elif database_name not in (resource.database_names or []):
                 errors.append({**prefix, "field": "database_name", "message": "配置数据库不在资源白名单中"})
-            if not keys or any(key not in GLOBAL_SETTING_KEYS for key in keys):
-                errors.append({**prefix, "field": "keys", "message": "至少选择一个受支持的配置项"})
+            if not keys:
+                errors.append({**prefix, "field": "keys", "message": "至少选择一个配置项"})
+            elif len(keys) > 1000:
+                errors.append({**prefix, "field": "keys", "message": "配置项不能超过 1000 个"})
+            elif len(keys) != len(set(keys)):
+                errors.append({**prefix, "field": "keys", "message": "配置项不能重复"})
+            elif any(not isinstance(key, str) or not key.strip() or len(key) > 255 for key in keys):
+                errors.append({**prefix, "field": "keys", "message": "配置项格式无效"})
         elif node.node_type == "wiring_confirmation":
             if str(config.get("diagram") or "placeholder") == "resource":
                 rem_resource = resources.get("rem")
@@ -245,9 +247,6 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                     errors.append({**prefix, "field": "trading_database_name", "message": "请选择交易数据库"})
                 if not node_contract_file_ids(node):
                     errors.append({**prefix, "field": "contract_file_ids", "message": "至少选择一个合约 CSV"})
-                preceding = [item for item in version.nodes if item.position < node.position and item.node_type == "database_config"]
-                if not preceding:
-                    errors.append({**prefix, "field": "database_node_key", "message": "发单节点前需要数据库配置节点"})
         elif node.node_type == "parser_parse":
             parser_resource = resources.get("parser")
             database_resource = resources.get("database")
@@ -299,29 +298,10 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                         "field": "database_name",
                         "message": f"数据库资源缺少配套配置库 {config_database_name}",
                     })
-            preceding_merges = [
-                item for item in version.nodes
-                if item.position < node.position and item.node_type == "slnic_merge_capture"
-            ]
-            if not preceding_merges or slnic_state != "merged":
-                errors.append({**prefix, "field": "position", "message": "数据解析前需要先完成 SLNIC 合并 pcapng 节点"})
         elif node.node_type == "data_statistics":
             parser_resource = resources.get("parser")
-            parser_node_key = str(config.get("parser_node_key") or "").strip()
-            preceding_parsers = [
-                item for item in version.nodes
-                if item.position < node.position and item.node_type == "parser_parse"
-            ]
-            source_node = next(
-                (item for item in preceding_parsers if item.node_key == parser_node_key),
-                None,
-            )
             if not parser_resource or parser_resource.is_deleted or not parser_resource.is_enabled:
                 errors.append({**prefix, "field": "resource", "message": "数据统计需要已启用的解析工具资源"})
-            if not parser_node_key:
-                errors.append({**prefix, "field": "parser_node_key", "message": "请选择前置数据解析节点"})
-            elif source_node is None:
-                errors.append({**prefix, "field": "parser_node_key", "message": "数据统计只能引用位于其前面的数据解析节点"})
             if not re.fullmatch(r"[A-Za-z0-9._-]+\.py", str(config.get("script_filename") or "")):
                 errors.append({**prefix, "field": "script_filename", "message": "请选择有效的远端统计脚本"})
             if not re.fullmatch(r"[0-9a-f]{64}", str(config.get("script_checksum") or "")):
@@ -334,22 +314,6 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少已启用的 SLNIC 资源"})
             elif not resource.remote_path.strip():
                 errors.append({**prefix, "field": "resource", "message": "SLNIC 资源未配置远端路径"})
-            if node.node_type == "slnic_start_capture":
-                if slnic_state == "capturing":
-                    errors.append({**prefix, "field": "position", "message": "当前已有未停止的 SLNIC 抓包"})
-                elif slnic_state == "stopped":
-                    errors.append({**prefix, "field": "position", "message": "开始下一轮 SLNIC 抓包前需要先合并上一轮文件"})
-                else:
-                    slnic_state = "capturing"
-            elif node.node_type == "slnic_stop_capture":
-                if slnic_state != "capturing":
-                    errors.append({**prefix, "field": "position", "message": "关闭 SLNIC 节点前需要先启动抓包"})
-                else:
-                    slnic_state = "stopped"
-            elif slnic_state != "stopped":
-                errors.append({**prefix, "field": "position", "message": "合并 pcapng 前需要先关闭 SLNIC 抓包"})
-            else:
-                slnic_state = "merged"
     return errors
 
 

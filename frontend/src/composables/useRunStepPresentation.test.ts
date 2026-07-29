@@ -31,6 +31,34 @@ function orderStep(): RunStep {
 }
 
 describe('useRunStepPresentation contract preview', () => {
+  it('presents a report version and missing sections', () => {
+    const step = {
+      ...orderStep(),
+      node_type: 'report_generation',
+      config_snapshot: {},
+      result_summary: {
+        report_version: 2,
+        generated_at: '2026-07-29T10:00:00+08:00',
+        reason: 'manual',
+        artifact_ids: [10, 11, 12],
+        missing_sections: ['servers', 'orders'],
+      },
+    } as RunStep
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const presentation = useRunStepPresentation(run, computed(() => step), {})
+
+    expect(presentation.configRows.value).toEqual([
+      { label: '报告格式', value: 'HTML、Excel、PDF' },
+      { label: '汇总范围', value: '全部前置配置、发单与统计节点' },
+    ])
+    expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
+      { label: '报告版本', value: 'v002' },
+      { label: '生成原因', value: '手动重新生成' },
+      { label: '报告产物', value: '3 个' },
+      { label: '缺失章节', value: 'servers、orders' },
+    ]))
+  })
+
   it('merges selected files from snapshots, results, and preview cache in ID order', () => {
     const step = orderStep()
     const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)

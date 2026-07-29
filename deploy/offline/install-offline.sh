@@ -12,6 +12,8 @@ START_SERVICES=true
 DATABASE_MODE=""
 DATABASE_MODE_FILE="/etc/openslt/database-mode"
 SKIP_DATABASE_RPMS=false
+NODE_INSTALL_ROOT="/opt/openslt-node"
+NPM_CACHE_ROOT="/var/cache/openslt/npm"
 
 [[ -f "$BUNDLE_ROOT/deployment-config.sh" ]] || {
     printf 'Bundle configuration helper is missing.\n' >&2
@@ -30,7 +32,7 @@ Options:
   --database-mode MODE
                       existing (default), provision, or initialize
   --install-rpms      Install the bundled RPM repository before OpenSLT
-  --rpms-only         Install bundled RPMs, then stop before application setup
+  --rpms-only         Install bundled RPMs and optional Node, then stop
   --skip-database-rpms
                       Do not install mariadb, mariadb-server, or mariadb-libs
   --no-start          Install and migrate, but do not start/restart services
@@ -162,6 +164,46 @@ if [[ "$INSTALL_RPMS" == true ]]; then
     yum --disablerepo='*' localinstall -y "${RPM_FILES[@]}"
 fi
 
+if [[ -d "$BUNDLE_ROOT/node-runtime" || -d "$BUNDLE_ROOT/npm-cache" ]]; then
+    [[ -x "$BUNDLE_ROOT/node-runtime/bin/node" \
+        && -x "$BUNDLE_ROOT/node-runtime/bin/npm" \
+        && -f "$BUNDLE_ROOT/node-runtime/METADATA" \
+        && -d "$BUNDLE_ROOT/npm-cache/_cacache" ]] || {
+        printf 'The bundled Node.js runtime or npm cache is incomplete.\n' >&2
+        exit 1
+    }
+    printf '[OpenSLT] Installing the isolated Node.js runtime and npm cache...\n'
+    rm -rf -- "$NODE_INSTALL_ROOT" "$NPM_CACHE_ROOT"
+    install -d -o root -g root -m 0755 "$NODE_INSTALL_ROOT" "$NPM_CACHE_ROOT"
+    cp -a "$BUNDLE_ROOT/node-runtime/." "$NODE_INSTALL_ROOT/"
+    cp -a "$BUNDLE_ROOT/npm-cache/." "$NPM_CACHE_ROOT/"
+    chown -R root:root "$NODE_INSTALL_ROOT" "$NPM_CACHE_ROOT"
+    install -d -o root -g root -m 0755 /etc/profile.d
+    install -o root -g root -m 0644 /dev/stdin /etc/profile.d/openslt-node.sh <<'EOF'
+# OpenSLT's isolated RHEL 7-compatible Node.js runtime.
+case ":$PATH:" in
+    *:/opt/openslt-node/bin:*) ;;
+    *) PATH="/opt/openslt-node/bin:$PATH" ;;
+esac
+export PATH
+EOF
+    export PATH="$NODE_INSTALL_ROOT/bin:$PATH"
+    INSTALLED_NODE_VERSION="$("$NODE_INSTALL_ROOT/bin/node" --version)"
+    INSTALLED_NPM_VERSION="$("$NODE_INSTALL_ROOT/bin/npm" --version)"
+    [[ "$INSTALLED_NODE_VERSION" =~ ^v20\. ]] || {
+        printf 'Installed bundled Node.js is not version 20: %s\n' \
+            "$INSTALLED_NODE_VERSION" >&2
+        exit 1
+    }
+    INSTALLED_NPM_MAJOR="${INSTALLED_NPM_VERSION%%.*}"
+    [[ "$INSTALLED_NPM_MAJOR" =~ ^[0-9]+$ && "$INSTALLED_NPM_MAJOR" -ge 10 ]] || {
+        printf 'Installed bundled npm must be >=10: %s\n' "$INSTALLED_NPM_VERSION" >&2
+        exit 1
+    }
+    printf '[OpenSLT] Node.js %s and npm %s installed under %s.\n' \
+        "$INSTALLED_NODE_VERSION" "$INSTALLED_NPM_VERSION" "$NODE_INSTALL_ROOT"
+fi
+
 if [[ "$RPMS_ONLY" == true ]]; then
     printf '[OpenSLT] RPM installation completed for database mode %s.\n' "$DATABASE_MODE"
     exit 0
@@ -195,6 +237,10 @@ ENV_FILE="$CANONICAL_ENV_FILE"
 
 printf '[OpenSLT] Installing application files...\n'
 cp -a "$BUNDLE_ROOT/app/." /opt/openslt/
+if [[ -d "$BUNDLE_ROOT/node-runtime" ]]; then
+    install -o root -g root -m 0755 \
+        "$BUNDLE_ROOT/build-frontend.sh" /opt/openslt/build-frontend.sh
+fi
 
 rm -rf -- /opt/openslt/.venv
 "$PYTHON" -m venv /opt/openslt/.venv

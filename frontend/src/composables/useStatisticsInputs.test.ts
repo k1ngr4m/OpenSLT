@@ -7,7 +7,7 @@ import type { RunArtifact, RunDetail, RunStep } from '@/types/run'
 const message = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 
 vi.mock('@/api/client', () => ({
-  api: { put: vi.fn() },
+  api: { get: vi.fn(), put: vi.fn() },
   errorMessage: (error: unknown) => String(error),
 }))
 vi.mock('element-plus', () => ({ ElMessage: message }))
@@ -101,40 +101,48 @@ describe('useStatisticsInputs', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(api.put).mockResolvedValue({ data: {} })
+    vi.mocked(api.get).mockResolvedValue({ data: { directory: '/tmp/parser', files: [] } })
   })
 
-  it('lists only parsed CSV artifacts from the configured parser step', () => {
-    const { statistics } = setup(undefined, 'awaiting_step_start', [
-      artifact(101, 31),
-      artifact(102, 31, 'statistics_result_json'),
-      artifact(201, 32),
-      artifact(301, 99),
-    ])
-    expect(statistics.statisticsInputArtifacts.value.map(item => item.id)).toEqual([101])
+  it('loads remote CSV files for the current statistics step', async () => {
+    vi.mocked(api.get).mockResolvedValue({ data: {
+      directory: '/tmp/parser',
+      files: [{
+        relative_path: 'latency.csv', filename: 'latency.csv', source: 'root',
+        size: 100, modified_at: '2026-07-28T10:00:00+08:00',
+      }],
+    } })
+    const { statistics } = setup()
+    await statistics.refreshStatisticsCsvFiles()
+    expect(api.get).toHaveBeenCalledWith('/runs/9/steps/32/statistics-csv-files')
+    expect(statistics.displayedStatisticsCsvFiles.value.map(item => item.relative_path)).toEqual(['latency.csv'])
   })
 
   it('tracks saved and dirty selection state', () => {
     const { statistics } = setup(statisticsStep('pending', {
       statistics_selection: {
-        inputs: [{ artifact_id: 102 }, { artifact_id: 101 }],
+        inputs: [
+          { relative_path: 'b.csv', filename: 'b.csv', source: 'root', size: 1, modified_at: '2026-07-28T10:00:00+08:00' },
+          { relative_path: 'a.csv', filename: 'a.csv', source: 'root', size: 1, modified_at: '2026-07-28T10:00:00+08:00' },
+        ],
       },
     }))
-    expect(statistics.selectedArtifactIds.value).toEqual([102, 101])
+    expect(statistics.selectedRelativePaths.value).toEqual(['b.csv', 'a.csv'])
     expect(statistics.statisticsSelectionReady.value).toBe(true)
 
-    statistics.selectedArtifactIds.value = [101]
+    statistics.selectedRelativePaths.value = ['a.csv']
     expect(statistics.statisticsSelectionDirty.value).toBe(true)
     expect(statistics.statisticsSelectionReady.value).toBe(false)
   })
 
   it('saves the current selection before start', async () => {
     const { reload, statistics } = setup()
-    statistics.selectedArtifactIds.value = [101, 102]
+    statistics.selectedRelativePaths.value = ['latency.csv', '.openslt-runs/r9-s31-a1/result.csv']
 
     await statistics.saveStatisticsInputs()
 
     expect(api.put).toHaveBeenCalledWith('/runs/9/steps/32/statistics-inputs', {
-      artifact_ids: [101, 102],
+      relative_paths: ['latency.csv', '.openslt-runs/r9-s31-a1/result.csv'],
     })
     expect(message.success).toHaveBeenCalledWith('已选择 2 个统计输入')
     expect(reload).toHaveBeenCalled()

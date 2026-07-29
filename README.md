@@ -241,6 +241,12 @@ RHEL 7.9 x86_64 无互联网部署请使用
 - `configure.sh`：内网主机和数据库模式初始化。
 - `install.sh`：底层 RPM、应用文件和迁移安装器。
 - `start.sh`：生产安装、升级、迁移、启动与健康检查入口。
+- `build-frontend.sh`：使用可选的包内 Node.js 与 npm 缓存离线重建前端。
+
+需要在 RHEL 7.9 内网机直接修改前端时，外网制包增加 `--bundle-node`。该模式使用
+`linux-x64-glibc-217` 社区构建，不覆盖系统 Node；运行时安装到
+`/opt/openslt-node`，npm 缓存安装到 `/var/cache/openslt/npm`。具体校验、风险和使用
+方式见离线部署手册。
 
 默认数据库模式为 `existing`，不会安装、配置、启停或清理 MariaDB，也不会管理
 数据库账号。使用 `provision` 或 `initialize` 前必须先阅读离线手册中的影响说明。
@@ -281,3 +287,10 @@ RHEL 7.9 x86_64 无互联网部署请使用
 
 不可以。无互联网环境不要运行 `deploy/scripts/install.sh` 或开发启动脚本；它们可能
 访问 PyPI 或 npm registry。请严格使用离线包中的脚本。
+
+### 内网服务器没有 Node.js，能否修改前端？
+
+可以，但离线包必须在外网制包时使用 `--bundle-node`。部署后修改
+`/opt/openslt/frontend/src` 中的代码，再以 root 运行
+`/opt/openslt/build-frontend.sh`。旧 npm 缓存只适用于制包时的
+`package-lock.json`；新增或升级依赖后必须在外网重新制包。

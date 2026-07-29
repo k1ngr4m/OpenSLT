@@ -5,7 +5,7 @@ import io
 import typing
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.models import Artifact, AuditLog, LogRecord, User
 from app.schemas import AuditOut, LogOut
 from app.services.audit import write_audit
+from app.services.reports import SENSITIVE_ARTIFACT_TYPES
 
 router = APIRouter()
 
@@ -50,6 +51,8 @@ def export_audit_logs(request: Request, actor: User = Depends(admin_only), db: S
 def download_artifact(artifact_id: int, request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> FileResponse:
     artifact = db.get(Artifact, artifact_id)
     if not artifact: raise not_found("产物")
+    if artifact.artifact_type in SENSITIVE_ARTIFACT_TYPES and user.role not in {"admin", "tester"}:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "该产物包含敏感配置，仅管理员和测试人员可下载"})
     path = Path(artifact.path).resolve(); root = settings.artifact_root.resolve()
     if root not in path.parents or not path.is_file(): raise not_found("产物文件")
     write_audit(db, "artifact.download", "artifact", artifact.id, user, request); db.commit(); return FileResponse(path, media_type=artifact.content_type, filename=artifact.name)

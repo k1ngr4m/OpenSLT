@@ -321,7 +321,9 @@ async def _dispatch_order_preparation_command(
     )
     db.flush()
     try:
-        summary = await prepare_order_node(db, workflow, node, run_resources)
+        summary = await prepare_order_node(
+            db, workflow, node, run_resources, run=run, step=step
+        )
         command = str(summary.get("generated_command") or "").strip()
         if not command:
             raise WorkflowError("ORDER_COMMAND_EMPTY", "发单命令为空", 409)

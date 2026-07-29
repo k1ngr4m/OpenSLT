@@ -8,7 +8,7 @@ import asyncssh
 from app.core.database import SessionLocal
 from app.models import ConfigurationCaptureSnapshot, ContractDataFile
 from app.services import order_configs
-from app.services import workflow_capture, workflow_contracts, workflows
+from app.services import workflow_capture, workflow_contracts, workflow_publishing, workflows
 from conftest import create_plan_scenario, create_resource
 
 
@@ -331,6 +331,52 @@ def test_publish_rejects_incomplete_order_node(client, admin_headers):
     assert published.json()["code"] == "WORKFLOW_VALIDATION_FAILED"
 
 
+def test_publish_rejects_database_config_key_removed_from_catalog(
+    client,
+    admin_headers,
+    monkeypatch,
+):
+    async def fake_database_config_items(_resource, _database_name):
+        return [{"key": "CURRENT_KEY", "description": "仍存在"}]
+
+    monkeypatch.setattr(
+        workflow_publishing,
+        "list_database_config_items",
+        fake_database_config_items,
+    )
+    database = create_database_resource(client, admin_headers)
+    _, scenario = create_plan_scenario(
+        client, admin_headers, resource_ids=[database["id"]]
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [database["id"]],
+            "nodes": [{
+                "node_key": "database",
+                "node_type": "database_config",
+                "name": "数据库配置",
+                "config": {"database_name": "alpha_config", "keys": ["REMOVED_KEY"]},
+            }],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers
+    )
+    assert published.status_code == 422
+    assert published.json()["errors"] == [{
+        "node_key": "database",
+        "field": "keys",
+        "message": "配置项已不存在：REMOVED_KEY",
+    }]
+
+
 def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers, monkeypatch):
     order = create_order_resource(client, admin_headers)
     database = create_database_resource(client, admin_headers)
@@ -353,9 +399,18 @@ def test_contract_fetch_selection_publish_and_run_snapshot(client, admin_headers
         )
         return quote_date, len(rows), rows[:5]
 
+    async def fake_database_config_items(_resource, database_name):
+        assert database_name == "alpha_config"
+        return [{"key": "CLIENT_REQ_BIND_CPU", "description": "客户端请求绑核"}]
+
     monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
     monkeypatch.setattr(workflow_contracts.asyncssh, "connect", fake_connect)
     monkeypatch.setattr(workflow_contracts, "_export_contract_csv", fake_export_contract_csv)
+    monkeypatch.setattr(
+        workflow_publishing,
+        "list_database_config_items",
+        fake_database_config_items,
+    )
     plan, scenario = create_plan_scenario(
         client, admin_headers, resource_ids=[database["id"], order["id"]]
     )

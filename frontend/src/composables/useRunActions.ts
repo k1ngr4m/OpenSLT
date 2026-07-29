@@ -1,7 +1,7 @@
 import { reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api, errorMessage } from '@/api/client'
-import type { RunStep, RunVerdictWrite } from '@/types/run'
+import type { RunStep, RunVerdict, RunVerdictWrite } from '@/types/run'
 
 type StepOperation = 'start' | 'complete' | 'confirm' | 'retry'
 
@@ -14,6 +14,7 @@ interface RunActionsOptions {
 export function useRunActions(options: RunActionsOptions) {
   const { reload, runId, runTerminalStep } = options
   const actingStepId = ref<number | null>(null)
+  const regeneratingReports = ref(false)
   const verdictDialog = ref(false)
   const verdict = reactive<RunVerdictWrite>({
     final_result: 'passed',
@@ -81,6 +82,27 @@ export function useRunActions(options: RunActionsOptions) {
     }
   }
 
+  function openVerdict(existing: RunVerdict | null) {
+    const finalResult = existing?.final_result
+    verdict.final_result = finalResult === 'conditional' || finalResult === 'failed' ? finalResult : 'passed'
+    verdict.issue_description = existing?.issue_description || ''
+    verdict.notes = existing?.notes || ''
+    verdictDialog.value = true
+  }
+
+  async function regenerateReports() {
+    regeneratingReports.value = true
+    try {
+      await api.post(`/runs/${runId}/reports`)
+      ElMessage.success('新报告版本已生成')
+      await reload()
+    } catch (error) {
+      ElMessage.error(errorMessage(error))
+    } finally {
+      regeneratingReports.value = false
+    }
+  }
+
   async function download(id: number) {
     try {
       const response = await api.get(`/artifacts/${id}/download`, { responseType: 'blob' })
@@ -101,6 +123,9 @@ export function useRunActions(options: RunActionsOptions) {
     action,
     cancel,
     download,
+    openVerdict,
+    regenerateReports,
+    regeneratingReports,
     stepAction,
     submitVerdict,
     verdict,

@@ -18,6 +18,7 @@ from app.workflow_node_configs import (
     OrderPreparationConfig,
     ParserConfig,
     RemStartupConfig,
+    ReportGenerationConfig,
     StatisticsConfig,
     ServerConfig,
     SlnicMergeConfig,
@@ -278,6 +279,62 @@ class DatabaseSqlRequest(BaseModel):
     sql: str = Field(min_length=1, max_length=100_000)
 
 
+class DatabaseConfigItemOut(BaseModel):
+    key: str
+    description: typing.Union[str, None] = None
+
+
+def _normalize_template_keys(keys: typing.List[str]) -> typing.List[str]:
+    normalized = [key.strip() for key in keys]
+    if any(not key or len(key) > 255 for key in normalized):
+        raise ValueError("配置键不能为空且长度不能超过 255 个字符")
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("配置键不能重复")
+    return normalized
+
+
+class DatabaseConfigTemplateCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    keys: typing.List[str] = Field(min_length=1, max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("模板名称不能为空")
+        if len(value.casefold()) > 128:
+            raise ValueError("模板名称规范化后不能超过 128 个字符")
+        return value
+
+    @field_validator("keys")
+    @classmethod
+    def normalize_keys(cls, value: typing.List[str]) -> typing.List[str]:
+        return _normalize_template_keys(value)
+
+
+class DatabaseConfigTemplateRename(BaseModel):
+    new_name: str = Field(min_length=1, max_length=128)
+
+    @field_validator("new_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("模板名称不能为空")
+        if len(value.casefold()) > 128:
+            raise ValueError("模板名称规范化后不能超过 128 个字符")
+        return value
+
+
+class DatabaseConfigTemplateOut(ORMModel):
+    id: int
+    name: str
+    keys: typing.List[str]
+    created_at: datetime
+    updated_at: datetime
+
+
 class OrderConfigCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     source_name: str = Field(min_length=1, max_length=255)
@@ -470,6 +527,11 @@ class StatisticsNodeWrite(WorkflowNodeBase):
     config: StatisticsConfig = Field(default_factory=StatisticsConfig)
 
 
+class ReportGenerationNodeWrite(WorkflowNodeBase):
+    node_type: Literal["report_generation"]
+    config: ReportGenerationConfig = Field(default_factory=ReportGenerationConfig)
+
+
 WorkflowNodeWrite = Annotated[
     typing.Union[
         ServerConfigNodeWrite,
@@ -483,6 +545,7 @@ WorkflowNodeWrite = Annotated[
         SlnicMergeNodeWrite,
         ParserNodeWrite,
         StatisticsNodeWrite,
+        ReportGenerationNodeWrite,
     ],
     Field(discriminator="node_type"),
 ]
@@ -547,6 +610,10 @@ class StatisticsNodeOut(StatisticsNodeWrite, WorkflowNodeOutFields):
     pass
 
 
+class ReportGenerationNodeOut(ReportGenerationNodeWrite, WorkflowNodeOutFields):
+    pass
+
+
 WorkflowNodeOut = Annotated[
     typing.Union[
         ServerConfigNodeOut,
@@ -560,6 +627,7 @@ WorkflowNodeOut = Annotated[
         SlnicMergeNodeOut,
         ParserNodeOut,
         StatisticsNodeOut,
+        ReportGenerationNodeOut,
     ],
     Field(discriminator="node_type"),
 ]
@@ -660,14 +728,20 @@ class ParserTableExportRequest(BaseModel):
 
 
 class StatisticsInputSelectionRequest(BaseModel):
-    artifact_ids: typing.List[int] = Field(min_length=1)
+    relative_paths: typing.List[str] = Field(min_length=1)
 
 
 class StatisticsInputOut(BaseModel):
-    artifact_id: int
+    relative_path: str
     filename: str
+    source: Literal["root", "current_run"]
     size: int
-    checksum: str
+    modified_at: datetime
+
+
+class StatisticsCsvFilesOut(BaseModel):
+    directory: str
+    files: typing.List[StatisticsInputOut]
 
 
 class StatisticsInputSelectionOut(BaseModel):

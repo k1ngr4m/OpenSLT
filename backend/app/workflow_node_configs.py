@@ -109,10 +109,16 @@ class ParserConfig(WorkflowNodeConfig):
 
 
 class StatisticsConfig(WorkflowNodeConfig):
+    # Kept for published workflow/run snapshot compatibility. Statistics inputs
+    # are selected from the parser resource at run time and no longer use it.
     parser_node_key: str = ""
     script_filename: str = ""
     script_checksum: str = ""
     max_latency_ns: int = Field(default=999999999, ge=1)
+
+
+class ReportGenerationConfig(WorkflowNodeConfig):
+    pass
 
 
 NodeConfig = typing.Union[
@@ -127,6 +133,7 @@ NodeConfig = typing.Union[
     SlnicMergeConfig,
     ParserConfig,
     StatisticsConfig,
+    ReportGenerationConfig,
 ]
 
 
@@ -142,6 +149,7 @@ NODE_CONFIG_MODELS: typing.Dict[str, typing.Type[WorkflowNodeConfig]] = {
     "slnic_merge_capture": SlnicMergeConfig,
     "parser_parse": ParserConfig,
     "data_statistics": StatisticsConfig,
+    "report_generation": ReportGenerationConfig,
 }
 
 

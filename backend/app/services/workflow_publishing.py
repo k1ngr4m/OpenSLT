@@ -8,9 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.time import beijing_now
+from app.adapters.database import DatabaseOperationError
 from app.models import ContractDataFile, ScenarioWorkflowVersion, TestScenario
 from app.services.market_scripts import MarketScriptError, market_script_service
 from app.services.order_configs import OrderConfigError, order_config_service, update_symbol_csv_values
+from app.services.database_config_catalog import list_database_config_items
 from app.services.resource_relations import node_config_with_relations, node_contract_file_ids, sync_scenario_resources, workflow_resource_ids
 from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
 from app.services.workflow_contracts import parse_read_symbol_csv
@@ -50,6 +52,29 @@ async def validate_publish(
                             )
                 except (MarketScriptError, WorkflowError) as exc:
                     errors.append({"node_key": node.node_key, "field": "scripts", "message": str(exc)})
+            continue
+        if node.node_type == "database_config":
+            resource = resources.get("database")
+            config = node_config_with_relations(node)
+            database_name = str(config.get("database_name") or "")
+            keys = list(config.get("keys") or [])
+            if resource and database_name and keys:
+                try:
+                    items = await list_database_config_items(resource, database_name)
+                    available = {str(item["key"]) for item in items}
+                    missing = [key for key in keys if key not in available]
+                    if missing:
+                        errors.append({
+                            "node_key": node.node_key,
+                            "field": "keys",
+                            "message": "配置项已不存在：" + "、".join(missing),
+                        })
+                except DatabaseOperationError as exc:
+                    errors.append({
+                        "node_key": node.node_key,
+                        "field": "keys",
+                        "message": exc.message,
+                    })
             continue
         if node.node_type == "data_statistics":
             resource = resources.get("parser")
@@ -107,12 +132,6 @@ async def validate_publish(
                 database_resource = resources.get("database")
                 if not database_resource or trading_database_name not in (database_resource.database_names or []):
                     raise WorkflowError("TRADING_DATABASE_INVALID", "交易数据库不在资源白名单中", 409)
-                preceding = [
-                    item for item in version.nodes
-                    if item.position < node.position and item.node_type == "database_config"
-                ]
-                if not preceding:
-                    raise WorkflowError("DATABASE_NODE_REQUIRED", "发单节点前需要数据库配置节点", 409)
                 if not file_ids:
                     raise WorkflowError("CONTRACT_FILES_REQUIRED", "至少选择一个已归档的合约 CSV", 409)
                 files = list(db.scalars(select(ContractDataFile).where(

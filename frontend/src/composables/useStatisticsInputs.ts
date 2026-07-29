@@ -20,16 +20,47 @@ function selectionIds(step: RunStep | null) {
     : []
 }
 
-function sortedIds(ids: number[]) {
-  return [...ids].sort((a, b) => a - b).join(',')
+function selectionPaths(step: RunStep | null) {
+  const selection = step?.result_summary?.statistics_selection
+  if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return []
+  const inputs = (selection as JsonMap).inputs
+  return Array.isArray(inputs)
+    ? inputs.map(item => String((item as JsonMap)?.relative_path || '')).filter(Boolean)
+    : []
+}
+
+function sortedPaths(paths: string[]) {
+  return [...paths].sort().join('\n')
+}
+
+export interface StatisticsCsvFile {
+  relative_path: string
+  filename: string
+  source: 'root' | 'current_run'
+  size: number
+  modified_at: string
 }
 
 export function useStatisticsInputs(options: StatisticsOptions) {
   const { currentStep, selectedStep, run, runId, reload } = options
-  const selectedArtifactIds = ref<number[]>([])
+  const selectedRelativePaths = ref<string[]>([])
   const savingStatisticsInputs = ref(false)
+  const loadingStatisticsCsvFiles = ref(false)
+  const statisticsCsvFiles = ref<StatisticsCsvFile[]>([])
+  const statisticsCsvDirectory = ref('')
   const statisticsUnit = ref<'ns' | 'us'>('ns')
   const savedArtifactIds = computed(() => selectionIds(selectedStep.value))
+  const savedRelativePaths = computed(() => selectionPaths(selectedStep.value))
+  const savedRemoteInputs = computed<StatisticsCsvFile[]>(() => {
+    const selection = selectedStep.value?.result_summary?.statistics_selection
+    if (!selection || typeof selection !== 'object' || Array.isArray(selection)) return []
+    const inputs = (selection as JsonMap).inputs
+    if (!Array.isArray(inputs)) return []
+    return inputs.filter(item => {
+      const value = item as JsonMap
+      return typeof value.relative_path === 'string' && typeof value.filename === 'string'
+    }) as unknown as StatisticsCsvFile[]
+  })
   const isCurrentStatisticsStep = computed(() => Boolean(
     selectedStep.value?.node_type === 'data_statistics'
     && selectedStep.value.id === currentStep.value?.id,
@@ -42,21 +73,16 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     )
     && !savingStatisticsInputs.value,
   ))
-  const statisticsInputArtifacts = computed(() => {
-    const parserNodeKey = String(selectedStep.value?.config_snapshot?.parser_node_key || '')
-    const parserStep = run.value?.steps.find(step => step.code === parserNodeKey && step.node_type === 'parser_parse')
-    if (!parserStep) return []
-    return (run.value?.artifacts || []).filter(
-      artifact => artifact.step_id === parserStep.id && artifact.artifact_type === 'parsed_csv',
-    )
-  })
   const statisticsSelectionDirty = computed(
-    () => sortedIds(selectedArtifactIds.value) !== sortedIds(savedArtifactIds.value),
+    () => sortedPaths(selectedRelativePaths.value) !== sortedPaths(savedRelativePaths.value),
   )
   const statisticsSelectionReady = computed(() => Boolean(
-    savedArtifactIds.value.length
-    && !statisticsSelectionDirty.value
-    && !savingStatisticsInputs.value,
+    (savedRelativePaths.value.length || savedArtifactIds.value.length)
+      && !statisticsSelectionDirty.value
+      && !savingStatisticsInputs.value,
+  ))
+  const displayedStatisticsCsvFiles = computed(() => (
+    canSelectStatisticsInputs.value ? statisticsCsvFiles.value : savedRemoteInputs.value
   ))
   const statisticsResults = computed(() => {
     const direct = selectedStep.value?.result_summary?.statistics_results
@@ -78,13 +104,13 @@ export function useStatisticsInputs(options: StatisticsOptions) {
 
   async function saveStatisticsInputs() {
     const step = currentStep.value
-    if (!step || !canSelectStatisticsInputs.value || !selectedArtifactIds.value.length) return
+    if (!step || !canSelectStatisticsInputs.value || !selectedRelativePaths.value.length) return
     savingStatisticsInputs.value = true
     try {
       await api.put(`/runs/${runId}/steps/${step.id}/statistics-inputs`, {
-        artifact_ids: selectedArtifactIds.value,
+        relative_paths: selectedRelativePaths.value,
       })
-      ElMessage.success(`已选择 ${selectedArtifactIds.value.length} 个统计输入`)
+      ElMessage.success(`已选择 ${selectedRelativePaths.value.length} 个统计输入`)
       await reload()
     } catch (error) {
       ElMessage.error(errorMessage(error))
@@ -93,20 +119,49 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     }
   }
 
+  async function refreshStatisticsCsvFiles() {
+    const step = currentStep.value
+    if (!step || !canSelectStatisticsInputs.value) {
+      statisticsCsvFiles.value = []
+      statisticsCsvDirectory.value = ''
+      return
+    }
+    loadingStatisticsCsvFiles.value = true
+    try {
+      const response = await api.get(`/runs/${runId}/steps/${step.id}/statistics-csv-files`)
+      statisticsCsvDirectory.value = String(response.data?.directory || '')
+      statisticsCsvFiles.value = Array.isArray(response.data?.files) ? response.data.files : []
+    } catch (error) {
+      statisticsCsvFiles.value = []
+      ElMessage.error(errorMessage(error))
+    } finally {
+      loadingStatisticsCsvFiles.value = false
+    }
+  }
+
   watch(
-    () => `${selectedStep.value?.id || ''}:${savedArtifactIds.value.join(',')}`,
-    () => { selectedArtifactIds.value = [...savedArtifactIds.value] },
+    () => `${selectedStep.value?.id || ''}:${savedRelativePaths.value.join(',')}`,
+    () => { selectedRelativePaths.value = [...savedRelativePaths.value] },
+    { immediate: true },
+  )
+  watch(
+    () => `${selectedStep.value?.id || ''}:${currentStep.value?.id || ''}:${run.value?.status || ''}:${currentStep.value?.status || ''}`,
+    () => { void refreshStatisticsCsvFiles() },
     { immediate: true },
   )
 
   return {
     canSelectStatisticsInputs,
     displayStatisticsValue,
+    displayedStatisticsCsvFiles,
     isCurrentStatisticsStep,
+    loadingStatisticsCsvFiles,
+    refreshStatisticsCsvFiles,
     saveStatisticsInputs,
     savingStatisticsInputs,
-    selectedArtifactIds,
-    statisticsInputArtifacts,
+    selectedRelativePaths,
+    statisticsCsvDirectory,
+    statisticsCsvFiles,
     statisticsResults,
     statisticsSelectionDirty,
     statisticsSelectionReady,

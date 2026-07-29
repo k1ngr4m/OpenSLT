@@ -308,7 +308,7 @@ def test_soft_cffex_speed_analysis_v2_uses_tcp_default_config(
     assert '<sm4_iv value="39383736353433323130393837363534"/>' in content
 
 
-def test_parser_publish_rejects_missing_merge(client, admin_headers):
+def test_parser_publish_does_not_require_merge_node_position(client, admin_headers):
     database = create_database_resource(client, admin_headers)
     parser = create_parser_resource(client, admin_headers)
     _, scenario = create_plan_scenario(
@@ -323,7 +323,7 @@ def test_parser_publish_rejects_missing_merge(client, admin_headers):
     assert saved.status_code == 200, saved.text
     published = client.post(f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers)
     assert published.status_code == 422
-    assert any("pcapng" in item["message"] for item in published.json()["errors"])
+    assert not any("pcapng" in item["message"] for item in published.json()["errors"])
 
 
 def test_parser_publish_rejects_missing_paired_config_database(client, admin_headers):

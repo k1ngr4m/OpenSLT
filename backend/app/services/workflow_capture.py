@@ -14,12 +14,11 @@ from app.core.time import beijing_now
 from app.models import ConfigurationCaptureItem, ConfigurationCaptureSnapshot, Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestScenario
 from app.services.workflow_core import (
     FIELD_LABELS,
-    KEY_COLUMN_CANDIDATES,
     SERVER_COMMANDS,
-    VALUE_COLUMN_CANDIDATES,
     WorkflowError,
     resource_map,
 )
+from app.services.database_config_catalog import TABLE_NAME, detect_setting_columns, quote_identifier
 from app.workflow_node_configs import DatabaseConfig, ServerConfig, parse_node_config
 
 def _ssh_options(resource: Resource) -> dict:
@@ -108,15 +107,6 @@ async def capture_server(
     return snapshots
 
 
-def _detect_setting_columns(columns: list[str]) -> tuple[str, str]:
-    folded = {column.casefold(): column for column in columns}
-    keys = [folded[item] for item in KEY_COLUMN_CANDIDATES if item in folded]
-    values = [folded[item] for item in VALUE_COLUMN_CANDIDATES if item in folded]
-    if len(keys) != 1 or len(values) != 1 or keys[0] == values[0]:
-        raise WorkflowError("GLOBAL_SETTINGS_SCHEMA_UNKNOWN", "无法唯一识别 t_global_settings 的配置键和值列", 409)
-    return keys[0], values[0]
-
-
 async def capture_database(
     db: Session,
     scenario: TestScenario,
@@ -157,10 +147,16 @@ async def capture_database(
         async with mysql_adapter.connection(resource, database_name) as connection:
             def query() -> tuple[dict[str, typing.Any], str]:
                 with connection.cursor() as cursor:
-                    cursor.execute("SHOW COLUMNS FROM `t_global_settings`")
-                    key_column, value_column = _detect_setting_columns([str(row[0]) for row in cursor.fetchall()])
+                    cursor.execute(f"SHOW COLUMNS FROM {quote_identifier(TABLE_NAME)}")
+                    key_column, value_column, _ = detect_setting_columns(
+                        [str(row[0]) for row in cursor.fetchall()]
+                    )
                     placeholders = ",".join(["%s"] * len(keys))
-                    sql = f"SELECT `{key_column}`, `{value_column}` FROM `t_global_settings` WHERE `{key_column}` IN ({placeholders})"
+                    sql = (
+                        f"SELECT {quote_identifier(key_column)}, {quote_identifier(value_column)} "
+                        f"FROM {quote_identifier(TABLE_NAME)} "
+                        f"WHERE {quote_identifier(key_column)} IN ({placeholders})"
+                    )
                     cursor.execute(sql, keys)
                     return {str(row[0]): row[1] for row in cursor.fetchall()}, f"{database_name}.t_global_settings.{key_column}/{value_column}"
             values, source = await to_thread(query)

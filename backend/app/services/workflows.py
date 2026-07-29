@@ -393,8 +393,7 @@ def _parser_pcap_artifact(db: Session, run: TestRun, step: RunStep) -> Artifact:
     prior_steps = sorted(
         (
             item for item in run.steps
-            if item.position < step.position
-            and item.node_type == "slnic_merge_capture"
+            if item.node_type == "slnic_merge_capture"
             and item.status == "succeeded"
         ),
         key=lambda item: item.position,
@@ -410,7 +409,7 @@ def _parser_pcap_artifact(db: Session, run: TestRun, step: RunStep) -> Artifact:
         )
         if artifact and Path(artifact.path).is_file():
             return artifact
-    raise WorkflowError("PARSER_PCAP_REQUIRED", "未找到前置 SLNIC 节点生成的 merge_pcap.pcapng", 409)
+    raise WorkflowError("PARSER_PCAP_REQUIRED", "本次运行尚无 SLNIC 节点生成的 merge_pcap.pcapng", 409)
 
 
 async def _parser_csv_snapshot(sftp: typing.Any, directory: str) -> dict[str, tuple[int, int]]:
