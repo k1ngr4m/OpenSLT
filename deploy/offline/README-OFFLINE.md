@@ -45,22 +45,38 @@ deploy/offline/make-offline-package.sh \
   --nginx-repo-url 'http://yum.example.internal/nginx/rhel/7/$basearch/'
 ```
 
-将生成的 `.tar.gz` 和 `.tar.gz.sha256` 传入内网并校验、解压。首次部署执行：
+将生成的 `.tar.gz` 和 `.tar.gz.sha256` 传入内网并校验、解压。默认使用现有数据库，
+先准备生产 env，再执行配置和启动：
 
 ```bash
 sha256sum -c openslt-offline-rhel7-x86_64-0.1.0.tar.gz.sha256
 tar -xzf openslt-offline-rhel7-x86_64-0.1.0.tar.gz
 cd openslt-offline-rhel7-x86_64-0.1.0
 chmod +x configure.sh start.sh
+install -d -o root -g root -m 0700 /etc/openslt
+install -o root -g root -m 0600 openslt.env.example /etc/openslt/openslt.env
+# 编辑 /etc/openslt/openslt.env，替换全部 CHANGE_ME 并填写现有数据库连接
 ./configure.sh
 ./start.sh
 ```
 
-`configure.sh` 负责安装离线 RPM、配置 MariaDB、创建应用数据库和随机生产密钥，
-已存在的 `/etc/openslt/openslt.env` 不会被覆盖。`start.sh` 负责应用安装、Alembic
-迁移、systemd/Nginx 配置和健康检查；重复启动同一版本时不会重建虚拟环境，使用新
-版本压缩包时会自动升级。首次登录密码保存在仅 root 可读的
-`/etc/openslt/initial-admin-password`，修改密码后应删除该文件。
+默认 `existing` 模式不会安装 MariaDB RPM、修改数据库配置、启停数据库服务、使用
+root 登录或创建数据库账号。`start.sh` 仍会使用 env 中的应用账号执行 Alembic，只
+创建或升级 OpenSLT 自有表。重复启动同一版本时不会重建虚拟环境，使用新版本压缩包
+时会自动升级。
+
+数据库模式如下：
+
+| 模式 | 行为 |
+| --- | --- |
+| `existing`（默认） | 使用已准备的数据库和 env，不管理数据库实例或账号 |
+| `provision` | 安装并启动本地 MariaDB，创建 OpenSLT 库和账号，不执行安全清理 |
+| `initialize` | 执行完整首次初始化，包括 root 密码处理、匿名/远程 root 清理和删除测试库 |
+
+新建独占数据库但保留现有 MariaDB 安全策略时执行
+`./configure.sh --database-mode provision`。只有确认该 MariaDB 实例由 OpenSLT 独占
+时，才执行 `./configure.sh --database-mode initialize`。选择会保存到
+`/etc/openslt/database-mode`，后续 `start.sh` 自动沿用。
 
 如果 MariaDB root 已设置密码且 `/root/.my.cnf` 不可用，请准备权限为 `0600` 的
 MySQL client defaults 文件：
@@ -149,12 +165,13 @@ tar -xzf openslt-offline-rhel7-x86_64-0.1.0.tar.gz
 
 ## 4. 准备 MariaDB 5.5.68
 
-`configure.sh` 会自动完成本节配置，包括首次安装时为 MariaDB root 生成随机密码
-并保存到 `/root/.my.cnf`。如需分步排查，可先只安装 RPM，然后启动 MariaDB：
+只有 `provision` 和 `initialize` 模式会自动安装、配置并启动本地 MariaDB。
+`initialize` 还会在 root 密码为空时生成随机密码并保存到 `/root/.my.cnf`。
+如需分步排查，可安装数据库 RPM，然后启动 MariaDB：
 
 ```bash
 chmod +x install.sh
-./install.sh --rpms-only
+./install.sh --rpms-only --database-mode provision
 systemctl enable --now mariadb
 mysql_secure_installation
 ```
@@ -199,8 +216,10 @@ MariaDB 只需监听本机或受控管理网地址。虽然服务端是 MariaDB�
 
 ## 5. 生成生产配置
 
-在安全目录复制 `openslt.env.example`，替换所有 `CHANGE_ME`。值必须符合 Bash
-赋值语法；包含空格或 shell 特殊字符时使用双引号。
+`existing` 模式要求在运行 `configure.sh` 前准备好 env。复制
+`openslt.env.example`，替换所有 `CHANGE_ME`；`AUTO_CREATE_DATABASE=false` 必须
+保留，以保证数据库不存在时直接失败。值必须符合 Bash 赋值语法；包含空格或 shell
+特殊字符时使用双引号。
 
 生成 JWT 和凭据加密密钥：
 
@@ -227,7 +246,8 @@ MariaDB 只需监听本机或受控管理网地址。虽然服务端是 MariaDB�
 ```bash
 chmod +x install.sh
 ./install.sh \
-  --env-file /root/openslt-production.env
+  --env-file /root/openslt-production.env \
+  --database-mode existing
 ```
 
 安装器会执行平台检查、逐文件哈希校验、可选 RPM 安装、从 wheelhouse 离线安装
@@ -241,8 +261,9 @@ chmod +x install.sh
 /var/log/openslt
 ```
 
-如果 MariaDB 使用内网已有实例，也可以跳过前面的 `--rpms-only`，由运维预装 Nginx、
-Python 和 curl。如果希望先检查迁移结果而不启动服务，增加 `--no-start`。
+`existing` 模式安装 RPM 时会自动排除 `mariadb`、`mariadb-server` 和
+`mariadb-libs`，也不会启动本地 MariaDB。如果希望先检查迁移结果而不启动服务，
+增加 `--no-start`。
 
 安装完成后通过 `http://内网服务器地址:7777/` 访问，立即修改初始管理员密码。
 
@@ -273,9 +294,11 @@ Nginx 改为监听 443。
 
 ```bash
 curl -fsS http://127.0.0.1:4396/health
-systemctl status openslt-api nginx mariadb
+systemctl status openslt-api nginx
 journalctl -u openslt-api -n 100 --no-pager
 ```
+
+仅在 `provision` 或 `initialize` 模式下额外检查 `systemctl status mariadb`。
 
 随后验证登录、权限、SSH 终端、资源健康检查、数据库查询、WebSocket、完整测速
 工作流、HTML/Excel/PDF 报告和服务器重启后的自动恢复。

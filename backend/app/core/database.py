@@ -93,8 +93,10 @@ def validate_database_server(connection: typing.Any) -> typing.Optional[Database
     return info
 
 
-def ensure_database_exists(database_url: str) -> bool:
+def ensure_database_exists(database_url: str, *, allow_create: bool = True) -> bool:
     """Create the configured MySQL database when it does not exist yet."""
+    if not allow_create:
+        return False
     url = make_url(database_url)
     if url.get_backend_name() != "mysql":
         return False

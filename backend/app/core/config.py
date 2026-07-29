@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_v1_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./backend/data/openslt.sqlite3"
+    auto_create_database: bool = True
     jwt_secret: typing.Union[str, None] = None
     jwt_algorithm: str = "HS256"
     jwt_access_minutes: int = 30

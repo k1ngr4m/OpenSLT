@@ -27,7 +27,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    ensure_database_exists(settings.database_url)
+    ensure_database_exists(
+        settings.database_url,
+        allow_create=settings.auto_create_database,
+    )
     connectable = engine_from_config(config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
         validate_database_server(connection)

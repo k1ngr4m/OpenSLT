@@ -9,6 +9,9 @@ PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 INSTALL_RPMS=false
 RPMS_ONLY=false
 START_SERVICES=true
+DATABASE_MODE=""
+DATABASE_MODE_FILE="/etc/openslt/database-mode"
+SKIP_DATABASE_RPMS=false
 
 usage() {
     cat <<'EOF'
@@ -17,8 +20,12 @@ Usage: install.sh --env-file FILE [options]
 Options:
   --env-file FILE     Completed production environment file (required)
   --python PATH       Python >=3.8 executable
+  --database-mode MODE
+                      existing (default), provision, or initialize
   --install-rpms      Install the bundled RPM repository before OpenSLT
   --rpms-only         Install bundled RPMs, then stop before application setup
+  --skip-database-rpms
+                      Do not install mariadb, mariadb-server, or mariadb-libs
   --no-start          Install and migrate, but do not start/restart services
   -h, --help          Show this help
 EOF
@@ -34,6 +41,10 @@ while (($#)); do
             PYTHON="$2"
             shift 2
             ;;
+        --database-mode)
+            DATABASE_MODE="$2"
+            shift 2
+            ;;
         --install-rpms)
             INSTALL_RPMS=true
             shift
@@ -41,6 +52,10 @@ while (($#)); do
         --rpms-only)
             INSTALL_RPMS=true
             RPMS_ONLY=true
+            shift
+            ;;
+        --skip-database-rpms)
+            SKIP_DATABASE_RPMS=true
             shift
             ;;
         --no-start)
@@ -58,6 +73,23 @@ while (($#)); do
             ;;
     esac
 done
+
+if [[ -z "$DATABASE_MODE" && -f "$DATABASE_MODE_FILE" ]]; then
+    DATABASE_MODE="$(<"$DATABASE_MODE_FILE")"
+fi
+DATABASE_MODE="${DATABASE_MODE:-existing}"
+case "$DATABASE_MODE" in
+    existing)
+        SKIP_DATABASE_RPMS=true
+        ;;
+    provision|initialize)
+        ;;
+    *)
+        printf 'Invalid database mode: %s (expected existing, provision, or initialize)\n' \
+            "$DATABASE_MODE" >&2
+        exit 2
+        ;;
+esac
 
 [[ "$(id -u)" == "0" ]] || {
     printf 'Run the installer as root.\n' >&2
@@ -103,12 +135,31 @@ if [[ "$INSTALL_RPMS" == true ]]; then
         printf 'No RPM files were found in the bundle.\n' >&2
         exit 1
     }
+    if [[ "$SKIP_DATABASE_RPMS" == true ]]; then
+        FILTERED_RPM_FILES=()
+        for rpm_file in "${RPM_FILES[@]}"; do
+            rpm_name="$(rpm -qp --queryformat '%{NAME}' "$rpm_file")"
+            case "$rpm_name" in
+                mariadb|mariadb-server|mariadb-libs)
+                    printf '[OpenSLT] Skipping database RPM in existing mode: %s\n' "$rpm_name"
+                    ;;
+                *)
+                    FILTERED_RPM_FILES+=("$rpm_file")
+                    ;;
+            esac
+        done
+        RPM_FILES=("${FILTERED_RPM_FILES[@]}")
+        ((${#RPM_FILES[@]})) || {
+            printf 'No non-database RPM files remain after filtering.\n' >&2
+            exit 1
+        }
+    fi
     printf '[OpenSLT] Installing bundled RPMs with all external repositories disabled...\n'
     yum --disablerepo='*' localinstall -y "${RPM_FILES[@]}"
 fi
 
 if [[ "$RPMS_ONLY" == true ]]; then
-    printf '[OpenSLT] RPM installation completed. Configure MariaDB before installing OpenSLT.\n'
+    printf '[OpenSLT] RPM installation completed for database mode %s.\n' "$DATABASE_MODE"
     exit 0
 fi
 
@@ -137,7 +188,12 @@ install -d -o root -g root -m 0755 /opt/openslt
 
 printf '[OpenSLT] Installing application files...\n'
 cp -a "$BUNDLE_ROOT/app/." /opt/openslt/
-install -o root -g openslt -m 0640 "$ENV_FILE" /etc/openslt/openslt.env
+if [[ "$(readlink -f -- "$ENV_FILE")" == "/etc/openslt/openslt.env" ]]; then
+    chown root:openslt /etc/openslt/openslt.env
+    chmod 0640 /etc/openslt/openslt.env
+else
+    install -o root -g openslt -m 0640 "$ENV_FILE" /etc/openslt/openslt.env
+fi
 
 rm -rf -- /opt/openslt/.venv
 "$PYTHON" -m venv /opt/openslt/.venv
@@ -170,7 +226,7 @@ fi
 printf '[OpenSLT] Applying database migrations...\n'
 (
     cd /opt/openslt
-    /opt/openslt/.venv/bin/python - /etc/openslt/openslt.env <<'PY'
+    /opt/openslt/.venv/bin/python - /etc/openslt/openslt.env "$DATABASE_MODE" <<'PY'
 import os
 import sys
 
@@ -182,6 +238,7 @@ if missing:
     raise SystemExit("Invalid environment entries: " + ", ".join(missing))
 environment = os.environ.copy()
 environment.update(values)
+environment["AUTO_CREATE_DATABASE"] = "false" if sys.argv[2] == "existing" else "true"
 alembic = "/opt/openslt/.venv/bin/alembic"
 os.execve(alembic, [alembic, "upgrade", "head"], environment)
 PY

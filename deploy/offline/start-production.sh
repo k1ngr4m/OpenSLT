@@ -7,6 +7,8 @@ BUNDLE_ROOT="$SCRIPT_DIR"
 ENV_FILE="/etc/openslt/openslt.env"
 PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 FORCE_INSTALL=false
+DATABASE_MODE=""
+DATABASE_MODE_FILE="/etc/openslt/database-mode"
 
 usage() {
     cat <<'EOF'
@@ -18,6 +20,8 @@ start the production services. Re-running the same version only restarts them.
 Options:
   --env-file FILE   Production environment path
   --python PATH     Preinstalled Python >=3.8 executable
+  --database-mode MODE
+                    existing (default), provision, or initialize
   --reinstall       Reinstall even when this bundle version is already active
   -h, --help        Show this help
 EOF
@@ -31,6 +35,10 @@ while (($#)); do
             ;;
         --python)
             PYTHON="$2"
+            shift 2
+            ;;
+        --database-mode)
+            DATABASE_MODE="$2"
             shift 2
             ;;
         --reinstall)
@@ -48,6 +56,20 @@ while (($#)); do
             ;;
     esac
 done
+
+if [[ -z "$DATABASE_MODE" && -f "$DATABASE_MODE_FILE" ]]; then
+    DATABASE_MODE="$(<"$DATABASE_MODE_FILE")"
+fi
+DATABASE_MODE="${DATABASE_MODE:-existing}"
+case "$DATABASE_MODE" in
+    existing|provision|initialize)
+        ;;
+    *)
+        printf 'Invalid database mode: %s (expected existing, provision, or initialize)\n' \
+            "$DATABASE_MODE" >&2
+        exit 2
+        ;;
+esac
 
 [[ "$(id -u)" == "0" ]] || {
     printf 'Run start.sh as root.\n' >&2
@@ -71,8 +93,12 @@ INSTALLED_VERSION_FILE="/var/lib/openslt/installed-bundle-version"
 INSTALLED_VERSION=""
 [[ -f "$INSTALLED_VERSION_FILE" ]] && INSTALLED_VERSION="$(<"$INSTALLED_VERSION_FILE")"
 
-systemctl enable mariadb
-systemctl start mariadb
+if [[ "$DATABASE_MODE" != "existing" ]]; then
+    systemctl enable mariadb
+    systemctl start mariadb
+else
+    printf '[OpenSLT] Existing database mode: local MariaDB service management skipped.\n'
+fi
 
 if [[ "$FORCE_INSTALL" == true || "$INSTALLED_VERSION" != "$BUNDLE_VERSION" \
     || ! -x /opt/openslt/.venv/bin/uvicorn \
@@ -80,11 +106,15 @@ if [[ "$FORCE_INSTALL" == true || "$INSTALLED_VERSION" != "$BUNDLE_VERSION" \
     || ! -f /etc/nginx/conf.d/openslt.conf \
     || ! -f /opt/openslt/frontend/dist/index.html ]]; then
     printf '[OpenSLT] Installing bundle version %s...\n' "$BUNDLE_VERSION"
-    "$BUNDLE_ROOT/install.sh" --env-file "$ENV_FILE" --python "$PYTHON" --no-start
+    "$BUNDLE_ROOT/install.sh" \
+        --env-file "$ENV_FILE" \
+        --python "$PYTHON" \
+        --database-mode "$DATABASE_MODE" \
+        --no-start
 else
     printf '[OpenSLT] Bundle version %s is already installed.\n' "$BUNDLE_VERSION"
     printf '[OpenSLT] Applying any pending database migrations...\n'
-    /opt/openslt/.venv/bin/python - "$ENV_FILE" <<'PY'
+    /opt/openslt/.venv/bin/python - "$ENV_FILE" "$DATABASE_MODE" <<'PY'
 import os
 import subprocess
 import sys
@@ -97,6 +127,7 @@ if missing:
     raise SystemExit("Invalid environment entries: " + ", ".join(missing))
 environment = os.environ.copy()
 environment.update(values)
+environment["AUTO_CREATE_DATABASE"] = "false" if sys.argv[2] == "existing" else "true"
 subprocess.run(
     ["/opt/openslt/.venv/bin/alembic", "upgrade", "head"],
     cwd="/opt/openslt",

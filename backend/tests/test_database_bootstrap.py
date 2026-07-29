@@ -66,6 +66,19 @@ def test_non_mysql_database_does_not_bootstrap(monkeypatch) -> None:
     assert database_module.ensure_database_exists("sqlite:///./data/test.sqlite3") is False
 
 
+def test_database_creation_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(
+        database_module,
+        "create_engine",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("unexpected engine")),
+    )
+
+    assert database_module.ensure_database_exists(
+        "mysql+pymysql://openslt:secret@127.0.0.1:3306/openslt?charset=utf8mb4",
+        allow_create=False,
+    ) is False
+
+
 def test_existing_mysql_database_is_not_created(monkeypatch) -> None:
     fake_engine = FakeEngine("openslt")
     captured: typing.Dict[str, typing.Any] = {}

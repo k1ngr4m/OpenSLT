@@ -12,6 +12,11 @@ ENV_FILE="/etc/openslt/openslt.env"
 OPEN_FIREWALL=true
 PYTHON_RUNTIME_DIR="$BUNDLE_ROOT/python-runtime/rh-python38"
 RPMS_INSTALLED=false
+DATABASE_MODE="existing"
+DATABASE_MODE_FILE="/etc/openslt/database-mode"
+MYSQL_DEFAULTS_FILE_SET=false
+DATABASE_NAME_SET=false
+DATABASE_USER_SET=false
 
 usage() {
     cat <<'EOF'
@@ -21,6 +26,7 @@ Run this once as root on the offline RHEL 7.9 application host.
 
 Options:
   --python PATH                Python >=3.8 executable
+  --database-mode MODE        existing (default), provision, or initialize
   --mysql-defaults-file FILE  Existing MySQL client option file for root/admin
   --database-name NAME        Application database (default: openslt)
   --database-user NAME        Application user (default: openslt)
@@ -38,16 +44,23 @@ while (($#)); do
             PYTHON="$2"
             shift 2
             ;;
+        --database-mode)
+            DATABASE_MODE="$2"
+            shift 2
+            ;;
         --mysql-defaults-file)
             MYSQL_DEFAULTS_FILE="$2"
+            MYSQL_DEFAULTS_FILE_SET=true
             shift 2
             ;;
         --database-name)
             DATABASE_NAME="$2"
+            DATABASE_NAME_SET=true
             shift 2
             ;;
         --database-user)
             DATABASE_USER="$2"
+            DATABASE_USER_SET=true
             shift 2
             ;;
         --env-file)
@@ -70,6 +83,16 @@ while (($#)); do
     esac
 done
 
+case "$DATABASE_MODE" in
+    existing|provision|initialize)
+        ;;
+    *)
+        printf 'Invalid database mode: %s (expected existing, provision, or initialize)\n' \
+            "$DATABASE_MODE" >&2
+        exit 2
+        ;;
+esac
+
 [[ "$(id -u)" == "0" ]] || {
     printf 'Run configure.sh as root.\n' >&2
     exit 1
@@ -86,6 +109,33 @@ if [[ -n "$MYSQL_DEFAULTS_FILE" && ! -f "$MYSQL_DEFAULTS_FILE" ]]; then
     printf 'MySQL defaults file not found: %s\n' "$MYSQL_DEFAULTS_FILE" >&2
     exit 1
 fi
+if [[ "$DATABASE_MODE" == "existing" ]]; then
+    if [[ "$MYSQL_DEFAULTS_FILE_SET" == true \
+        || "$DATABASE_NAME_SET" == true \
+        || "$DATABASE_USER_SET" == true ]]; then
+        printf 'Database administration options cannot be used in existing mode.\n' >&2
+        exit 2
+    fi
+    [[ -f "$ENV_FILE" ]] || {
+        printf 'Existing mode requires a completed environment file: %s\n' "$ENV_FILE" >&2
+        exit 1
+    }
+    if grep -q 'CHANGE_ME' "$ENV_FILE"; then
+        printf 'The existing environment file still contains CHANGE_ME placeholders: %s\n' \
+            "$ENV_FILE" >&2
+        exit 1
+    fi
+    for required_key in DATABASE_URL JWT_SECRET CREDENTIAL_ENCRYPTION_KEY INITIAL_ADMIN_PASSWORD; do
+        grep -Eq "^[[:space:]]*${required_key}=.+" "$ENV_FILE" || {
+            printf 'Required environment entry is missing: %s\n' "$required_key" >&2
+            exit 1
+        }
+    done
+fi
+
+install_system_rpms() {
+    "$BUNDLE_ROOT/install.sh" --rpms-only --database-mode "$DATABASE_MODE"
+}
 python_is_supported() {
     [[ -x "$PYTHON" ]] \
         && "$PYTHON" -c \
@@ -100,7 +150,7 @@ if ! python_is_supported && [[ -d "$PYTHON_RUNTIME_DIR" ]]; then
         exit 1
     }
     printf '[OpenSLT] Installing bundled operating-system packages before Python bootstrap...\n'
-    "$BUNDLE_ROOT/install.sh" --rpms-only
+    install_system_rpms
     RPMS_INSTALLED=true
     printf '[OpenSLT] Installing the bundled rh-python38 runtime...\n'
     install -d -o root -g root -m 0755 /opt/rh
@@ -126,11 +176,15 @@ printf '[OpenSLT] Python accepted: %s (%s)\n' "$PYTHON_VERSION" "$PYTHON"
 
 if [[ "$RPMS_INSTALLED" == false ]]; then
     printf '[OpenSLT] Installing the bundled operating-system packages...\n'
-    "$BUNDLE_ROOT/install.sh" --rpms-only
+    install_system_rpms
 fi
 
-install -d -o root -g root -m 0755 /etc/my.cnf.d
-install -o root -g root -m 0644 /dev/stdin /etc/my.cnf.d/openslt.cnf <<'EOF'
+if [[ "$DATABASE_MODE" == "existing" ]]; then
+    printf '[OpenSLT] Existing database mode: instance configuration and account management skipped.\n'
+    printf '[OpenSLT] Existing environment preserved: %s\n' "$ENV_FILE"
+else
+    install -d -o root -g root -m 0755 /etc/my.cnf.d
+    install -o root -g root -m 0644 /dev/stdin /etc/my.cnf.d/openslt.cnf <<'EOF'
 [mysqld]
 default-storage-engine=InnoDB
 character-set-server=utf8mb4
@@ -138,20 +192,20 @@ collation-server=utf8mb4_unicode_ci
 innodb-file-per-table=1
 EOF
 
-systemctl enable mariadb
-systemctl restart mariadb
+    systemctl enable mariadb
+    systemctl restart mariadb
 
-MYSQL=(mysql)
-if [[ -n "$MYSQL_DEFAULTS_FILE" ]]; then
-    MYSQL=(mysql "--defaults-extra-file=$MYSQL_DEFAULTS_FILE")
-fi
-if ! "${MYSQL[@]}" -uroot -NBe "SELECT VERSION()" >/dev/null 2>&1; then
-    printf 'Cannot authenticate as MariaDB root. Provide --mysql-defaults-file.\n' >&2
-    exit 1
-fi
+    MYSQL=(mysql)
+    if [[ -n "$MYSQL_DEFAULTS_FILE" ]]; then
+        MYSQL=(mysql "--defaults-extra-file=$MYSQL_DEFAULTS_FILE")
+    fi
+    if ! "${MYSQL[@]}" -uroot -NBe "SELECT VERSION()" >/dev/null 2>&1; then
+        printf 'Cannot authenticate as MariaDB root. Provide --mysql-defaults-file.\n' >&2
+        exit 1
+    fi
 
-SERVER_VERSION="$("${MYSQL[@]}" -uroot -NBe "SELECT VERSION()")"
-"$PYTHON" - "$SERVER_VERSION" <<'PY'
+    SERVER_VERSION="$("${MYSQL[@]}" -uroot -NBe "SELECT VERSION()")"
+    "$PYTHON" - "$SERVER_VERSION" <<'PY'
 import re
 import sys
 
@@ -169,22 +223,23 @@ if version < (5, 5, 68):
 print("[OpenSLT] MariaDB server accepted: " + raw)
 PY
 
-install -d -o root -g root -m 0700 "$(dirname -- "$ENV_FILE")"
+    install -d -o root -g root -m 0700 "$(dirname -- "$ENV_FILE")"
 
-ROOT_PASSWORD=""
-ROOT_PASSWORD_QUERY="SELECT COUNT(*) FROM mysql.user WHERE User = 'root' "
-ROOT_PASSWORD_QUERY+="AND Host = 'localhost' AND Password <> ''"
-ROOT_PASSWORD_ROWS="$("${MYSQL[@]}" -uroot -NBe "$ROOT_PASSWORD_QUERY")"
-if [[ "$ROOT_PASSWORD_ROWS" == "0" ]]; then
-    if [[ -z "$MYSQL_DEFAULTS_FILE" && ! -f /root/.my.cnf ]]; then
-        ROOT_PASSWORD="$("$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(36))')"
-    else
-        printf 'MariaDB root has an empty password; secure it before continuing.\n' >&2
-        exit 1
-    fi
-fi
+    if [[ "$DATABASE_MODE" == "initialize" ]]; then
+        ROOT_PASSWORD=""
+        ROOT_PASSWORD_QUERY="SELECT COUNT(*) FROM mysql.user WHERE User = 'root' "
+        ROOT_PASSWORD_QUERY+="AND Host = 'localhost' AND Password <> ''"
+        ROOT_PASSWORD_ROWS="$("${MYSQL[@]}" -uroot -NBe "$ROOT_PASSWORD_QUERY")"
+        if [[ "$ROOT_PASSWORD_ROWS" == "0" ]]; then
+            if [[ -z "$MYSQL_DEFAULTS_FILE" && ! -f /root/.my.cnf ]]; then
+                ROOT_PASSWORD="$("$PYTHON" -c 'import secrets; print(secrets.token_urlsafe(36))')"
+            else
+                printf 'MariaDB root has an empty password; secure it before continuing.\n' >&2
+                exit 1
+            fi
+        fi
 
-"${MYSQL[@]}" -uroot <<SQL
+        "${MYSQL[@]}" -uroot <<SQL
 DELETE FROM mysql.user WHERE User = '';
 DELETE FROM mysql.user WHERE User = 'root' AND Host <> 'localhost';
 DROP DATABASE IF EXISTS test;
@@ -193,19 +248,22 @@ $(if [[ -n "$ROOT_PASSWORD" ]]; then printf "UPDATE mysql.user SET Password = PA
 FLUSH PRIVILEGES;
 SQL
 
-if [[ -n "$ROOT_PASSWORD" ]]; then
-    install -o root -g root -m 0600 /dev/stdin /root/.my.cnf <<EOF
+        if [[ -n "$ROOT_PASSWORD" ]]; then
+            install -o root -g root -m 0600 /dev/stdin /root/.my.cnf <<EOF
 [client]
 user=root
 password=$ROOT_PASSWORD
 EOF
-    printf '[OpenSLT] MariaDB root credentials saved to /root/.my.cnf\n'
-fi
+            printf '[OpenSLT] MariaDB root credentials saved to /root/.my.cnf\n'
+        fi
+    else
+        printf '[OpenSLT] Provision mode: MariaDB security cleanup and root changes skipped.\n'
+    fi
 
-if [[ -f "$ENV_FILE" ]]; then
-    printf '[OpenSLT] Existing environment preserved: %s\n' "$ENV_FILE"
-else
-    mapfile -t GENERATED < <("$PYTHON" - <<'PY'
+    if [[ -f "$ENV_FILE" ]]; then
+        printf '[OpenSLT] Existing environment preserved: %s\n' "$ENV_FILE"
+    else
+        mapfile -t GENERATED < <("$PYTHON" - <<'PY'
 import base64
 import os
 import secrets
@@ -215,13 +273,13 @@ print(secrets.token_urlsafe(64))
 print(base64.urlsafe_b64encode(os.urandom(32)).decode())
 print(secrets.token_urlsafe(24))
 PY
-    )
-    DATABASE_PASSWORD="${GENERATED[0]}"
-    JWT_SECRET="${GENERATED[1]}"
-    CREDENTIAL_KEY="${GENERATED[2]}"
-    INITIAL_ADMIN_PASSWORD="${GENERATED[3]}"
+        )
+        DATABASE_PASSWORD="${GENERATED[0]}"
+        JWT_SECRET="${GENERATED[1]}"
+        CREDENTIAL_KEY="${GENERATED[2]}"
+        INITIAL_ADMIN_PASSWORD="${GENERATED[3]}"
 
-    "${MYSQL[@]}" -uroot <<SQL
+        "${MYSQL[@]}" -uroot <<SQL
 CREATE DATABASE IF NOT EXISTS \`$DATABASE_NAME\`
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 GRANT ALL PRIVILEGES ON \`$DATABASE_NAME\`.*
@@ -229,10 +287,11 @@ GRANT ALL PRIVILEGES ON \`$DATABASE_NAME\`.*
 FLUSH PRIVILEGES;
 SQL
 
-    install -o root -g root -m 0600 /dev/stdin "$ENV_FILE" <<EOF
+        install -o root -g root -m 0600 /dev/stdin "$ENV_FILE" <<EOF
 ENVIRONMENT=production
 TZ=Asia/Shanghai
 DATABASE_URL="mysql+pymysql://$DATABASE_USER:$DATABASE_PASSWORD@127.0.0.1:3306/$DATABASE_NAME?charset=utf8mb4"
+AUTO_CREATE_DATABASE=true
 JWT_SECRET="$JWT_SECRET"
 CREDENTIAL_ENCRYPTION_KEY="$CREDENTIAL_KEY"
 ARTIFACT_ROOT=/var/lib/openslt/artifacts
@@ -248,11 +307,16 @@ OPEN_BROWSER=false
 INITIAL_ADMIN_USERNAME=admin
 INITIAL_ADMIN_PASSWORD="$INITIAL_ADMIN_PASSWORD"
 EOF
-    install -o root -g root -m 0600 /dev/stdin /etc/openslt/initial-admin-password <<EOF
+        install -o root -g root -m 0600 /dev/stdin /etc/openslt/initial-admin-password <<EOF
 $INITIAL_ADMIN_PASSWORD
 EOF
-    printf '[OpenSLT] Initial admin password saved to /etc/openslt/initial-admin-password\n'
+        printf '[OpenSLT] Initial admin password saved to /etc/openslt/initial-admin-password\n'
+    fi
 fi
+
+install -d -o root -g root -m 0755 "$(dirname -- "$DATABASE_MODE_FILE")"
+printf '%s\n' "$DATABASE_MODE" \
+    | install -o root -g root -m 0644 /dev/stdin "$DATABASE_MODE_FILE"
 
 if [[ "$OPEN_FIREWALL" == true ]] \
     && command -v firewall-cmd >/dev/null 2>&1 \

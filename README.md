@@ -102,6 +102,8 @@ RHEL 7.9 x86_64 无互联网环境的制包、安装、网络和验收步骤见
 
 外网一键制包入口为 `deploy/offline/make-offline-package.sh`；生成的压缩包内提供
 `configure.sh` 和 `start.sh`，分别用于内网环境初始化和正式服务启动。
+离线部署默认使用现有数据库，不会管理 MariaDB 实例或账号；本地数据库初始化必须
+通过 `configure.sh --database-mode provision` 或 `initialize` 显式启用。
 
 ## 验证
 
