@@ -89,3 +89,15 @@ def test_existing_environment_disables_database_creation() -> None:
     example = _script("openslt.env.example")
 
     assert "AUTO_CREATE_DATABASE=false" in example
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    ["configure-intranet-host.sh", "install-offline.sh"],
+)
+def test_environment_placeholder_check_ignores_comments(script_name: str) -> None:
+    script = _script(script_name)
+
+    assert "/^[[:space:]]*#/ { next }" in script
+    assert 'if environment_has_placeholder "$ENV_FILE"; then' in script
+    assert "grep -q 'CHANGE_ME'" not in script

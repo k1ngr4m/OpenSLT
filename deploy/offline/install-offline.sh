@@ -103,12 +103,19 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'OpenSLT offline bundle requires RHEL 7.9.\n' >&2
     exit 1
 }
+environment_has_placeholder() {
+    awk '
+        /^[[:space:]]*#/ { next }
+        /CHANGE_ME/ { found = 1 }
+        END { exit(found ? 0 : 1) }
+    ' "$1"
+}
 if [[ "$RPMS_ONLY" == false ]]; then
     [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]] || {
         printf -- '--env-file must point to a completed production environment file.\n' >&2
         exit 1
     }
-    if grep -q 'CHANGE_ME' "$ENV_FILE"; then
+    if environment_has_placeholder "$ENV_FILE"; then
         printf 'The environment file still contains CHANGE_ME placeholders.\n' >&2
         exit 1
     fi

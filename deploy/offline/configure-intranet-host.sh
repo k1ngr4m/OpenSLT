@@ -109,6 +109,13 @@ if [[ -n "$MYSQL_DEFAULTS_FILE" && ! -f "$MYSQL_DEFAULTS_FILE" ]]; then
     printf 'MySQL defaults file not found: %s\n' "$MYSQL_DEFAULTS_FILE" >&2
     exit 1
 fi
+environment_has_placeholder() {
+    awk '
+        /^[[:space:]]*#/ { next }
+        /CHANGE_ME/ { found = 1 }
+        END { exit(found ? 0 : 1) }
+    ' "$1"
+}
 if [[ "$DATABASE_MODE" == "existing" ]]; then
     if [[ "$MYSQL_DEFAULTS_FILE_SET" == true \
         || "$DATABASE_NAME_SET" == true \
@@ -120,7 +127,7 @@ if [[ "$DATABASE_MODE" == "existing" ]]; then
         printf 'Existing mode requires a completed environment file: %s\n' "$ENV_FILE" >&2
         exit 1
     }
-    if grep -q 'CHANGE_ME' "$ENV_FILE"; then
+    if environment_has_placeholder "$ENV_FILE"; then
         printf 'The existing environment file still contains CHANGE_ME placeholders: %s\n' \
             "$ENV_FILE" >&2
         exit 1
