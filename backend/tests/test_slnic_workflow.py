@@ -92,14 +92,9 @@ def test_slnic_publish_allows_any_node_type_sequence(client, admin_headers):
             "expected_revision": document["draft"]["revision"],
             "resource_ids": [resource["id"]],
             "nodes": [
-                {
-                    "node_key": "report",
-                    "node_type": "report_generation",
-                    "name": "生成报告",
-                    "config": {},
-                },
                 slnic_nodes()[1],
                 slnic_nodes()[2],
+                slnic_nodes()[0],
             ],
         },
     )

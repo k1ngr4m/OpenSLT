@@ -150,6 +150,24 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 "field": "node_type",
                 "message": "每个工作流最多只能有一个报告生成节点",
             })
+    if len(report_nodes) == 1:
+        report_node = report_nodes[0]
+        ordered_nodes = sorted(version.nodes, key=lambda item: (item.position, item.id or 0))
+        if ordered_nodes[-1] is not report_node:
+            errors.append({
+                "node_key": report_node.node_key,
+                "field": "position",
+                "message": "报告生成节点必须位于工作流末尾",
+            })
+        if not any(
+            item.node_type == "data_statistics" and item.position < report_node.position
+            for item in version.nodes
+        ):
+            errors.append({
+                "node_key": report_node.node_key,
+                "field": "position",
+                "message": "报告生成节点前至少需要一个数据统计节点",
+            })
     for node in version.nodes:
         config = node_config_with_relations(node)
         prefix = {"node_key": node.node_key}
@@ -338,7 +356,7 @@ def replace_draft(
     db.flush()
     for key, node in list(existing.items()):
         if key not in incoming_keys:
-            db.delete(node)
+            version.nodes.remove(node)
             existing.pop(key)
     db.flush()
     for position, item in enumerate(nodes, 1):

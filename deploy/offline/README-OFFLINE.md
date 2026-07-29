@@ -980,9 +980,10 @@ Nginx 可以连接 `127.0.0.1:${BACKEND_PORT}`。WebSocket 路径为 `/api/v1/ws
 
 ### 17.10 PDF 中文或排版异常
 
-WeasyPrint 在 RHEL 7 上可能因 Pango/Cairo 版本和中文字体不足而退回简化 PDF。若
-PDF 是上线验收项，应在相同 RHEL 7.9 环境预装经批准的中文字体，并在外网测试机验证
-Pango、Cairo、WeasyPrint 和字体组合。Excel、HTML 正常不代表 PDF 环境已经合格。
+PDF 由 ReportLab 使用内置 `STSong-Light` 中文 CID 字体生成，不再依赖
+Pango、Cairo 或系统中文字体。若 PDF 是上线验收项，应在相同 RHEL 7.9 环境用
+`pdftoppm` 逐页渲染验证；渲染机还需安装 Poppler 的 Adobe-GB1 CMap 数据包。
+Excel、HTML 正常不代表 PDF 环境已经合格。
 
 ### 17.11 已保存凭据突然无法解密
 

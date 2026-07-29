@@ -120,14 +120,11 @@ describe('useRunActions', () => {
 
     actions.openVerdict({
       id: 4,
-      run_id: 11,
       final_result: 'conditional',
       issue_description: '存在抖动',
       notes: '复测确认',
       reviewed_by: 2,
       reviewed_at: '2026-07-29T10:00:00+08:00',
-      created_at: '2026-07-29T10:00:00+08:00',
-      updated_at: '2026-07-29T10:00:00+08:00',
     })
 
     expect(actions.verdict).toMatchObject({

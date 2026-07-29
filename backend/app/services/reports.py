@@ -481,6 +481,7 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
     from reportlab.platypus import (
         BaseDocTemplate,
         Frame,
+        KeepTogether,
         NextPageTemplate,
         PageBreak,
         PageTemplate,
@@ -591,8 +592,6 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
     if not report["statistics"]:
         story.append(Paragraph("无测速统计数据", body))
     for table_data in report["statistics"]:
-        story.append(Paragraph(html.escape(table_data["step_name"]), subheading))
-        story.append(Paragraph(f"统计脚本：{html.escape(table_data['script_filename'] or '-')}　单位：ns", small))
         for start in range(0, len(table_data["columns"]), 6):
             columns = table_data["columns"][start:start + 6]
             rows = [[cell("指标", center), *[cell(value, center) for value in columns]]]
@@ -602,8 +601,17 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
             usable_width = landscape_size[0] - 2 * margin_x
             metric_width = 27 * mm
             value_width = (usable_width - metric_width) / max(1, len(columns))
-            story.append(table(rows, [metric_width, *([value_width] * len(columns))]))
-            story.append(Spacer(1, 4 * mm))
+            block: list[typing.Any] = []
+            if start == 0:
+                block.extend([
+                    Paragraph(html.escape(table_data["step_name"]), subheading),
+                    Paragraph(f"统计脚本：{html.escape(table_data['script_filename'] or '-')}　单位：ns", small),
+                ])
+            block.extend([
+                table(rows, [metric_width, *([value_width] * len(columns))]),
+                Spacer(1, 4 * mm),
+            ])
+            story.append(KeepTogether(block))
 
     story.extend([NextPageTemplate("portrait"), PageBreak(), Paragraph("步骤时间线", heading)])
     story.append(table(
@@ -625,8 +633,8 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
             wrapped_lines: list[str] = []
             for raw_line in order["raw_xml"].splitlines() or [""]:
                 wrapped_lines.extend(
-                    raw_line[offset:offset + 110]
-                    for offset in range(0, max(1, len(raw_line)), 110)
+                    raw_line[offset:offset + 75]
+                    for offset in range(0, max(1, len(raw_line)), 75)
                 )
             story.append(XPreformatted(html.escape("\n".join(wrapped_lines)), code))
     document.build(story)

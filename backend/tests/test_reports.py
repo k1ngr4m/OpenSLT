@@ -29,6 +29,7 @@ from conftest import create_plan_scenario, create_resource
 RAW_XML = '''<?xml version="1.0" encoding="utf-8"?>
 <tcp>
   <account id="main" disp="账户"><password disp="密码" value="p&amp;&lt;secret&gt;" /></account>
+  <note disp="超长配置" value="''' + ("中文配置" * 80) + '''" />
 </tcp>'''
 
 
@@ -259,6 +260,7 @@ def test_report_versions_are_immutable_and_render_all_formats(
         extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
         assert "OpenSLT" in extracted
         assert "兆芯" in extracted
+        assert extracted.count("指标") >= 4
 
     visitor = client.post("/api/v1/users", headers=admin_headers, json={
         "username": "report-viewer", "display_name": "报告访客",
@@ -307,3 +309,81 @@ def test_order_xml_archive_is_reused_and_detects_changes(
         with pytest.raises(WorkflowError) as exc:
             _archive_order_config(db, run, step, "remote.xml", RAW_XML, checksum)
         assert exc.value.code == "ORDER_CONFIG_ARCHIVE_CHANGED"
+
+
+def test_workflow_verdict_updates_and_manual_regeneration_create_versions(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    run_id, report_step_id = _create_report_run(client, admin_headers, tmp_path)
+    endpoint = f"/api/v1/runs/{run_id}/verdict"
+    first = client.post(endpoint, headers=admin_headers, json={
+        "final_result": "passed", "issue_description": "", "notes": "首次复核",
+    })
+    assert first.status_code == 200, first.text
+    second = client.post(endpoint, headers=admin_headers, json={
+        "final_result": "conditional", "issue_description": "尾延迟偏高", "notes": "复测",
+    })
+    assert second.status_code == 200, second.text
+    regenerated = client.post(f"/api/v1/runs/{run_id}/reports", headers=admin_headers)
+    assert regenerated.status_code == 200, regenerated.text
+    assert {item["name"] for item in regenerated.json()} == {
+        "report-v003.html", "report-v003.xlsx", "report-v003.pdf",
+    }
+    with SessionLocal() as db:
+        report_step = db.get(RunStep, report_step_id)
+        assert report_step.result_summary["report_version"] == 3
+        report_artifacts = db.query(Artifact).filter(
+            Artifact.run_id == run_id,
+            Artifact.artifact_type.in_(("web_report", "excel_report", "pdf_report")),
+        ).all()
+        assert len(report_artifacts) == 9
+        v1_html = next(item for item in report_artifacts if item.name == "report-v001.html")
+        v2_html = next(item for item in report_artifacts if item.name == "report-v002.html")
+        assert "首次复核" in Path(v1_html.path).read_text(encoding="utf-8")
+        assert "尾延迟偏高" in Path(v2_html.path).read_text(encoding="utf-8")
+
+
+def test_legacy_verdict_still_completes_fixed_step_run(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run = RunModel(
+            run_number="R-LEGACY-REPORT",
+            plan_id=plan["id"],
+            scenario_id=scenario["id"],
+            workflow_version_id=None,
+            business_code="fut_mm",
+            status="awaiting_review",
+            progress=90,
+            resource_ids=[],
+            config_snapshot={"plan": {"name": "旧方案"}, "scenario": {"name": "旧场景"}},
+            trace_id="legacy-report-test",
+            created_by=1,
+        )
+        run.steps = [
+            RunStep(
+                code="manual_review", name="人工复核", node_type="legacy", position=1,
+                status="waiting", progress=100, config_snapshot={}, result_summary={},
+            ),
+            RunStep(
+                code="reporting", name="生成报告", node_type="legacy", position=2,
+                status="pending", progress=0, config_snapshot={}, result_summary={},
+            ),
+        ]
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    response = client.post(f"/api/v1/runs/{run_id}/verdict", headers=admin_headers, json={
+        "final_result": "passed", "issue_description": "", "notes": "旧版兼容",
+    })
+    assert response.status_code == 200, response.text
+    detail = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert detail["status"] == "completed"
+    assert [step["status"] for step in detail["steps"]] == ["succeeded", "succeeded"]
+    assert {item["name"] for item in detail["artifacts"]} == {
+        "report-v001.html", "report-v001.xlsx", "report-v001.pdf",
+    }
