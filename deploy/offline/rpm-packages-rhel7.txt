@@ -1,12 +1,8 @@
-# One package per line. RHEL 7 and Software Collections repositories must be
-# enabled. The collector can temporarily enable the official Nginx repository.
+# One package per line. RHEL 7 repositories must be enabled. The collector can
+# temporarily enable the official Nginx repository. Python 3.8 is preinstalled.
 curl
 nginx
 policycoreutils-python
-rh-python38
-rh-python38-python
-rh-python38-python-pip
-rh-python38-python-setuptools
 mariadb
 mariadb-server
 mariadb-libs

@@ -2,9 +2,13 @@
 
 本文适用于以下已确认环境：
 
-- 外网制包机：RHEL 7.9、x86_64、glibc 2.17、Python 3.8.13。
-- 内网服务器：RHEL 7.9、x86_64、glibc 2.17、Python 3.8.13。
+- 外网制包机：RHEL 7.9、x86_64、glibc 2.17，已在
+  `/opt/rh/rh-python38/root/usr/bin/python3.8` 安装 Python 3.8.13。
+- 内网服务器：RHEL 7.9、x86_64、glibc 2.17，已在相同路径安装 Python 3.8.13。
 - 生产形态：Nginx、systemd、MariaDB 5.5.68、单个 OpenSLT API 进程。
+
+Python 解释器是两台服务器的前置条件，不包含在离线压缩包中。压缩包包含应用及其
+全部 Python wheel 依赖，安装过程不会访问 PyPI。
 
 不要在内网服务器运行仓库根目录的 `start-web.sh` 或
 `deploy/scripts/install.sh`。这两个脚本面向开发或在线环境，会尝试访问 PyPI 和
@@ -76,7 +80,7 @@ npm --prefix frontend run build
 
 在外网 RHEL 7.9 制包机上配置并验证以下软件源：
 
-- RHEL 7 基础源、MariaDB 5.5.68 及 Red Hat Software Collections。
+- RHEL 7 基础源及提供 MariaDB 5.5.68 的仓库。
 - Nginx 软件源可选；没有时一键脚本会临时启用 nginx.org 官方 RHEL 7 源。
 
 推荐直接使用前述 `make-offline-package.sh`。如需分步排查，可先安装制包工具并
@@ -213,8 +217,9 @@ chmod +x install.sh
   --env-file /root/openslt-production.env
 ```
 
-安装器会执行平台检查、逐文件哈希校验、可选 RPM 安装、离线 Python 安装、
-Alembic 迁移、SELinux 上下文设置、Nginx 检查和服务启动。应用路径为：
+安装器会执行平台检查、逐文件哈希校验、可选 RPM 安装、从 wheelhouse 离线安装
+应用及 Python 依赖、Alembic 迁移、SELinux 上下文设置、Nginx 检查和服务启动。
+应用路径为：
 
 ```text
 /opt/openslt

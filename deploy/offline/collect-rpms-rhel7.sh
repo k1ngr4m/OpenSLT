@@ -14,8 +14,8 @@ usage() {
 Usage: collect-rpms-rhel7.sh [options]
 
 Run this on the internet-connected RHEL 7.9 x86_64 build host after enabling
-the RHEL and Software Collections repositories. If nginx is unavailable, the
-script temporarily enables the official nginx.org RHEL 7 repository.
+the RHEL and MariaDB repositories. If nginx is unavailable, the script
+temporarily enables the official nginx.org RHEL 7 repository.
 
 Options:
   --output DIR            RPM repository output directory
@@ -133,7 +133,7 @@ done <"$PACKAGE_FILE"
 if ((${#missing_packages[@]})); then
     printf 'The following packages are unavailable from the enabled repositories:\n' >&2
     printf '  %s\n' "${missing_packages[@]}" >&2
-    printf 'Enable the RHEL 7 base, Software Collections, and MariaDB repositories, then retry.\n' >&2
+    printf 'Enable the RHEL 7 base and MariaDB repositories, then retry.\n' >&2
     exit 1
 fi
 

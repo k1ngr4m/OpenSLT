@@ -79,6 +79,21 @@ if [[ -n "$MYSQL_DEFAULTS_FILE" && ! -f "$MYSQL_DEFAULTS_FILE" ]]; then
     printf 'MySQL defaults file not found: %s\n' "$MYSQL_DEFAULTS_FILE" >&2
     exit 1
 fi
+[[ -x "$PYTHON" ]] || {
+    printf 'Required preinstalled Python executable not found: %s\n' "$PYTHON" >&2
+    exit 1
+}
+PYTHON_VERSION="$("$PYTHON" -c 'import platform; print(platform.python_version())')" || {
+    printf 'Unable to run the preinstalled Python executable: %s\n' "$PYTHON" >&2
+    exit 1
+}
+"$PYTHON" -c \
+    'import sys; raise SystemExit(0 if (3, 8, 2) <= sys.version_info[:3] < (3, 9) else 1)' || {
+    printf 'OpenSLT requires preinstalled Python >=3.8.2,<3.9; found %s at %s\n' \
+        "$PYTHON_VERSION" "$PYTHON" >&2
+    exit 1
+}
+printf '[OpenSLT] Preinstalled Python accepted: %s (%s)\n' "$PYTHON_VERSION" "$PYTHON"
 
 printf '[OpenSLT] Installing the bundled operating-system packages...\n'
 "$BUNDLE_ROOT/install.sh" --rpms-only
