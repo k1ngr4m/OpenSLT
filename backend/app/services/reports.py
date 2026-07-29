@@ -71,24 +71,24 @@ REPORT_TEMPLATE = """<!doctype html>
 {% if report.servers %}{% for source in report.servers %}
 <h3>{{ source.step_name }} / {{ source.resource_name }}（{{ source.resource_type }}）</h3>
 <p class="section-note">主机：{{ source.host or '-' }}　采集状态：{{ source.status }}</p>
-<table><thead><tr><th>配置项</th><th>采集值</th><th>状态</th></tr></thead><tbody>{% for item in source.items %}<tr><td>{{ item.label }}</td><td class="mono">{{ item.value }}</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table>
+<table><thead><tr><th>配置项</th><th>采集值</th><th>状态</th></tr></thead><tbody>{% for item in source["items"] %}<tr><td>{{ item.label }}</td><td class="mono">{{ item.value }}</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table>
 {% endfor %}{% else %}<div class="empty">无服务器配置数据</div>{% endif %}
 
 <h2>数据库配置</h2>
 {% if report.databases %}{% for source in report.databases %}
 <h3>{{ source.step_name }} / {{ source.database_name or '-' }}</h3>
-<table><thead><tr><th>配置键</th><th>采集值</th><th>状态</th></tr></thead><tbody>{% for item in source.items %}<tr><td class="mono">{{ item.label }}</td><td class="mono">{{ item.value }}</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table>
+<table><thead><tr><th>配置键</th><th>采集值</th><th>状态</th></tr></thead><tbody>{% for item in source["items"] %}<tr><td class="mono">{{ item.label }}</td><td class="mono">{{ item.value }}</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table>
 {% endfor %}{% else %}<div class="empty">无数据库配置数据</div>{% endif %}
 
 <h2>发单 XML 配置</h2>
 {% if report.orders %}{% for order in report.orders %}
 <h3>{{ order.step_name }} / {{ order.filename }}</h3><p class="section-note mono">SHA-256：{{ order.checksum }}</p>
-<table><thead><tr><th>配置路径</th><th>配置项</th><th>值</th></tr></thead><tbody>{% for row in order.rows %}<tr><td class="mono">{{ row.path }}</td><td>{{ row.label }}</td><td class="mono">{{ row.value }}</td></tr>{% endfor %}</tbody></table>
+<table><thead><tr><th>配置路径</th><th>配置项</th><th>值</th></tr></thead><tbody>{% for row in order["rows"] %}<tr><td class="mono">{{ row.path }}</td><td>{{ row.label }}</td><td class="mono">{{ row.value }}</td></tr>{% endfor %}</tbody></table>
 {% endfor %}{% else %}<div class="empty">无发单 XML 配置数据</div>{% endif %}
 
 <div class="metrics"><h2>测速指标</h2>
 {% for table in report.statistics %}<h3>{{ table.step_name }}</h3><p class="section-note">统计脚本：{{ table.script_filename or '-' }}　单位：ns</p>
-<div class="table-wrap"><table><thead><tr><th>指标</th>{% for column in table.columns %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in table.rows %}<tr><td>{{ row.label }}</td>{% for value in row.values %}<td class="number">{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>指标</th>{% for column in table["columns"] %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in table["rows"] %}<tr><td>{{ row.label }}</td>{% for value in row["values"] %}<td class="number">{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
 {% else %}<div class="empty">无测速统计数据</div>{% endfor %}</div>
 
 <h2>步骤时间线</h2><table><thead><tr><th>顺序</th><th>步骤</th><th>类型</th><th>状态</th><th>耗时(ms)</th><th>错误</th></tr></thead><tbody>{% for step in report.steps %}<tr><td>{{ step.position }}</td><td>{{ step.name }}</td><td>{{ step.node_type }}</td><td>{{ step.status }}</td><td class="number">{{ step.duration_ms }}</td><td>{{ step.error }}</td></tr>{% endfor %}</tbody></table>
@@ -514,7 +514,7 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
         canvas.setFont(font_name, 7)
         canvas.setFillColor(colors.HexColor("#68777D"))
         canvas.drawString(margin_x, 8 * mm, report["run_number"])
-        canvas.drawRightString(document.pagesize[0] - margin_x, 8 * mm, f"第 {document.page} 页")
+        canvas.drawRightString(canvas._pagesize[0] - margin_x, 8 * mm, f"第 {document.page} 页")
         canvas.restoreState()
 
     document = BaseDocTemplate(
@@ -622,7 +622,13 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
         story.append(Paragraph("发单 XML 原文附录", heading))
         for order in report["orders"]:
             story.append(Paragraph(f"{html.escape(order['step_name'])} / {html.escape(order['filename'])}", subheading))
-            story.append(XPreformatted(order["raw_xml"], code, maxLineLength=110))
+            wrapped_lines: list[str] = []
+            for raw_line in order["raw_xml"].splitlines() or [""]:
+                wrapped_lines.extend(
+                    raw_line[offset:offset + 110]
+                    for offset in range(0, max(1, len(raw_line)), 110)
+                )
+            story.append(XPreformatted(html.escape("\n".join(wrapped_lines)), code))
     document.build(story)
 
 
