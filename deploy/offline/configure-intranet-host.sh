@@ -10,6 +10,8 @@ DATABASE_NAME="openslt"
 DATABASE_USER="openslt"
 ENV_FILE="/etc/openslt/openslt.env"
 OPEN_FIREWALL=true
+PYTHON_RUNTIME_DIR="$BUNDLE_ROOT/python-runtime/rh-python38"
+RPMS_INSTALLED=false
 
 usage() {
     cat <<'EOF'
@@ -18,7 +20,7 @@ Usage: configure.sh [options]
 Run this once as root on the offline RHEL 7.9 application host.
 
 Options:
-  --python PATH                Preinstalled Python >=3.8 executable
+  --python PATH                Python >=3.8 executable
   --mysql-defaults-file FILE  Existing MySQL client option file for root/admin
   --database-name NAME        Application database (default: openslt)
   --database-user NAME        Application user (default: openslt)
@@ -84,12 +86,34 @@ if [[ -n "$MYSQL_DEFAULTS_FILE" && ! -f "$MYSQL_DEFAULTS_FILE" ]]; then
     printf 'MySQL defaults file not found: %s\n' "$MYSQL_DEFAULTS_FILE" >&2
     exit 1
 fi
+python_is_supported() {
+    [[ -x "$PYTHON" ]] \
+        && "$PYTHON" -c \
+            'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 8) else 1)' \
+            >/dev/null 2>&1
+}
+
+if ! python_is_supported && [[ -d "$PYTHON_RUNTIME_DIR" ]]; then
+    [[ "$PYTHON" == /opt/rh/rh-python38/* ]] || {
+        printf 'The bundled Python runtime can only bootstrap /opt/rh/rh-python38. Requested: %s\n' \
+            "$PYTHON" >&2
+        exit 1
+    }
+    printf '[OpenSLT] Installing bundled operating-system packages before Python bootstrap...\n'
+    "$BUNDLE_ROOT/install.sh" --rpms-only
+    RPMS_INSTALLED=true
+    printf '[OpenSLT] Installing the bundled rh-python38 runtime...\n'
+    install -d -o root -g root -m 0755 /opt/rh
+    cp -a "$PYTHON_RUNTIME_DIR" /opt/rh/
+fi
+
 [[ -x "$PYTHON" ]] || {
-    printf 'Required preinstalled Python executable not found: %s\n' "$PYTHON" >&2
+    printf 'Required Python executable not found: %s\n' "$PYTHON" >&2
+    printf 'Create the bundle with --bundle-python or install Python >=3.8 first.\n' >&2
     exit 1
 }
 PYTHON_VERSION="$("$PYTHON" -c 'import platform; print(platform.python_version())')" || {
-    printf 'Unable to run the preinstalled Python executable: %s\n' "$PYTHON" >&2
+    printf 'Unable to run the Python executable: %s\n' "$PYTHON" >&2
     exit 1
 }
 "$PYTHON" -c \
@@ -98,10 +122,12 @@ PYTHON_VERSION="$("$PYTHON" -c 'import platform; print(platform.python_version()
         "$PYTHON_VERSION" "$PYTHON" >&2
     exit 1
 }
-printf '[OpenSLT] Preinstalled Python accepted: %s (%s)\n' "$PYTHON_VERSION" "$PYTHON"
+printf '[OpenSLT] Python accepted: %s (%s)\n' "$PYTHON_VERSION" "$PYTHON"
 
-printf '[OpenSLT] Installing the bundled operating-system packages...\n'
-"$BUNDLE_ROOT/install.sh" --rpms-only
+if [[ "$RPMS_INSTALLED" == false ]]; then
+    printf '[OpenSLT] Installing the bundled operating-system packages...\n'
+    "$BUNDLE_ROOT/install.sh" --rpms-only
+fi
 
 install -d -o root -g root -m 0755 /etc/my.cnf.d
 install -o root -g root -m 0644 /dev/stdin /etc/my.cnf.d/openslt.cnf <<'EOF'

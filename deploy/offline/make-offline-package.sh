@@ -9,6 +9,7 @@ OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
 SKIP_TESTS=false
 NGINX_REPO_URL=""
+BUNDLE_PYTHON=false
 
 usage() {
     cat <<'EOF'
@@ -22,6 +23,7 @@ Options:
   --version VERSION   Unique release label (default: date + Git commit)
   --nginx-repo-url URL
                       Alternate RHEL 7 Nginx repository base URL
+  --bundle-python     Include the installed RHEL 7 rh-python38 runtime
   --skip-tests        Skip backend tests during packaging
   -h, --help          Show this help
 
@@ -46,6 +48,10 @@ while (($#)); do
         --nginx-repo-url)
             NGINX_REPO_URL="$2"
             shift 2
+            ;;
+        --bundle-python)
+            BUNDLE_PYTHON=true
+            shift
             ;;
         --skip-tests)
             SKIP_TESTS=true
@@ -116,6 +122,7 @@ BUILD_ARGS=(
 )
 [[ -n "$VERSION" ]] && BUILD_ARGS+=(--version "$VERSION")
 [[ "$SKIP_TESTS" == true ]] && BUILD_ARGS+=(--skip-tests)
+[[ "$BUNDLE_PYTHON" == true ]] && BUILD_ARGS+=(--bundle-python)
 
 printf '[OpenSLT] Building and validating the offline application bundle...\n'
 "$SCRIPT_DIR/build-offline-bundle.sh" "${BUILD_ARGS[@]}"

@@ -9,6 +9,8 @@ RPM_DIR=""
 OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
 SKIP_TESTS=false
+BUNDLE_PYTHON=false
+PYTHON_RUNTIME_ROOT="/opt/rh/rh-python38"
 
 usage() {
     cat <<'EOF'
@@ -19,6 +21,7 @@ Options:
   --rpm-dir DIR       RPM repository created by collect-rpms-rhel7.sh
   --output DIR        Output directory (default: release/)
   --version VERSION   Bundle version label
+  --bundle-python     Include /opt/rh/rh-python38 for Python bootstrap
   --skip-tests        Skip the offline wheel reinstall and backend tests
   -h, --help          Show this help
 
@@ -44,6 +47,10 @@ while (($#)); do
         --version)
             VERSION="$2"
             shift 2
+            ;;
+        --bundle-python)
+            BUNDLE_PYTHON=true
+            shift
             ;;
         --skip-tests)
             SKIP_TESTS=true
@@ -77,6 +84,18 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'OpenSLT requires Python >=3.8.\n' >&2
     exit 1
 }
+if [[ "$BUNDLE_PYTHON" == true ]]; then
+    [[ -d "$PYTHON_RUNTIME_ROOT" ]] || {
+        printf 'The rh-python38 runtime is missing: %s\n' "$PYTHON_RUNTIME_ROOT" >&2
+        exit 1
+    }
+    RESOLVED_PYTHON="$(readlink -f -- "$PYTHON")"
+    [[ "$RESOLVED_PYTHON" == "$PYTHON_RUNTIME_ROOT"/* ]] || {
+        printf '%s must be inside %s when using --bundle-python.\n' \
+            "$PYTHON" "$PYTHON_RUNTIME_ROOT" >&2
+        exit 1
+    }
+fi
 [[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
     printf 'frontend/dist is missing. Build the frontend before creating the bundle.\n' >&2
     exit 1
@@ -167,6 +186,18 @@ fi
 if [[ -n "$RPM_DIR" ]]; then
     printf '[OpenSLT] Adding the offline RPM repository...\n'
     cp -a "$RPM_DIR" "$STAGING/rpms"
+fi
+
+if [[ "$BUNDLE_PYTHON" == true ]]; then
+    printf '[OpenSLT] Adding the installed rh-python38 runtime...\n'
+    mkdir -p "$STAGING/python-runtime"
+    tar -C /opt/rh \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        -cf - rh-python38 \
+        | tar -C "$STAGING/python-runtime" -xf -
+    "$PYTHON" -c 'import platform; print(platform.python_version())' \
+        >"$STAGING/python-runtime/VERSION"
 fi
 
 cp -p "$SCRIPT_DIR/install-offline.sh" "$STAGING/install.sh"

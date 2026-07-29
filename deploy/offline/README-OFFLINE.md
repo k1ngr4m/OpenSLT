@@ -7,10 +7,11 @@
 - 内网服务器：RHEL 7.9、x86_64、glibc 2.17，已在相同路径安装 Python 3.8.13。
 - 生产形态：Nginx、systemd、MariaDB 5.5.68、单个 OpenSLT API 进程。
 
-Python 3.8 及以上版本的解释器是两台服务器的前置条件，不包含在离线压缩包中。
-压缩包包含应用及其全部 Python wheel 依赖，安装过程不会访问 PyPI。制包机和内网
-服务器必须使用相同的 Python 主次版本；使用非默认路径时，制包、配置和启动命令均
-需传入 `--python PATH`。
+外网制包机必须有 Python 3.8 及以上版本。内网服务器可以预装相同主次版本，也可以
+使用 `--bundle-python` 将外网机现有的 `/opt/rh/rh-python38` 一并打包。压缩包包含
+应用及其全部 Python wheel 依赖，安装过程不会访问 PyPI。制包机和内网服务器必须
+使用相同的 Python 主次版本；使用非默认路径时，制包、配置和启动命令均需传入
+`--python PATH`。
 
 不要在内网服务器运行仓库根目录的 `start-web.sh` 或
 `deploy/scripts/install.sh`。这两个脚本面向开发或在线环境，会尝试访问 PyPI 和
@@ -24,6 +25,15 @@ npm registry。
 chmod +x deploy/offline/*.sh
 deploy/offline/make-offline-package.sh --version 0.1.0
 ```
+
+如果内网目标机没有 Python 3.8，或现有版本低于 3.8，制包时增加：
+
+```bash
+deploy/offline/make-offline-package.sh --version 0.1.2 --bundle-python
+```
+
+该模式只打包外网 RHEL 7 机器已安装的 `/opt/rh/rh-python38`，不会替换目标机的
+`/usr/bin/python`。目标机已有可用 Python 时，`configure.sh` 不会覆盖它。
 
 如果当前 yum 源没有 `nginx`，脚本会临时使用 nginx.org 的 RHEL 7 官方仓库，退出时
 自动删除临时 repo 文件，不会修改已有仓库配置。若服务器只能访问单位镜像，请指定
@@ -116,7 +126,8 @@ deploy/offline/build-offline-bundle.sh \
 
 脚本会完成以下工作：
 
-1. 复制当前工作树，同时排除 Git 元数据、密钥、数据、日志和开发依赖。
+1. 复制当前工作树，同时排除 Git 元数据、密钥、数据、日志和开发依赖；指定
+   `--bundle-python` 时加入已安装的 rh-python38 运行时。
 2. 在线解析并构建 Python wheelhouse。
 3. 在全新虚拟环境中使用 `--no-index` 回装 wheelhouse。
 4. 执行 `pip check` 和后端测试。
