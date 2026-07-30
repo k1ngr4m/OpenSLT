@@ -24,7 +24,7 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'plans',
         component: () => import('@/views/PlansView.vue'),
-        meta: { section: 'management', operator: true },
+        meta: { section: 'management' },
       },
       {
         path: 'resources',

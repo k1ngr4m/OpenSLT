@@ -122,9 +122,20 @@ class DatabaseUpdateConfirmation(Base):
     completed_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
 
 
+class PlanDirectory(TimestampMixin, Base):
+    __tablename__ = "t_plan_directories"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    plans: Mapped[typing.List['TestPlan']] = relationship(back_populates="directory")
+
+
 class TestPlan(TimestampMixin, Base):
     __tablename__ = "t_test_plans"
     id: Mapped[int] = mapped_column(primary_key=True)
+    directory_id: Mapped[int] = mapped_column(
+        ForeignKey("t_plan_directories.id", ondelete="RESTRICT"), index=True
+    )
     name: Mapped[str] = mapped_column(String(128), index=True)
     business_code: Mapped[str] = mapped_column(String(32), index=True)
     description: Mapped[str] = mapped_column(Text, default="")
@@ -132,6 +143,7 @@ class TestPlan(TimestampMixin, Base):
     config_version: Mapped[str] = mapped_column(String(64), default="1.0")
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"))
+    directory: Mapped[PlanDirectory] = relationship(back_populates="plans")
     scenarios: Mapped[typing.List['TestScenario']] = relationship(back_populates="plan", cascade="all, delete-orphan")
     resource_links: Mapped[typing.List['PlanResource']] = relationship(
         back_populates="plan",

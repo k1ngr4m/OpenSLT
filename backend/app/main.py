@@ -19,7 +19,7 @@ from app.core.logging import configure_logging, logger, trace_id_ctx
 from app.core.observability import writer
 from app.core.observability_middleware import ObservabilityMiddleware
 from app.core.security import CredentialSecretError, hash_password
-from app.models import BusinessType, User
+from app.models import BusinessType, PlanDirectory, User
 from app.services.durable_tasks import (
     claim_due_tasks,
     execute_claimed_task,
@@ -40,6 +40,8 @@ def seed_database() -> None:
             db.add(User(username=settings.initial_admin_username, display_name="系统管理员", password_hash=hash_password(settings.initial_admin_password), role="admin"))
         for code, name in [("fut_mm", "软核做市"), ("rem_two", "整合版二期"), ("rem_two_mm", "整合版二期做市")]:
             if not db.query(BusinessType).filter(BusinessType.code == code).first(): db.add(BusinessType(code=code, name=name))
+        if not db.query(PlanDirectory).filter(PlanDirectory.is_default.is_(True)).first():
+            db.add(PlanDirectory(name="默认目录", is_default=True))
         db.commit()
     finally: db.close()
 

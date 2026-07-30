@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import asyncssh
+from sqlalchemy import text
 
 from app.core.database import SessionLocal
-from app.models import ConfigurationCaptureSnapshot, ContractDataFile
+from app.models import AuditLog, ConfigurationCaptureSnapshot, ContractDataFile
 from app.services import order_configs
 from app.services import workflow_capture, workflow_contracts, workflow_publishing, workflows
 from conftest import create_plan_scenario, create_resource
@@ -215,6 +217,88 @@ def test_workflow_draft_revision_preview_and_publish(client, admin_headers, monk
     listed = client.get("/api/v1/scenarios", headers=admin_headers).json()
     assert listed[0]["is_enabled"] is True
     assert listed[0]["workflow_status"] == "published"
+
+
+def test_database_preview_releases_platform_write_lock_during_remote_read(
+    client,
+    admin_headers,
+    monkeypatch,
+):
+    database = create_database_resource(client, admin_headers)
+    _, scenario = create_plan_scenario(
+        client,
+        admin_headers,
+        resource_ids=[database["id"]],
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [database["id"]],
+            "nodes": [node(
+                "database-config",
+                "database_config",
+                "采集数据库配置",
+                {"database_name": "alpha_config", "keys": ["SETTING_A"]},
+            )],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    class FakeCursor:
+        def __init__(self) -> None:
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, statement, _parameters=None):
+            self.rows = (
+                [("setting_key",), ("setting_value",)]
+                if statement.startswith("SHOW COLUMNS")
+                else [("SETTING_A", "captured")]
+            )
+
+        def fetchall(self):
+            return self.rows
+
+    class FakeDatabaseConnection:
+        def cursor(self):
+            return FakeCursor()
+
+    @asynccontextmanager
+    async def fake_connection(_resource, _database_name):
+        # This is the point where the real adapter begins remote I/O. A second platform write
+        # must succeed immediately instead of waiting for the preview transaction to finish.
+        with SessionLocal() as parallel_db:
+            parallel_db.execute(text("PRAGMA busy_timeout = 100"))
+            parallel_db.add(AuditLog(
+                action="test.concurrent_write",
+                object_type="test",
+                trace_id="test-concurrent-write",
+            ))
+            parallel_db.commit()
+        yield FakeDatabaseConnection()
+
+    monkeypatch.setattr(workflow_capture.mysql_adapter, "connection", fake_connection)
+    preview = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/nodes/database-config/preview",
+        headers=admin_headers,
+    )
+
+    assert preview.status_code == 200, preview.text
+    assert preview.json()[0]["status"] == "succeeded"
+    assert preview.json()[0]["items"][0]["value_text"] == "captured"
+    with SessionLocal() as db:
+        assert db.query(AuditLog).filter(AuditLog.action == "test.concurrent_write").count() == 1
 
 
 def test_unpublished_scenario_cannot_run(client, admin_headers):

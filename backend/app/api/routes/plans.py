@@ -9,8 +9,15 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import get_current_user, operators
 from app.api.routes.common import not_found, validate_scenario_resources
 from app.core.database import get_db
-from app.models import ScenarioWorkflowVersion, TestPlan, TestRun, TestScenario, User
-from app.schemas import PlanOut, PlanWrite, ScenarioOut, ScenarioWrite
+from app.models import PlanDirectory, ScenarioWorkflowVersion, TestPlan, TestRun, TestScenario, User
+from app.schemas import (
+    PlanDirectoryOut,
+    PlanDirectoryWrite,
+    PlanOut,
+    PlanWrite,
+    ScenarioOut,
+    ScenarioWrite,
+)
 from app.services.audit import write_audit
 from app.services.workflows import copy_version_contents, create_draft, load_version
 from app.services.resource_relations import (
@@ -24,17 +31,104 @@ from app.services.resource_relations import (
 
 router = APIRouter()
 
+
+def _default_directory(db: Session) -> PlanDirectory:
+    directory = db.scalar(select(PlanDirectory).where(PlanDirectory.is_default.is_(True)))
+    if not directory:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "DEFAULT_DIRECTORY_MISSING", "message": "系统默认目录不存在"},
+        )
+    return directory
+
+
+@router.get("/plan-directories", response_model=typing.List[PlanDirectoryOut])
+def list_plan_directories(
+    _: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> typing.List[PlanDirectory]:
+    return list(
+        db.scalars(
+            select(PlanDirectory).order_by(PlanDirectory.is_default.desc(), PlanDirectory.id.asc())
+        ).all()
+    )
+
+
+@router.post("/plan-directories", response_model=PlanDirectoryOut, status_code=201)
+def create_plan_directory(
+    payload: PlanDirectoryWrite,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> PlanDirectory:
+    directory = PlanDirectory(name=payload.name, is_default=False)
+    db.add(directory)
+    db.flush()
+    write_audit(db, "plan_directory.create", "plan_directory", directory.id, actor, request)
+    db.commit()
+    return directory
+
+
+@router.put("/plan-directories/{directory_id}", response_model=PlanDirectoryOut)
+def update_plan_directory(
+    directory_id: int,
+    payload: PlanDirectoryWrite,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> PlanDirectory:
+    directory = db.get(PlanDirectory, directory_id)
+    if not directory:
+        raise not_found("目录")
+    if directory.is_default:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "DEFAULT_DIRECTORY_PROTECTED", "message": "默认目录不能修改"},
+        )
+    directory.name = payload.name
+    write_audit(db, "plan_directory.update", "plan_directory", directory.id, actor, request)
+    db.commit()
+    return directory
+
+
+@router.delete("/plan-directories/{directory_id}", status_code=204)
+def delete_plan_directory(
+    directory_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> Response:
+    directory = db.get(PlanDirectory, directory_id)
+    if not directory:
+        raise not_found("目录")
+    if directory.is_default:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "DEFAULT_DIRECTORY_PROTECTED", "message": "默认目录不能删除"},
+        )
+    if db.scalar(select(TestPlan.id).where(TestPlan.directory_id == directory_id).limit(1)):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "DIRECTORY_NOT_EMPTY", "message": "目录内仍有方案，请先移动或删除方案"},
+        )
+    db.delete(directory)
+    write_audit(db, "plan_directory.delete", "plan_directory", directory_id, actor, request)
+    db.commit()
+    return Response(status_code=204)
+
 @router.get("/plans", response_model=typing.List[PlanOut])
-def list_plans(business_code: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestPlan]:
+def list_plans(directory_id: typing.Union[int, None] = None, business_code: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[TestPlan]:
     query = select(TestPlan)
+    if directory_id: query = query.where(TestPlan.directory_id == directory_id)
     if business_code: query = query.where(TestPlan.business_code == business_code)
     return list(db.scalars(query.order_by(TestPlan.id.desc())).all())
 
 
 @router.post("/plans", response_model=PlanOut, status_code=201)
 def create_plan(payload: PlanWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestPlan:
-    values = payload.model_dump(exclude={"default_resource_ids"})
-    plan = TestPlan(**values, created_by=actor.id)
+    directory = db.get(PlanDirectory, payload.directory_id) if payload.directory_id else _default_directory(db)
+    if not directory: raise not_found("目录")
+    values = payload.model_dump(exclude={"default_resource_ids", "directory_id"})
+    plan = TestPlan(**values, directory_id=directory.id, created_by=actor.id)
     sync_plan_resources(plan, payload.default_resource_ids)
     db.add(plan); db.flush(); write_audit(db, "plan.create", "test_plan", plan.id, actor, request); db.commit(); return plan
 
@@ -43,7 +137,10 @@ def create_plan(payload: PlanWrite, request: Request, actor: User = Depends(oper
 def update_plan(plan_id: int, payload: PlanWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestPlan:
     plan = db.get(TestPlan, plan_id)
     if not plan: raise not_found("方案")
-    for key, value in payload.model_dump(exclude={"default_resource_ids"}).items(): setattr(plan, key, value)
+    if payload.directory_id is not None:
+        if not db.get(PlanDirectory, payload.directory_id): raise not_found("目录")
+        plan.directory_id = payload.directory_id
+    for key, value in payload.model_dump(exclude={"default_resource_ids", "directory_id"}).items(): setattr(plan, key, value)
     sync_plan_resources(plan, payload.default_resource_ids, db)
     write_audit(db, "plan.update", "test_plan", plan.id, actor, request); db.commit(); return plan
 
@@ -53,7 +150,7 @@ def copy_plan(plan_id: int, request: Request, actor: User = Depends(operators), 
     original = db.scalar(select(TestPlan).where(TestPlan.id == plan_id).options(selectinload(TestPlan.scenarios)))
     if not original: raise not_found("方案")
     copied_resource_ids = plan_resource_ids(original)
-    copied = TestPlan(name=f"{original.name} - 副本", business_code=original.business_code, description=original.description, config_version=original.config_version, created_by=actor.id)
+    copied = TestPlan(directory_id=original.directory_id, name=f"{original.name} - 副本", business_code=original.business_code, description=original.description, config_version=original.config_version, created_by=actor.id)
     sync_plan_resources(copied, copied_resource_ids)
     db.add(copied); db.flush()
     for scenario in original.scenarios:
@@ -116,6 +213,15 @@ def update_scenario(scenario_id: int, payload: ScenarioWrite, request: Request, 
     if not scenario: raise not_found("场景")
     plan = db.get(TestPlan, payload.plan_id)
     if not plan: raise not_found("方案")
+    current_plan = db.get(TestPlan, scenario.plan_id)
+    if current_plan and current_plan.directory_id != plan.directory_id:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "SCENARIO_CROSS_DIRECTORY_FORBIDDEN",
+                "message": "场景只能调整到当前目录内的其他方案",
+            },
+        )
     values = payload.model_dump(
         exclude={"default_resource_ids", "is_enabled", "scenario_type", "config_version"}
     )

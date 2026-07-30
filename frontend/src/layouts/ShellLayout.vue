@@ -118,13 +118,13 @@ onBeforeUnmount(() => {
               <el-icon><Document /></el-icon>
               <template #title>方案与场景</template>
             </el-menu-item>
-            <el-menu-item index="/resources">
+            <el-menu-item v-if="auth.canOperate" index="/resources">
               <el-icon><SetUp /></el-icon>
               <template #title>资源管理</template>
             </el-menu-item>
 
-            <div v-if="!collapsed" class="nav-label">系统</div>
-            <el-menu-item index="/logs">
+            <div v-if="auth.canOperate && !collapsed" class="nav-label">系统</div>
+            <el-menu-item v-if="auth.canOperate" index="/logs">
               <el-icon><Files /></el-icon>
               <template #title>日志中心</template>
             </el-menu-item>
@@ -205,7 +205,7 @@ onBeforeUnmount(() => {
         </nav>
 
         <div class="topbar-end">
-          <el-tooltip v-if="auth.canOperate" content="管理中心" placement="bottom">
+          <el-tooltip content="管理中心" placement="bottom">
             <el-button
               text
               circle
@@ -270,8 +270,9 @@ onBeforeUnmount(() => {
 .topbar-tooltip::before{position:absolute;top:-4px;left:50%;width:8px;height:8px;background:#303133;content:"";transform:translateX(-50%) rotate(45deg)}
 .charts-tooltip:hover .topbar-tooltip,.charts-tooltip:focus-within .topbar-tooltip{opacity:1;transform:translate(-50%,0)}
 .topbar-end{display:flex;align-items:center;justify-self:end;gap:12px;min-width:max-content}
-.management-center{color:#e97924;transition:color var(--ui-transition),background-color var(--ui-transition),transform var(--ui-transition)}
-.management-center:hover,.management-center.is-active{color:#cf6419;background:#fff0e5}
+.management-center{color:var(--ui-text-secondary);transition:color var(--ui-transition),background-color var(--ui-transition),transform var(--ui-transition)}
+.management-center:hover:not(.is-active){color:var(--ui-text-secondary);background:var(--el-fill-color-light)}
+.management-center.is-active,.management-center.is-active:hover{color:#cf6419;background:#fff0e5}
 .management-center:active{transform:translateY(1px)}
 .management-center :deep(.el-icon){font-size:19px}
 .main{min-width:0;flex:1;outline:none}

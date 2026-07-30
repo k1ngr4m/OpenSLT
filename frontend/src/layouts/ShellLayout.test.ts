@@ -86,6 +86,7 @@ describe('ShellLayout navigation', () => {
     expect(navigation.text()).not.toContain('方案与场景')
     expect(wrapper.get('.section-nav-item').classes()).toContain('is-active')
     expect(wrapper.find('.management-center').exists()).toBe(true)
+    expect(wrapper.get('.management-center').classes()).not.toContain('is-active')
     expect(wrapper.find('.beijing-time').exists()).toBe(false)
     expect(wrapper.get('.topbar-end').element.lastElementChild?.tagName).toBe('VERSION-HISTORY-STUB')
     wrapper.unmount()
@@ -108,10 +109,17 @@ describe('ShellLayout navigation', () => {
     admin.wrapper.unmount()
   })
 
-  it('hides the management center entry from visitors', async () => {
+  it('lets visitors open the read-only plans area', async () => {
     const { wrapper } = await mountLayout('/dashboard', 'visitor')
-    expect(wrapper.find('.management-center').exists()).toBe(false)
+    expect(wrapper.find('.management-center').exists()).toBe(true)
     wrapper.unmount()
+
+    const management = await mountLayout('/plans', 'visitor')
+    const navigation = management.wrapper.get('.el-menu-stub')
+    expect(navigation.text()).toContain('方案与场景')
+    expect(navigation.text()).not.toContain('资源管理')
+    expect(navigation.text()).not.toContain('日志中心')
+    management.wrapper.unmount()
   })
 
   it('navigates between home and management without enabling charts', async () => {

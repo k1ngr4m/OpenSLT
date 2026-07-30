@@ -2032,6 +2032,56 @@
         "title": "ParserTableExportRequest",
         "type": "object"
       },
+      "PlanDirectoryOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PlanDirectoryOut",
+        "type": "object"
+      },
+      "PlanDirectoryWrite": {
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PlanDirectoryWrite",
+        "type": "object"
+      },
       "PlanOut": {
         "properties": {
           "business_code": {
@@ -2062,6 +2112,10 @@
             "title": "Description",
             "type": "string"
           },
+          "directory_id": {
+            "title": "Directory Id",
+            "type": "integer"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -2077,6 +2131,7 @@
         },
         "required": [
           "id",
+          "directory_id",
           "name",
           "business_code",
           "description",
@@ -2116,6 +2171,17 @@
             "default": "",
             "title": "Description",
             "type": "string"
+          },
+          "directory_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Directory Id"
           },
           "is_enabled": {
             "default": true,
@@ -5911,10 +5977,183 @@
         "summary": "Log Detail"
       }
     },
+    "/api/v1/plan-directories": {
+      "get": {
+        "operationId": "list_plan_directories_api_v1_plan_directories_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlanDirectoryOut"
+                  },
+                  "title": "Response List Plan Directories Api V1 Plan Directories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Plan Directories"
+      },
+      "post": {
+        "operationId": "create_plan_directory_api_v1_plan_directories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanDirectoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDirectoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Plan Directory"
+      }
+    },
+    "/api/v1/plan-directories/{directory_id}": {
+      "delete": {
+        "operationId": "delete_plan_directory_api_v1_plan_directories__directory_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "directory_id",
+            "required": true,
+            "schema": {
+              "title": "Directory Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Plan Directory"
+      },
+      "put": {
+        "operationId": "update_plan_directory_api_v1_plan_directories__directory_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "directory_id",
+            "required": true,
+            "schema": {
+              "title": "Directory Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanDirectoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDirectoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Plan Directory"
+      }
+    },
     "/api/v1/plans": {
       "get": {
         "operationId": "list_plans_api_v1_plans_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "directory_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Directory Id"
+            }
+          },
           {
             "in": "query",
             "name": "business_code",

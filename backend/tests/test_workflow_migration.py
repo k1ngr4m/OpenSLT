@@ -66,7 +66,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 28
+    assert len(model_table_names) == 29
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -110,7 +110,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0004"
+        ).scalar_one() == "0005"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -121,6 +121,38 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
         }
         assert remaining == {VERSION_TABLE}
         assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() is None
+
+
+def test_plan_directory_migration_backfills_existing_plans(tmp_path: Path) -> None:
+    database_path = tmp_path / "existing.sqlite3"
+    _alembic(database_path, "upgrade", "0004")
+
+    with sqlite3.connect(database_path) as connection:
+        timestamp = "2026-07-30 00:00:00"
+        connection.execute(
+            "INSERT INTO t_users "
+            "(id, username, display_name, password_hash, role, is_active, last_login_at, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "migration-user", "迁移用户", "hash", "admin", 1, None, timestamp, timestamp),
+        )
+        connection.execute(
+            "INSERT INTO t_test_plans "
+            "(id, name, business_code, description, default_resource_ids, config_version, "
+            "is_enabled, created_by, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "已有方案", "fut_mm", "", "[]", "1.0", 1, 1, timestamp, timestamp),
+        )
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "head")
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT id, name, is_default FROM t_plan_directories"
+        ).fetchall() == [(1, "默认目录", 1)]
+        assert connection.execute(
+            "SELECT directory_id FROM t_test_plans WHERE id = 1"
+        ).fetchone() == (1,)
 
 
 def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
@@ -139,13 +171,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 29
+    assert len(created_tables) == 30
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 28
-    assert sql.count("CHARSET=utf8mb4") == 28
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 28
+    assert sql.count("ENGINE=InnoDB") == 29
+    assert sql.count("CHARSET=utf8mb4") == 29
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 29
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert (
@@ -165,6 +197,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0002_database_config_templates.py",
         "0003_workflow_version_generations.py",
         "0004_observability_logs.py",
+        "0005_plan_directories.py",
     }
 
     completed = subprocess.run(
@@ -174,4 +207,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0004 (head)"
+    assert completed.stdout.strip() == "0005 (head)"

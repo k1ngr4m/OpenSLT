@@ -414,7 +414,25 @@ class DatabaseUpdateExecuteRequest(DatabaseSqlRequest):
     confirmation_text: str
 
 
+class PlanDirectoryWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+
+class PlanDirectoryOut(ORMModel):
+    id: int
+    name: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class PlanWrite(BaseModel):
+    directory_id: typing.Union[int, None] = None
     name: str
     business_code: Literal["fut_mm", "rem_two", "rem_two_mm"]
     description: str = ""
@@ -425,6 +443,7 @@ class PlanWrite(BaseModel):
 
 class PlanOut(ORMModel):
     id: int
+    directory_id: int
     name: str
     business_code: str
     description: str

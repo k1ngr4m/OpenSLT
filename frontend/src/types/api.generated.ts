@@ -227,6 +227,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plan-directories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Plan Directories */
+        get: operations["list_plan_directories_api_v1_plan_directories_get"];
+        put?: never;
+        /** Create Plan Directory */
+        post: operations["create_plan_directory_api_v1_plan_directories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/plan-directories/{directory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Plan Directory */
+        put: operations["update_plan_directory_api_v1_plan_directories__directory_id__put"];
+        post?: never;
+        /** Delete Plan Directory */
+        delete: operations["delete_plan_directory_api_v1_plan_directories__directory_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plans": {
         parameters: {
             query?: never;
@@ -1998,6 +2034,30 @@ export interface components {
              */
             table: "t_fut_orders" | "t_fut_quotes" | "t_fut_arbi_orders" | "t_account_exchange_code";
         };
+        /** PlanDirectoryOut */
+        PlanDirectoryOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Is Default */
+            is_default: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PlanDirectoryWrite */
+        PlanDirectoryWrite: {
+            /** Name */
+            name: string;
+        };
         /** PlanOut */
         PlanOut: {
             /** Business Code */
@@ -2015,6 +2075,8 @@ export interface components {
             default_resource_ids: number[];
             /** Description */
             description: string;
+            /** Directory Id */
+            directory_id: number;
             /** Id */
             id: number;
             /** Is Enabled */
@@ -2041,6 +2103,8 @@ export interface components {
              * @default
              */
             description: string;
+            /** Directory Id */
+            directory_id?: number | null;
             /**
              * Is Enabled
              * @default true
@@ -3458,9 +3522,127 @@ export interface operations {
             };
         };
     };
+    list_plan_directories_api_v1_plan_directories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanDirectoryOut"][];
+                };
+            };
+        };
+    };
+    create_plan_directory_api_v1_plan_directories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanDirectoryWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanDirectoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_plan_directory_api_v1_plan_directories__directory_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                directory_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanDirectoryWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanDirectoryOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_plan_directory_api_v1_plan_directories__directory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                directory_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_plans_api_v1_plans_get: {
         parameters: {
             query?: {
+                directory_id?: number | null;
                 business_code?: string | null;
             };
             header?: never;

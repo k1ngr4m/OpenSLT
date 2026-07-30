@@ -70,6 +70,9 @@ async def capture_server(
         )
         db.add(snapshot)
         db.flush()
+        # Do not hold the platform database write lock while waiting on SSH I/O.
+        # The running snapshot is intentionally durable so interrupted captures remain visible.
+        db.commit()
         failed = False
         connection = None
         try:
@@ -102,8 +105,8 @@ async def capture_server(
                     await connection.wait_closed()
         snapshot.status = "failed" if failed else "succeeded"
         snapshot.finished_at = beijing_now()
+        db.commit()
         snapshots.append(snapshot)
-    db.flush()
     return snapshots
 
 
@@ -143,6 +146,9 @@ async def capture_database(
     )
     db.add(snapshot)
     db.flush()
+    # Remote database reads may take seconds. Release the platform database write lock first
+    # so concurrent catalog and audit requests can complete while this capture is running.
+    db.commit()
     try:
         async with mysql_adapter.connection(resource, database_name) as connection:
             def query() -> tuple[dict[str, typing.Any], str]:
@@ -178,7 +184,7 @@ async def capture_database(
         snapshot.status = "failed"
         snapshot.error_message = str(exc)
     snapshot.finished_at = beijing_now()
-    db.flush()
+    db.commit()
     return [snapshot]
 
 
