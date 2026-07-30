@@ -29,6 +29,7 @@ from app.services.orchestration import (
     expire_timed_out_runs,
     reclaim_expired_locks,
 )
+from app.version import APP_VERSION
 
 
 def seed_database() -> None:
@@ -98,7 +99,7 @@ async def lifespan(_: FastAPI):
     if settings.enable_internal_scheduler:
         scheduler_task = asyncio.create_task(internal_scheduler())
         logger.info("internal_scheduler_started")
-    logger.info("application_started")
+    logger.info("application_started", version=APP_VERSION)
     try:
         yield
     finally:
@@ -109,7 +110,7 @@ async def lifespan(_: FastAPI):
         logger.info("application_stopped")
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:7777", "http://127.0.0.1:7777"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 
@@ -151,7 +152,8 @@ async def credential_secret_error(request: Request, exc: CredentialSecretError):
 
 
 @app.get("/health")
-def health() -> typing.Dict[str, str]: return {"status": "ok", "service": "openslt-api"}
+def health() -> typing.Dict[str, str]:
+    return {"status": "ok", "service": "openslt-api", "version": APP_VERSION}
 
 
 app.include_router(router, prefix=settings.api_v1_prefix)

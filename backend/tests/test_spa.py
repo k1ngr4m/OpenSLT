@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app.version import APP_VERSION
+
 
 def test_frontend_and_spa_routes_are_served(client):
     if not Path("frontend/dist/index.html").is_file():
@@ -17,7 +19,11 @@ def test_frontend_and_spa_routes_are_served(client):
 def test_api_routes_take_precedence_over_spa(client, admin_headers):
     health = client.get("/health")
     assert health.status_code == 200
-    assert health.json()["service"] == "openslt-api"
+    assert health.json() == {
+        "status": "ok",
+        "service": "openslt-api",
+        "version": APP_VERSION,
+    }
     me = client.get("/api/v1/auth/me", headers=admin_headers)
     assert me.status_code == 200
     assert me.json()["username"] == "admin"

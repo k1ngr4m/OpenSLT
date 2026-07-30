@@ -25,7 +25,7 @@ Run this once on the internet-connected RHEL 7.9 x86_64 packaging host.
 Options:
   --python PATH       Python >=3.8 executable
   --output DIR        Output directory (default: release/)
-  --version VERSION   Unique release label (default: date + Git commit)
+  --version VERSION   Assert the canonical VERSION value (optional)
   --nginx-repo-url URL
                       Alternate RHEL 7 Nginx repository base URL
   --bundle-python     Include the installed RHEL 7 rh-python38 runtime
@@ -112,6 +112,20 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'Python executable not found: %s\n' "$PYTHON" >&2
     exit 1
 }
+"$PYTHON" -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 8) else 1)' || {
+    printf 'OpenSLT requires Python >=3.8.\n' >&2
+    exit 1
+}
+PROJECT_VERSION="$("$PYTHON" "$PROJECT_ROOT/tools/release_metadata.py" --version)" || {
+    printf 'OpenSLT release metadata validation failed.\n' >&2
+    exit 1
+}
+if [[ -n "$VERSION" && "$VERSION" != "$PROJECT_VERSION" ]]; then
+    printf 'Requested bundle version %s does not match project VERSION %s.\n' \
+        "$VERSION" "$PROJECT_VERSION" >&2
+    exit 2
+fi
+VERSION="$PROJECT_VERSION"
 if [[ "$BUNDLE_NODE" == false ]]; then
     [[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
         printf 'frontend/dist is missing. Build it on a Node.js 20+ host first.\n' >&2
@@ -124,6 +138,9 @@ if [[ "$BUNDLE_NODE" == false ]]; then
         "$PROJECT_ROOT/frontend/package.json" \
         "$PROJECT_ROOT/frontend/package-lock.json" \
         "$PROJECT_ROOT/frontend/vite.config.ts" \
+        "$PROJECT_ROOT/frontend/release-metadata.config.ts" \
+        "$PROJECT_ROOT/VERSION" \
+        "$PROJECT_ROOT/RELEASES.json" \
         -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print -quit | grep -q .; then
         printf 'frontend/dist is stale. Rebuild it on the Node.js host first.\n' >&2
         exit 1
@@ -169,8 +186,8 @@ BUILD_ARGS=(
     --python "$PYTHON"
     --rpm-dir "$RPM_DIR"
     --output "$OUTPUT_DIR"
+    --version "$VERSION"
 )
-[[ -n "$VERSION" ]] && BUILD_ARGS+=(--version "$VERSION")
 [[ "$SKIP_TESTS" == true ]] && BUILD_ARGS+=(--skip-tests)
 [[ "$BUNDLE_PYTHON" == true ]] && BUILD_ARGS+=(--bundle-python)
 if [[ "$BUNDLE_NODE" == true ]]; then

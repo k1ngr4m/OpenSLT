@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/time'
+import VersionHistory from '@/components/VersionHistory.vue'
 import {
   DataAnalysis,
   Monitor,
@@ -164,7 +165,10 @@ onBeforeUnmount(() => {
             </el-button>
           </el-tooltip>
         </div>
-        <time class="beijing-time mono" :datetime="now.toISOString()">{{ beijingText }}</time>
+        <div class="topbar-meta">
+          <time class="beijing-time mono" :datetime="now.toISOString()">{{ beijingText }}</time>
+          <VersionHistory />
+        </div>
       </header>
       <main id="main-content" class="main" tabindex="-1">
         <router-view />
@@ -202,11 +206,12 @@ nav{min-height:0;flex:1;overflow:auto}
 .topbar-start,.service-health{display:flex;align-items:center}
 .topbar-start{gap:8px}
 .nav-toggle{color:var(--ui-text-secondary)}
+.topbar-meta{display:grid;justify-items:end;gap:3px;min-width:max-content}
 .service-health{gap:7px;color:var(--ui-success);font-size:12px;font-weight:500}
 .service-health .el-icon{font-size:15px}
 .beijing-time{color:var(--ui-text-tertiary);font-size:11px}
 .main{min-width:0;flex:1;outline:none}
 .nav-scrim{position:fixed;z-index:25;inset:0;border:0;background:rgba(5,25,29,.5)}
 @media(max-width:1199px){.topbar{padding-inline:16px}}
-@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{padding-inline:12px}.beijing-time{font-size:10px}.service-health span{display:none}}
+@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{padding-inline:12px}.topbar-meta{gap:2px}.beijing-time{font-size:10px}.service-health span{display:none}}
 </style>

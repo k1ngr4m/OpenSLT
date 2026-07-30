@@ -46,13 +46,15 @@ flowchart LR
 后续示例统一使用以下版本变量。每次打开新终端时重新定义：
 
 ```bash
-VERSION=0.1.3
+VERSION="$(<VERSION)"
 PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
 PYTHON=/opt/rh/rh-python38/root/usr/bin/python3.8
 ```
 
-正式发布时，`VERSION` 必须是未使用过的唯一标签，只能包含字母、数字、点、下划线和
-连字符。
+`VERSION` 是项目唯一版本源，必须使用不带 `v` 前缀的 `MAJOR.MINOR.PATCH` 格式。
+`RELEASES.json` 保存当前和历史更新说明。正式制包前执行
+`"${PYTHON}" tools/release_metadata.py`；脚本会拒绝缺失、重复、乱序或与 `VERSION`
+不一致的发布记录。`--version` 仅用于断言传入值与项目版本相同，不能覆盖项目版本。
 
 ## 3. 上线前检查清单
 
@@ -155,7 +157,7 @@ deploy/offline/make-offline-package.sh \
 3. 在新虚拟环境中使用 `--no-index` 回装 wheelhouse。
 4. 执行 `pip check` 和后端测试。
 5. 使用 `--bundle-node` 时，校验 Node、生成 npm 缓存并完成断网回装和前端构建。
-6. 复制应用、前端产物、RPM、安装脚本和文档。
+6. 复制应用、前端产物、RPM、安装脚本、发布说明和文档。
 7. 生成包内 `SHA256SUMS`、压缩包和压缩包校验文件。
 
 默认输出到项目根目录的 `release/`：
@@ -297,7 +299,7 @@ tar -tzf "release/${PACKAGE}.tar.gz" | grep -E \
 在内网存放目录重新定义变量并校验：
 
 ```bash
-VERSION=0.1.3
+VERSION=0.2.0
 PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
 
 sha256sum -c "${PACKAGE}.tar.gz.sha256"
@@ -709,7 +711,7 @@ systemctl status openslt-api nginx --no-pager
 校验并解压新包后进入新目录：
 
 ```bash
-VERSION=0.1.3
+VERSION=0.2.0
 PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
 
 sha256sum -c "${PACKAGE}.tar.gz.sha256"

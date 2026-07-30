@@ -32,6 +32,21 @@ def test_node_bundle_options_are_documented_by_both_build_entrypoints() -> None:
             assert option in completed.stdout
 
 
+def test_offline_bundle_uses_and_enforces_the_canonical_project_version() -> None:
+    for name in ("make-offline-package.sh", "build-offline-bundle.sh"):
+        script = _script(name)
+        assert 'tools/release_metadata.py" --version' in script
+        assert '"$VERSION" != "$PROJECT_VERSION"' in script
+        assert 'VERSION="$PROJECT_VERSION"' in script
+
+    builder = _script("build-offline-bundle.sh")
+    assert "date +%Y%m%d" not in builder
+    assert '"openslt-$VERSION-"*.whl' in builder
+    assert 'cp -p "$PROJECT_ROOT/RELEASES.json" "$STAGING/RELEASES.json"' in builder
+    assert '"$PROJECT_ROOT/VERSION"' in builder
+    assert '"$PROJECT_ROOT/RELEASES.json"' in builder
+
+
 def test_node_archive_is_verified_before_extraction() -> None:
     builder = _script("build-offline-bundle.sh")
 

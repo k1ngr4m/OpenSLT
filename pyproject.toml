@@ -1,6 +1,6 @@
 [project]
 name = "openslt"
-version = "0.1.0"
+dynamic = ["version"]
 description = "OpenSLT REM futures automated latency testing platform"
 requires-python = ">=3.8"
 dependencies = [
@@ -29,6 +29,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["backend"]
 include = ["app*"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
 
 [project.optional-dependencies]
 test = [

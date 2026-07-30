@@ -25,7 +25,7 @@ Options:
   --python PATH       Python >=3.8 executable on RHEL 7.9
   --rpm-dir DIR       RPM repository created by collect-rpms-rhel7.sh
   --output DIR        Output directory (default: release/)
-  --version VERSION   Bundle version label
+  --version VERSION   Assert the canonical VERSION value (optional)
   --bundle-python     Include /opt/rh/rh-python38 for Python bootstrap
   --bundle-node       Include Node.js, npm, and a verified offline npm cache
   --node-version VER  linux-x64-glibc-217 Node version (default: 20.20.2)
@@ -114,6 +114,16 @@ grep -Eq '^VERSION_ID="?7\.9"?$' /etc/os-release || {
     printf 'OpenSLT requires Python >=3.8.\n' >&2
     exit 1
 }
+PROJECT_VERSION="$("$PYTHON" "$PROJECT_ROOT/tools/release_metadata.py" --version)" || {
+    printf 'OpenSLT release metadata validation failed.\n' >&2
+    exit 1
+}
+if [[ -n "$VERSION" && "$VERSION" != "$PROJECT_VERSION" ]]; then
+    printf 'Requested bundle version %s does not match project VERSION %s.\n' \
+        "$VERSION" "$PROJECT_VERSION" >&2
+    exit 2
+fi
+VERSION="$PROJECT_VERSION"
 if [[ "$BUNDLE_PYTHON" == true ]]; then
     [[ -d "$PYTHON_RUNTIME_ROOT" ]] || {
         printf 'The rh-python38 runtime is missing: %s\n' "$PYTHON_RUNTIME_ROOT" >&2
@@ -155,6 +165,9 @@ else
         "$PROJECT_ROOT/frontend/package.json" \
         "$PROJECT_ROOT/frontend/package-lock.json" \
         "$PROJECT_ROOT/frontend/vite.config.ts" \
+        "$PROJECT_ROOT/frontend/release-metadata.config.ts" \
+        "$PROJECT_ROOT/VERSION" \
+        "$PROJECT_ROOT/RELEASES.json" \
         -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print -quit | grep -q .; then
         printf 'frontend/dist is older than one or more frontend source files. Rebuild it first.\n' >&2
         find \
@@ -164,22 +177,14 @@ else
             "$PROJECT_ROOT/frontend/package.json" \
             "$PROJECT_ROOT/frontend/package-lock.json" \
             "$PROJECT_ROOT/frontend/vite.config.ts" \
+            "$PROJECT_ROOT/frontend/release-metadata.config.ts" \
+            "$PROJECT_ROOT/VERSION" \
+            "$PROJECT_ROOT/RELEASES.json" \
             -type f -newer "$PROJECT_ROOT/frontend/dist/index.html" -print >&2
         exit 1
     fi
 fi
 
-if [[ -z "$VERSION" ]]; then
-    if command -v git >/dev/null 2>&1 && git -C "$PROJECT_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-        VERSION="$(date +%Y%m%d)-$(git -C "$PROJECT_ROOT" rev-parse --short HEAD)"
-    else
-        VERSION="$(date +%Y%m%d-%H%M%S)"
-    fi
-fi
-[[ "$VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || {
-    printf 'Version may contain only letters, digits, dot, underscore, and hyphen.\n' >&2
-    exit 1
-}
 if [[ -n "$RPM_DIR" && ! -d "$RPM_DIR/packages" ]]; then
     printf 'RPM directory must contain packages/: %s\n' "$RPM_DIR" >&2
     exit 1
@@ -305,15 +310,20 @@ BUILD_VENV="$BUILD_ROOT/build-venv"
 "$BUILD_VENV/bin/python" -m pip install --upgrade 'pip==25.0.1' 'setuptools==75.3.0' 'wheel==0.45.1'
 printf '[OpenSLT] Building the Python wheelhouse...\n'
 "$BUILD_VENV/bin/python" -m pip wheel --wheel-dir "$STAGING/wheelhouse" "$PROJECT_ROOT[test]"
+APP_WHEEL="$(find "$STAGING/wheelhouse" -maxdepth 1 -type f -name 'openslt-*.whl' -print -quit)"
+[[ -n "$APP_WHEEL" ]] || {
+    printf 'The OpenSLT application wheel was not created.\n' >&2
+    exit 1
+}
+[[ "$(basename "$APP_WHEEL")" == "openslt-$VERSION-"*.whl ]] || {
+    printf 'OpenSLT wheel version does not match project VERSION %s: %s\n' \
+        "$VERSION" "$(basename "$APP_WHEEL")" >&2
+    exit 1
+}
 
 if [[ "$SKIP_TESTS" == false ]]; then
     VALIDATE_VENV="$BUILD_ROOT/validate-venv"
     "$PYTHON" -m venv "$VALIDATE_VENV"
-    APP_WHEEL="$(find "$STAGING/wheelhouse" -maxdepth 1 -type f -name 'openslt-*.whl' -print -quit)"
-    [[ -n "$APP_WHEEL" ]] || {
-        printf 'The OpenSLT application wheel was not created.\n' >&2
-        exit 1
-    }
     printf '[OpenSLT] Validating a network-free wheel installation...\n'
     "$VALIDATE_VENV/bin/python" -m pip install --no-index --find-links "$STAGING/wheelhouse" "${APP_WHEEL}[test]"
     "$VALIDATE_VENV/bin/python" -m pip check
@@ -348,6 +358,7 @@ cp -p "$SCRIPT_DIR/build-frontend-intranet.sh" "$STAGING/build-frontend.sh"
 cp -p "$SCRIPT_DIR/deployment-config.sh" "$STAGING/deployment-config.sh"
 cp -p "$SCRIPT_DIR/openslt.env.example" "$STAGING/openslt.env.example"
 cp -p "$SCRIPT_DIR/README-OFFLINE.md" "$STAGING/README-OFFLINE.md"
+cp -p "$PROJECT_ROOT/RELEASES.json" "$STAGING/RELEASES.json"
 chmod 0755 \
     "$STAGING/install.sh" "$STAGING/configure.sh" "$STAGING/start.sh" \
     "$STAGING/build-frontend.sh"

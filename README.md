@@ -175,6 +175,22 @@ JWT 签名密钥和 Fernet 凭据加密密钥在未配置时自动生成并持�
 所有页面、API、日志和报告时间按北京时间（UTC+08:00）展示，数据库时间仍以 UTC
 保存。
 
+## 版本与更新说明
+
+根目录 `VERSION` 是 OpenSLT 唯一版本号来源，使用不带 `v` 前缀的
+`MAJOR.MINOR.PATCH` 格式。Python wheel、FastAPI、主界面和离线部署包都会读取或校验
+这个值。主界面右上角在北京时间下方显示当前版本，点击版本号可以查看历次更新说明。
+
+`RELEASES.json` 保存未发布变更和历史版本记录。修改版本或发布说明后执行：
+
+```bash
+python tools/release_metadata.py
+```
+
+校验通过后再运行后端测试、前端测试和生产构建。正式离线包的文件名、包内 `VERSION`、
+wheel 版本、前端显示版本以及安装后的版本记录必须保持一致。完整制包和升级步骤见
+`deploy/offline/README-OFFLINE.md`。
+
 ## 项目结构
 
 ```text

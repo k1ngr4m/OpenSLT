@@ -1,0 +1,31 @@
+{
+  "unreleased": [],
+  "releases": [
+    {
+      "version": "0.2.0",
+      "date": "2026-07-30",
+      "title": "统一版本机制",
+      "changes": [
+        {
+          "type": "added",
+          "text": "主界面右上角展示当前版本，并支持查看历次版本更新说明。"
+        },
+        {
+          "type": "changed",
+          "text": "Python 包、API、前端和离线部署包统一使用同一版本号。"
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": null,
+      "title": "初始版本",
+      "changes": [
+        {
+          "type": "added",
+          "text": "建立 OpenSLT 初始功能基线。"
+        }
+      ]
+    }
+  ]
+}
