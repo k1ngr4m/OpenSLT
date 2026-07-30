@@ -21,5 +21,4 @@ frontend/vite.config.d.ts
 build/
 /.playwright/
 /.playwright-cli/
-/docs/
 /output/
