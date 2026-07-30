@@ -2,7 +2,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { formatBeijingDateTime } from '@/utils/time'
 import VersionHistory from '@/components/VersionHistory.vue'
 import {
   DataAnalysis,
@@ -22,12 +21,10 @@ import {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const now = ref(new Date())
 const isCompact = ref(false)
 const isMobile = ref(false)
 const mobileNavOpen = ref(false)
 const manualCollapsed = ref(localStorage.getItem('openslt-nav-collapsed') === '1')
-let timer = 0
 
 const roleText: Record<string, string> = {
   admin: '系统管理员',
@@ -45,7 +42,6 @@ const activePath = computed(() => {
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
   return ['/dashboard', '/runs', '/plans', '/resources', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
-const beijingText = computed(() => `${formatBeijingDateTime(now.value)}`)
 const navToggleLabel = computed(() => {
   if (isMobile.value) return '打开导航'
   return collapsed.value ? '展开导航' : '收起导航'
@@ -87,12 +83,10 @@ async function logout() {
 onMounted(() => {
   syncViewport()
   window.addEventListener('resize', syncViewport)
-  timer = window.setInterval(() => { now.value = new Date() }, 1000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncViewport)
-  window.clearInterval(timer)
 })
 </script>
 
@@ -211,10 +205,6 @@ onBeforeUnmount(() => {
         </nav>
 
         <div class="topbar-end">
-          <div class="topbar-meta">
-            <time class="beijing-time mono" :datetime="now.toISOString()">{{ beijingText }}</time>
-            <VersionHistory />
-          </div>
           <el-tooltip v-if="auth.canOperate" content="管理中心" placement="bottom">
             <el-button
               text
@@ -227,6 +217,7 @@ onBeforeUnmount(() => {
               <el-icon><Setting /></el-icon>
             </el-button>
           </el-tooltip>
+          <VersionHistory />
         </div>
       </header>
       <main id="main-content" class="main" tabindex="-1">
@@ -279,8 +270,6 @@ onBeforeUnmount(() => {
 .topbar-tooltip::before{position:absolute;top:-4px;left:50%;width:8px;height:8px;background:#303133;content:"";transform:translateX(-50%) rotate(45deg)}
 .charts-tooltip:hover .topbar-tooltip,.charts-tooltip:focus-within .topbar-tooltip{opacity:1;transform:translate(-50%,0)}
 .topbar-end{display:flex;align-items:center;justify-self:end;gap:12px;min-width:max-content}
-.topbar-meta{display:grid;justify-items:end;gap:3px;min-width:max-content}
-.beijing-time{color:var(--ui-text-tertiary);font-size:11px}
 .management-center{color:#e97924;transition:color var(--ui-transition),background-color var(--ui-transition),transform var(--ui-transition)}
 .management-center:hover,.management-center.is-active{color:#cf6419;background:#fff0e5}
 .management-center:active{transform:translateY(1px)}
@@ -288,5 +277,5 @@ onBeforeUnmount(() => {
 .main{min-width:0;flex:1;outline:none}
 .nav-scrim{position:fixed;z-index:25;inset:0;border:0;background:rgba(5,25,29,.5)}
 @media(max-width:1199px){.topbar{padding-inline:16px}}
-@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{gap:6px;padding-inline:8px}.section-nav{gap:2px}.section-nav-item{min-width:38px;padding-inline:9px}.section-nav-item::after{right:8px;left:8px}.section-nav-label,.beijing-time{display:none}.topbar-end{gap:3px}.topbar-meta{gap:0}.topbar-tooltip{max-width:150px}}
+@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{gap:6px;padding-inline:8px}.section-nav{gap:2px}.section-nav-item{min-width:38px;padding-inline:9px}.section-nav-item::after{right:8px;left:8px}.section-nav-label{display:none}.topbar-end{gap:6px}.topbar-tooltip{max-width:150px}}
 </style>

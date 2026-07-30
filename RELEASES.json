@@ -1,5 +1,9 @@
 {
   "unreleased": [
+    {
+      "type": "changed",
+      "text": "主界面右上角移除时间显示，并将版本入口调整到管理中心右侧。"
+    }
   ],
   "releases": [
     {

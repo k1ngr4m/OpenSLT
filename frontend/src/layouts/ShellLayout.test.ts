@@ -86,6 +86,8 @@ describe('ShellLayout navigation', () => {
     expect(navigation.text()).not.toContain('方案与场景')
     expect(wrapper.get('.section-nav-item').classes()).toContain('is-active')
     expect(wrapper.find('.management-center').exists()).toBe(true)
+    expect(wrapper.find('.beijing-time').exists()).toBe(false)
+    expect(wrapper.get('.topbar-end').element.lastElementChild?.tagName).toBe('VERSION-HISTORY-STUB')
     wrapper.unmount()
   })
 
