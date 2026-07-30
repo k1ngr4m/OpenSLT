@@ -1,5 +1,14 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "added",
+      "text": "工作流支持同版本暂停编辑、重新启用、新增版本和历史版本归档。"
+    },
+    {
+      "type": "changed",
+      "text": "工作流编辑改为全屏双页签，并为节点和资源修改增加独立保存及未保存保护。"
+    }
+  ],
   "releases": [
     {
       "version": "0.2.0",

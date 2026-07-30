@@ -12,6 +12,10 @@ from app.services import workflow_capture, workflow_contracts, workflow_publishi
 from conftest import create_plan_scenario, create_resource
 
 
+def node(key: str, node_type: str, name: str, config: dict) -> dict:
+    return {"node_key": key, "node_type": node_type, "name": name, "config": config}
+
+
 ORDER_XML = '''<?xml version="1.0" encoding="utf-8"?>
 <tcp>
   <group_new_order id="new_order" disp="NEW_ORDER"><price disp="PRICE" value="1495.0000" /></group_new_order>
@@ -220,6 +224,153 @@ def test_unpublished_scenario_cannot_run(client, admin_headers):
         "plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [rem["id"]], "timeout_minutes": 30,
     })
     assert response.status_code == 404
+
+
+def test_pause_edits_same_visible_version_without_affecting_existing_run(client, admin_headers):
+    rem = create_resource(client, admin_headers, "REM-version-snapshot")
+    plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [rem["id"]],
+            "nodes": [node("wiring-v1", "wiring_confirmation", "旧接线确认", {"diagram": "placeholder"})],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    enabled = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/enable", headers=admin_headers
+    )
+    assert enabled.status_code == 200, enabled.text
+    published_id = enabled.json()["draft"]["id"]
+
+    existing = client.post(
+        "/api/v1/runs",
+        headers=admin_headers,
+        json={"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [rem["id"]]},
+    )
+    assert existing.status_code == 201, existing.text
+    assert existing.json()["steps"][0]["name"] == "旧接线确认"
+
+    paused = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/pause", headers=admin_headers
+    )
+    assert paused.status_code == 200, paused.text
+    paused_document = paused.json()
+    assert paused_document["draft"]["version_no"] == 1
+    assert paused_document["draft"]["id"] != published_id
+    assert paused_document["scenario"]["is_enabled"] is False
+
+    draft_node = paused_document["draft"]["nodes"][0]
+    updated = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": paused_document["draft"]["revision"],
+            "resource_ids": [rem["id"]],
+            "nodes": [node(draft_node["node_key"], "wiring_confirmation", "新接线确认", {"diagram": "placeholder"})],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    blocked = client.post(
+        "/api/v1/runs",
+        headers=admin_headers,
+        json={"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [rem["id"]]},
+    )
+    assert blocked.status_code == 404
+
+    run_id = existing.json()["id"]
+    assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
+    old_step = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()["steps"][0]
+    started = client.post(
+        f"/api/v1/runs/{run_id}/steps/{old_step['id']}/start", headers=admin_headers
+    )
+    assert started.status_code == 200, started.text
+
+    reenabled = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/enable", headers=admin_headers
+    )
+    assert reenabled.status_code == 200, reenabled.text
+    assert reenabled.json()["draft"]["version_no"] == 1
+    versions = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions", headers=admin_headers
+    ).json()
+    assert [(item["version_no"], item["status"]) for item in versions] == [(1, "published")]
+    replacement = client.post(
+        "/api/v1/runs",
+        headers=admin_headers,
+        json={"plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [rem["id"]]},
+    )
+    assert replacement.status_code == 201, replacement.text
+    assert replacement.json()["steps"][0]["name"] == "新接线确认"
+
+
+def test_create_and_archive_workflow_versions(client, admin_headers):
+    rem = create_resource(client, admin_headers, "REM-version-archive")
+    _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [rem["id"]],
+            "nodes": [node("wiring-v1", "wiring_confirmation", "接线确认", {"diagram": "placeholder"})],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    enabled = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/enable", headers=admin_headers
+    ).json()
+
+    created = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions",
+        headers=admin_headers,
+        json={"source_version_id": enabled["draft"]["id"]},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["draft"]["version_no"] == 2
+    duplicate = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions",
+        headers=admin_headers,
+        json={"source_version_id": enabled["draft"]["id"]},
+    )
+    assert duplicate.status_code == 409
+
+    archived = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions/{created.json()['draft']['id']}/archive",
+        headers=admin_headers,
+    )
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["status"] == "archived"
+    visible = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions", headers=admin_headers
+    ).json()
+    assert [item["version_no"] for item in visible] == [1]
+    all_versions = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions?include_archived=true",
+        headers=admin_headers,
+    ).json()
+    assert [(item["version_no"], item["status"]) for item in all_versions] == [
+        (2, "archived"),
+        (1, "retired"),
+    ]
+
+    resumed = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/enable", headers=admin_headers
+    )
+    assert resumed.status_code == 200, resumed.text
+    reject = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/versions/{enabled['draft']['id']}/archive",
+        headers=admin_headers,
+    )
+    assert reject.status_code == 409
 
 
 def test_scan_existing_contract_csv_files(client, admin_headers, monkeypatch):

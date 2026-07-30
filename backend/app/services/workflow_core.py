@@ -88,6 +88,7 @@ def create_draft(db: Session, scenario: TestScenario, actor_id: int, resource_id
     draft = ScenarioWorkflowVersion(
         scenario_id=scenario.id,
         version_no=next_version,
+        generation_no=1,
         status="draft",
         revision=1,
         created_by=actor_id,
@@ -108,9 +109,83 @@ def clone_published_to_draft(db: Session, scenario: TestScenario, actor_id: int)
     if not scenario.published_workflow_version_id:
         return create_draft(db, scenario, actor_id, scenario_resource_ids(scenario))
     published = load_version(db, scenario.published_workflow_version_id)
-    draft = create_draft(db, scenario, actor_id, workflow_resource_ids(published))
+    next_generation = (
+        db.scalar(
+            select(func.max(ScenarioWorkflowVersion.generation_no)).where(
+                ScenarioWorkflowVersion.scenario_id == scenario.id,
+                ScenarioWorkflowVersion.version_no == published.version_no,
+            )
+        )
+        or 0
+    ) + 1
+    draft = ScenarioWorkflowVersion(
+        scenario_id=scenario.id,
+        version_no=published.version_no,
+        generation_no=next_generation,
+        status="draft",
+        revision=1,
+        created_by=actor_id,
+    )
+    sync_workflow_resources(draft, workflow_resource_ids(published))
+    db.add(draft)
+    db.flush()
+    scenario.draft_workflow_version_id = draft.id
+    scenario.workflow_status = "draft"
+    scenario.is_enabled = False
     copy_version_contents(db, published, draft, actor_id)
     return draft
+
+
+def create_next_version(
+    db: Session,
+    scenario: TestScenario,
+    source: ScenarioWorkflowVersion,
+    actor_id: int,
+) -> ScenarioWorkflowVersion:
+    if scenario.draft_workflow_version_id:
+        raise WorkflowError("WORKFLOW_DRAFT_EXISTS", "已有设计中的流程版本", 409)
+    if source.scenario_id != scenario.id:
+        raise WorkflowError("WORKFLOW_NOT_FOUND", "工作流版本不存在", 404)
+    draft = create_draft(db, scenario, actor_id, workflow_resource_ids(source))
+    copy_version_contents(db, source, draft, actor_id)
+    if scenario.published_workflow_version_id:
+        published = db.get(ScenarioWorkflowVersion, scenario.published_workflow_version_id)
+        if published and published.status == "published":
+            published.status = "retired"
+    scenario.is_enabled = False
+    scenario.workflow_status = "draft"
+    return draft
+
+
+def version_heads_query(scenario_id: int):
+    latest = (
+        select(
+            ScenarioWorkflowVersion.version_no.label("version_no"),
+            func.max(ScenarioWorkflowVersion.generation_no).label("generation_no"),
+        )
+        .where(ScenarioWorkflowVersion.scenario_id == scenario_id)
+        .group_by(ScenarioWorkflowVersion.version_no)
+        .subquery()
+    )
+    return (
+        select(ScenarioWorkflowVersion)
+        .join(
+            latest,
+            (ScenarioWorkflowVersion.version_no == latest.c.version_no)
+            & (ScenarioWorkflowVersion.generation_no == latest.c.generation_no),
+        )
+        .where(ScenarioWorkflowVersion.scenario_id == scenario_id)
+    )
+
+
+def is_version_head(db: Session, version: ScenarioWorkflowVersion) -> bool:
+    latest_generation = db.scalar(
+        select(func.max(ScenarioWorkflowVersion.generation_no)).where(
+            ScenarioWorkflowVersion.scenario_id == version.scenario_id,
+            ScenarioWorkflowVersion.version_no == version.version_no,
+        )
+    )
+    return version.generation_no == latest_generation
 
 
 def copy_version_contents(

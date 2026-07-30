@@ -105,6 +105,28 @@ def test_scenario_resources_are_derived_and_copied(client: TestClient, admin_hea
     assert all(item["default_resource_ids"] == scenario["default_resource_ids"] for item in copied_scenarios)
 
 
+def test_scenario_hidden_fields_are_system_owned(client: TestClient, admin_headers: typing.Dict[str, str]):
+    rem = create_resource(client, admin_headers, "REM-01")
+    plan = create_plan(client, admin_headers)
+    payload = scenario_payload(plan["id"], [rem["id"]])
+    payload.update({"scenario_type": "custom", "config_version": "99.0"})
+
+    created = client.post("/api/v1/scenarios", headers=admin_headers, json=payload)
+    assert created.status_code == 201, created.text
+    scenario = created.json()
+    assert scenario["scenario_type"] == "order"
+    assert scenario["config_version"] == "1.0"
+
+    payload.update({"name": "重命名场景", "scenario_type": "other", "config_version": "2.0"})
+    updated = client.put(
+        f"/api/v1/scenarios/{scenario['id']}", headers=admin_headers, json=payload
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["name"] == "重命名场景"
+    assert updated.json()["scenario_type"] == "order"
+    assert updated.json()["config_version"] == "1.0"
+
+
 def test_scenario_resource_validation(client: TestClient, admin_headers: typing.Dict[str, str]):
     rem_one = create_resource(client, admin_headers, "REM-01")
     rem_two = create_resource(client, admin_headers, "REM-02")

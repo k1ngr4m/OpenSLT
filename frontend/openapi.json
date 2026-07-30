@@ -715,8 +715,8 @@
           },
           "database_port": {
             "default": 3306,
-            "maximum": 65535.0,
-            "minimum": 1.0,
+            "maximum": 65535,
+            "minimum": 1,
             "title": "Database Port",
             "type": "integer"
           },
@@ -759,7 +759,7 @@
           "resource_id": {
             "anyOf": [
               {
-                "minimum": 1.0,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -770,8 +770,8 @@
           },
           "ssh_port": {
             "default": 22,
-            "maximum": 65535.0,
-            "minimum": 1.0,
+            "maximum": 65535,
+            "minimum": 1,
             "title": "Ssh Port",
             "type": "integer"
           },
@@ -2071,7 +2071,7 @@
           "resource_id": {
             "anyOf": [
               {
-                "minimum": 1.0,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -2095,8 +2095,8 @@
           },
           "ssh_port": {
             "default": 22,
-            "maximum": 65535.0,
-            "minimum": 1.0,
+            "maximum": 65535,
+            "minimum": 1,
             "title": "Ssh Port",
             "type": "integer"
           },
@@ -2447,8 +2447,8 @@
           "database_port": {
             "anyOf": [
               {
-                "maximum": 65535.0,
-                "minimum": 1.0,
+                "maximum": 65535,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -2529,8 +2529,8 @@
           "query_port": {
             "anyOf": [
               {
-                "maximum": 65535.0,
-                "minimum": 1.0,
+                "maximum": 65535,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -2560,8 +2560,8 @@
           },
           "ssh_port": {
             "default": 22,
-            "maximum": 65535.0,
-            "minimum": 1.0,
+            "maximum": 65535,
+            "minimum": 1,
             "title": "Ssh Port",
             "type": "integer"
           },
@@ -2580,8 +2580,8 @@
           "trade_tcp_port": {
             "anyOf": [
               {
-                "maximum": 65535.0,
-                "minimum": 1.0,
+                "maximum": 65535,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -2593,8 +2593,8 @@
           "trade_udp_port": {
             "anyOf": [
               {
-                "maximum": 65535.0,
-                "minimum": 1.0,
+                "maximum": 65535,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -2643,8 +2643,8 @@
           "timeout_minutes": {
             "anyOf": [
               {
-                "maximum": 1440.0,
-                "minimum": 1.0,
+                "maximum": 1440,
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -3526,7 +3526,7 @@
         "properties": {
           "max_latency_ns": {
             "default": 999999999,
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Max Latency Ns",
             "type": "integer"
           },
@@ -4377,7 +4377,7 @@
         "additionalProperties": false,
         "properties": {
           "expected_revision": {
-            "minimum": 1.0,
+            "minimum": 1,
             "title": "Expected Revision",
             "type": "integer"
           },
@@ -4456,6 +4456,21 @@
           "resource_ids"
         ],
         "title": "WorkflowDocumentWrite",
+        "type": "object"
+      },
+      "WorkflowVersionCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "source_version_id": {
+            "exclusiveMinimum": 0,
+            "title": "Source Version Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_version_id"
+        ],
+        "title": "WorkflowVersionCreate",
         "type": "object"
       },
       "WorkflowVersionOut": {
@@ -8434,6 +8449,50 @@
         "summary": "Ensure Workflow Draft"
       }
     },
+    "/api/v1/scenarios/{scenario_id}/workflow/enable": {
+      "post": {
+        "operationId": "enable_scenario_workflow_api_v1_scenarios__scenario_id__workflow_enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Enable Scenario Workflow"
+      }
+    },
     "/api/v1/scenarios/{scenario_id}/workflow/nodes/{node_key}/contract-files": {
       "get": {
         "operationId": "list_contract_files_api_v1_scenarios__scenario_id__workflow_nodes__node_key__contract_files_get",
@@ -8672,6 +8731,50 @@
         "summary": "Preview Workflow Node"
       }
     },
+    "/api/v1/scenarios/{scenario_id}/workflow/pause": {
+      "post": {
+        "operationId": "pause_scenario_workflow_api_v1_scenarios__scenario_id__workflow_pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pause Scenario Workflow"
+      }
+    },
     "/api/v1/scenarios/{scenario_id}/workflow/publish": {
       "post": {
         "operationId": "publish_scenario_workflow_api_v1_scenarios__scenario_id__workflow_publish_post",
@@ -8728,6 +8831,16 @@
               "title": "Scenario Id",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -8762,6 +8875,164 @@
           }
         ],
         "summary": "List Workflow Versions"
+      },
+      "post": {
+        "operationId": "create_workflow_version_api_v1_scenarios__scenario_id__workflow_versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowVersionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDocumentOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Workflow Version"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/versions/{version_id}": {
+      "get": {
+        "operationId": "get_workflow_version_api_v1_scenarios__scenario_id__workflow_versions__version_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Workflow Version"
+      }
+    },
+    "/api/v1/scenarios/{scenario_id}/workflow/versions/{version_id}/archive": {
+      "post": {
+        "operationId": "archive_workflow_version_api_v1_scenarios__scenario_id__workflow_versions__version_id__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scenario_id",
+            "required": true,
+            "schema": {
+              "title": "Scenario Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version_id",
+            "required": true,
+            "schema": {
+              "title": "Version Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVersionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Archive Workflow Version"
       }
     },
     "/api/v1/users": {

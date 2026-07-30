@@ -90,13 +90,17 @@ def list_scenarios(plan_id: typing.Union[int, None] = None, include_archived: bo
 def create_scenario(payload: ScenarioWrite, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestScenario:
     plan = db.get(TestPlan, payload.plan_id)
     if not plan: raise not_found("方案")
-    values = payload.model_dump(exclude={"default_resource_ids"})
+    values = payload.model_dump(
+        exclude={"default_resource_ids", "is_enabled", "scenario_type", "config_version"}
+    )
     if payload.default_resource_ids is not None:
         resource_ids, resource_types = validate_scenario_resources(db, plan, payload.default_resource_ids)
         values["default_resource_ids"] = resource_ids
         values["required_resource_types"] = resource_types
     else:
         values["default_resource_ids"] = []
+    values["scenario_type"] = "order"
+    values["config_version"] = "1.0"
     values["is_enabled"] = False
     values["workflow_status"] = "draft"
     scenario = TestScenario(**values)
@@ -112,7 +116,9 @@ def update_scenario(scenario_id: int, payload: ScenarioWrite, request: Request, 
     if not scenario: raise not_found("场景")
     plan = db.get(TestPlan, payload.plan_id)
     if not plan: raise not_found("方案")
-    values = payload.model_dump(exclude={"default_resource_ids"})
+    values = payload.model_dump(
+        exclude={"default_resource_ids", "is_enabled", "scenario_type", "config_version"}
+    )
     if payload.default_resource_ids is not None:
         resource_ids, resource_types = validate_scenario_resources(db, plan, payload.default_resource_ids)
         values["default_resource_ids"] = resource_ids

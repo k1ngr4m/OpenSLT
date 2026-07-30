@@ -184,10 +184,18 @@ class TestScenario(TimestampMixin, Base):
 
 class ScenarioWorkflowVersion(TimestampMixin, Base):
     __tablename__ = "t_scenario_workflow_versions"
-    __table_args__ = (UniqueConstraint("scenario_id", "version_no", name="uq_scenario_workflow_version"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "scenario_id",
+            "version_no",
+            "generation_no",
+            name="uq_scenario_workflow_version_generation",
+        ),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     scenario_id: Mapped[int] = mapped_column(ForeignKey("t_test_scenarios.id", ondelete="CASCADE"), index=True)
     version_no: Mapped[int] = mapped_column(Integer)
+    generation_no: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
     revision: Mapped[int] = mapped_column(Integer, default=1)
     resource_ids: Mapped[typing.List[int]] = mapped_column(JSONText, default=list)

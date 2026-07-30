@@ -135,7 +135,11 @@ async function saveScenario() {
   }
   try {
     const data = {
-      ...scenario,
+      plan_id: scenario.plan_id,
+      name: scenario.name,
+      scenario_type: scenario.scenario_type || 'order',
+      config_version: scenario.config_version || '1.0',
+      expected_artifacts: scenario.expected_artifacts || [],
       default_resource_ids: selectedIds,
       required_resource_types: resourceTypes.filter(type => resourceSelections[type]),
     }
@@ -208,12 +212,10 @@ onMounted(load)
         <p class="muted">{{ p.description || '暂无描述' }}</p>
         <el-table :data="scenarios.filter(item => item.plan_id === p.id)" size="small">
           <el-table-column prop="name" label="场景名称" />
-          <el-table-column prop="scenario_type" label="场景类型" />
-          <el-table-column prop="config_version" label="配置版本" />
           <el-table-column label="场景资源" min-width="260">
             <template #default="scope"><el-tag v-for="label in scenarioResourceLabels(scope.row)" :key="label" size="small" class="tag">{{ label }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="工作流状态" width="120"><template #default="scope"><el-tag size="small" :type="scope.row.workflow_status === 'published' ? 'success' : 'warning'">{{ scope.row.workflow_status === 'published' ? '已发布' : '草稿' }}</el-tag></template></el-table-column>
+          <el-table-column label="工作流状态" width="120"><template #default="scope"><el-tag size="small" :type="scope.row.is_enabled ? 'success' : (scope.row.published_workflow_version_id ? 'info' : 'warning')">{{ scope.row.is_enabled ? '已启用' : (scope.row.published_workflow_version_id ? '已暂停' : '未启用') }}</el-tag></template></el-table-column>
           <el-table-column v-if="auth.canOperate" width="220"><template #default="scope"><el-button link type="primary" @click="router.push(`/plans/scenarios/${scope.row.id}/workflow`)">工作流</el-button><el-button link @click="openScenario(scope.row)">基础信息</el-button><el-button link @click="copyScenario(scope.row)">复制</el-button><el-tooltip content="删除场景" placement="top"><el-button link type="danger" :icon="Delete" aria-label="删除场景" @click="removeScenario(scope.row)" /></el-tooltip></template></el-table-column>
         </el-table>
       </el-collapse-item>
@@ -236,8 +238,6 @@ onMounted(load)
         <el-row :gutter="16">
           <el-col :span="12"><el-form-item label="所属方案"><el-select v-model="scenario.plan_id" style="width: 100%" @change="handleScenarioPlanChange"><el-option v-for="item in plans" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="场景名称"><el-input v-model="scenario.name" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="场景类型"><el-input v-model="scenario.scenario_type" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="配置版本"><el-input v-model="scenario.config_version" /></el-form-item></el-col>
           <el-col :span="24"><div class="resource-heading"><strong>场景资源</strong><span class="muted">按需选择，每种类型最多一个</span></div></el-col>
           <el-col v-for="type in resourceTypes" :key="type" :span="12">
             <el-form-item :label="resourceText[type] || type" :required="legacyRequiredTypes.includes(type)">
@@ -246,7 +246,6 @@ onMounted(load)
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="24"><el-form-item label="启用"><el-switch v-model="scenario.is_enabled" /></el-form-item></el-col>
         </el-row>
       </el-form>
       <template #footer><el-button @click="scenarioDialog = false">取消</el-button><el-button type="primary" @click="saveScenario">保存</el-button></template>

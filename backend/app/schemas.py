@@ -559,6 +559,12 @@ class WorkflowDocumentWrite(BaseModel):
     nodes: typing.List[WorkflowNodeWrite] = Field(default_factory=list)
 
 
+class WorkflowVersionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_version_id: int = Field(gt=0)
+
+
 class WorkflowNodeOutFields(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Bottom, Check, Connection, Delete, Document, Edit, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, Bottom, Check, Close, Connection, Delete, Document, Edit, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useAuthStore } from '@/stores/auth'
+import { cloneWorkflowValue, useStagedWorkflowNode } from '@/composables/useStagedWorkflowNode'
 import type { EditableWorkflowNode as WorkflowNode, WorkflowNodeType } from '@/types/api'
 import { resourceText } from '@/utils/status'
 import { buildWiringSnapshot, wiringInterfaceNameDefaults } from '@/utils/wiring'
@@ -28,13 +29,23 @@ const scenarioId = Number(route.params.id)
 const loading = ref(true)
 const saving = ref(false)
 const publishing = ref(false)
+const pausing = ref(false)
 const dirty = ref(false)
 const documentData = ref<any>(null)
+const versions = ref<any[]>([])
+const includeArchived = ref(false)
+const versionsLoading = ref(false)
+const versionActionLoading = ref(false)
+const selectedVersionId = ref<number | null>(null)
+const activeTab = ref<'resources' | 'workflow'>('workflow')
 const resources = ref<any[]>([])
 const plans = ref<any[]>([])
 const nodes = ref<WorkflowNode[]>([])
 const resourceSelections = reactive<Record<string, number | null>>({})
 const selectedKey = ref('')
+const stagedNode = useStagedWorkflowNode<WorkflowNode>()
+const nodeForm = stagedNode.form
+const resourceBaseline = ref('[]')
 const pickerOpen = ref(false)
 const insertAt = ref(0)
 const draggingKey = ref('')
@@ -84,8 +95,16 @@ const SERVER_FIELD_OPTIONS: Record<string, { value: string; label: string }[]> =
 
 const scenario = computed(() => documentData.value?.scenario)
 const draft = computed(() => documentData.value?.draft)
-const selectedNode = computed(() => nodes.value.find(item => item.node_key === selectedKey.value) || null)
-const editable = computed(() => auth.canOperate && draft.value?.status === 'draft')
+const currentVersionId = computed(() => scenario.value?.draft_workflow_version_id || scenario.value?.published_workflow_version_id || null)
+const viewingCurrentVersion = computed(() => selectedVersionId.value === currentVersionId.value)
+const selectedStoredNode = computed(() => nodes.value.find(item => item.node_key === selectedKey.value) || null)
+const selectedNode = computed(() => nodeForm.value)
+const editable = computed(() => auth.canOperate && viewingCurrentVersion.value && draft.value?.status === 'draft' && !scenario.value?.is_enabled)
+const nodeDirty = computed(() => editable.value && stagedNode.dirty.value)
+const resourceIds = computed(() => resourceTypes.map(type => resourceSelections[type]).filter((value): value is number => value != null))
+const resourceDirty = computed(() => editable.value && JSON.stringify(resourceIds.value) !== resourceBaseline.value)
+const selectedVersion = computed(() => versions.value.find(item => item.id === selectedVersionId.value) || draft.value)
+const canArchiveSelectedVersion = computed(() => auth.canOperate && selectedVersion.value && ['draft', 'retired'].includes(selectedVersion.value.status) && !(scenario.value?.is_enabled && selectedVersion.value.id === scenario.value?.published_workflow_version_id))
 const displayedDatabaseConfigItems = computed<DatabaseConfigItem[]>(() => {
   if (databaseConfigCatalogLoaded.value) return databaseConfigItems.value
   return (selectedNode.value?.config.keys || []).map(key => ({ key, description: null }))
@@ -150,6 +169,10 @@ function makeKey() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+function syncNodeForm() {
+  stagedNode.stage(selectedStoredNode.value)
+}
+
 function applyDocument(data: any) {
   const preferredKey = selectedKey.value
   documentData.value = data
@@ -171,6 +194,9 @@ function applyDocument(data: any) {
   selectedKey.value = nodes.value.some(item => item.node_key === preferredKey)
     ? preferredKey
     : (nodes.value[0]?.node_key || '')
+  selectedVersionId.value = data.draft.id
+  resourceBaseline.value = JSON.stringify(resourceTypes.map(type => resourceSelections[type]).filter(value => value != null))
+  syncNodeForm()
   dirty.value = false
 }
 
@@ -185,15 +211,23 @@ async function load() {
       api.get('/resources').then(response => response.data),
       api.get('/plans').then(response => response.data),
     ])
-    const response = auth.canOperate
-      ? await api.post(`/scenarios/${scenarioId}/workflow/draft`)
-      : await api.get(`/scenarios/${scenarioId}/workflow`)
+    const response = await api.get(`/scenarios/${scenarioId}/workflow`)
     applyDocument(response.data)
+    await loadVersions()
   } catch (error) {
     ElMessage.error(errorMessage(error))
     await router.replace('/plans')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadVersions() {
+  versionsLoading.value = true
+  try {
+    versions.value = (await api.get(`/scenarios/${scenarioId}/workflow/versions`, { params: { include_archived: includeArchived.value } })).data || []
+  } finally {
+    versionsLoading.value = false
   }
 }
 
@@ -439,35 +473,92 @@ function defaultNode(type: string): WorkflowNode {
   return { node_key: key, position: 0, node_type: type as WorkflowNodeType, name: nodeMeta(type).label, config: {} }
 }
 
-function openPicker(position: number) {
+async function guardNodeChanges() {
+  if (!nodeDirty.value) return true
+  try {
+    await ElMessageBox.confirm(
+      '当前节点中有尚未保存的修改，你在继续操作前是否需要保存这些修改？',
+      '要保存对节点的修改吗？',
+      {
+        type: 'warning',
+        confirmButtonText: '是，前往保存',
+        cancelButtonText: '否，放弃修改',
+        distinguishCancelAndClose: true,
+      },
+    )
+    await nextTick()
+    document.querySelector<HTMLElement>('#node-save-actions')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    document.querySelector<HTMLButtonElement>('#node-save-actions .el-button--primary')?.focus()
+    return false
+  } catch (action) {
+    if (action === 'cancel') {
+      cancelNodeChanges()
+      return true
+    }
+    return false
+  }
+}
+
+async function selectNode(nodeKey: string) {
+  if (nodeKey === selectedKey.value) return
+  if (!await guardNodeChanges()) return
+  selectedKey.value = nodeKey
+  syncNodeForm()
+}
+
+async function openPicker(position: number) {
   if (!editable.value) return
+  if (!await guardNodeChanges()) return
   insertAt.value = position
   pickerOpen.value = true
 }
 
-function addNode(type: string) {
+async function addNode(type: string) {
   if (type === 'report_generation' && nodes.value.some(item => item.node_type === type)) return
+  const previousNodes = cloneWorkflowValue(nodes.value)
+  const previousKey = selectedKey.value
   const node = defaultNode(type)
   nodes.value.splice(insertAt.value, 0, node)
   normalizePositions()
   selectedKey.value = node.node_key
   pickerOpen.value = false
-  dirty.value = true
-  nextTick(() => document.querySelector(`[data-node-key="${node.node_key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  syncNodeForm()
+  try {
+    await saveWorkflow(true)
+    ElMessage.success('节点已添加')
+    nextTick(() => document.querySelector(`[data-node-key="${node.node_key}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  } catch {
+    nodes.value = previousNodes
+    selectedKey.value = previousKey
+    syncNodeForm()
+  }
 }
 
 function normalizePositions() { nodes.value.forEach((item, index) => { item.position = index + 1 }) }
-function moveNode(index: number, offset: number) {
+async function moveNode(index: number, offset: number) {
+  if (!await guardNodeChanges()) return
   const target = index + offset
   if (target < 0 || target >= nodes.value.length) return
+  const previousNodes = cloneWorkflowValue(nodes.value)
   const [item] = nodes.value.splice(index, 1)
   nodes.value.splice(target, 0, item)
-  normalizePositions(); dirty.value = true
+  normalizePositions()
+  try { await saveWorkflow(true) }
+  catch { nodes.value = previousNodes; syncNodeForm() }
 }
-function removeNode(index: number) {
+async function removeNode(index: number) {
+  if (!await guardNodeChanges()) return
+  try {
+    await ElMessageBox.confirm(`确定删除节点“${nodes.value[index].name}”？`, '删除节点', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+  } catch { return }
+  const previousNodes = cloneWorkflowValue(nodes.value)
+  const previousKey = selectedKey.value
   const [removed] = nodes.value.splice(index, 1)
-  normalizePositions(); dirty.value = true
+  normalizePositions()
   if (selectedKey.value === removed.node_key) selectedKey.value = nodes.value[Math.min(index, nodes.value.length - 1)]?.node_key || ''
+  syncNodeForm()
+  try { await saveWorkflow(true); ElMessage.success('节点已删除') }
+  catch { nodes.value = previousNodes; selectedKey.value = previousKey; syncNodeForm() }
 }
 
 function updateWiringInterfaceName(
@@ -485,23 +576,26 @@ function updateWiringInterfaceName(
   }
   markDirty()
 }
-function dropNode(targetIndex: number) {
+async function dropNode(targetIndex: number) {
+  if (!await guardNodeChanges()) return
   const sourceIndex = nodes.value.findIndex(item => item.node_key === draggingKey.value)
   if (sourceIndex < 0 || sourceIndex === targetIndex) return
+  const previousNodes = cloneWorkflowValue(nodes.value)
   const [item] = nodes.value.splice(sourceIndex, 1)
   nodes.value.splice(targetIndex, 0, item)
-  draggingKey.value = ''; normalizePositions(); dirty.value = true
+  draggingKey.value = ''; normalizePositions()
+  try { await saveWorkflow(true) }
+  catch { nodes.value = previousNodes; syncNodeForm() }
 }
 
 async function saveWorkflow(silent = false) {
   if (!editable.value) return
-  const resourceIds = resourceTypes.map(type => resourceSelections[type]).filter((value): value is number => value != null)
-  if (!resourceIds.length) throw new Error('请至少保留一个场景资源')
+  if (!resourceIds.value.length) throw new Error('请至少保留一个场景资源')
   saving.value = true
   try {
     const response = await api.put(`/scenarios/${scenarioId}/workflow`, {
       expected_revision: draft.value.revision,
-      resource_ids: resourceIds,
+      resource_ids: resourceIds.value,
       nodes: nodes.value.map(({ node_key, node_type, name, config }) => ({ node_key, node_type, name, config })),
     })
     applyDocument(response.data)
@@ -513,26 +607,181 @@ async function saveWorkflow(silent = false) {
   } finally { saving.value = false }
 }
 
-async function publishWorkflow() {
-  publishing.value = true
+function cancelNodeChanges() {
+  stagedNode.reset()
+  dirty.value = resourceDirty.value
+}
+
+async function saveNode(silent = false) {
+  if (!editable.value || !nodeForm.value) return
+  const index = nodes.value.findIndex(item => item.node_key === nodeForm.value?.node_key)
+  if (index < 0) return
+  const previousNodes = cloneWorkflowValue(nodes.value)
+  nodes.value[index] = stagedNode.snapshot()!
   try {
     await saveWorkflow(true)
-    const response = await api.post(`/scenarios/${scenarioId}/workflow/publish`)
+  } catch (error) {
+    nodes.value = previousNodes
+    throw error
+  }
+  if (!silent) ElMessage.success('节点配置已保存')
+}
+
+function cancelResourceChanges() {
+  for (const type of resourceTypes) resourceSelections[type] = null
+  for (const id of draft.value?.resource_ids || []) {
+    const resource = resources.value.find(item => item.id === id)
+    if (resource) resourceSelections[resource.resource_type] = resource.id
+  }
+  resourceBaseline.value = JSON.stringify(resourceIds.value)
+  dirty.value = nodeDirty.value
+}
+
+async function saveResourcePool() {
+  await saveWorkflow(true)
+  ElMessage.success('场景资源池已保存')
+}
+
+async function publishWorkflow() {
+  if (nodeDirty.value) {
+    activeTab.value = 'workflow'
+    ElMessage.warning('请先保存当前节点配置')
+    await nextTick()
+    document.querySelector<HTMLElement>('#node-save-actions')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    return
+  }
+  if (resourceDirty.value) {
+    activeTab.value = 'resources'
+    ElMessage.warning('请先保存场景资源池')
+    return
+  }
+  publishing.value = true
+  try {
+    const response = await api.post(`/scenarios/${scenarioId}/workflow/enable`)
     applyDocument(response.data)
-    ElMessage.success('工作流已发布并启用')
+    await loadVersions()
+    ElMessage.success('流程已启用')
   } catch (error: any) {
     const errors = error?.response?.data?.errors
     if (errors?.length) {
       selectedKey.value = errors[0].node_key || selectedKey.value
+      syncNodeForm()
+      activeTab.value = 'workflow'
       ElMessage.error(errors.map((item: any) => item.message).join('；'))
     } else if (!(error instanceof Error && !(error as any).response)) ElMessage.error(errorMessage(error))
   } finally { publishing.value = false }
 }
 
-async function createNextDraft() {
-  const response = await api.post(`/scenarios/${scenarioId}/workflow/draft`)
-  applyDocument(response.data)
-  ElMessage.success('已从已发布版本创建新草稿')
+async function pauseWorkflow() {
+  try {
+    await ElMessageBox.confirm('暂停后将禁止创建新运行，已经进行中的运行不受影响。', '暂停流程', { type: 'warning', confirmButtonText: '暂停流程', cancelButtonText: '取消' })
+  } catch { return }
+  pausing.value = true
+  try {
+    const response = await api.post(`/scenarios/${scenarioId}/workflow/pause`)
+    applyDocument(response.data)
+    await loadVersions()
+    ElMessage.success('流程已暂停，可以继续编辑当前版本')
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+  finally { pausing.value = false }
+}
+
+function versionStatusText(version: any) {
+  if (!version) return '加载中'
+  if (version.status === 'archived') return '已归档'
+  if (version.status === 'draft') return '设计中'
+  if (version.status === 'published' && scenario.value?.is_enabled && version.id === scenario.value?.published_workflow_version_id) return '已启用'
+  return '历史'
+}
+
+function versionTagType(version: any) {
+  if (!version) return 'info'
+  if (version.status === 'published' && scenario.value?.is_enabled && version.id === scenario.value?.published_workflow_version_id) return 'success'
+  if (version.status === 'draft') return 'warning'
+  return 'info'
+}
+
+async function viewVersion(versionId: number) {
+  if (versionId === selectedVersionId.value) return
+  if (!await guardNodeChanges()) return
+  if (resourceDirty.value) {
+    ElMessage.warning('请先保存或取消场景资源池修改')
+    activeTab.value = 'resources'
+    return
+  }
+  try {
+    if (versionId === currentVersionId.value) {
+      const response = await api.get(`/scenarios/${scenarioId}/workflow`)
+      applyDocument(response.data)
+      return
+    }
+    const version = (await api.get(`/scenarios/${scenarioId}/workflow/versions/${versionId}`)).data
+    applyDocument({ ...documentData.value, draft: version })
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+}
+
+async function returnToCurrentVersion() {
+  if (!currentVersionId.value) return
+  await viewVersion(currentVersionId.value)
+}
+
+async function createWorkflowVersion() {
+  if (!auth.canOperate || scenario.value?.draft_workflow_version_id) return
+  if (!selectedVersionId.value) return
+  if (!await guardNodeChanges()) return
+  versionActionLoading.value = true
+  try {
+    const response = await api.post(`/scenarios/${scenarioId}/workflow/versions`, { source_version_id: selectedVersionId.value })
+    applyDocument(response.data)
+    await loadVersions()
+    activeTab.value = 'workflow'
+    ElMessage.success(`流程版本 v${response.data.draft.version_no} 已创建`)
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+  finally { versionActionLoading.value = false }
+}
+
+async function archiveSelectedVersion() {
+  const version = selectedVersion.value
+  if (!canArchiveSelectedVersion.value || !version) return
+  try {
+    await ElMessageBox.confirm(`归档流程版本 v${version.version_no} 后将只能查看，不能继续编辑。`, '归档流程版本', { type: 'warning', confirmButtonText: '归档', cancelButtonText: '取消' })
+  } catch { return }
+  versionActionLoading.value = true
+  try {
+    await api.post(`/scenarios/${scenarioId}/workflow/versions/${version.id}/archive`)
+    const scenarioRows = (await api.get('/scenarios', { params: { include_archived: true } })).data || []
+    const refreshedScenario = scenarioRows.find((item: any) => item.id === scenarioId)
+    if (refreshedScenario) documentData.value.scenario = refreshedScenario
+    await loadVersions()
+    const fallback = currentVersionId.value || versions.value[0]?.id
+    if (fallback) await viewVersion(fallback)
+    ElMessage.success('流程版本已归档')
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+  finally { versionActionLoading.value = false }
+}
+
+async function toggleArchivedVersions(value: boolean) {
+  includeArchived.value = value
+  await loadVersions()
+}
+
+async function beforeTabLeave(nextName: string) {
+  if (nextName === activeTab.value) return true
+  if (!await guardNodeChanges()) return false
+  if (activeTab.value === 'resources' && resourceDirty.value) {
+    try {
+      await ElMessageBox.confirm('场景资源池有未保存修改，确定放弃并切换？', '未保存修改', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' })
+      cancelResourceChanges()
+      return true
+    } catch { return false }
+  }
+  return true
+}
+
+async function closePropertyPanel() {
+  if (!await guardNodeChanges()) return
+  selectedKey.value = ''
+  syncNodeForm()
 }
 
 function targetFor(role: string) { return selectedNode.value?.config.targets?.find((item: any) => item.resource_type === role) }
@@ -552,7 +801,7 @@ async function previewNode() {
   if (!selectedNode.value) return
   previewing.value = true
   try {
-    await saveWorkflow(true)
+    await saveNode(true)
     const response = await api.post(`/scenarios/${scenarioId}/workflow/nodes/${selectedKey.value}/preview`)
     previewSnapshots.value = response.data
     ElMessage.success(response.data.some((item: any) => item.status === 'failed') ? '预采集完成，部分项目失败' : '预采集完成')
@@ -776,13 +1025,14 @@ async function fetchContracts(contractTypes: string[]) {
   if (!database || !nodeKey || !databaseName) { ElMessage.warning('请先确认交易数据库'); return }
   fetchingContracts.value = true
   try {
-    await saveWorkflow(true)
+    await saveNode(true)
     const response = await api.post(`/scenarios/${scenarioId}/workflow/nodes/${nodeKey}/contract-files/fetch`, {
       database_resource_id: database.id, database_name: databaseName, contract_types: contractTypes,
     })
-    const orderNode = nodes.value.find(item => item.node_key === nodeKey)
-    if (orderNode) orderNode.config.contract_file_ids = [...new Set([...(orderNode.config.contract_file_ids || []), ...response.data.map((item: any) => item.id)])]
-    dirty.value = true
+    if (selectedNode.value?.node_key === nodeKey) {
+      selectedNode.value.config.contract_file_ids = [...new Set([...(selectedNode.value.config.contract_file_ids || []), ...response.data.map((item: any) => item.id)])]
+      markDirty()
+    }
     if (selectedKey.value === nodeKey) await loadContractFiles(true)
     ElMessage.success('最新交易日合约数据已生成并归档')
   } catch (error) { ElMessage.error(errorMessage(error)) }
@@ -825,11 +1075,21 @@ watch(() => selectedResourceMap.value.market?.id, async () => {
 })
 
 onBeforeRouteLeave(async () => {
-  if (!dirty.value) return true
-  try { await ElMessageBox.confirm('工作流有未保存修改，确定离开？', '未保存修改', { type: 'warning', confirmButtonText: '离开', cancelButtonText: '继续编辑' }); return true }
+  if (!nodeDirty.value && !resourceDirty.value && !dirty.value) return true
+  try { await ElMessageBox.confirm('工作流有未保存修改，确定放弃修改并离开？', '未保存修改', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true }
   catch { return false }
 })
-onMounted(load)
+function protectBrowserLeave(event: BeforeUnloadEvent) {
+  if (!nodeDirty.value && !resourceDirty.value && !dirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', protectBrowserLeave)
+  void load()
+})
+onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserLeave))
 </script>
 
 <template>
@@ -837,30 +1097,61 @@ onMounted(load)
     <header class="workflow-header">
       <div class="header-left">
         <el-button text circle :icon="ArrowLeft" aria-label="返回方案与场景" @click="router.push('/plans')" />
-        <div><div class="title-line"><h1>{{ scenario?.name || '工作流设置' }}</h1><el-tag size="small" :type="draft?.status === 'published' ? 'success' : 'warning'">{{ draft?.status === 'published' ? '已发布' : '草稿' }}</el-tag><span v-if="dirty" class="dirty-mark">有未保存修改</span></div><p>主流程 · v{{ draft?.version_no || 1 }} · 修订 {{ draft?.revision || 1 }}</p></div>
+        <div>
+          <div class="title-line"><h1>{{ scenario?.name || '工作流设置' }}</h1><span v-if="nodeDirty || resourceDirty" class="dirty-mark">有未保存修改</span></div>
+          <el-popover placement="bottom-start" :width="300" trigger="click">
+            <template #reference>
+              <button class="version-trigger" type="button">
+                <span>流程版本 v{{ selectedVersion?.version_no || 1 }}</span>
+                <el-tag size="small" :type="versionTagType(selectedVersion)">{{ versionStatusText(selectedVersion) }}</el-tag>
+                <el-icon><Bottom /></el-icon>
+              </button>
+            </template>
+            <div class="version-manager" v-loading="versionsLoading || versionActionLoading">
+              <div class="version-manager-title"><strong>版本管理</strong><el-switch :model-value="includeArchived" size="small" inline-prompt active-text="含归档" inactive-text="当前" @change="value => toggleArchivedVersions(Boolean(value))" /></div>
+              <div class="version-list">
+                <button v-for="version in versions" :key="version.id" type="button" :class="{ active: selectedVersionId === version.id }" @click="viewVersion(version.id)">
+                  <span><strong>流程版本 v{{ version.version_no }}</strong><small>{{ version.updated_at?.slice(0, 16).replace('T', ' ') }}</small></span>
+                  <el-tag size="small" :type="versionTagType(version)">{{ versionStatusText(version) }}</el-tag>
+                </button>
+              </div>
+              <div class="version-manager-actions">
+                <el-button :icon="Plus" :disabled="!auth.canOperate || Boolean(scenario?.draft_workflow_version_id) || !selectedVersionId" @click="createWorkflowVersion">新增版本</el-button>
+                <el-button :icon="Files" :disabled="!canArchiveSelectedVersion" @click="archiveSelectedVersion">归档</el-button>
+              </div>
+            </div>
+          </el-popover>
+        </div>
       </div>
       <div class="header-actions">
-        <template v-if="editable"><el-button :loading="saving" @click="saveWorkflow()">保存草稿</el-button><el-button type="primary" :loading="publishing" :icon="Check" @click="publishWorkflow">发布并启用</el-button></template>
-        <el-button v-else-if="auth.canOperate" type="primary" @click="createNextDraft">创建新草稿</el-button>
+        <el-button v-if="!viewingCurrentVersion && currentVersionId" @click="returnToCurrentVersion">返回当前版本</el-button>
+        <template v-else-if="auth.canOperate">
+          <el-button v-if="scenario?.is_enabled" type="warning" :loading="pausing" :icon="VideoPause" @click="pauseWorkflow">暂停流程</el-button>
+          <el-button v-else type="primary" :loading="publishing" :icon="Check" :disabled="!scenario?.draft_workflow_version_id && !scenario?.published_workflow_version_id" @click="publishWorkflow">启用流程</el-button>
+        </template>
       </div>
     </header>
 
-    <div class="editor-grid">
-      <aside class="resource-panel">
-        <div class="panel-heading"><div><strong>场景资源池</strong><small>每种类型最多一个</small></div></div>
-        <div class="resource-fields">
-          <label v-for="type in resourceTypes" :key="type"><span>{{ resourceText[type] || type }}</span><el-select v-model="resourceSelections[type]" clearable filterable :disabled="!editable" placeholder="未绑定" @change="markDirty"><el-option v-for="resource in resourceOptions(type)" :key="resource.id" :label="resource.name" :value="resource.id" /></el-select></label>
-        </div>
-        <div class="resource-note"><strong>发布校验</strong><span>节点只能引用资源池中的角色；正式运行可替换同类型资源。</span></div>
-      </aside>
-
-      <main class="workflow-canvas">
+    <el-tabs v-model="activeTab" class="workflow-tabs" :before-leave="beforeTabLeave">
+      <el-tab-pane label="场景资源池" name="resources">
+        <section class="resource-tab">
+          <div class="resource-tab-heading"><div><h2>场景资源池</h2><p>为当前流程绑定运行资源，每种类型最多选择一个。</p></div><el-tag v-if="!editable" type="info" effect="plain">只读</el-tag></div>
+          <div class="resource-fields">
+            <label v-for="type in resourceTypes" :key="type"><span>{{ resourceText[type] || type }}</span><el-select v-model="resourceSelections[type]" clearable filterable :disabled="!editable" placeholder="未绑定" @change="markDirty"><el-option v-for="resource in resourceOptions(type)" :key="resource.id" :label="resource.name" :value="resource.id" /></el-select></label>
+          </div>
+          <div class="resource-note"><strong>启用校验</strong><span>节点只能引用资源池中的角色；正式运行可替换同类型资源。</span></div>
+          <div v-if="editable" class="resource-actions"><el-button :disabled="!resourceDirty" @click="cancelResourceChanges">取消</el-button><el-button type="primary" :loading="saving" :disabled="!resourceDirty" @click="saveResourcePool">保存</el-button></div>
+        </section>
+      </el-tab-pane>
+      <el-tab-pane label="流程编辑" name="workflow">
+        <div class="editor-grid">
+          <main class="workflow-canvas">
         <div class="canvas-intro"><strong>主流程</strong><span>拖拽节点调整顺序，点击节点编辑属性</span></div>
         <div class="flow-column">
           <button v-if="editable" class="add-point" type="button" aria-label="在流程开头添加节点" @click="openPicker(0)"><el-icon><Plus /></el-icon></button>
           <div v-if="!nodes.length" class="flow-empty"><el-icon><Tickets /></el-icon><strong>还没有流程节点</strong><span>点击加号添加第一个节点</span></div>
           <template v-for="(node, index) in nodes" :key="node.node_key">
-            <article :data-node-key="node.node_key" class="flow-node" :class="[{ selected: selectedKey === node.node_key }, nodeMeta(node.node_type).tone]" :draggable="editable" @dragstart="draggingKey = node.node_key" @dragover.prevent @drop="dropNode(index)" @click="selectedKey = node.node_key">
+            <article :data-node-key="node.node_key" class="flow-node" :class="[{ selected: selectedKey === node.node_key }, nodeMeta(node.node_type).tone]" :draggable="editable" @dragstart="draggingKey = node.node_key" @dragover.prevent @drop="dropNode(index)" @click="selectNode(node.node_key)">
               <div class="node-icon"><el-icon><component :is="nodeMeta(node.node_type).icon" /></el-icon></div>
               <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'rem_startup'">{{ selectedResourceMap.rem?.name || '未绑定 REM 资源' }}</small><small v-else-if="node.node_type === 'market_startup'">{{ node.config.scripts?.length || 0 }} 个启动脚本</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="node.node_type === 'data_statistics'">{{ node.config.script_filename || '未选择统计脚本' }}</small><small v-else-if="node.node_type === 'report_generation'">HTML · Excel · PDF</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
               <div v-if="editable" class="node-actions"><el-button text circle :icon="Top" :disabled="index === 0" aria-label="上移节点" @click.stop="moveNode(index, -1)" /><el-button text circle :icon="Bottom" :disabled="index === nodes.length - 1" aria-label="下移节点" @click.stop="moveNode(index, 1)" /><el-button text circle type="danger" :icon="Delete" aria-label="删除节点" @click.stop="removeNode(index)" /></div>
@@ -869,11 +1160,11 @@ onMounted(load)
           </template>
           <div v-if="nodes.length" class="flow-end"><span></span>结束流程</div>
         </div>
-      </main>
+          </main>
 
-      <aside class="property-panel">
+          <aside class="property-panel" :class="{ open: Boolean(selectedNode) }">
         <template v-if="selectedNode">
-          <div class="property-title"><div class="node-icon" :class="nodeMeta(selectedNode.node_type).tone"><el-icon><component :is="nodeMeta(selectedNode.node_type).icon" /></el-icon></div><div><strong>节点属性</strong><small>{{ nodeMeta(selectedNode.node_type).label }}</small></div></div>
+          <div class="property-title"><div class="node-icon" :class="nodeMeta(selectedNode.node_type).tone"><el-icon><component :is="nodeMeta(selectedNode.node_type).icon" /></el-icon></div><div><strong>节点属性</strong><small>{{ nodeMeta(selectedNode.node_type).label }}</small></div><el-button class="property-close" text circle :icon="Close" aria-label="关闭节点属性" @click="closePropertyPanel" /></div>
           <label class="field"><span>节点名称</span><el-input v-model="selectedNode.name" :disabled="!editable" maxlength="128" @input="markDirty" /></label>
 
           <template v-if="selectedNode.node_type === 'server_config'">
@@ -1082,10 +1373,13 @@ onMounted(load)
           </template>
 
           <div v-if="previewSnapshots.length" class="preview-results"><div class="section-label">最近预采集结果</div><div v-for="snapshot in previewSnapshots" :key="snapshot.id" class="snapshot"><div><strong>{{ snapshot.source_type === 'server' ? `资源 #${snapshot.resource_id}` : snapshot.database_name }}</strong><el-tag size="small" :type="snapshot.status === 'succeeded' ? 'success' : 'danger'">{{ snapshot.status === 'succeeded' ? '成功' : '失败' }}</el-tag></div><dl><template v-for="item in snapshot.items" :key="item.id"><dt>{{ item.item_label }}</dt><dd :class="{ failed: item.status === 'failed' }">{{ item.value_text || item.error_message || '-' }}</dd></template></dl></div></div>
+          <div v-if="editable" id="node-save-actions" class="node-save-actions"><el-button :disabled="!nodeDirty" @click="cancelNodeChanges">取消</el-button><el-button type="primary" :loading="saving" :disabled="!nodeDirty" @click="saveNode()">保存</el-button></div>
         </template>
         <div v-else class="property-empty"><el-icon><Tickets /></el-icon><strong>选择一个节点</strong><span>节点配置和预览结果会显示在这里</span></div>
-      </aside>
-    </div>
+          </aside>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
 
     <el-drawer v-model="pickerOpen" title="选择一个节点" size="360px" append-to-body>
       <div class="node-catalog">
@@ -1124,4 +1418,17 @@ onMounted(load)
 .resource-note{background:var(--ui-primary-soft);color:var(--ui-primary-hover)}
 @media(max-width:1023px){.workflow-page{overflow:auto}.workflow-header{position:sticky;z-index:3;top:0}.editor-grid{grid-template-columns:190px minmax(420px,1fr);height:auto;min-height:0}.resource-panel{min-height:680px}.property-panel{grid-column:1/-1;min-height:520px;border-top:1px solid var(--ui-border);border-left:0}.workflow-canvas{min-height:680px}}
 @media(max-width:767px){.workflow-header{align-items:flex-start;height:auto;flex-direction:column;gap:12px;padding:14px 12px}.header-actions{width:100%;justify-content:flex-end}.editor-grid{grid-template-columns:1fr}.resource-panel{min-height:0;border-right:0;border-bottom:1px solid var(--ui-border)}.workflow-canvas{min-width:420px;min-height:600px}.property-panel{grid-column:1;min-width:420px}.flow-column,.flow-node,.flow-empty{width:300px}}
+
+/* Full-screen workflow workspace */
+.workflow-page{min-height:100dvh;height:100dvh;overflow:hidden}
+.workflow-header{height:72px;flex:0 0 72px;padding-inline:18px}
+.header-left>div{min-width:0}.title-line h1{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.header-actions :deep(.el-button){white-space:nowrap}
+.version-trigger{display:flex;align-items:center;gap:7px;margin-top:6px;padding:0;border:0;color:var(--ui-text-secondary);background:transparent;font-size:12px;cursor:pointer}.version-trigger:hover{color:var(--ui-primary)}
+.version-manager{display:grid;gap:12px}.version-manager-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.version-list{display:grid;max-height:280px;overflow:auto;border:1px solid var(--ui-border);border-radius:8px}.version-list button{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:0;border-bottom:1px solid var(--ui-border);color:var(--ui-text-primary);background:#fff;text-align:left;cursor:pointer}.version-list button:last-child{border-bottom:0}.version-list button:hover,.version-list button.active{background:var(--ui-primary-soft)}.version-list button.active{box-shadow:inset 3px 0 0 var(--ui-primary)}.version-list strong,.version-list small{display:block}.version-list small{margin-top:3px;color:var(--ui-text-tertiary);font-size:10px}.version-manager-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.version-manager-actions :deep(.el-button){margin:0}
+.workflow-tabs{height:calc(100dvh - 72px);background:var(--ui-surface-subtle)}.workflow-tabs :deep(.el-tabs__header){height:48px;margin:0;padding:0 24px;border-bottom:1px solid var(--ui-border);background:#fff}.workflow-tabs :deep(.el-tabs__nav-wrap::after){display:none}.workflow-tabs :deep(.el-tabs__item){height:48px}.workflow-tabs :deep(.el-tabs__content){height:calc(100% - 48px)}.workflow-tabs :deep(.el-tab-pane){height:100%}
+.editor-grid{grid-template-columns:minmax(420px,1fr) 390px;height:100%;min-height:0}.workflow-canvas{min-width:0}.property-panel{display:block;min-width:0}.property-title>div:nth-child(2){min-width:0}.property-close{display:none;margin-left:auto}.node-save-actions{position:sticky;z-index:2;bottom:-20px;display:flex;justify-content:flex-end;gap:8px;margin:24px -20px -20px;padding:14px 20px;border-top:1px solid var(--ui-border);background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}
+.resource-tab{height:100%;overflow:auto;padding:28px 32px 40px}.resource-tab-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;max-width:1120px;margin:0 auto 24px}.resource-tab-heading h2{margin:0;font-size:20px}.resource-tab-heading p{margin:6px 0 0;color:var(--ui-text-secondary);font-size:12px}.resource-tab .resource-fields{grid-template-columns:repeat(3,minmax(220px,1fr));max-width:1120px;margin:0 auto}.resource-tab .resource-note{max-width:1120px;margin:24px auto 0}.resource-actions{position:sticky;bottom:-40px;display:flex;justify-content:flex-end;gap:8px;max-width:1184px;margin:32px auto -40px;padding:14px 32px;border-top:1px solid var(--ui-border);background:rgba(237,242,244,.96);backdrop-filter:blur(8px)}
+@media(max-width:1250px){.editor-grid{grid-template-columns:minmax(380px,1fr) 340px}.resource-tab .resource-fields{grid-template-columns:repeat(2,minmax(220px,1fr))}}
+@media(max-width:1023px){.workflow-page{overflow:hidden}.workflow-header{position:relative;z-index:12}.editor-grid{grid-template-columns:1fr;height:100%;min-height:0}.workflow-canvas{min-height:0}.property-panel{position:fixed;z-index:20;top:120px;right:0;bottom:0;width:min(420px,100vw);min-width:0;min-height:0;border-top:0;border-left:1px solid var(--ui-border);box-shadow:-16px 0 40px rgba(19,43,48,.16);transform:translateX(102%);transition:transform var(--ui-transition);pointer-events:none}.property-panel.open{transform:translateX(0);pointer-events:auto}.property-close{display:inline-flex}.resource-tab{padding-inline:20px}}
+@media(max-width:767px){.workflow-header{height:auto;min-height:112px}.title-line h1{max-width:70vw}.workflow-tabs{height:calc(100dvh - 112px)}.workflow-tabs :deep(.el-tabs__header){padding-inline:12px}.resource-tab{padding:20px 14px 32px}.resource-tab .resource-fields{grid-template-columns:1fr}.resource-actions{bottom:-32px;margin-bottom:-32px;padding-inline:14px}.workflow-canvas{min-width:0;min-height:0;padding-inline:10px}.property-panel{top:160px;width:100vw}.flow-column,.flow-node,.flow-empty{width:min(320px,calc(100vw - 32px))}}
 </style>

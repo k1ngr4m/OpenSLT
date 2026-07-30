@@ -36,10 +36,13 @@ from app.services.workflow_core import (
     clone_published_to_draft,
     copy_version_contents,
     create_draft,
+    create_next_version,
+    is_version_head,
     load_version,
     replace_draft,
     resource_map,
     validate_structure,
+    version_heads_query,
     workflow_payload,
 )
 from app.services.workflow_publishing import publish, validate_publish

@@ -191,7 +191,7 @@ async def publish(db: Session, scenario: TestScenario, version: ScenarioWorkflow
         node.config = config
     if scenario.published_workflow_version_id:
         previous = db.get(ScenarioWorkflowVersion, scenario.published_workflow_version_id)
-        if previous:
+        if previous and previous.version_no != version.version_no:
             previous.status = "retired"
     version.status = "published"
     version.published_by = actor_id
