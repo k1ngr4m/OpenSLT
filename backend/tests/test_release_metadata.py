@@ -12,6 +12,7 @@ from app.version import APP_VERSION
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_VERSION = (REPOSITORY_ROOT / "VERSION").read_text(encoding="utf-8").strip()
 sys.path.insert(0, str(REPOSITORY_ROOT / "tools"))
 
 from release_metadata import ReleaseMetadataError, load_release_metadata  # noqa: E402
@@ -20,7 +21,7 @@ from release_metadata import ReleaseMetadataError, load_release_metadata  # noqa
 def test_current_release_metadata_is_valid() -> None:
     metadata = load_release_metadata()
 
-    assert metadata["version"] == "0.2.1"
+    assert metadata["version"] == REPOSITORY_VERSION
     assert metadata["releases"][0]["version"] == APP_VERSION
     assert app.version == APP_VERSION
 
@@ -34,7 +35,7 @@ def test_release_metadata_cli_prints_current_version() -> None:
         check=True,
     )
 
-    assert completed.stdout.strip() == "0.2.1"
+    assert completed.stdout.strip() == REPOSITORY_VERSION
 
 
 def test_release_metadata_rejects_a_mismatched_latest_release(tmp_path: Path) -> None:

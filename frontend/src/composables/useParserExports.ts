@@ -1,5 +1,5 @@
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui/elementPlusServices'
 import { api, errorMessage } from '@/api/client'
 import type { JsonMap, RunDetail, RunStep } from '@/types/run'
 

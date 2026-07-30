@@ -1,6 +1,5 @@
 {
-  "unreleased": [
-  ],
+  "unreleased": [],
   "releases": [
     {
       "version": "0.2.0",
@@ -78,6 +77,10 @@
         {
           "type": "changed",
           "text": "Python 包、API、前端和离线部署包统一使用同一版本号。"
+        },
+        {
+          "type": "changed",
+          "text": "优化前端资源按需加载与分包，减少首屏资源体积并提升缓存复用。"
         }
       ]
     },

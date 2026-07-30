@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ArrowDown, ArrowRight, Bottom, CopyDocument, Delete, Plus, Top } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox } from '@/ui/elementPlusServices'
 import type { XmlNode } from '@/types/orderConfig'
 import { cloneTree, createElement, elementChildren, getAttribute, isSensitiveNode, nodeLabel, setAttribute } from '@/utils/orderConfigXml'
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui/elementPlusServices'
 import { Plus, Search } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import type { ApiUser, ApiUserCreate } from '@/types/api'

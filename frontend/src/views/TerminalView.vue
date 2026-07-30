@@ -2,7 +2,7 @@
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui/elementPlusServices'
 import { api, errorMessage } from '@/api/client'
 import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'

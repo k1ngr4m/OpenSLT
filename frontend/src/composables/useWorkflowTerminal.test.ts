@@ -4,7 +4,7 @@ import { useWorkflowTerminal } from '@/composables/useWorkflowTerminal'
 import type { RunDetail, RunStep } from '@/types/run'
 
 const message = vi.hoisted(() => ({ error: vi.fn(), info: vi.fn(), success: vi.fn() }))
-vi.mock('element-plus', () => ({ ElMessage: message }))
+vi.mock('@/ui/elementPlusServices', () => ({ ElMessage: message }))
 vi.mock('@/components/SshTerminalPanel.vue', () => ({ default: {} }))
 
 const terminalStep = {

@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), put: vi.fn() },
   errorMessage: (error: unknown) => String(error),
 }))
-vi.mock('element-plus', () => ({ ElMessage: message }))
+vi.mock('@/ui/elementPlusServices', () => ({ ElMessage: message }))
 
 function parserStep(): RunStep {
   return {

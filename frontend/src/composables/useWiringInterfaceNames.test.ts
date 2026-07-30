@@ -11,7 +11,7 @@ vi.mock('@/api/client', () => ({
   api: { put: vi.fn() },
   errorMessage: (error: unknown) => String(error),
 }))
-vi.mock('element-plus', () => ({ ElMessage: message }))
+vi.mock('@/ui/elementPlusServices', () => ({ ElMessage: message }))
 
 function wiringStep(status: RunStep['status'] = 'pending', businessCode = 'fut_mm'): RunStep {
   return {

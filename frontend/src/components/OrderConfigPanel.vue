@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { CopyDocument, Delete, Document, EditPen, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from '@/ui/elementPlusServices'
 import { api, errorMessage } from '@/api/client'
 import OrderConfigNodeEditor from '@/components/OrderConfigNodeEditor.vue'
 import type { OrderConfigDetail, OrderConfigFile, XmlNode } from '@/types/orderConfig'

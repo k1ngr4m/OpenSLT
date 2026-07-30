@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from '@/ui/elementPlusServices'
 import { ArrowLeft, Bottom, Check, Close, Connection, Delete, Document, Edit, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'

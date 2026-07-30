@@ -10,7 +10,7 @@ vi.mock('@/api/client', () => ({
   api: { get: vi.fn(), post: vi.fn() },
   errorMessage: (error: unknown) => String(error),
 }))
-vi.mock('element-plus', () => ({
+vi.mock('@/ui/elementPlusServices', () => ({
   ElMessage: message,
   ElMessageBox: { confirm },
 }))

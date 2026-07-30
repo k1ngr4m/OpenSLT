@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { api, errorMessage } from '@/api/client'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui/elementPlusServices'
 import { CopyDocument, Download, RefreshRight, Search, View } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import type { ApiAuditLog, ApiLogDetail, ApiLogSearchPage, ApiLogSummary } from '@/types/api'

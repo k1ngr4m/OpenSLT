@@ -1,5 +1,5 @@
 import { computed, nextTick, ref, type ComputedRef, type Ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from '@/ui/elementPlusServices'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
 import type {
   JsonMap,
