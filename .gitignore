@@ -20,4 +20,5 @@ frontend/vite.config.d.ts
 *.sqlite3
 build/
 /.playwright/
+/.playwright-cli/
 /docs/
