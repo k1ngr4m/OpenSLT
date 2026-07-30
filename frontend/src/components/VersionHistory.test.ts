@@ -22,7 +22,7 @@ describe('VersionHistory', () => {
       },
     })
 
-    expect(wrapper.get('.version-trigger').text()).toBe('v0.2.1')
+    expect(wrapper.get('.version-trigger').text()).toBe('v0.2.0')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 
     await wrapper.get('.version-trigger').trigger('click')
@@ -32,7 +32,7 @@ describe('VersionHistory', () => {
     expect(dialog.text()).toContain('版本更新说明')
     expect(dialog.text()).toContain('当前版本')
     expect(dialog.text()).toContain('2026-07-29')
-    expect(dialog.text().indexOf('v0.2.1')).toBeLessThan(dialog.text().indexOf('v0.2.0'))
+    expect(dialog.text().indexOf('v0.2.0')).toBeLessThan(dialog.text().indexOf('v0.2.0'))
 
     const currentReleaseChanges = dialog.findAll('.release-entry')[0].findAll('li')
     expect(currentReleaseChanges.map(change => change.get('.change-type').text())).toEqual([
