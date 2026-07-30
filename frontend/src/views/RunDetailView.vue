@@ -65,6 +65,9 @@ const {
   handleWorkflowTerminalCommand,
   handleWorkflowTerminalError,
   handleWorkflowTerminalStatus,
+  marketResource,
+  marketTerminalSubtitle,
+  marketWorkflowTerminalPanel,
   orderResource,
   orderTerminalSubtitle,
   orderWorkflowTerminalPanel,
@@ -483,6 +486,19 @@ watch(
                   @status="message => handleWorkflowTerminalStatus('rem', message)"
                   @error="message => handleWorkflowTerminalError('rem', message)"
                   @workflow-command="message => handleWorkflowTerminalCommand('rem', message)"
+                />
+                <SshTerminalPanel
+                  v-if="marketResource"
+                  v-show="workflowTerminalKind === 'market'"
+                  ref="marketWorkflowTerminalPanel"
+                  :resource-id="marketResource.id"
+                  :title="marketResource.name"
+                  :subtitle="marketTerminalSubtitle"
+                  :active="workflowTerminalKind === 'market'"
+                  :min-height="320"
+                  @status="message => handleWorkflowTerminalStatus('market', message)"
+                  @error="message => handleWorkflowTerminalError('market', message)"
+                  @workflow-command="message => handleWorkflowTerminalCommand('market', message)"
                 />
                 <SshTerminalPanel
                   v-if="slnicResource"

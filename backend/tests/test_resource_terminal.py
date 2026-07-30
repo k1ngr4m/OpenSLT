@@ -3,6 +3,7 @@ from __future__ import annotations
 import typing
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cryptography.fernet import Fernet
@@ -15,6 +16,7 @@ from app.models import AuditLog, Resource, ScenarioWorkflowNode, TestRun as RunM
 from app.services import order_configs
 from app.services import terminal as terminal_service
 from app.services import workflow_contracts, workflows
+from app.services.market_scripts import market_script_service
 from app.services.run_state import transition_run, transition_step
 from app.services.workflows import WorkflowError
 from conftest import create_plan_scenario, create_resource, publish_workflow
@@ -26,6 +28,29 @@ def access_token(headers: typing.Dict[str, str]) -> str:
 
 def terminal_url(resource_id: int, token: str) -> str:
     return f"/api/v1/ws/resources/{resource_id}/terminal?token={token}"
+
+
+def dispatch_terminal_step(
+    client: TestClient,
+    resource_id: int,
+    token: str,
+    run_id: int,
+    step_id: int,
+    operation: str = "start",
+) -> dict:
+    with client.websocket_connect(terminal_url(resource_id, token)) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "remote-ready" in websocket.receive_json()["data"]
+        websocket.send_json(
+            {
+                "type": "workflow_step_command",
+                "run_id": run_id,
+                "step_id": step_id,
+                "operation": operation,
+            }
+        )
+        return websocket.receive_json()
 
 
 def slnic_start_nodes(commands: typing.Optional[typing.List[str]] = None) -> list[dict]:
@@ -46,6 +71,23 @@ def rem_start_nodes(commands: typing.Optional[typing.List[str]] = None) -> list[
             "node_type": "rem_startup",
             "name": "启动 REM 柜台",
             "config": {} if commands is None else {"commands": commands},
+        }
+    ]
+
+
+MARKET_SCRIPTS = [
+    {"filename": "prepare.sh", "checksum": "a" * 64},
+    {"filename": "start_all.sh", "checksum": "b" * 64},
+]
+
+
+def market_start_nodes() -> list[dict]:
+    return [
+        {
+            "node_key": "market-start",
+            "node_type": "market_startup",
+            "name": "启动模拟市场",
+            "config": {"scripts": MARKET_SCRIPTS},
         }
     ]
 
@@ -166,6 +208,48 @@ def create_rem_start_run(
         resource_ids=[resource["id"]],
     )
     publish_workflow(client, headers, scenario, [resource["id"]], rem_start_nodes(commands))
+    created = client.post(
+        "/api/v1/runs",
+        headers=headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": [resource["id"]],
+            "timeout_minutes": 30,
+        },
+    )
+    assert created.status_code == 201, created.text
+    started = client.post(f"/api/v1/runs/{created.json()['id']}/start", headers=headers)
+    assert started.status_code == 200, started.text
+    return resource, client.get(f"/api/v1/runs/{created.json()['id']}", headers=headers).json()
+
+
+def create_market_start_run(
+    client: TestClient,
+    headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[dict, dict]:
+    async def valid_script_details(_resource, filenames, **_kwargs):
+        checksums = {item["filename"]: item["checksum"] for item in MARKET_SCRIPTS}
+        return [
+            {
+                "name": filename,
+                "checksum": checksums[filename],
+                "executable": True,
+                "path": f"/tmp/openslt/{filename}",
+            }
+            for filename in filenames
+        ]
+
+    monkeypatch.setattr(market_script_service, "read_many", valid_script_details)
+    resource = create_resource(client, headers, "Market-Terminal", resource_type="market")
+    plan, scenario = create_plan_scenario(
+        client,
+        headers,
+        required_types=["market"],
+        resource_ids=[resource["id"]],
+    )
+    publish_workflow(client, headers, scenario, [resource["id"]], market_start_nodes())
     created = client.post(
         "/api/v1/runs",
         headers=headers,
@@ -347,13 +431,29 @@ class FakeProcess:
 class FakeSFTP:
     def __init__(self) -> None:
         self.gets: typing.List[typing.Tuple[str, str]] = []
+        self.lstats: typing.List[str] = []
+        self.attrs_by_path: typing.Dict[str, object] = {}
+        self.exited = False
+
+    async def lstat(self, remote_path: str):
+        self.lstats.append(remote_path)
+        value = self.attrs_by_path.get(
+            remote_path,
+            SimpleNamespace(
+                type=terminal_service.asyncssh.FILEXFER_TYPE_REGULAR,
+                permissions=0o755,
+            ),
+        )
+        if isinstance(value, Exception):
+            raise value
+        return value
 
     async def get(self, remote_path: str, local_path: str) -> None:
         self.gets.append((remote_path, local_path))
         Path(local_path).write_bytes(b"merged-pcapng")
 
     def exit(self) -> None:
-        return None
+        self.exited = True
 
 
 class FakeConnection:
@@ -585,6 +685,215 @@ def test_terminal_workflow_command_dispatches_rem_snapshot_in_shared_shell(
     assert summary["remote_workdir"] == "/tmp/openslt"
     assert summary["commands"] == commands
     assert summary["exit_code"] is None
+
+
+def test_terminal_workflow_command_dispatches_market_snapshot_in_order(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_market_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    connection = FakeConnection()
+
+    with SessionLocal() as db:
+        workflow_node = db.get(ScenarioWorkflowNode, step["workflow_node_id"])
+        workflow_node.config = {
+            "scripts": [{"filename": "mutated.sh", "checksum": "c" * 64}]
+        }
+        db.commit()
+
+    async def fake_connect(**_):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    response = dispatch_terminal_step(
+        client,
+        resource["id"],
+        access_token(admin_headers),
+        run["id"],
+        step["id"],
+    )
+
+    commands = ["./prepare.sh", "./start_all.sh"]
+    expected = terminal_service._build_chained_terminal_command("/tmp/openslt", commands)
+    assert response["status"] == "dispatched"
+    assert response["command"] == expected
+    assert response["commands"] == commands
+    assert response["scripts"] == ["prepare.sh", "start_all.sh"]
+    assert "./prepare.sh &&\n./start_all.sh" in expected
+    assert connection.process.stdin.writes == [expected + "\r"]
+    assert connection.sftp.lstats == [
+        "/tmp/openslt/prepare.sh",
+        "/tmp/openslt/start_all.sh",
+    ]
+    assert connection.sftp.exited is True
+
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    summary = updated["steps"][0]["result_summary"]
+    assert updated["status"] == "awaiting_step_completion"
+    assert summary["mode"] == "terminal"
+    assert summary["scripts"] == ["prepare.sh", "start_all.sh"]
+    assert summary["commands"] == commands
+    assert summary["exit_code"] is None
+
+
+@pytest.mark.parametrize(
+    ("script_state", "error_code"),
+    [
+        (FileNotFoundError("missing"), "MARKET_SCRIPT_NOT_FOUND"),
+        (
+            SimpleNamespace(
+                type=terminal_service.asyncssh.FILEXFER_TYPE_SYMLINK,
+                permissions=0o755,
+            ),
+            "MARKET_SCRIPT_INVALID",
+        ),
+        (
+            SimpleNamespace(
+                type=terminal_service.asyncssh.FILEXFER_TYPE_REGULAR,
+                permissions=0o644,
+            ),
+            "MARKET_SCRIPT_NOT_EXECUTABLE",
+        ),
+    ],
+)
+def test_terminal_market_preflight_rejects_invalid_script_metadata(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    script_state: object,
+    error_code: str,
+):
+    resource, run = create_market_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    connection = FakeConnection()
+    connection.sftp.attrs_by_path["/tmp/openslt/prepare.sh"] = script_state
+
+    async def fake_connect(**_):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    response = dispatch_terminal_step(
+        client,
+        resource["id"],
+        access_token(admin_headers),
+        run["id"],
+        step["id"],
+    )
+
+    assert response["status"] == "failed"
+    assert response["code"] == error_code
+    assert connection.process.stdin.writes == []
+    assert connection.sftp.exited is True
+    unchanged = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert unchanged["status"] == "awaiting_step_start"
+    assert unchanged["steps"][0]["status"] == "pending"
+
+
+def test_terminal_market_rejects_resource_outside_run(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_market_start_run(client, admin_headers, monkeypatch)
+    other = create_resource(client, admin_headers, "Market-Other", resource_type="market")
+    connection = FakeConnection()
+
+    async def fake_connect(**_):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    response = dispatch_terminal_step(
+        client,
+        other["id"],
+        access_token(admin_headers),
+        run["id"],
+        run["steps"][0]["id"],
+    )
+
+    assert response["status"] == "failed"
+    assert response["code"] == "INVALID_RESOURCE"
+    assert connection.sftp.lstats == []
+    assert connection.process.stdin.writes == []
+
+
+def test_terminal_market_retry_revalidates_and_dispatches_all_scripts(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_market_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    connections: typing.List[FakeConnection] = []
+
+    async def fake_connect(**_):
+        connection = FakeConnection()
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    started = dispatch_terminal_step(
+        client,
+        resource["id"],
+        access_token(admin_headers),
+        run["id"],
+        step["id"],
+    )
+    assert started["status"] == "dispatched"
+
+    with SessionLocal() as db:
+        stored = db.get(RunModel, run["id"])
+        transition_run(stored, "awaiting_step_retry")
+        transition_step(stored.steps[0], "failed")
+        db.commit()
+
+    retried = dispatch_terminal_step(
+        client,
+        resource["id"],
+        access_token(admin_headers),
+        run["id"],
+        step["id"],
+        "retry",
+    )
+    assert retried["status"] == "dispatched"
+    assert len(connections) == 2
+    assert connections[1].sftp.lstats == connections[0].sftp.lstats
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["steps"][0]["retry_count"] == 1
+
+
+def test_terminal_market_write_failure_enters_retry_state(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = create_market_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    connection = FakeConnection()
+
+    def fail_write(_data: str) -> None:
+        raise BrokenPipeError("terminal closed")
+
+    connection.process.stdin.write = fail_write
+
+    async def fake_connect(**_):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+    response = dispatch_terminal_step(
+        client,
+        resource["id"],
+        access_token(admin_headers),
+        run["id"],
+        step["id"],
+    )
+
+    assert response["code"] == "SSH_COMMAND_DISPATCH_FAILED"
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_retry"
+    assert updated["steps"][0]["status"] == "failed"
+    assert updated["steps"][0]["result_summary"]["dispatch_error"] == response["code"]
 
 
 def test_terminal_workflow_command_dispatches_slnic_stop_and_waits_for_completion(

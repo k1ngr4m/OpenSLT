@@ -50,6 +50,7 @@ export function useRunActions(options: RunActionsOptions) {
     try {
       const terminalNodeTypes = [
         'rem_startup',
+        'market_startup',
         'slnic_start_capture',
         'slnic_stop_capture',
         'slnic_merge_capture',

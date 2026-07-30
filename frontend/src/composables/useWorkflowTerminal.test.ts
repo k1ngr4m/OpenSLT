@@ -43,6 +43,24 @@ function remRunDetail(): RunDetail {
   } as RunDetail
 }
 
+const marketStep = {
+  ...terminalStep,
+  id: 9,
+  code: 'market-start',
+  name: '启动模拟市场',
+  node_type: 'market_startup',
+} as RunStep
+
+function marketRunDetail(): RunDetail {
+  return {
+    ...runDetail(),
+    steps: [marketStep],
+    config_snapshot: {
+      resources: [{ id: 5, name: 'Market', type: 'market', host: '10.0.0.5' }],
+    },
+  } as RunDetail
+}
+
 describe('useWorkflowTerminal', () => {
   it('queues a command while disconnected and dispatches it after connection', async () => {
     const selectedStepId = ref<number | null>(null)
@@ -113,6 +131,45 @@ describe('useWorkflowTerminal', () => {
     expect(sendWorkflowStepCommand).toHaveBeenCalledWith({
       run_id: 11,
       step_id: 8,
+      operation: 'start',
+    })
+  })
+
+  it('selects the market panel and dispatches the queued command after connection', async () => {
+    const selectedStepId = ref<number | null>(null)
+    const terminal = useWorkflowTerminal({
+      active: ref('logs'),
+      manualStepSelection: ref(true),
+      reload: vi.fn().mockResolvedValue(undefined),
+      run: ref(marketRunDetail()),
+      runId: 11,
+      selectedStep: computed(() => marketStep),
+      selectedStepId,
+    })
+    const sendWorkflowStepCommand = vi.fn().mockReturnValue(true)
+    const panel = {
+      connected: false,
+      connecting: false,
+      connect: vi.fn(),
+      sendWorkflowStepCommand,
+    }
+    terminal.marketWorkflowTerminalPanel.value = panel as never
+
+    expect(terminal.workflowTerminalKind.value).toBe('market')
+    expect(terminal.workflowTerminalResource.value?.id).toBe(5)
+    expect(terminal.workflowTerminalTitle.value).toBe('模拟市场 SSH 终端')
+    expect(terminal.workflowTerminalDescription.value).toContain('按顺序')
+
+    await terminal.runWorkflowStepInTerminal(marketStep, 'start')
+    await nextTick()
+    expect(panel.connect).toHaveBeenCalled()
+    expect(selectedStepId.value).toBe(9)
+
+    panel.connected = true
+    terminal.handleWorkflowTerminalStatus('market', { status: 'connected' })
+    expect(sendWorkflowStepCommand).toHaveBeenCalledWith({
+      run_id: 11,
+      step_id: 9,
       operation: 'start',
     })
   })

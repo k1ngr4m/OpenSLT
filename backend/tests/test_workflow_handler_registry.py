@@ -13,7 +13,7 @@ def test_registry_covers_every_supported_node_type() -> None:
 def test_registry_exposes_terminal_capabilities() -> None:
     assert registry.get("order_preparation").terminal_kind is None
     assert registry.get("rem_startup").terminal_kind == "rem"
-    assert registry.get("market_startup").terminal_kind is None
+    assert registry.get("market_startup").terminal_kind == "market"
     assert registry.get("slnic_start_capture").terminal_kind == "slnic"
     assert registry.get("parser_parse").terminal_kind is None
 

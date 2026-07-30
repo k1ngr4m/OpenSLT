@@ -214,10 +214,32 @@ export function useRunStepPresentation(
       ]
     }
     if (step.node_type === 'market_startup') {
+      const configuredScripts = Array.isArray(selectedConfig.value.scripts)
+        ? selectedConfig.value.scripts.filter(isJsonMap).map(script => stringValue(script.filename, '')).filter(Boolean)
+        : []
+      if (result.mode === 'terminal') {
+        const scripts = Array.isArray(result.scripts)
+          ? result.scripts.filter(script => typeof script === 'string') as string[]
+          : []
+        const commands = Array.isArray(result.commands)
+          ? result.commands.filter(command => typeof command === 'string') as string[]
+          : []
+        return [
+          { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
+          { label: '执行模式', value: 'SSH 终端' },
+          { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
+          { label: '已下发脚本', value: `${scripts.length}/${configuredScripts.length}` },
+          { label: '下发顺序', value: (commands.length ? commands : scripts).join(' → ') || '-', mono: true },
+          { label: '退出码', value: '未知' },
+          { label: '下发人 ID', value: optionalNumber(result.dispatched_by) ?? '-' },
+          { label: '下发时间', value: formatDate(optionalString(result.dispatched_at)) },
+        ]
+      }
       const commands = Array.isArray(result.commands) ? result.commands.filter(isJsonMap) : []
-      const expected = Array.isArray(selectedConfig.value.scripts) ? selectedConfig.value.scripts.length : commands.length
+      const expected = configuredScripts.length || commands.length
       return [
         { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
+        { label: '执行模式', value: '后端自动执行' },
         { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
         { label: '完成脚本', value: `${commands.filter(command => command.exit_code === 0).length}/${expected}` },
         { label: '执行顺序', value: commands.map(command => stringValue(command.script, '')).filter(Boolean).join(' → ') || '-', mono: true },

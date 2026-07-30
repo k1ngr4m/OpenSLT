@@ -6,7 +6,7 @@ from app.services.workflow_handlers.base import WorkflowExecutionContext
 
 class MarketStartupHandler:
     node_types = ("market_startup",)
-    terminal_kind = None
+    terminal_kind = "market"
 
     async def execute(self, context: WorkflowExecutionContext) -> dict:
         def log_command(result: dict) -> None:

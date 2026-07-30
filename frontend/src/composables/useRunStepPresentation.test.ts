@@ -201,8 +201,42 @@ describe('useRunStepPresentation contract preview', () => {
     ])
     expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
       { label: '资源', value: 'Market-01' },
+      { label: '执行模式', value: '后端自动执行' },
       { label: '完成脚本', value: '2/2' },
       { label: '执行顺序', value: 'prepare.sh → start_all.sh', mono: true },
+    ]))
+  })
+
+  it('presents market scripts dispatched through the SSH terminal', () => {
+    const step = {
+      ...orderStep(),
+      node_type: 'market_startup',
+      config_snapshot: {
+        scripts: [
+          { filename: 'prepare.sh', checksum: 'a' },
+          { filename: 'start_all.sh', checksum: 'b' },
+        ],
+      },
+      result_summary: {
+        mode: 'terminal',
+        resource_name: 'Market-01',
+        remote_workdir: '/home/user0/rem_mkt/cffex_2.0',
+        scripts: ['prepare.sh', 'start_all.sh'],
+        commands: ['./prepare.sh', './start_all.sh'],
+        exit_code: null,
+        dispatched_by: 17,
+        dispatched_at: '2026-07-30T10:00:00+08:00',
+      },
+    } as RunStep
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const presentation = useRunStepPresentation(run, computed(() => step), {})
+
+    expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
+      { label: '执行模式', value: 'SSH 终端' },
+      { label: '已下发脚本', value: '2/2' },
+      { label: '下发顺序', value: './prepare.sh → ./start_all.sh', mono: true },
+      { label: '退出码', value: '未知' },
+      { label: '下发人 ID', value: 17 },
     ]))
   })
 

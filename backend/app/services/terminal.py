@@ -28,7 +28,7 @@ from app.services.order_sessions import order_session_name
 from app.services.run_state import transition_run, transition_step
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.slnic import SLNIC_TERMINAL_COMMANDS
-from app.workflow_node_configs import ShellCommandsConfig, parse_node_config
+from app.workflow_node_configs import MarketStartupConfig, ShellCommandsConfig, parse_node_config
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
@@ -219,6 +219,93 @@ def _build_terminal_command(workdir: str, commands: typing.Sequence[str]) -> str
     return f"cd {shlex.quote(workdir)} && {{\n{body}\n}}"
 
 
+def _build_chained_terminal_command(workdir: str, commands: typing.Sequence[str]) -> str:
+    body = " &&\n".join(commands)
+    return f"cd {shlex.quote(workdir)} && {{\n{body}\n}}"
+
+
+def _record_terminal_command_dispatch(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run: TestRun,
+    step: RunStep,
+    retrying: bool,
+    action: str,
+    workdir: str,
+    commands: typing.Sequence[str],
+    command: str,
+    result_extra: typing.Optional[dict] = None,
+    response_extra: typing.Optional[dict] = None,
+) -> typing.Tuple[str, dict]:
+    now = beijing_now()
+    command_list = list(commands)
+    if retrying:
+        step.retry_count += 1
+    transition_step(step, "waiting")
+    step.progress = 100
+    step.started_at = now
+    step.finished_at = None
+    step.duration_ms = 0
+    step.error_message = None
+    step.result_summary = {
+        "resource_id": resource.id,
+        "resource_name": resource.name,
+        "remote_workdir": workdir,
+        "commands": command_list,
+        "command": command,
+        "mode": "terminal",
+        "exit_code": None,
+        "dispatched_by": actor_id,
+        "dispatched_at": now.isoformat(),
+        **(result_extra or {}),
+    }
+    transition_run(run, "awaiting_step_completion")
+    run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
+    run.error_code = None
+    run.error_message = None
+    append_log(
+        db,
+        run,
+        "workflow.step_retried" if retrying else "workflow.step_started",
+        f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发{action}指令",
+        step=step,
+        source="terminal",
+        detail={"retry_count": step.retry_count, "mode": "terminal", "action": action},
+    )
+    append_log(
+        db,
+        run,
+        "workflow.step_executed",
+        f"{step.name}{action}指令已在终端下发，等待手动完成",
+        step=step,
+        source="terminal",
+        detail={
+            "command": command,
+            "commands": command_list,
+            "remote_workdir": workdir,
+            "resource_id": resource.id,
+            "mode": "terminal",
+            "action": action,
+            **(response_extra or {}),
+        },
+        log_type="remote_command",
+    )
+    db.commit()
+    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+    return command, {
+        "type": "workflow_command",
+        "status": "dispatched",
+        "command": command,
+        "run_id": run.id,
+        "step_id": step.id,
+        "resource_id": resource.id,
+        "commands": command_list,
+        **(response_extra or {}),
+    }
+
+
 def _dispatch_shell_terminal_command(
     *,
     db,
@@ -249,73 +336,101 @@ def _dispatch_shell_terminal_command(
     if not config.commands:
         return None, _workflow_command_error("SHELL_COMMANDS_REQUIRED", "工作流节点至少需要一条命令")
 
-    now = beijing_now()
     root = resource.remote_path.strip().rstrip("/") or "/"
     suffix = command_meta.get("workdir_suffix")
     workdir = posixpath.join(root, str(suffix)) if suffix else root
     action = str(command_meta["action"])
     commands = list(config.commands)
     command = _build_terminal_command(workdir, commands)
-    if retrying:
-        step.retry_count += 1
-    transition_step(step, "waiting")
-    step.progress = 100
-    step.started_at = now
-    step.finished_at = None
-    step.duration_ms = 0
-    step.error_message = None
-    step.result_summary = {
-        "resource_id": resource.id,
-        "resource_name": resource.name,
-        "remote_workdir": workdir,
-        "commands": commands,
-        "command": command,
-        "mode": "terminal",
-        "exit_code": None,
-        "dispatched_by": actor_id,
-        "dispatched_at": now.isoformat(),
-    }
-    transition_run(run, "awaiting_step_completion")
-    run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
-    run.error_code = None
-    run.error_message = None
-    append_log(
-        db,
-        run,
-        "workflow.step_retried" if retrying else "workflow.step_started",
-        f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端下发{action}指令",
+    return _record_terminal_command_dispatch(
+        db=db,
+        actor_id=actor_id,
+        resource=resource,
+        run=run,
         step=step,
-        source="terminal",
-        detail={"retry_count": step.retry_count, "mode": "terminal", "action": action},
+        retrying=retrying,
+        action=action,
+        workdir=workdir,
+        commands=commands,
+        command=command,
     )
-    append_log(
-        db,
-        run,
-        "workflow.step_executed",
-        f"{step.name}{action}指令已在终端下发，等待手动完成",
+
+
+async def _dispatch_market_terminal_command(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    connection: asyncssh.SSHClientConnection,
+    run: TestRun,
+    step: RunStep,
+    retrying: bool,
+) -> typing.Tuple[typing.Union[str, None], dict]:
+    if resource.resource_type != "market":
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是模拟市场资源")
+    if not resource.remote_path.strip():
+        return None, _workflow_command_error(
+            "MARKET_REMOTE_PATH_REQUIRED", "模拟市场资源未配置远端路径"
+        )
+    try:
+        config = typing.cast(
+            MarketStartupConfig,
+            parse_node_config(step.node_type, step.config_snapshot or {}),
+        )
+    except Exception:
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "模拟市场节点脚本配置无效")
+    if not config.scripts:
+        return None, _workflow_command_error(
+            "MARKET_SCRIPTS_REQUIRED", "启动模拟市场至少需要一个脚本"
+        )
+
+    root = resource.remote_path.strip().rstrip("/") or "/"
+    sftp = None
+    try:
+        sftp = await connection.start_sftp_client()
+        for selection in config.scripts:
+            path = posixpath.join(root, selection.filename)
+            try:
+                attrs = await sftp.lstat(path)
+            except (asyncssh.SFTPNoSuchFile, FileNotFoundError):
+                return None, _workflow_command_error(
+                    "MARKET_SCRIPT_NOT_FOUND", f"模拟市场脚本 {selection.filename} 不存在"
+                )
+            if attrs.type != asyncssh.FILEXFER_TYPE_REGULAR:
+                return None, _workflow_command_error(
+                    "MARKET_SCRIPT_INVALID", f"模拟市场脚本 {selection.filename} 必须是普通文件"
+                )
+            if not (attrs.permissions or 0) & 0o111:
+                return None, _workflow_command_error(
+                    "MARKET_SCRIPT_NOT_EXECUTABLE",
+                    f"模拟市场脚本 {selection.filename} 没有执行权限",
+                )
+    except (asyncssh.Error, OSError) as exc:
+        return None, _workflow_command_error(
+            "MARKET_SCRIPT_SFTP_FAILED", f"检查远端模拟市场脚本失败：{exc}"
+        )
+    finally:
+        if sftp:
+            with suppress(Exception):
+                sftp.exit()
+
+    scripts = [selection.filename for selection in config.scripts]
+    commands = [shlex.quote(f"./{filename}") for filename in scripts]
+    command = _build_chained_terminal_command(root, commands)
+    return _record_terminal_command_dispatch(
+        db=db,
+        actor_id=actor_id,
+        resource=resource,
+        run=run,
         step=step,
-        source="terminal",
-        detail={
-            "command": command,
-            "commands": commands,
-            "remote_workdir": workdir,
-            "resource_id": resource.id,
-            "mode": "terminal",
-            "action": action,
-        },
-        log_type="remote_command",
+        retrying=retrying,
+        action="启动",
+        workdir=root,
+        commands=commands,
+        command=command,
+        result_extra={"scripts": scripts},
+        response_extra={"scripts": scripts},
     )
-    db.commit()
-    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
-    return command, {
-        "type": "workflow_command",
-        "status": "dispatched",
-        "command": command,
-        "run_id": run.id,
-        "step_id": step.id,
-        "resource_id": resource.id,
-        "commands": commands,
-    }
 
 
 async def _dispatch_order_preparation_command(
@@ -447,6 +562,7 @@ async def _dispatch_workflow_step_command(
     *,
     actor_id: int,
     resource: TerminalResource,
+    connection: asyncssh.SSHClientConnection,
     run_id: object,
     step_id: object,
     operation: object,
@@ -469,6 +585,16 @@ async def _dispatch_workflow_step_command(
                 db=db,
                 actor_id=actor_id,
                 resource=resource,
+                run=run,
+                step=step,
+                retrying=retrying,
+            )
+        if terminal_kind == "market":
+            return await _dispatch_market_terminal_command(
+                db=db,
+                actor_id=actor_id,
+                resource=resource,
+                connection=connection,
                 run=run,
                 step=step,
                 retrying=retrying,
@@ -550,6 +676,7 @@ def _record_workflow_command_dispatch_failure(
 async def _receive_remote(
     websocket: WebSocket,
     process: asyncssh.SSHClientProcess,
+    connection: asyncssh.SSHClientConnection,
     *,
     actor_id: int,
     resource: TerminalResource,
@@ -574,6 +701,7 @@ async def _receive_remote(
             command, response = await _dispatch_workflow_step_command(
                 actor_id=actor_id,
                 resource=resource,
+                connection=connection,
                 run_id=message.get("run_id"),
                 step_id=message.get("step_id"),
                 operation=message.get("operation"),
@@ -631,7 +759,15 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, actor_id
         )
         await _send(websocket, {"type": "status", "status": "connected", "message": "SSH 已连接"})
         on_connected()
-        receiver = asyncio.create_task(_receive_remote(websocket, process, actor_id=actor_id, resource=resource))
+        receiver = asyncio.create_task(
+            _receive_remote(
+                websocket,
+                process,
+                connection,
+                actor_id=actor_id,
+                resource=resource,
+            )
+        )
         sender = asyncio.create_task(_send_remote_output(websocket, process))
         done, pending = await asyncio.wait({receiver, sender}, return_when=asyncio.FIRST_COMPLETED)
         reason = next(iter(done)).result()
