@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import shlex
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
+from app.core.database import SessionLocal
+from app.models import Resource, ScenarioWorkflowNode
 from app.services import workflows
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
@@ -30,12 +36,12 @@ def slnic_nodes() -> list[dict]:
     ]
 
 
-def create_slnic_run(client, headers):
+def create_slnic_run(client, headers, nodes=None):
     resource = create_resource(client, headers, "SLNIC-01", resource_type="slnic")
     plan, scenario = create_plan_scenario(
         client, headers, required_types=["slnic"], resource_ids=[resource["id"]]
     )
-    publish_workflow(client, headers, scenario, [resource["id"]], slnic_nodes())
+    publish_workflow(client, headers, scenario, [resource["id"]], nodes or slnic_nodes())
     response = client.post(
         "/api/v1/runs",
         headers=headers,
@@ -106,7 +112,78 @@ def test_slnic_publish_allows_any_node_type_sequence(client, admin_headers):
     assert published.status_code == 200, published.text
 
 
-def test_remote_slnic_run_executes_fixed_commands_and_downloads(
+@pytest.mark.parametrize("node_index", [0, 1, 2])
+def test_empty_slnic_commands_can_be_saved_but_not_published(
+    client, admin_headers, node_index
+):
+    resource = create_resource(client, admin_headers, "SLNIC-empty", resource_type="slnic")
+    _, scenario = create_plan_scenario(
+        client, admin_headers, required_types=["slnic"], resource_ids=[resource["id"]]
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    node = slnic_nodes()[node_index]
+    node["config"] = {"commands": [" ", "\n"]}
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [resource["id"]],
+            "nodes": [node],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["draft"]["nodes"][0]["config"]["commands"] == []
+    assert {item["field"] for item in saved.json()["validation_errors"]} == {"commands"}
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers
+    )
+    assert published.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("is_enabled", False, "场景资源池缺少已启用的 SLNIC 资源"),
+        ("remote_path", "", "SLNIC 资源未配置远端路径"),
+    ],
+)
+def test_slnic_publish_rechecks_resource_state(
+    client, admin_headers, field, value, message
+):
+    resource = create_resource(client, admin_headers, f"SLNIC-{field}", resource_type="slnic")
+    _, scenario = create_plan_scenario(
+        client, admin_headers, required_types=["slnic"], resource_ids=[resource["id"]]
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [resource["id"]],
+            "nodes": [slnic_nodes()[0]],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    with SessionLocal() as db:
+        stored = db.get(Resource, resource["id"])
+        setattr(stored, field, value)
+        db.commit()
+
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish", headers=admin_headers
+    )
+    assert published.status_code == 422, published.text
+    assert message in {item["message"] for item in published.json()["errors"]}
+
+
+def test_remote_slnic_run_executes_configured_commands_and_downloads(
     client, admin_headers, monkeypatch
 ):
     commands = []
@@ -151,7 +228,15 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
         return connection
 
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
-    resource, _, run = create_slnic_run(client, admin_headers)
+    nodes = slnic_nodes()
+    nodes[0]["config"] = {
+        "commands": ["export MODE=shared", "printf '%s' \"$MODE\""],
+    }
+    resource, _, run = create_slnic_run(client, admin_headers, nodes)
+    with SessionLocal() as db:
+        workflow_node = db.get(ScenarioWorkflowNode, run["steps"][0]["workflow_node_id"])
+        workflow_node.config = {"commands": ["printf mutated"]}
+        db.commit()
     started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
     assert started.status_code == 200, started.text
     completed = None
@@ -168,13 +253,16 @@ def test_remote_slnic_run_executes_fixed_commands_and_downloads(
     assert all(connection.closed for connection in connections)
     assert connections[-1].sftp.closed is True
     assert all(options["password"] == "secret" for options in connect_options)
-    assert commands[0] == "cd /tmp/openslt/tcpdump && ./start_slnic_dump.sh"
-    assert commands[1] == "cd /tmp/openslt/tcpdump && ./stop_slnic_dump.sh"
-    assert commands[2] == "cd /tmp/openslt/tcpdump && ./pcap_merge_tool slnic*"
-    assert "merge_pacp.pcap" in commands[3]
-    assert commands[4].endswith(
-        "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng"
-    )
+    assert len(commands) == 3
+    assert commands[0].startswith("cd /tmp/openslt/tcpdump && /bin/sh -c ")
+    assert "export MODE=shared" in commands[0]
+    assert "printf" in commands[0]
+    assert "mutated" not in commands[0]
+    assert commands[0].index("export MODE=shared") < commands[0].index("printf")
+    assert "./stop_slnic_dump.sh" in commands[1]
+    assert "./pcap_merge_tool slnic*" in commands[2]
+    assert "merge_pacp.pcap" in commands[2]
+    assert "./editcap merge_pcap.pcap merge_pcap.pcapng" in commands[2]
     merge = completed["steps"][-1]["result_summary"]
     assert merge["size"] == len(b"remote-pcapng")
     assert "mode" not in merge
@@ -215,6 +303,78 @@ def test_remote_slnic_command_failure_waits_for_step_retry(client, admin_headers
     assert failed["artifacts"] == []
 
 
+def test_non_terminal_slnic_shell_shares_state_and_stops_on_failure(tmp_path):
+    script = workflows._failure_stopping_shell([
+        "export OPENSLT_MODE=shared",
+        "mkdir state && cd state",
+        "printf '%s' \"$OPENSLT_MODE\" > value.txt",
+        "false",
+        "printf after > after.txt",
+    ])
+    completed = subprocess.run(
+        ["/bin/sh", "-c", script],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert (tmp_path / "state" / "value.txt").read_text() == "shared"
+    assert not (tmp_path / "state" / "after.txt").exists()
+
+
+def test_non_terminal_slnic_retry_replays_the_complete_snapshot(
+    client, admin_headers, monkeypatch
+):
+    dispatched = []
+    attempts = 0
+
+    class RetryConnection:
+        async def run(self, command, check=False):
+            nonlocal attempts
+            assert check is False
+            attempts += 1
+            dispatched.append(command)
+            if attempts == 1:
+                return SimpleNamespace(exit_status=7, stdout="", stderr="temporary failure")
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+        def close(self):
+            return None
+
+        async def wait_closed(self):
+            return None
+
+    connection = RetryConnection()
+
+    async def fake_connect(**_kwargs):
+        return connection
+
+    commands = ["export MODE=retry", "cd state", "printf '%s' \"$MODE\""]
+    node = slnic_nodes()[0]
+    node["config"] = {"commands": commands}
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    _, _, run = create_slnic_run(client, admin_headers, [node])
+    started = client.post(f"/api/v1/runs/{run['id']}/start", headers=admin_headers)
+    assert started.status_code == 200, started.text
+
+    failed = execute_current_step(client, admin_headers, run["id"])
+    assert failed["status"] == "awaiting_step_retry"
+    retried = execute_current_step(client, admin_headers, run["id"])
+
+    assert retried["status"] == "awaiting_step_completion"
+    assert len(dispatched) == 2
+    assert dispatched[0] == dispatched[1]
+    expected_script = workflows._failure_stopping_shell(commands)
+    assert dispatched[0] == (
+        f"cd /tmp/openslt/tcpdump && /bin/sh -c {shlex.quote(expected_script)}"
+    )
+    assert retried["steps"][0]["config_snapshot"]["commands"] == commands
+    assert retried["steps"][0]["result_summary"]["commands"] == commands
+    assert retried["steps"][0]["retry_count"] == 1
+
+
 def test_remote_slnic_stop_failure_continues_to_merge(client, admin_headers, monkeypatch):
     commands = []
     stop_attempts = 0
@@ -232,7 +392,7 @@ def test_remote_slnic_stop_failure_continues_to_merge(client, admin_headers, mon
             nonlocal stop_attempts
             assert check is False
             commands.append(command)
-            if command.endswith("./stop_slnic_dump.sh"):
+            if "./stop_slnic_dump.sh" in command:
                 stop_attempts += 1
                 if stop_attempts == 1:
                     return SimpleNamespace(

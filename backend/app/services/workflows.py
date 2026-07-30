@@ -43,7 +43,7 @@ from app.services.workflow_core import (
     workflow_payload,
 )
 from app.services.workflow_publishing import publish, validate_publish
-from app.workflow_node_configs import ParserConfig, parse_node_config
+from app.workflow_node_configs import ParserConfig, ShellCommandsConfig, parse_node_config
 
 def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
     return (
@@ -132,14 +132,31 @@ async def collect_slnic_merge_artifact(
     return _register_slnic_merge_artifact(db, run, step, target)
 
 
-async def _run_slnic_command(connection: typing.Any, command: str, label: str) -> None:
-    result = await connection.run(command, check=False)
+def _failure_stopping_shell(commands: typing.Sequence[str]) -> str:
+    lines: typing.List[str] = []
+    for command in commands:
+        lines.extend([
+            command,
+            "openslt_slnic_status=$?",
+            '[ "$openslt_slnic_status" -eq 0 ] || exit "$openslt_slnic_status"',
+        ])
+    return "\n".join(lines) + "\n"
+
+
+async def _run_slnic_commands(
+    connection: typing.Any,
+    workdir: str,
+    commands: typing.Sequence[str],
+) -> None:
+    script = _failure_stopping_shell(commands)
+    shell_command = f"cd {shlex.quote(workdir)} && /bin/sh -c {shlex.quote(script)}"
+    result = await connection.run(shell_command, check=False)
     if result.exit_status == 0:
         return
     detail = str(result.stderr or result.stdout or "远端命令没有返回错误信息").strip()[:1000]
     raise WorkflowError(
         "SLNIC_COMMAND_FAILED",
-        f"{label}失败（退出码 {result.exit_status}）：{detail}",
+        f"SLNIC 命令执行失败（退出码 {result.exit_status}）：{detail}",
         409,
     )
 
@@ -158,41 +175,37 @@ async def execute_slnic_node(
         raise WorkflowError("SLNIC_NODE_REQUIRED", "当前节点不是 SLNIC 节点", 400)
     if not resource.remote_path.strip():
         raise WorkflowError("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径", 409)
+    config = typing.cast(
+        ShellCommandsConfig,
+        parse_node_config(node.node_type, step.config_snapshot or {}),
+    )
+    if not config.commands:
+        raise WorkflowError("SLNIC_COMMANDS_REQUIRED", "SLNIC 节点至少需要一条命令", 409)
 
-    summary = {"resource_id": resource.id, "exit_code": 0}
-    workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
-    prefix = f"cd {shlex.quote(workdir)} && "
+    root = resource.remote_path.strip().rstrip("/") or "/"
+    workdir = posixpath.join(root, "tcpdump")
+    commands = list(config.commands)
+    summary = {
+        "resource_id": resource.id,
+        "resource_name": resource.name,
+        "remote_workdir": workdir,
+        "commands": commands,
+        "exit_code": 0,
+    }
     connection = None
     try:
         connection = await asyncssh.connect(**_ssh_options(resource))
-        if node.node_type == "slnic_start_capture":
-            await _run_slnic_command(
-                connection, prefix + "./start_slnic_dump.sh", "启动 SLNIC 抓包"
+        await _run_slnic_commands(connection, workdir, commands)
+        if node.node_type == "slnic_merge_capture":
+            summary.update(
+                await collect_slnic_merge_artifact(
+                    db,
+                    run,
+                    step,
+                    resource,
+                    connection=connection,
+                )
             )
-            return summary
-        if node.node_type == "slnic_stop_capture":
-            await _run_slnic_command(
-                connection, prefix + "./stop_slnic_dump.sh", "关闭 SLNIC 抓包"
-            )
-            return summary
-
-        await _run_slnic_command(
-            connection, prefix + "./pcap_merge_tool slnic*", "合并 SLNIC 抓包"
-        )
-        await _run_slnic_command(
-            connection,
-            prefix
-            + "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; "
-            + "then mv -- merge_pacp.pcap merge_pcap.pcap; fi; "
-            + "test -f merge_pcap.pcap",
-            "检查合并后的 pcap 文件",
-        )
-        await _run_slnic_command(
-            connection,
-            prefix + "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
-            "转换 pcapng 文件",
-        )
-        summary.update(await collect_slnic_merge_artifact(db, run, step, resource, connection=connection))
         return summary
     except WorkflowError:
         raise

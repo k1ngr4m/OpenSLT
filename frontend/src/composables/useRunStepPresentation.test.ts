@@ -138,6 +138,39 @@ describe('useRunStepPresentation contract preview', () => {
     ]))
   })
 
+  it('presents terminal REM and SLNIC dispatch metadata without an exit code', () => {
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const cases: Array<[RunStep['node_type'], string]> = [
+      ['rem_startup', '/srv/rem'],
+      ['slnic_stop_capture', '/srv/slnic/tcpdump'],
+    ]
+
+    for (const [nodeType, workdir] of cases) {
+      const step = {
+        ...orderStep(),
+        node_type: nodeType,
+        config_snapshot: { commands: ['export MODE=terminal', 'false', 'printf "$MODE"'] },
+        result_summary: {
+          mode: 'terminal',
+          resource_name: 'remote-01',
+          remote_workdir: workdir,
+          commands: ['export MODE=terminal', 'false', 'printf "$MODE"'],
+          exit_code: null,
+          dispatched_by: 17,
+          dispatched_at: '2026-07-30T10:00:00+08:00',
+        },
+      } as RunStep
+      const presentation = useRunStepPresentation(run, computed(() => step), {})
+
+      expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
+        { label: '远端工作目录', value: workdir, mono: true },
+        { label: '退出码', value: '未知' },
+        { label: '下发人 ID', value: 17 },
+      ]))
+      expect(presentation.resultRows.value.some(row => row.value === 'export MODE=terminal → false → printf "$MODE"')).toBe(true)
+    }
+  })
+
   it('presents the ordered market startup scripts and completion count', () => {
     const step = {
       ...orderStep(),
@@ -170,6 +203,38 @@ describe('useRunStepPresentation contract preview', () => {
       { label: '资源', value: 'Market-01' },
       { label: '完成脚本', value: '2/2' },
       { label: '执行顺序', value: 'prepare.sh → start_all.sh', mono: true },
+    ]))
+  })
+
+  it('presents configured and actually dispatched SLNIC terminal commands', () => {
+    const commands = ['export MODE=terminal', 'false', 'printf "$MODE"']
+    const step = {
+      ...orderStep(),
+      node_type: 'slnic_start_capture',
+      config_snapshot: { commands },
+      result_summary: {
+        resource_name: 'SLNIC-01',
+        remote_workdir: '/home/user0/slnic/tcpdump',
+        mode: 'terminal',
+        commands,
+        exit_code: null,
+        dispatched_at: '2026-07-30T09:00:00+08:00',
+      },
+    } as RunStep
+    const run = ref({ artifacts: [], config_snapshot: {} } as unknown as RunDetail)
+    const presentation = useRunStepPresentation(run, computed(() => step), {})
+
+    expect(presentation.configRows.value).toEqual([
+      { label: 'SLNIC 动作', value: '启动 SLNIC' },
+      { label: '命令数量', value: '3 条' },
+      { label: '执行顺序', value: 'export MODE=terminal → false → printf "$MODE"', mono: true },
+    ])
+    expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
+      { label: '执行模式', value: 'SSH 终端' },
+      { label: '远端工作目录', value: '/home/user0/slnic/tcpdump', mono: true },
+      { label: '已下发命令', value: '3/3' },
+      { label: '实际下发命令', value: 'export MODE=terminal → false → printf "$MODE"', mono: true },
+      { label: '退出码', value: '未知' },
     ]))
   })
 })

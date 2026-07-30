@@ -2,6 +2,7 @@ import { computed, type ComputedRef, type Ref } from 'vue'
 import type { ContractFilePreview, InfoRow, JsonMap, RunDetail, RunStep } from '@/types/run'
 import { formatBytes, formatDate, formatDuration, formatValue, isJsonMap, nodeTypeText, normalizeContractFile, optionalNumber, optionalString, stringValue } from '@/utils/runDetail'
 import { DEFAULT_REM_STARTUP_COMMANDS } from '@/utils/remCommands'
+import { defaultSlnicCommands } from '@/utils/slnicCommands'
 import { statusText } from '@/utils/status'
 
 export function useRunStepPresentation(
@@ -136,9 +137,13 @@ export function useRunStepPresentation(
       ]
     }
     if (step.node_type.startsWith('slnic_')) {
+      const commands = Array.isArray(config.commands)
+        ? config.commands.filter(command => typeof command === 'string') as string[]
+        : defaultSlnicCommands(step.node_type)
       return [
         { label: 'SLNIC 动作', value: nodeTypeText[step.node_type] || step.node_type },
-        { label: '节点配置', value: Object.keys(config).length ? '见原始配置' : '-' },
+        { label: '命令数量', value: `${commands.length} 条` },
+        { label: '执行顺序', value: commands.join(' → ') || '-', mono: true },
       ]
     }
     return objectRows(config)
@@ -180,10 +185,25 @@ export function useRunStepPresentation(
       ]
     }
     if (step.node_type === 'rem_startup') {
-      const commands = Array.isArray(result.commands) ? result.commands.filter(isJsonMap) : []
       const configuredCommands = Array.isArray(selectedConfig.value.commands)
         ? selectedConfig.value.commands
         : DEFAULT_REM_STARTUP_COMMANDS
+      if (result.mode === 'terminal') {
+        const commands = Array.isArray(result.commands)
+          ? result.commands.filter(command => typeof command === 'string') as string[]
+          : []
+        return [
+          { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
+          { label: '执行模式', value: 'SSH 终端' },
+          { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
+          { label: '已下发命令', value: `${commands.length}/${configuredCommands.length}` },
+          { label: '下发顺序', value: commands.join(' → ') || '-', mono: true },
+          { label: '退出码', value: '未知' },
+          { label: '下发人 ID', value: optionalNumber(result.dispatched_by) ?? '-' },
+          { label: '下发时间', value: formatDate(optionalString(result.dispatched_at)) },
+        ]
+      }
+      const commands = Array.isArray(result.commands) ? result.commands.filter(isJsonMap) : []
       return [
         { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
         { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
@@ -206,11 +226,20 @@ export function useRunStepPresentation(
       ]
     }
     if (step.node_type.startsWith('slnic_')) {
+      const configuredCommands = Array.isArray(selectedConfig.value.commands)
+        ? selectedConfig.value.commands
+        : defaultSlnicCommands(step.node_type)
+      const dispatchedCommands = Array.isArray(result.commands)
+        ? result.commands.filter(command => typeof command === 'string') as string[]
+        : []
       return [
         { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
         { label: '执行模式', value: result.mode === 'terminal' ? 'SSH 终端' : '后端自动执行' },
-        { label: 'SLNIC 指令', value: stringValue(result.command), mono: true },
-        { label: '退出码', value: optionalNumber(result.exit_code) ?? '-' },
+        { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
+        { label: result.mode === 'terminal' ? '已下发命令' : '执行命令', value: `${dispatchedCommands.length}/${configuredCommands.length}` },
+        { label: result.mode === 'terminal' ? '实际下发命令' : '实际执行命令', value: (dispatchedCommands.length ? dispatchedCommands : configuredCommands).join(' → ') || '-', mono: true },
+        { label: '退出码', value: result.mode === 'terminal' ? '未知' : (optionalNumber(result.exit_code) ?? '-') },
+        { label: '下发人 ID', value: result.mode === 'terminal' ? (optionalNumber(result.dispatched_by) ?? '-') : '-' },
         { label: '下发时间', value: formatDate(optionalString(result.dispatched_at)) },
         { label: '产物文件', value: stringValue(result.filename) },
         { label: '文件大小', value: optionalNumber(result.size) != null ? formatBytes(optionalNumber(result.size)!) : '-' },

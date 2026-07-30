@@ -4,7 +4,7 @@ type ApiSchemas = components['schemas']
 
 export type JsonMap = Record<string, unknown>
 export type LogScope = 'all' | number
-export type WorkflowTerminalKind = 'slnic' | 'order'
+export type WorkflowTerminalKind = 'rem' | 'slnic' | 'order'
 
 export type RunStep = Omit<ApiSchemas['StepOut'], 'config_snapshot' | 'result_summary'> & {
   config_snapshot: JsonMap

@@ -21,9 +21,19 @@ REM_STARTUP_DEFAULT_COMMANDS = (
     "./makeneat.sh",
     "./start_rem_all.sh",
 )
-REM_STARTUP_MAX_COMMANDS = 100
-REM_STARTUP_MAX_COMMAND_LENGTH = 4096
-REM_STARTUP_MAX_TOTAL_BYTES = 32 * 1024
+SLNIC_START_DEFAULT_COMMANDS = ("./start_slnic_dump.sh",)
+SLNIC_STOP_DEFAULT_COMMANDS = ("./stop_slnic_dump.sh",)
+SLNIC_MERGE_DEFAULT_COMMANDS = (
+    "./pcap_merge_tool slnic*",
+    "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; test -f merge_pcap.pcap",
+    "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
+)
+SHELL_COMMAND_MAX_COMMANDS = 100
+SHELL_COMMAND_MAX_LENGTH = 4096
+SHELL_COMMAND_MAX_TOTAL_BYTES = 32 * 1024
+REM_STARTUP_MAX_COMMANDS = SHELL_COMMAND_MAX_COMMANDS
+REM_STARTUP_MAX_COMMAND_LENGTH = SHELL_COMMAND_MAX_LENGTH
+REM_STARTUP_MAX_TOTAL_BYTES = SHELL_COMMAND_MAX_TOTAL_BYTES
 OrderAction = Literal[
     "new_order",
     "new_order_simple",
@@ -86,10 +96,10 @@ class WiringConfirmationConfig(WorkflowNodeConfig):
         return value
 
 
-class RemStartupConfig(WorkflowNodeConfig):
+class ShellCommandsConfig(WorkflowNodeConfig):
     commands: typing.List[str] = Field(
-        default_factory=lambda: list(REM_STARTUP_DEFAULT_COMMANDS),
-        max_length=REM_STARTUP_MAX_COMMANDS,
+        default_factory=list,
+        max_length=SHELL_COMMAND_MAX_COMMANDS,
     )
 
     @field_validator("commands", mode="before")
@@ -108,11 +118,18 @@ class RemStartupConfig(WorkflowNodeConfig):
     @field_validator("commands")
     @classmethod
     def validate_commands(cls, value: typing.List[str]) -> typing.List[str]:
-        if any(len(command) > REM_STARTUP_MAX_COMMAND_LENGTH for command in value):
-            raise ValueError("单条 REM 启动命令不能超过 4096 个字符")
-        if sum(len(command.encode("utf-8")) for command in value) > REM_STARTUP_MAX_TOTAL_BYTES:
-            raise ValueError("REM 启动命令总长度不能超过 32 KiB")
+        if any(len(command) > SHELL_COMMAND_MAX_LENGTH for command in value):
+            raise ValueError("单条 Shell 命令不能超过 4096 个字符")
+        if sum(len(command.encode("utf-8")) for command in value) > SHELL_COMMAND_MAX_TOTAL_BYTES:
+            raise ValueError("Shell 命令总长度不能超过 32 KiB")
         return value
+
+
+class RemStartupConfig(ShellCommandsConfig):
+    commands: typing.List[str] = Field(
+        default_factory=lambda: list(REM_STARTUP_DEFAULT_COMMANDS),
+        max_length=SHELL_COMMAND_MAX_COMMANDS,
+    )
 
 
 class MarketScriptSelection(WorkflowNodeConfig):
@@ -145,16 +162,25 @@ class OrderPreparationConfig(WorkflowNodeConfig):
     order_action: OrderAction = "new_order"
 
 
-class SlnicStartConfig(WorkflowNodeConfig):
-    pass
+class SlnicStartConfig(ShellCommandsConfig):
+    commands: typing.List[str] = Field(
+        default_factory=lambda: list(SLNIC_START_DEFAULT_COMMANDS),
+        max_length=SHELL_COMMAND_MAX_COMMANDS,
+    )
 
 
-class SlnicStopConfig(WorkflowNodeConfig):
-    pass
+class SlnicStopConfig(ShellCommandsConfig):
+    commands: typing.List[str] = Field(
+        default_factory=lambda: list(SLNIC_STOP_DEFAULT_COMMANDS),
+        max_length=SHELL_COMMAND_MAX_COMMANDS,
+    )
 
 
-class SlnicMergeConfig(WorkflowNodeConfig):
-    pass
+class SlnicMergeConfig(ShellCommandsConfig):
+    commands: typing.List[str] = Field(
+        default_factory=lambda: list(SLNIC_MERGE_DEFAULT_COMMANDS),
+        max_length=SHELL_COMMAND_MAX_COMMANDS,
+    )
 
 
 class ParserConfig(WorkflowNodeConfig):

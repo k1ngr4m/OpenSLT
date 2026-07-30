@@ -4,10 +4,12 @@ export const DEFAULT_REM_STARTUP_COMMANDS = [
   './start_rem_all.sh',
 ] as const
 
-export function normalizeRemStartupCommands(value: string | string[]): string[] {
+export function normalizeShellCommands(value: string | string[]): string[] {
   const sources = Array.isArray(value) ? value : [value]
   return sources.flatMap(source => source.split(/\r?\n/).map(line => line.trim()).filter(Boolean))
 }
+
+export const normalizeRemStartupCommands = normalizeShellCommands
 
 export function remStartupCommandText(commands: unknown): string {
   if (!Array.isArray(commands)) return DEFAULT_REM_STARTUP_COMMANDS.join('\n')

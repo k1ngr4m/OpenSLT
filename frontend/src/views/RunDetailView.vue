@@ -68,6 +68,9 @@ const {
   orderResource,
   orderTerminalSubtitle,
   orderWorkflowTerminalPanel,
+  remResource,
+  remTerminalSubtitle,
+  remWorkflowTerminalPanel,
   runWorkflowStepInTerminal,
   showWorkflowTerminal,
   slnicResource,
@@ -468,6 +471,19 @@ watch(
                   </div>
                   <el-tag v-if="workflowTerminalResource" type="success" effect="plain">{{ workflowTerminalResource.name }}</el-tag>
                 </div>
+                <SshTerminalPanel
+                  v-if="remResource"
+                  v-show="workflowTerminalKind === 'rem'"
+                  ref="remWorkflowTerminalPanel"
+                  :resource-id="remResource.id"
+                  :title="remResource.name"
+                  :subtitle="remTerminalSubtitle"
+                  :active="workflowTerminalKind === 'rem'"
+                  :min-height="320"
+                  @status="message => handleWorkflowTerminalStatus('rem', message)"
+                  @error="message => handleWorkflowTerminalError('rem', message)"
+                  @workflow-command="message => handleWorkflowTerminalCommand('rem', message)"
+                />
                 <SshTerminalPanel
                   v-if="slnicResource"
                   v-show="workflowTerminalKind === 'slnic'"

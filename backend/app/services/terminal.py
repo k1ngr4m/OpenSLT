@@ -28,9 +28,26 @@ from app.services.order_sessions import order_session_name
 from app.services.run_state import transition_run, transition_step
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.slnic import SLNIC_TERMINAL_COMMANDS
+from app.workflow_node_configs import ShellCommandsConfig, parse_node_config
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
+SHELL_TERMINAL_COMMANDS = {
+    "rem_startup": {
+        "resource_type": "rem",
+        "action": "启动",
+        "node_label": "启动 REM 柜台",
+        "workdir_suffix": None,
+    },
+    **{
+        node_type: {
+            **metadata,
+            "resource_type": "slnic",
+            "workdir_suffix": "tcpdump",
+        }
+        for node_type, metadata in SLNIC_TERMINAL_COMMANDS.items()
+    },
+}
 MAX_INPUT_SIZE = 64 * 1024
 MIN_COLUMNS = 20
 MAX_COLUMNS = 300
@@ -197,7 +214,12 @@ def _validate_terminal_step(
     return run, step, retrying, None
 
 
-def _dispatch_slnic_terminal_command(
+def _build_terminal_command(workdir: str, commands: typing.Sequence[str]) -> str:
+    body = "\n".join(commands)
+    return f"cd {shlex.quote(workdir)} && {{\n{body}\n}}"
+
+
+def _dispatch_shell_terminal_command(
     *,
     db,
     actor_id: int,
@@ -206,18 +228,34 @@ def _dispatch_slnic_terminal_command(
     step,
     retrying: bool,
 ) -> typing.Tuple[typing.Union[str, None], dict]:
-    if resource.resource_type != "slnic":
-        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是 SLNIC 资源")
-    command_meta = SLNIC_TERMINAL_COMMANDS.get(step.node_type)
+    command_meta = SHELL_TERMINAL_COMMANDS.get(step.node_type)
     if not command_meta:
-        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不支持通过 SLNIC 终端执行")
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不支持通过交互终端执行")
+    expected_resource_type = str(command_meta["resource_type"])
+    if resource.resource_type != expected_resource_type:
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端资源与工作流节点不匹配")
     if not resource.remote_path.strip():
-        return None, _workflow_command_error("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径")
+        return None, _workflow_command_error(
+            f"{expected_resource_type.upper()}_REMOTE_PATH_REQUIRED",
+            f"{expected_resource_type.upper()} 资源未配置远端路径",
+        )
+    try:
+        config = typing.cast(
+            ShellCommandsConfig,
+            parse_node_config(step.node_type, step.config_snapshot or {}),
+        )
+    except Exception:
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "工作流节点命令配置无效")
+    if not config.commands:
+        return None, _workflow_command_error("SHELL_COMMANDS_REQUIRED", "工作流节点至少需要一条命令")
 
     now = beijing_now()
-    workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
+    root = resource.remote_path.strip().rstrip("/") or "/"
+    suffix = command_meta.get("workdir_suffix")
+    workdir = posixpath.join(root, str(suffix)) if suffix else root
     action = str(command_meta["action"])
-    command = f"cd {shlex.quote(workdir)} && {command_meta['script']}"
+    commands = list(config.commands)
+    command = _build_terminal_command(workdir, commands)
     if retrying:
         step.retry_count += 1
     transition_step(step, "waiting")
@@ -229,6 +267,8 @@ def _dispatch_slnic_terminal_command(
     step.result_summary = {
         "resource_id": resource.id,
         "resource_name": resource.name,
+        "remote_workdir": workdir,
+        "commands": commands,
         "command": command,
         "mode": "terminal",
         "exit_code": None,
@@ -255,7 +295,14 @@ def _dispatch_slnic_terminal_command(
         f"{step.name}{action}指令已在终端下发，等待手动完成",
         step=step,
         source="terminal",
-        detail={"command": command, "resource_id": resource.id, "mode": "terminal", "action": action},
+        detail={
+            "command": command,
+            "commands": commands,
+            "remote_workdir": workdir,
+            "resource_id": resource.id,
+            "mode": "terminal",
+            "action": action,
+        },
         log_type="remote_command",
     )
     db.commit()
@@ -267,6 +314,7 @@ def _dispatch_slnic_terminal_command(
         "run_id": run.id,
         "step_id": step.id,
         "resource_id": resource.id,
+        "commands": commands,
     }
 
 
@@ -416,8 +464,8 @@ async def _dispatch_workflow_step_command(
             return None, error or _workflow_command_error("INVALID_WORKFLOW_STEP", "运行步骤无效")
         handler = workflow_handler_registry.find(step.node_type)
         terminal_kind = handler.terminal_kind if handler else None
-        if terminal_kind == "slnic":
-            return _dispatch_slnic_terminal_command(
+        if terminal_kind in {"rem", "slnic"}:
+            return _dispatch_shell_terminal_command(
                 db=db,
                 actor_id=actor_id,
                 resource=resource,
@@ -435,6 +483,66 @@ async def _dispatch_workflow_step_command(
                 retrying=retrying,
             )
         return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不支持终端执行")
+    finally:
+        db.close()
+
+
+def _record_workflow_command_dispatch_failure(
+    *,
+    resource: TerminalResource,
+    run_id: object,
+    step_id: object,
+    actor_id: int,
+) -> dict:
+    response = _workflow_command_error("SSH_COMMAND_DISPATCH_FAILED", "SSH 终端命令下发失败，请重试")
+    if not isinstance(run_id, int) or not isinstance(step_id, int):
+        return response
+    db = SessionLocal()
+    try:
+        run = db.scalar(
+            select(TestRun)
+            .where(TestRun.id == run_id)
+            .options(selectinload(TestRun.steps))
+        )
+        if not run or run.status != "awaiting_step_completion":
+            return response
+        step = next((item for item in run.steps if item.id == step_id), None)
+        if not step or step.status != "waiting" or resource.id not in run_resource_ids(run):
+            return response
+        failed_at = beijing_now()
+        transition_step(step, "failed")
+        step.progress = 0
+        step.error_message = response["message"]
+        step.finished_at = failed_at
+        if step.started_at:
+            step.duration_ms = max(0, int((failed_at - step.started_at).total_seconds() * 1000))
+        step.result_summary = {
+            **(step.result_summary or {}),
+            "dispatch_error": response["code"],
+        }
+        transition_run(
+            run,
+            "awaiting_step_retry",
+            source="terminal",
+            actor_id=actor_id,
+            reason=response["code"],
+        )
+        run.error_code = None
+        run.error_message = None
+        run.finished_at = None
+        append_log(
+            db,
+            run,
+            "workflow.step_failed",
+            response["message"],
+            level="ERROR",
+            step=step,
+            source="terminal",
+            detail={"error_code": response["code"], "resource_id": resource.id},
+        )
+        db.commit()
+        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+        return response
     finally:
         db.close()
 
@@ -471,7 +579,15 @@ async def _receive_remote(
                 operation=message.get("operation"),
             )
             if command:
-                process.stdin.write(f"{command}\r")
+                try:
+                    process.stdin.write(f"{command}\r")
+                except Exception:
+                    response = _record_workflow_command_dispatch_failure(
+                        resource=resource,
+                        run_id=message.get("run_id"),
+                        step_id=message.get("step_id"),
+                        actor_id=actor_id,
+                    )
             await _send(websocket, response)
         else:
             await _send(websocket, {"type": "error", "code": "INVALID_MESSAGE", "message": "不支持的终端消息"})

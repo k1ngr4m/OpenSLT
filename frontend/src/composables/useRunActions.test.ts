@@ -71,6 +71,20 @@ describe('useRunActions', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
+  it('routes REM startup through the terminal executor', async () => {
+    const runTerminalStep = vi.fn().mockResolvedValue(undefined)
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep,
+    })
+    const terminalStep = step('rem_startup')
+
+    await actions.stepAction(terminalStep, 'start')
+    expect(runTerminalStep).toHaveBeenCalledWith(terminalStep, 'start')
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
   it('starts order nodes through the durable step endpoint', async () => {
     const runTerminalStep = vi.fn().mockResolvedValue(undefined)
     const actions = useRunActions({

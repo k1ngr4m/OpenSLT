@@ -11,7 +11,8 @@ import { resourceText } from '@/utils/status'
 import { buildWiringSnapshot, wiringInterfaceNameDefaults } from '@/utils/wiring'
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
-import { DEFAULT_REM_STARTUP_COMMANDS, normalizeRemStartupCommands, remStartupCommandText } from '@/utils/remCommands'
+import { DEFAULT_REM_STARTUP_COMMANDS, normalizeShellCommands, remStartupCommandText } from '@/utils/remCommands'
+import { defaultSlnicCommands, slnicCommandText } from '@/utils/slnicCommands'
 import {
   applyDatabaseConfigTemplate,
   filterDatabaseConfigItems,
@@ -51,7 +52,7 @@ const fetchingContracts = ref(false)
 const scanningContracts = ref(false)
 let contractFilesRequestId = 0
 const globalKeySearch = ref('')
-const remCommandEditorText = ref('')
+const shellCommandEditorText = ref('')
 const databaseConfigItems = ref<DatabaseConfigItem[]>([])
 const databaseConfigCatalogLoading = ref(false)
 const databaseConfigCatalogLoaded = ref(false)
@@ -143,9 +144,7 @@ const selectedMarketScriptRows = computed(() => {
     return { selection, file, status }
   })
 })
-const remCommandCount = computed(() => normalizeRemStartupCommands(
-  remStartupCommandText(selectedNode.value?.config.commands),
-).length)
+const shellCommandCount = computed(() => normalizeShellCommands(shellCommandEditorText.value).length)
 
 function makeKey() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -380,16 +379,18 @@ function remWorkdir() {
   return String(selectedResourceMap.value.rem?.remote_path || '').replace(/\/+$/, '') || '未配置远端路径'
 }
 
-function updateRemCommands(value: string) {
-  if (!selectedNode.value || selectedNode.value.node_type !== 'rem_startup') return
-  selectedNode.value.config.commands = normalizeRemStartupCommands(value)
+function updateShellCommands(value: string) {
+  if (!selectedNode.value) return
+  if (selectedNode.value.node_type !== 'rem_startup' && !slnicNodeTypes.has(selectedNode.value.node_type)) return
+  selectedNode.value.config.commands = normalizeShellCommands(value)
   markDirty()
 }
 
-function slnicCommands(type: string) {
-  if (type === 'slnic_start_capture') return ['./start_slnic_dump.sh']
-  if (type === 'slnic_stop_capture') return ['./stop_slnic_dump.sh']
-  return ['./pcap_merge_tool slnic*', './editcap merge_pcap.pcap merge_pcap.pcapng']
+function commandTextForNode(node: WorkflowNode | null) {
+  if (!node) return ''
+  if (node.node_type === 'rem_startup') return remStartupCommandText(node.config.commands)
+  if (slnicNodeTypes.has(node.node_type)) return slnicCommandText(node.node_type, node.config.commands)
+  return ''
 }
 
 function defaultNode(type: string): WorkflowNode {
@@ -407,6 +408,7 @@ function defaultNode(type: string): WorkflowNode {
     }
   }
   if (type === 'rem_startup') return { node_key: key, position: 0, node_type: type, name: '启动rem柜台', config: { commands: [...DEFAULT_REM_STARTUP_COMMANDS] } }
+  if (slnicNodeTypes.has(type)) return { node_key: key, position: 0, node_type: type as WorkflowNodeType, name: nodeMeta(type).label, config: { commands: defaultSlnicCommands(type) } }
   if (type === 'market_startup') return { node_key: key, position: 0, node_type: type, name: '启动模拟市场', config: { scripts: [] } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return {
@@ -791,9 +793,7 @@ watch(selectedNode, async node => {
   previewSnapshots.value = []
   globalKeySearch.value = ''
   selectedDatabaseConfigTemplateId.value = null
-  remCommandEditorText.value = node?.node_type === 'rem_startup'
-    ? remStartupCommandText(node.config.commands)
-    : ''
+  shellCommandEditorText.value = commandTextForNode(node || null)
   if (node?.node_type === 'database_config') await loadDatabaseConfigTemplates()
   if (node?.node_type === 'order_preparation') { await loadOrderConfigs(); await loadContractFiles() }
   if (node?.node_type === 'parser_parse') { await loadParserConfigs(); await ensureParserXmlSelections() }
@@ -947,14 +947,14 @@ onMounted(load)
           <template v-else-if="selectedNode.node_type === 'rem_startup'">
             <div class="slnic-summary">
               <div><span>REM 柜台资源</span><strong>{{ selectedResourceMap.rem?.name || '资源池未绑定' }}</strong></div>
-              <div><span>执行模式</span><strong>可配置 Shell 命令</strong></div>
+              <div><span>执行模式</span><strong>可配置交互 Shell 命令</strong></div>
               <div class="wide"><span>工作目录</span><code>{{ remWorkdir() }}</code></div>
             </div>
             <el-alert v-if="!selectedResourceMap.rem" title="请先在左侧场景资源池绑定 REM 柜台" type="warning" :closable="false" show-icon />
-            <el-alert v-if="!remCommandCount" title="至少输入一条 REM 启动命令后才能发布" type="warning" :closable="false" show-icon />
+            <el-alert v-if="!shellCommandCount" title="至少输入一条 REM 启动命令后才能发布" type="warning" :closable="false" show-icon />
             <div class="section-label">执行命令（按顺序）</div>
             <el-input
-              v-model="remCommandEditorText"
+              v-model="shellCommandEditorText"
               type="textarea"
               :rows="7"
               :readonly="!editable"
@@ -963,9 +963,9 @@ onMounted(load)
               spellcheck="false"
               class="rem-command-editor"
               placeholder="一行一条 Shell 命令"
-              @input="value => updateRemCommands(String(value))"
+              @input="value => updateShellCommands(String(value))"
             />
-            <p class="slnic-note">空白行会被忽略。命令在同一个 Shell 中执行，前一行的 cd、export 会影响后续命令；任一命令失败都会停止，重试时从第一条重新开始。</p>
+            <p class="slnic-note">空白行会被忽略。全部命令会在同一个交互 Shell 中逐行下发，前一行的 cd、export 会影响后续命令；系统不因非零退出自动截断，请在终端确认后手动完成节点。</p>
           </template>
 
           <template v-else-if="selectedNode.node_type === 'market_startup'">
@@ -1008,13 +1008,25 @@ onMounted(load)
           <template v-else-if="slnicNodeTypes.has(selectedNode.node_type)">
             <div class="slnic-summary">
               <div><span>SLNIC 资源</span><strong>{{ selectedResourceMap.slnic?.name || '资源池未绑定' }}</strong></div>
-              <div><span>执行模式</span><strong>固定远程脚本</strong></div>
+              <div><span>执行模式</span><strong>可配置交互 Shell 命令</strong></div>
               <div class="wide"><span>工作目录</span><code>{{ slnicWorkdir() }}</code></div>
             </div>
             <el-alert v-if="!selectedResourceMap.slnic" title="请先在左侧场景资源池绑定 SLNIC 节点" type="warning" :closable="false" show-icon />
-            <div class="section-label">执行命令</div>
-            <div class="slnic-commands"><code v-for="command in slnicCommands(selectedNode.node_type)" :key="command">{{ command }}</code></div>
-            <p class="slnic-note">命令由系统固定生成，工作流节点不能修改脚本路径或追加 Shell 参数。</p>
+            <el-alert v-if="!shellCommandCount" title="至少输入一条 SLNIC 命令后才能发布" type="warning" :closable="false" show-icon />
+            <div class="section-label">执行命令（按顺序）</div>
+            <el-input
+              v-model="shellCommandEditorText"
+              type="textarea"
+              :rows="7"
+              :readonly="!editable"
+              :maxlength="32768"
+              resize="vertical"
+              spellcheck="false"
+              class="rem-command-editor"
+              placeholder="一行一条 Shell 命令"
+              @input="value => updateShellCommands(String(value))"
+            />
+            <p class="slnic-note">空白行会被忽略。全部命令会在同一个交互 Shell 中逐行下发并共享状态；系统不因非零退出自动截断，请在终端确认后手动完成节点。</p>
           </template>
           <template v-else-if="selectedNode.node_type === 'parser_parse'">
             <label class="field required"><span>运行数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable || !selectedResourceMap.database" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>三张订单表从该 *_trading_data 库导出；t_account_exchange_code 从同前缀 *_config 库导出。</small></label>

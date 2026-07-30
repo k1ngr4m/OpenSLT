@@ -22,6 +22,7 @@ interface WorkflowTerminalOptions {
 
 export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   const { active, manualStepSelection, reload, run, runId, selectedStep, selectedStepId } = options
+  const remWorkflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
   const slnicWorkflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
   const orderWorkflowTerminalPanel = ref<InstanceType<typeof SshTerminalPanel> | null>(null)
   const terminalCommandPendingStepId = ref<number | null>(null)
@@ -31,6 +32,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
     kind: WorkflowTerminalKind
   } | null>(null)
 
+  const remResource = computed(() => resourceByType('rem'))
   const slnicResource = computed(() => resourceByType('slnic'))
   const orderResource = computed(() => resourceByType('order'))
   const workflowTerminalKind = computed<WorkflowTerminalKind | null>(() =>
@@ -40,15 +42,19 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   const workflowTerminalResource = computed(() =>
     workflowTerminalKind.value ? resourceForTerminalKind(workflowTerminalKind.value) : null,
   )
-  const workflowTerminalResourceText = computed(() =>
-    workflowTerminalKind.value === 'order' ? resourceText.order : resourceText.slnic,
-  )
+  const workflowTerminalResourceText = computed(() => {
+    const kind = workflowTerminalKind.value
+    return kind ? resourceText[kind] : ''
+  })
   const workflowTerminalTitle = computed(() =>
     workflowTerminalKind.value ? titleForTerminalKind(workflowTerminalKind.value) : 'SSH 终端',
   )
   const workflowTerminalDescription = computed(() => {
     if (selectedStep.value?.node_type === 'order_preparation') {
       return '点击顶部“开始”后，系统会在远端 tmux 中启动发单程序；确认程序就绪后使用下方动作按钮。终端支持刷新和重连。'
+    }
+    if (selectedStep.value?.node_type === 'rem_startup') {
+      return '点击顶部“开始”后，配置的 REM 命令会在这个终端中逐行下发；查看输出并确认完成后再点击顶部“完成”。'
     }
     if (selectedStep.value?.node_type === 'slnic_stop_capture') {
       return '点击顶部“开始”后，关闭抓包脚本会在这个终端中下发。'
@@ -58,6 +64,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
     }
     return '点击顶部“开始”后，启动脚本会在这个终端中下发。'
   })
+  const remTerminalSubtitle = computed(() => terminalSubtitle('rem'))
   const slnicTerminalSubtitle = computed(() => terminalSubtitle('slnic'))
   const orderTerminalSubtitle = computed(() => terminalSubtitle('order'))
 
@@ -70,6 +77,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   function terminalKindForStep(step: RunStep | null): WorkflowTerminalKind | null {
     if (!step) return null
     if (step.node_type === 'order_preparation') return 'order'
+    if (step.node_type === 'rem_startup') return 'rem'
     if (['slnic_start_capture', 'slnic_stop_capture', 'slnic_merge_capture'].includes(step.node_type)) {
       return 'slnic'
     }
@@ -77,21 +85,24 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   }
 
   function panelForTerminalKind(kind: WorkflowTerminalKind) {
-    return kind === 'order' ? orderWorkflowTerminalPanel.value : slnicWorkflowTerminalPanel.value
+    if (kind === 'order') return orderWorkflowTerminalPanel.value
+    return kind === 'rem' ? remWorkflowTerminalPanel.value : slnicWorkflowTerminalPanel.value
   }
 
   function resourceForTerminalKind(kind: WorkflowTerminalKind) {
-    return kind === 'order' ? orderResource.value : slnicResource.value
+    if (kind === 'order') return orderResource.value
+    return kind === 'rem' ? remResource.value : slnicResource.value
   }
 
   function titleForTerminalKind(kind: WorkflowTerminalKind) {
-    return kind === 'order' ? '发单 SSH 终端' : 'SLNIC SSH 终端'
+    if (kind === 'order') return '发单 SSH 终端'
+    return kind === 'rem' ? 'REM SSH 终端' : 'SLNIC SSH 终端'
   }
 
   function terminalSubtitle(kind: WorkflowTerminalKind) {
     const resource = resourceForTerminalKind(kind)
     if (!resource) return ''
-    const label = kind === 'order' ? resourceText.order : resourceText.slnic
+    const label = resourceText[kind]
     return [label, resource.host, resource.version].filter(Boolean).join(' · ')
   }
 
@@ -169,6 +180,9 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
     orderResource,
     orderTerminalSubtitle,
     orderWorkflowTerminalPanel,
+    remResource,
+    remTerminalSubtitle,
+    remWorkflowTerminalPanel,
     runWorkflowStepInTerminal,
     showWorkflowTerminal,
     slnicResource,

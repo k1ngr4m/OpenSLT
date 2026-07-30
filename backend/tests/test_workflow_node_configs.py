@@ -4,7 +4,20 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import WorkflowDocumentWrite
-from app.workflow_node_configs import MarketStartupConfig, OrderPreparationConfig, ParserConfig, REM_STARTUP_DEFAULT_COMMANDS, RemStartupConfig, ServerConfig, StatisticsConfig, WiringConfirmationConfig, parse_node_config
+from app.workflow_node_configs import (
+    MarketStartupConfig,
+    OrderPreparationConfig,
+    ParserConfig,
+    REM_STARTUP_DEFAULT_COMMANDS,
+    SLNIC_MERGE_DEFAULT_COMMANDS,
+    SLNIC_START_DEFAULT_COMMANDS,
+    SLNIC_STOP_DEFAULT_COMMANDS,
+    RemStartupConfig,
+    ServerConfig,
+    StatisticsConfig,
+    WiringConfirmationConfig,
+    parse_node_config,
+)
 
 
 def test_workflow_document_discriminates_node_config_by_node_type() -> None:
@@ -57,6 +70,17 @@ def test_runtime_config_parser_uses_the_same_contract() -> None:
     with pytest.raises(ValidationError):
         parse_node_config("rem_startup", {"commands": ["true"] * 101})
 
+    assert parse_node_config("slnic_start_capture", {}).commands == list(SLNIC_START_DEFAULT_COMMANDS)
+    assert parse_node_config("slnic_stop_capture", {}).commands == list(SLNIC_STOP_DEFAULT_COMMANDS)
+    assert parse_node_config("slnic_merge_capture", {}).commands == list(SLNIC_MERGE_DEFAULT_COMMANDS)
+    normalized_slnic = parse_node_config(
+        "slnic_start_capture",
+        {"commands": [" export MODE=test ", "\ncd state\nprintf \"$MODE\""]},
+    )
+    assert normalized_slnic.commands == ["export MODE=test", "cd state", 'printf "$MODE"']
+    with pytest.raises(ValidationError):
+        parse_node_config("slnic_stop_capture", {"commands": ["x" * 4097]})
+
     market_startup = parse_node_config("market_startup", {
         "scripts": [{"filename": "start.sh", "checksum": "a" * 64}],
     })
@@ -107,6 +131,29 @@ def test_runtime_config_parser_uses_the_same_contract() -> None:
     })
     assert isinstance(statistics, StatisticsConfig)
     assert statistics.max_latency_ns == 999999999
+
+
+@pytest.mark.parametrize(
+    "node_type",
+    ["slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"],
+)
+def test_slnic_command_configs_share_rem_normalization_and_limits(node_type: str) -> None:
+    config = parse_node_config(node_type, {
+        "commands": [" export MODE=test ", "\ncd state\nprintf '%s' \"$MODE\"", "   "],
+    })
+    assert config.commands == [
+        "export MODE=test",
+        "cd state",
+        "printf '%s' \"$MODE\"",
+    ]
+    assert parse_node_config(node_type, {"commands": []}).commands == []
+
+    with pytest.raises(ValidationError):
+        parse_node_config(node_type, {"commands": ["true"] * 101})
+    with pytest.raises(ValidationError):
+        parse_node_config(node_type, {"commands": ["x" * 4097]})
+    with pytest.raises(ValidationError):
+        parse_node_config(node_type, {"commands": ["x" * 4096] * 9})
 
 
 def test_wiring_interface_names_are_trimmed_and_bounded() -> None:

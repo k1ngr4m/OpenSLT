@@ -8,7 +8,7 @@ from app.services.workflow_handlers.base import WorkflowExecutionContext
 
 class RemStartupHandler:
     node_types = ("rem_startup",)
-    terminal_kind = None
+    terminal_kind = "rem"
 
     async def execute(self, context: WorkflowExecutionContext) -> dict:
         resource = context.resources.get("rem")

@@ -25,6 +25,24 @@ function runDetail(): RunDetail {
   } as RunDetail
 }
 
+const remStep = {
+  ...terminalStep,
+  id: 8,
+  code: 'rem-start',
+  name: '启动 REM',
+  node_type: 'rem_startup',
+} as RunStep
+
+function remRunDetail(): RunDetail {
+  return {
+    ...runDetail(),
+    steps: [remStep],
+    config_snapshot: {
+      resources: [{ id: 4, name: 'REM', type: 'rem', host: '10.0.0.4' }],
+    },
+  } as RunDetail
+}
+
 describe('useWorkflowTerminal', () => {
   it('queues a command while disconnected and dispatches it after connection', async () => {
     const selectedStepId = ref<number | null>(null)
@@ -57,6 +75,44 @@ describe('useWorkflowTerminal', () => {
     expect(sendWorkflowStepCommand).toHaveBeenCalledWith({
       run_id: 11,
       step_id: 7,
+      operation: 'start',
+    })
+  })
+
+  it('selects the REM panel and dispatches the queued command after connection', async () => {
+    const selectedStepId = ref<number | null>(null)
+    const terminal = useWorkflowTerminal({
+      active: ref('logs'),
+      manualStepSelection: ref(true),
+      reload: vi.fn().mockResolvedValue(undefined),
+      run: ref(remRunDetail()),
+      runId: 11,
+      selectedStep: computed(() => remStep),
+      selectedStepId,
+    })
+    const sendWorkflowStepCommand = vi.fn().mockReturnValue(true)
+    const panel = {
+      connected: false,
+      connecting: false,
+      connect: vi.fn(),
+      sendWorkflowStepCommand,
+    }
+    terminal.remWorkflowTerminalPanel.value = panel as never
+
+    expect(terminal.workflowTerminalKind.value).toBe('rem')
+    expect(terminal.workflowTerminalResource.value?.id).toBe(4)
+    expect(terminal.workflowTerminalTitle.value).toBe('REM SSH 终端')
+
+    await terminal.runWorkflowStepInTerminal(remStep, 'start')
+    await nextTick()
+    expect(panel.connect).toHaveBeenCalled()
+    expect(selectedStepId.value).toBe(8)
+
+    panel.connected = true
+    terminal.handleWorkflowTerminalStatus('rem', { status: 'connected' })
+    expect(sendWorkflowStepCommand).toHaveBeenCalledWith({
+      run_id: 11,
+      step_id: 8,
       operation: 'start',
     })
   })

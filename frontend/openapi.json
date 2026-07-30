@@ -3256,7 +3256,16 @@
       },
       "SlnicMergeConfig": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Commands",
+            "type": "array"
+          }
+        },
         "title": "SlnicMergeConfig",
         "type": "object"
       },
@@ -3336,7 +3345,16 @@
       },
       "SlnicStartConfig": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Commands",
+            "type": "array"
+          }
+        },
         "title": "SlnicStartConfig",
         "type": "object"
       },
@@ -3416,7 +3434,16 @@
       },
       "SlnicStopConfig": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Commands",
+            "type": "array"
+          }
+        },
         "title": "SlnicStopConfig",
         "type": "object"
       },

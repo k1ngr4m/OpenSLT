@@ -2335,7 +2335,10 @@ export interface components {
             resource_type: "rem" | "market" | "order";
         };
         /** SlnicMergeConfig */
-        SlnicMergeConfig: Record<string, unknown>;
+        SlnicMergeConfig: {
+            /** Commands */
+            commands?: string[];
+        };
         /** SlnicMergeNodeOut */
         SlnicMergeNodeOut: {
             config?: components["schemas"]["SlnicMergeConfig"];
@@ -2367,7 +2370,10 @@ export interface components {
             node_type: "slnic_merge_capture";
         };
         /** SlnicStartConfig */
-        SlnicStartConfig: Record<string, unknown>;
+        SlnicStartConfig: {
+            /** Commands */
+            commands?: string[];
+        };
         /** SlnicStartNodeOut */
         SlnicStartNodeOut: {
             config?: components["schemas"]["SlnicStartConfig"];
@@ -2399,7 +2405,10 @@ export interface components {
             node_type: "slnic_start_capture";
         };
         /** SlnicStopConfig */
-        SlnicStopConfig: Record<string, unknown>;
+        SlnicStopConfig: {
+            /** Commands */
+            commands?: string[];
+        };
         /** SlnicStopNodeOut */
         SlnicStopNodeOut: {
             config?: components["schemas"]["SlnicStopConfig"];

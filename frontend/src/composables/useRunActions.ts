@@ -49,6 +49,7 @@ export function useRunActions(options: RunActionsOptions) {
     actingStepId.value = step.id
     try {
       const terminalNodeTypes = [
+        'rem_startup',
         'slnic_start_capture',
         'slnic_stop_capture',
         'slnic_merge_capture',

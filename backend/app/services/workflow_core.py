@@ -369,6 +369,9 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                 errors.append({**prefix, "field": "resource", "message": "场景资源池缺少已启用的 SLNIC 资源"})
             elif not resource.remote_path.strip():
                 errors.append({**prefix, "field": "resource", "message": "SLNIC 资源未配置远端路径"})
+            commands = config.get("commands")
+            if commands is not None and not commands:
+                errors.append({**prefix, "field": "commands", "message": "SLNIC 节点至少需要一条命令"})
     return errors
 
 
