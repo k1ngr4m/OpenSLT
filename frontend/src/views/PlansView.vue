@@ -300,7 +300,7 @@ onMounted(load)
     <div v-loading="listLoading" class="plan-workspace">
       <aside class="directory-panel" aria-label="方案目录">
         <div class="directory-heading">
-          <strong>目录</strong>tmux
+          <strong>目录</strong>
           <el-tooltip v-if="auth.canOperate" content="新建目录" placement="top">
             <el-button text circle :icon="Plus" aria-label="新建目录" @click="openDirectory()" />
           </el-tooltip>
