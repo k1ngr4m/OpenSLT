@@ -19,4 +19,5 @@ frontend/vite.config.d.ts
 .vite/
 *.sqlite3
 build/
+/.playwright/
 /docs/
