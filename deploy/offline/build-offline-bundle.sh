@@ -229,10 +229,15 @@ if [[ "$BUNDLE_NODE" == true ]]; then
             printf 'curl is required to download the Node.js runtime.\n' >&2
             exit 1
         }
-        printf '[OpenSLT] Downloading the unofficial Node.js glibc 2.17 runtime...\n'
-        curl --fail --location --show-error --silent --retry 3 --connect-timeout 30 \
+        printf '[OpenSLT] Downloading Node.js checksums...\n'
+        curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
+            --retry-max-time 900 --connect-timeout 30 --max-time 600 \
+            --speed-limit 1024 --speed-time 60 \
             --output "$DOWNLOADED_NODE_SHASUMS" "$NODE_RELEASE_URL/SHASUMS256.txt"
-        curl --fail --location --show-error --silent --retry 3 --connect-timeout 30 \
+        printf '[OpenSLT] Downloading %s (about 48 MB)...\n' "$NODE_ARCHIVE_NAME"
+        curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
+            --retry-max-time 900 --connect-timeout 30 --max-time 600 \
+            --speed-limit 1024 --speed-time 60 \
             --output "$DOWNLOADED_NODE_ARCHIVE" "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
         NODE_SOURCE="$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
     fi
