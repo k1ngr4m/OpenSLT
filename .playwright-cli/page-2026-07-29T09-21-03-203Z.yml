@@ -1,0 +1,1134 @@
+- generic [ref=f1e2]:
+  - link "跳到主要内容" [ref=f1e3] [cursor=pointer]:
+    - /url: "#main-content"
+  - generic [ref=f1e4]:
+    - complementary [ref=f1e5]:
+      - generic [ref=f1e8]:
+        - strong [ref=f1e9]: OpenSLT
+        - generic [ref=f1e10]: 自动化测速平台
+      - navigation "主导航" [ref=f1e11]:
+        - menubar [ref=f1e12]:
+          - generic [ref=f1e13]: 任务
+          - menuitem [ref=f1e14] [cursor=pointer]
+          - menuitem [ref=f1e18] [cursor=pointer]
+          - generic [ref=f1e22]: 配置
+          - menuitem [ref=f1e23] [cursor=pointer]
+          - menuitem [ref=f1e27] [cursor=pointer]
+          - generic [ref=f1e34]: 系统
+          - menuitem [ref=f1e35] [cursor=pointer]
+          - menuitem [ref=f1e39] [cursor=pointer]
+      - generic [ref=f1e43]:
+        - generic [ref=f1e44]:
+          - strong [ref=f1e45]: 系统管理员
+          - generic [ref=f1e46]: 系统管理员
+        - button "退出登录" [ref=f1e47] [cursor=pointer]
+    - generic [ref=f1e53]:
+      - generic [ref=f1e54]:
+        - button "收起导航" [ref=f1e56] [cursor=pointer]
+        - time [ref=f1e61]: 2026-07-29 17:21:02
+      - main [active] [ref=f1e62]:
+        - generic [ref=f1e63]:
+          - generic [ref=f1e64]:
+            - generic [ref=f1e65]:
+              - button "返回方案与场景" [ref=f1e66] [cursor=pointer]
+              - generic [ref=f1e70]:
+                - generic [ref=f1e71]:
+                  - heading "test1" [level=1] [ref=f1e72]
+                  - generic [ref=f1e73]: 草稿
+                - paragraph [ref=f1e75]: 主流程 · v2 · 修订 1
+            - generic [ref=f1e76]:
+              - button "保存草稿" [ref=f1e77] [cursor=pointer]
+              - button "发布并启用" [ref=f1e79] [cursor=pointer]
+          - generic [ref=f1e84]:
+            - complementary [ref=f1e85]:
+              - generic [ref=f1e87]:
+                - strong [ref=f1e88]: 场景资源池
+                - generic [ref=f1e89]: 每种类型最多一个
+              - generic [ref=f1e90]:
+                - generic [ref=f1e91]:
+                  - generic [ref=f1e92]: REM 柜台
+                  - generic [ref=f1e95]:
+                    - combobox "REM 柜台 rem_mm" [ref=f1e97]
+                    - generic [ref=f1e98]: rem_mm
+                - generic [ref=f1e103]:
+                  - generic [ref=f1e104]: 模拟市场
+                  - generic [ref=f1e107]:
+                    - combobox "模拟市场 zce_sim_mkt" [ref=f1e109]
+                    - generic [ref=f1e110]: zce_sim_mkt
+                - generic [ref=f1e115]:
+                  - generic [ref=f1e116]: MySQL 数据库
+                  - generic [ref=f1e119]:
+                    - combobox "MySQL 数据库 41.200_rem_mm" [ref=f1e121]
+                    - generic [ref=f1e122]: 41.200_rem_mm
+                - generic [ref=f1e127]:
+                  - generic [ref=f1e128]: 发单工具
+                  - generic [ref=f1e131]:
+                    - combobox "发单工具 ef_vi发单" [ref=f1e133]
+                    - generic [ref=f1e134]: ef_vi发单
+                - generic [ref=f1e139]:
+                  - generic [ref=f1e140]: SLNIC 节点
+                  - generic [ref=f1e143]:
+                    - combobox "SLNIC 节点 slnic_10g" [ref=f1e145]
+                    - generic [ref=f1e146]: slnic_10g
+                - generic [ref=f1e151]:
+                  - generic [ref=f1e152]: 解析工具
+                  - generic [ref=f1e155]:
+                    - combobox "解析工具 zce_v2.2" [ref=f1e157]
+                    - generic [ref=f1e158]: zce_v2.2
+              - generic [ref=f1e163]:
+                - strong [ref=f1e164]: 发布校验
+                - generic [ref=f1e165]: 节点只能引用资源池中的角色；正式运行可替换同类型资源。
+            - main [ref=f1e166]:
+              - generic [ref=f1e167]:
+                - strong [ref=f1e168]: 主流程
+                - generic [ref=f1e169]: 拖拽节点调整顺序，点击节点编辑属性
+              - generic [ref=f1e170]:
+                - button "在流程开头添加节点" [ref=f1e171] [cursor=pointer]
+                - article [ref=f1e175] [cursor=pointer]:
+                  - generic [ref=f1e180]:
+                    - generic [ref=f1e181]: 获取服务器配置
+                    - strong [ref=f1e182]: 获取服务器配置
+                    - generic [ref=f1e183]: 3 台服务器
+                  - generic [ref=f1e184]:
+                    - button "上移节点" [disabled] [ref=f1e185]
+                    - button "下移节点" [ref=f1e189]
+                    - button "删除节点" [ref=f1e193]
+                - button "在此处添加节点" [ref=f1e199] [cursor=pointer]
+                - article [ref=f1e203] [cursor=pointer]:
+                  - generic [ref=f1e208]:
+                    - generic [ref=f1e209]: 获取数据库配置
+                    - strong [ref=f1e210]: 获取数据库配置
+                    - generic [ref=f1e211]: 2 个配置项
+                  - generic [ref=f1e212]:
+                    - button "上移节点" [ref=f1e213]
+                    - button "下移节点" [ref=f1e217]
+                    - button "删除节点" [ref=f1e221]
+                - button "在此处添加节点" [ref=f1e227] [cursor=pointer]
+                - article [ref=f1e231] [cursor=pointer]:
+                  - generic [ref=f1e237]:
+                    - generic [ref=f1e238]: 接线确认
+                    - strong [ref=f1e239]: 接线确认
+                    - generic [ref=f1e240]: 需要人工确认
+                  - generic [ref=f1e241]:
+                    - button "上移节点" [ref=f1e242]
+                    - button "下移节点" [ref=f1e246]
+                    - button "删除节点" [ref=f1e250]
+                - button "在此处添加节点" [ref=f1e256] [cursor=pointer]
+                - article [ref=f1e260] [cursor=pointer]:
+                  - generic [ref=f1e265]:
+                    - generic [ref=f1e266]: 启动 SLNIC
+                    - strong [ref=f1e267]: 启动 SLNIC
+                    - generic [ref=f1e268]: slnic_10g
+                  - generic [ref=f1e269]:
+                    - button "上移节点" [ref=f1e270]
+                    - button "下移节点" [ref=f1e274]
+                    - button "删除节点" [ref=f1e278]
+                - button "在此处添加节点" [ref=f1e284] [cursor=pointer]
+                - article [ref=f1e288] [cursor=pointer]:
+                  - generic [ref=f1e293]:
+                    - generic [ref=f1e294]: 发单执行
+                    - strong [ref=f1e295]: 发单执行
+                    - generic [ref=f1e296]: ees_ef_vi_trader_api_test_conf.xml
+                  - generic [ref=f1e297]:
+                    - button "上移节点" [ref=f1e298]
+                    - button "下移节点" [ref=f1e302]
+                    - button "删除节点" [ref=f1e306]
+                - button "在此处添加节点" [ref=f1e312] [cursor=pointer]
+                - article [ref=f1e316] [cursor=pointer]:
+                  - generic [ref=f1e321]:
+                    - generic [ref=f1e322]: 关闭 SLNIC
+                    - strong [ref=f1e323]: 关闭 SLNIC
+                    - generic [ref=f1e324]: slnic_10g
+                  - generic [ref=f1e325]:
+                    - button "上移节点" [ref=f1e326]
+                    - button "下移节点" [ref=f1e330]
+                    - button "删除节点" [ref=f1e334]
+                - button "在此处添加节点" [ref=f1e340] [cursor=pointer]
+                - article [ref=f1e344] [cursor=pointer]:
+                  - generic [ref=f1e349]:
+                    - generic [ref=f1e350]: 合并 pcapng
+                    - strong [ref=f1e351]: 合并 pcapng
+                    - generic [ref=f1e352]: slnic_10g
+                  - generic [ref=f1e353]:
+                    - button "上移节点" [ref=f1e354]
+                    - button "下移节点" [ref=f1e358]
+                    - button "删除节点" [ref=f1e362]
+                - button "在此处添加节点" [ref=f1e368] [cursor=pointer]
+                - article [ref=f1e372] [cursor=pointer]:
+                  - generic [ref=f1e377]:
+                    - generic [ref=f1e378]: 数据解析
+                    - strong [ref=f1e379]: 数据解析
+                    - generic [ref=f1e380]: fut_mm_trading_data
+                  - generic [ref=f1e381]:
+                    - button "上移节点" [ref=f1e382]
+                    - button "下移节点" [ref=f1e386]
+                    - button "删除节点" [ref=f1e390]
+                - button "在此处添加节点" [ref=f1e396] [cursor=pointer]
+                - article [ref=f1e400] [cursor=pointer]:
+                  - generic [ref=f1e405]:
+                    - generic [ref=f1e406]: 数据统计
+                    - strong [ref=f1e407]: 数据统计
+                    - generic [ref=f1e408]: statistics.py
+                  - generic [ref=f1e409]:
+                    - button "上移节点" [ref=f1e410]
+                    - button "下移节点" [disabled] [ref=f1e414]
+                    - button "删除节点" [ref=f1e418]
+                - button "在此处添加节点" [ref=f1e424] [cursor=pointer]
+                - generic [ref=f1e428]: 结束流程
+            - complementary [ref=f1e430]:
+              - generic [ref=f1e436]:
+                - strong [ref=f1e437]: 节点属性
+                - generic [ref=f1e438]: 获取数据库配置
+              - generic [ref=f1e439]:
+                - generic [ref=f1e440]: 节点名称
+                - textbox "节点名称" [ref=f1e443]: 获取数据库配置
+              - generic [ref=f1e520]:
+                - generic [ref=f1e521]: 配置数据库
+                - generic [ref=f1e524]:
+                  - combobox "配置数据库 fut_mm_config" [ref=f1e526]
+                  - generic [ref=f1e527]: fut_mm_config
+              - generic [ref=f1e532]: 个人模板
+              - generic [ref=f1e533]:
+                - generic [ref=f1e535] [cursor=pointer]:
+                  - generic:
+                    - combobox [ref=f1e537]
+                    - generic [ref=f1e538]: 选择模板快速应用
+                - button "保存当前选择为模板" [ref=f1e543] [cursor=pointer]
+                - button "重命名模板" [disabled] [ref=f1e547]
+                - button "删除模板" [disabled] [ref=f1e552]
+              - generic [ref=f1e556]: t_global_settings 配置项
+              - generic [ref=f1e557]:
+                - textbox "搜索键名或描述" [ref=f1e564]
+                - button "全选" [ref=f1e566] [cursor=pointer]
+              - group "checkbox-group" [ref=f1e569]:
+                - generic [ref=f1e570] [cursor=pointer]:
+                  - generic [ref=f1e571]:
+                    - checkbox "ACCOUNT_BP_CHANGE_INTERVAL_MS 定时计算可用资金变化(毫秒)"
+                  - generic [ref=f1e574]:
+                    - strong [ref=f1e575]: ACCOUNT_BP_CHANGE_INTERVAL_MS
+                    - generic [ref=f1e576]: 定时计算可用资金变化(毫秒)
+                - generic [ref=f1e577] [cursor=pointer]:
+                  - generic [ref=f1e578]:
+                    - checkbox "ACCOUNT_QUANTITY 暂无描述"
+                  - generic [ref=f1e581]:
+                    - strong [ref=f1e582]: ACCOUNT_QUANTITY
+                    - generic [ref=f1e583]: 暂无描述
+                - generic [ref=f1e584] [cursor=pointer]:
+                  - generic [ref=f1e585]:
+                    - checkbox "ALLOW_CASH_OUT_NEGATIVE 允许出金至负数"
+                  - generic [ref=f1e588]:
+                    - strong [ref=f1e589]: ALLOW_CASH_OUT_NEGATIVE
+                    - generic [ref=f1e590]: 允许出金至负数
+                - generic [ref=f1e591] [cursor=pointer]:
+                  - generic [ref=f1e592]:
+                    - checkbox "ASYNC_MKT_MSG_PROC 市场回报的默认同步模式"
+                  - generic [ref=f1e595]:
+                    - strong [ref=f1e596]: ASYNC_MKT_MSG_PROC
+                    - generic [ref=f1e597]: 市场回报的默认同步模式
+                - generic [ref=f1e598] [cursor=pointer]:
+                  - generic [ref=f1e599]:
+                    - checkbox "ASYNC_MKT_MSG_PROC_CPU_TO_BIND market mgr模块异步发送时cpu绑定序号"
+                  - generic [ref=f1e602]:
+                    - strong [ref=f1e603]: ASYNC_MKT_MSG_PROC_CPU_TO_BIND
+                    - generic [ref=f1e604]: market mgr模块异步发送时cpu绑定序号
+                - generic [ref=f1e605] [cursor=pointer]:
+                  - generic [ref=f1e606]:
+                    - checkbox "BETWEEN_QUOTE_NOT_SELF_EXE_CHECK 报价单间豁免自成交检查"
+                  - generic [ref=f1e609]:
+                    - strong [ref=f1e610]: BETWEEN_QUOTE_NOT_SELF_EXE_CHECK
+                    - generic [ref=f1e611]: 报价单间豁免自成交检查
+                - generic [ref=f1e612] [cursor=pointer]:
+                  - generic [ref=f1e613]:
+                    - checkbox "BG_MKTPL_ADJUST_INTERVAL_MS 补偿间隔时间（ms）"
+                  - generic [ref=f1e616]:
+                    - strong [ref=f1e617]: BG_MKTPL_ADJUST_INTERVAL_MS
+                    - generic [ref=f1e618]: 补偿间隔时间（ms）
+                - generic [ref=f1e619] [cursor=pointer]:
+                  - generic [ref=f1e620]:
+                    - checkbox "BG_MKTPL_ADJUST_SWITCH 持仓亏损是否补偿硬件"
+                  - generic [ref=f1e623]:
+                    - strong [ref=f1e624]: BG_MKTPL_ADJUST_SWITCH
+                    - generic [ref=f1e625]: 持仓亏损是否补偿硬件
+                - generic [ref=f1e626] [cursor=pointer]:
+                  - generic [ref=f1e627]:
+                    - checkbox "BK_QUERY_PORT BK服务器查询端口"
+                  - generic [ref=f1e630]:
+                    - strong [ref=f1e631]: BK_QUERY_PORT
+                    - generic [ref=f1e632]: BK服务器查询端口
+                - generic [ref=f1e633] [cursor=pointer]:
+                  - generic [ref=f1e634]:
+                    - checkbox "BK_SVR_IP BK服务器地址"
+                  - generic [ref=f1e637]:
+                    - strong [ref=f1e638]: BK_SVR_IP
+                    - generic [ref=f1e639]: BK服务器地址
+                - generic [ref=f1e640] [cursor=pointer]:
+                  - generic [ref=f1e641]:
+                    - checkbox "BK_SVR_PORT BK服务器端口"
+                  - generic [ref=f1e644]:
+                    - strong [ref=f1e645]: BK_SVR_PORT
+                    - generic [ref=f1e646]: BK服务器端口
+                - generic [ref=f1e647] [cursor=pointer]:
+                  - generic [ref=f1e648]:
+                    - checkbox "BOD_BAK_ROOT_PATH 日志备份路径"
+                  - generic [ref=f1e651]:
+                    - strong [ref=f1e652]: BOD_BAK_ROOT_PATH
+                    - generic [ref=f1e653]: 日志备份路径
+                - generic [ref=f1e654] [cursor=pointer]:
+                  - generic [ref=f1e655]:
+                    - checkbox "BOD_MOUNT_ROOT_PATH 挂载路径"
+                  - generic [ref=f1e658]:
+                    - strong [ref=f1e659]: BOD_MOUNT_ROOT_PATH
+                    - generic [ref=f1e660]: 挂载路径
+                - generic [ref=f1e661] [cursor=pointer]:
+                  - generic [ref=f1e662]:
+                    - checkbox "BP_CHECK_MAX_ALLOW_MISTAKE ot和bk资金校验时允许最大误差值"
+                  - generic [ref=f1e665]:
+                    - strong [ref=f1e666]: BP_CHECK_MAX_ALLOW_MISTAKE
+                    - generic [ref=f1e667]: ot和bk资金校验时允许最大误差值
+                - generic [ref=f1e668] [cursor=pointer]:
+                  - generic [ref=f1e669]:
+                    - checkbox "CFFEX_OPTION_BIG_SIDE_ENABLE 中金所期权是否纳入大边"
+                  - generic [ref=f1e672]:
+                    - strong [ref=f1e673]: CFFEX_OPTION_BIG_SIDE_ENABLE
+                    - generic [ref=f1e674]: 中金所期权是否纳入大边
+                - generic [ref=f1e675] [cursor=pointer]:
+                  - generic [ref=f1e676]:
+                    - checkbox "CFFEX_RCAMS_ENABLE 开启中金所RCAMS"
+                  - generic [ref=f1e679]:
+                    - strong [ref=f1e680]: CFFEX_RCAMS_ENABLE
+                    - generic [ref=f1e681]: 开启中金所RCAMS
+                - generic [ref=f1e682] [cursor=pointer]:
+                  - generic [ref=f1e683]:
+                    - checkbox "CFFEX_RCAMS_INTERVAL_MS 中金所RCAMS定时计算的间隔（毫秒）"
+                  - generic [ref=f1e686]:
+                    - strong [ref=f1e687]: CFFEX_RCAMS_INTERVAL_MS
+                    - generic [ref=f1e688]: 中金所RCAMS定时计算的间隔（毫秒）
+                - generic [ref=f1e689] [cursor=pointer]:
+                  - generic [ref=f1e690]:
+                    - checkbox "CFFEX_SEAT_SELF_PROBE 是否开启中金所席位自探测"
+                  - generic [ref=f1e693]:
+                    - strong [ref=f1e694]: CFFEX_SEAT_SELF_PROBE
+                    - generic [ref=f1e695]: 是否开启中金所席位自探测
+                - generic [ref=f1e696] [cursor=pointer]:
+                  - generic [ref=f1e697]:
+                    - checkbox "CFFEX_SEAT_SELF_PROBE_MAX_SECONDS 中金所席位自探测最长时间（s）"
+                  - generic [ref=f1e700]:
+                    - strong [ref=f1e701]: CFFEX_SEAT_SELF_PROBE_MAX_SECONDS
+                    - generic [ref=f1e702]: 中金所席位自探测最长时间（s）
+                - generic [ref=f1e703] [cursor=pointer]:
+                  - generic [ref=f1e704]:
+                    - checkbox "CFFEX_SEAT_SELF_PROBE_WAIT_USEC 中金所席位自探测等待时间"
+                  - generic [ref=f1e707]:
+                    - strong [ref=f1e708]: CFFEX_SEAT_SELF_PROBE_WAIT_USEC
+                    - generic [ref=f1e709]: 中金所席位自探测等待时间
+                - generic [ref=f1e710] [cursor=pointer]:
+                  - generic [ref=f1e711]:
+                    - checkbox "CFFEX_STABLE_FRONT_CONN_TIME_USEC 中金所稳定连接时间"
+                  - generic [ref=f1e714]:
+                    - strong [ref=f1e715]: CFFEX_STABLE_FRONT_CONN_TIME_USEC
+                    - generic [ref=f1e716]: 中金所稳定连接时间
+                - generic [ref=f1e717] [cursor=pointer]:
+                  - generic [ref=f1e718]:
+                    - checkbox "CFFEX_USE_FENS_SL 中金fens连接模式"
+                  - generic [ref=f1e721]:
+                    - strong [ref=f1e722]: CFFEX_USE_FENS_SL
+                    - generic [ref=f1e723]: 中金fens连接模式
+                - generic [ref=f1e724] [cursor=pointer]:
+                  - generic [ref=f1e725]:
+                    - checkbox "CFFEX_USE_FRONT_MODE 中金所是否采用前置连接"
+                  - generic [ref=f1e728]:
+                    - strong [ref=f1e729]: CFFEX_USE_FRONT_MODE
+                    - generic [ref=f1e730]: 中金所是否采用前置连接
+                - generic [ref=f1e731] [cursor=pointer]:
+                  - generic [ref=f1e732]:
+                    - checkbox "CFFEX_WAIT_TIME_FOR_LOGIN_ERROR_75 中金所出现errorId 75时重登间隔"
+                  - generic [ref=f1e735]:
+                    - strong [ref=f1e736]: CFFEX_WAIT_TIME_FOR_LOGIN_ERROR_75
+                    - generic [ref=f1e737]: 中金所出现errorId 75时重登间隔
+                - generic [ref=f1e738] [cursor=pointer]:
+                  - generic [ref=f1e739]:
+                    - checkbox "CLIENT_OT_CONNECT_CONF 多网卡抓包及绑核配置"
+                  - generic [ref=f1e742]:
+                    - strong [ref=f1e743]: CLIENT_OT_CONNECT_CONF
+                    - generic [ref=f1e744]: 多网卡抓包及绑核配置
+                - generic [ref=f1e745] [cursor=pointer]:
+                  - generic [ref=f1e746]:
+                    - checkbox "CLIENT_OT_CONNECT_MODE 交换机与直连模式配置开关"
+                  - generic [ref=f1e749]:
+                    - strong [ref=f1e750]: CLIENT_OT_CONNECT_MODE
+                    - generic [ref=f1e751]: 交换机与直连模式配置开关
+                - generic [ref=f1e752] [cursor=pointer]:
+                  - generic [ref=f1e753]:
+                    - checkbox "CLIENT_OT_HEART_BEAT_PERIOD 心跳检测周期"
+                  - generic [ref=f1e756]:
+                    - strong [ref=f1e757]: CLIENT_OT_HEART_BEAT_PERIOD
+                    - generic [ref=f1e758]: 心跳检测周期
+                - generic [ref=f1e759] [cursor=pointer]:
+                  - generic [ref=f1e760]:
+                    - checkbox "CLIENT_OT_RINGBUFFER_REQ_BIND_CPU 多网卡请求ring绑核"
+                  - generic [ref=f1e763]:
+                    - strong [ref=f1e764]: CLIENT_OT_RINGBUFFER_REQ_BIND_CPU
+                    - generic [ref=f1e765]: 多网卡请求ring绑核
+                - generic [ref=f1e766] [cursor=pointer]:
+                  - generic [ref=f1e767]:
+                    - checkbox "CLIENT_PCAP_RECORD_CPU 客户端数据落文件绑核"
+                  - generic [ref=f1e770]:
+                    - strong [ref=f1e771]: CLIENT_PCAP_RECORD_CPU
+                    - generic [ref=f1e772]: 客户端数据落文件绑核
+                - generic [ref=f1e773] [cursor=pointer]:
+                  - generic [ref=f1e774]:
+                    - checkbox "CLIENT_PCAP_RECORD_ENABLE 客户端网卡抓包开关"
+                  - generic [ref=f1e777]:
+                    - strong [ref=f1e778]: CLIENT_PCAP_RECORD_ENABLE
+                    - generic [ref=f1e779]: 客户端网卡抓包开关
+                - generic [ref=f1e780] [cursor=pointer]:
+                  - generic [ref=f1e781]:
+                    - checkbox "CLIENT_REQ_BIND_CPU 发单方向绑定的cpu id" [checked]
+                  - generic [ref=f1e784]:
+                    - strong [ref=f1e785]: CLIENT_REQ_BIND_CPU
+                    - generic [ref=f1e786]: 发单方向绑定的cpu id
+                - generic [ref=f1e787] [cursor=pointer]:
+                  - generic [ref=f1e788]:
+                    - checkbox "CLIENT_REQ_ENABLE 是否开启发单加速"
+                  - generic [ref=f1e791]:
+                    - strong [ref=f1e792]: CLIENT_REQ_ENABLE
+                    - generic [ref=f1e793]: 是否开启发单加速
+                - generic [ref=f1e794] [cursor=pointer]:
+                  - generic [ref=f1e795]:
+                    - checkbox "CLIENT_REQ_USING_DEV 发单绑定网卡"
+                  - generic [ref=f1e798]:
+                    - strong [ref=f1e799]: CLIENT_REQ_USING_DEV
+                    - generic [ref=f1e800]: 发单绑定网卡
+                - generic [ref=f1e801] [cursor=pointer]:
+                  - generic [ref=f1e802]:
+                    - checkbox "CLIENT_TO_REM_MESSAGE_DROPCOPY_ENABLE 客户端向rem发的交易信息是否加日志"
+                  - generic [ref=f1e805]:
+                    - strong [ref=f1e806]: CLIENT_TO_REM_MESSAGE_DROPCOPY_ENABLE
+                    - generic [ref=f1e807]: 客户端向rem发的交易信息是否加日志
+                - generic [ref=f1e808] [cursor=pointer]:
+                  - generic [ref=f1e809]:
+                    - checkbox "COMBO_THREAD_MSECONDS_INTERVAL 组合线程运行的定时间隔"
+                  - generic [ref=f1e812]:
+                    - strong [ref=f1e813]: COMBO_THREAD_MSECONDS_INTERVAL
+                    - generic [ref=f1e814]: 组合线程运行的定时间隔
+                - generic [ref=f1e815] [cursor=pointer]:
+                  - generic [ref=f1e816]:
+                    - checkbox "CRON_TASK_CONFIG NULL"
+                  - generic [ref=f1e819]:
+                    - strong [ref=f1e820]: CRON_TASK_CONFIG
+                    - generic [ref=f1e821]: "NULL"
+                - generic [ref=f1e822] [cursor=pointer]:
+                  - generic [ref=f1e823]:
+                    - checkbox "DCE_ARBITRAGE_SUPPORT 大商所是否支持套利单"
+                  - generic [ref=f1e826]:
+                    - strong [ref=f1e827]: DCE_ARBITRAGE_SUPPORT
+                    - generic [ref=f1e828]: 大商所是否支持套利单
+                - generic [ref=f1e829] [cursor=pointer]:
+                  - generic [ref=f1e830]:
+                    - checkbox "DCE_CHECK_BP_WHEN_COVER_COMBO 大商所组合平仓验资开关"
+                  - generic [ref=f1e833]:
+                    - strong [ref=f1e834]: DCE_CHECK_BP_WHEN_COVER_COMBO
+                    - generic [ref=f1e835]: 大商所组合平仓验资开关
+                - generic [ref=f1e836] [cursor=pointer]:
+                  - generic [ref=f1e837]:
+                    - checkbox "DCE_COMBO_METHOD_TYPE 大商所支持组合算法类型"
+                  - generic [ref=f1e840]:
+                    - strong [ref=f1e841]: DCE_COMBO_METHOD_TYPE
+                    - generic [ref=f1e842]: 大商所支持组合算法类型
+                - generic [ref=f1e843] [cursor=pointer]:
+                  - generic [ref=f1e844]:
+                    - checkbox "DCE_LAST_TRADE_STATUS 大商所交易状态"
+                  - generic [ref=f1e847]:
+                    - strong [ref=f1e848]: DCE_LAST_TRADE_STATUS
+                    - generic [ref=f1e849]: 大商所交易状态
+                - generic [ref=f1e850] [cursor=pointer]:
+                  - generic [ref=f1e851]:
+                    - checkbox "DCE_RULE_ENABLE 是否开启RULE保证金"
+                  - generic [ref=f1e854]:
+                    - strong [ref=f1e855]: DCE_RULE_ENABLE
+                    - generic [ref=f1e856]: 是否开启RULE保证金
+                - generic [ref=f1e857] [cursor=pointer]:
+                  - generic [ref=f1e858]:
+                    - checkbox "DCE_SUPPORT_MULTI_ENCRYPT 大商所多线程加密"
+                  - generic [ref=f1e861]:
+                    - strong [ref=f1e862]: DCE_SUPPORT_MULTI_ENCRYPT
+                    - generic [ref=f1e863]: 大商所多线程加密
+                - generic [ref=f1e864] [cursor=pointer]:
+                  - generic [ref=f1e865]:
+                    - checkbox "DCE_USE_FENS_SL 大连fens连接模式"
+                  - generic [ref=f1e868]:
+                    - strong [ref=f1e869]: DCE_USE_FENS_SL
+                    - generic [ref=f1e870]: 大连fens连接模式
+                - generic [ref=f1e871] [cursor=pointer]:
+                  - generic [ref=f1e872]:
+                    - checkbox "DCE_V7_PROBE_BATCH_INTERVAL_USEC_MODE2 早连模式2批次间隔"
+                  - generic [ref=f1e875]:
+                    - strong [ref=f1e876]: DCE_V7_PROBE_BATCH_INTERVAL_USEC_MODE2
+                    - generic [ref=f1e877]: 早连模式2批次间隔
+                - generic [ref=f1e878] [cursor=pointer]:
+                  - generic [ref=f1e879]:
+                    - checkbox "DCE_V7_PROBE_CONNECTED_TIMEOUT_TV_SEC_MODE1 早连模式1超时间隔（秒）"
+                  - generic [ref=f1e882]:
+                    - strong [ref=f1e883]: DCE_V7_PROBE_CONNECTED_TIMEOUT_TV_SEC_MODE1
+                    - generic [ref=f1e884]: 早连模式1超时间隔（秒）
+                - generic [ref=f1e885] [cursor=pointer]:
+                  - generic [ref=f1e886]:
+                    - checkbox "DCE_V7_PROBE_CONNECTED_TIMEOUT_TV_USEC_MODE1 早连模式1超时间隔（微秒）"
+                  - generic [ref=f1e889]:
+                    - strong [ref=f1e890]: DCE_V7_PROBE_CONNECTED_TIMEOUT_TV_USEC_MODE1
+                    - generic [ref=f1e891]: 早连模式1超时间隔（微秒）
+                - generic [ref=f1e892] [cursor=pointer]:
+                  - generic [ref=f1e893]:
+                    - checkbox "DCE_V7_PROBE_MODE_X 是否开启大商所FENS早连功能"
+                  - generic [ref=f1e896]:
+                    - strong [ref=f1e897]: DCE_V7_PROBE_MODE_X
+                    - generic [ref=f1e898]: 是否开启大商所FENS早连功能
+                - generic [ref=f1e899] [cursor=pointer]:
+                  - generic [ref=f1e900]:
+                    - checkbox "DCE_V7_PROBE_RETRY_COUNT_MODE2 早连模式2批次内探测次数"
+                  - generic [ref=f1e903]:
+                    - strong [ref=f1e904]: DCE_V7_PROBE_RETRY_COUNT_MODE2
+                    - generic [ref=f1e905]: 早连模式2批次内探测次数
+                - generic [ref=f1e906] [cursor=pointer]:
+                  - generic [ref=f1e907]:
+                    - checkbox "DCE_V7_PROBE_RETRY_INTERVAL_USEC_MODE2 早连模式2探测间隔"
+                  - generic [ref=f1e910]:
+                    - strong [ref=f1e911]: DCE_V7_PROBE_RETRY_INTERVAL_USEC_MODE2
+                    - generic [ref=f1e912]: 早连模式2探测间隔
+                - generic [ref=f1e913] [cursor=pointer]:
+                  - generic [ref=f1e914]:
+                    - checkbox "DCE_V7_PROBE_TIMEOUT_TV_SEC_MODE1 早连模式1超时间隔（秒）"
+                  - generic [ref=f1e917]:
+                    - strong [ref=f1e918]: DCE_V7_PROBE_TIMEOUT_TV_SEC_MODE1
+                    - generic [ref=f1e919]: 早连模式1超时间隔（秒）
+                - generic [ref=f1e920] [cursor=pointer]:
+                  - generic [ref=f1e921]:
+                    - checkbox "DCE_V7_PROBE_TIMEOUT_TV_USEC_MODE1 早连模式1超时间隔（微秒）"
+                  - generic [ref=f1e924]:
+                    - strong [ref=f1e925]: DCE_V7_PROBE_TIMEOUT_TV_USEC_MODE1
+                    - generic [ref=f1e926]: 早连模式1超时间隔（微秒）
+                - generic [ref=f1e927] [cursor=pointer]:
+                  - generic [ref=f1e928]:
+                    - checkbox "DISABLE_SESSION_SEL_MODE 禁用指定席位报单"
+                  - generic [ref=f1e931]:
+                    - strong [ref=f1e932]: DISABLE_SESSION_SEL_MODE
+                    - generic [ref=f1e933]: 禁用指定席位报单
+                - generic [ref=f1e934] [cursor=pointer]:
+                  - generic [ref=f1e935]:
+                    - checkbox "DROPCOPY_MI_DATA_TO_API 调用API接口"
+                  - generic [ref=f1e938]:
+                    - strong [ref=f1e939]: DROPCOPY_MI_DATA_TO_API
+                    - generic [ref=f1e940]: 调用API接口
+                - generic [ref=f1e941] [cursor=pointer]:
+                  - generic [ref=f1e942]:
+                    - checkbox "EES_CONFIG_DB 基础配置数据库"
+                  - generic [ref=f1e945]:
+                    - strong [ref=f1e946]: EES_CONFIG_DB
+                    - generic [ref=f1e947]: 基础配置数据库
+                - generic [ref=f1e948] [cursor=pointer]:
+                  - generic [ref=f1e949]:
+                    - checkbox "ENABLE_EXPORT_POS_CHANGE 是否实时导出组合仓位信息"
+                  - generic [ref=f1e952]:
+                    - strong [ref=f1e953]: ENABLE_EXPORT_POS_CHANGE
+                    - generic [ref=f1e954]: 是否实时导出组合仓位信息
+                - generic [ref=f1e955] [cursor=pointer]:
+                  - generic [ref=f1e956]:
+                    - checkbox "ENABLE_NOTIFY_FOR_QUOTE 是否开启询价通知"
+                  - generic [ref=f1e959]:
+                    - strong [ref=f1e960]: ENABLE_NOTIFY_FOR_QUOTE
+                    - generic [ref=f1e961]: 是否开启询价通知
+                - generic [ref=f1e962] [cursor=pointer]:
+                  - generic [ref=f1e963]:
+                    - checkbox "ENABLE_PNTR_SPVS 看穿式监管的开关"
+                  - generic [ref=f1e966]:
+                    - strong [ref=f1e967]: ENABLE_PNTR_SPVS
+                    - generic [ref=f1e968]: 看穿式监管的开关
+                - generic [ref=f1e969] [cursor=pointer]:
+                  - generic [ref=f1e970]:
+                    - checkbox "ENABLE_QUERY_BP_CHANGE 是否启用资金变化记录"
+                  - generic [ref=f1e973]:
+                    - strong [ref=f1e974]: ENABLE_QUERY_BP_CHANGE
+                    - generic [ref=f1e975]: 是否启用资金变化记录
+                - generic [ref=f1e976] [cursor=pointer]:
+                  - generic [ref=f1e977]:
+                    - checkbox "ENABLE_REPORT_TIMESTAMP X25落时间戳"
+                  - generic [ref=f1e980]:
+                    - strong [ref=f1e981]: ENABLE_REPORT_TIMESTAMP
+                    - generic [ref=f1e982]: X25落时间戳
+                - generic [ref=f1e983] [cursor=pointer]:
+                  - generic [ref=f1e984]:
+                    - checkbox "ENABLE_RINGBUFFER_REQ 请求是否开启ringBuffer"
+                  - generic [ref=f1e987]:
+                    - strong [ref=f1e988]: ENABLE_RINGBUFFER_REQ
+                    - generic [ref=f1e989]: 请求是否开启ringBuffer
+                - generic [ref=f1e990] [cursor=pointer]:
+                  - generic [ref=f1e991]:
+                    - checkbox "ENABLE_RINGBUFFER_RSP 回报是否开启ringBuffer"
+                  - generic [ref=f1e994]:
+                    - strong [ref=f1e995]: ENABLE_RINGBUFFER_RSP
+                    - generic [ref=f1e996]: 回报是否开启ringBuffer
+                - generic [ref=f1e997] [cursor=pointer]:
+                  - generic [ref=f1e998]:
+                    - checkbox "ENABLE_SHUFFLE_TPI_LIST 席位重随开关"
+                  - generic [ref=f1e1001]:
+                    - strong [ref=f1e1002]: ENABLE_SHUFFLE_TPI_LIST
+                    - generic [ref=f1e1003]: 席位重随开关
+                - generic [ref=f1e1004] [cursor=pointer]:
+                  - generic [ref=f1e1005]:
+                    - checkbox "ENABLE_UDP_SEQUENCE_CHECK UDP连续递增校验开关"
+                  - generic [ref=f1e1008]:
+                    - strong [ref=f1e1009]: ENABLE_UDP_SEQUENCE_CHECK
+                    - generic [ref=f1e1010]: UDP连续递增校验开关
+                - generic [ref=f1e1011] [cursor=pointer]:
+                  - generic [ref=f1e1012]:
+                    - checkbox "EXANIC_IP_FILTER_FLAG 是否启用网卡过滤"
+                  - generic [ref=f1e1015]:
+                    - strong [ref=f1e1016]: EXANIC_IP_FILTER_FLAG
+                    - generic [ref=f1e1017]: 是否启用网卡过滤
+                - generic [ref=f1e1018] [cursor=pointer]:
+                  - generic [ref=f1e1019]:
+                    - checkbox "FEMAS_DISPATCH_CONFIG 暂无描述"
+                  - generic [ref=f1e1022]:
+                    - strong [ref=f1e1023]: FEMAS_DISPATCH_CONFIG
+                    - generic [ref=f1e1024]: 暂无描述
+                - generic [ref=f1e1025] [cursor=pointer]:
+                  - generic [ref=f1e1026]:
+                    - checkbox "FEMAS_DISPATCH_SWITCH 暂无描述"
+                  - generic [ref=f1e1029]:
+                    - strong [ref=f1e1030]: FEMAS_DISPATCH_SWITCH
+                    - generic [ref=f1e1031]: 暂无描述
+                - generic [ref=f1e1032] [cursor=pointer]:
+                  - generic [ref=f1e1033]:
+                    - checkbox "FORCE_MODIFY_INIT_PWD_ENABLE 强制修改初始密码"
+                  - generic [ref=f1e1036]:
+                    - strong [ref=f1e1037]: FORCE_MODIFY_INIT_PWD_ENABLE
+                    - generic [ref=f1e1038]: 强制修改初始密码
+                - generic [ref=f1e1039] [cursor=pointer]:
+                  - generic [ref=f1e1040]:
+                    - checkbox "FREEZE_PREMIUM_FOR_OPTION_COVERSHORT 期权买入平仓是否冻结权利金"
+                  - generic [ref=f1e1043]:
+                    - strong [ref=f1e1044]: FREEZE_PREMIUM_FOR_OPTION_COVERSHORT
+                    - generic [ref=f1e1045]: 期权买入平仓是否冻结权利金
+                - generic [ref=f1e1046] [cursor=pointer]:
+                  - generic [ref=f1e1047]:
+                    - checkbox "GFEX_ARBITRAGE_SUPPORT 广期所是否支持套利单"
+                  - generic [ref=f1e1050]:
+                    - strong [ref=f1e1051]: GFEX_ARBITRAGE_SUPPORT
+                    - generic [ref=f1e1052]: 广期所是否支持套利单
+                - generic [ref=f1e1053] [cursor=pointer]:
+                  - generic [ref=f1e1054]:
+                    - checkbox "GFEX_COMBO_METHOD_TYPE 广期所支持组合算法类型"
+                  - generic [ref=f1e1057]:
+                    - strong [ref=f1e1058]: GFEX_COMBO_METHOD_TYPE
+                    - generic [ref=f1e1059]: 广期所支持组合算法类型
+                - generic [ref=f1e1060] [cursor=pointer]:
+                  - generic [ref=f1e1061]:
+                    - checkbox "GFEX_FRONT_RETRY_COUNT 广期所fens优选重连次数"
+                  - generic [ref=f1e1064]:
+                    - strong [ref=f1e1065]: GFEX_FRONT_RETRY_COUNT
+                    - generic [ref=f1e1066]: 广期所fens优选重连次数
+                - generic [ref=f1e1067] [cursor=pointer]:
+                  - generic [ref=f1e1068]:
+                    - checkbox "GFEX_LAST_TRADE_STATUS 广期所交易状态"
+                  - generic [ref=f1e1071]:
+                    - strong [ref=f1e1072]: GFEX_LAST_TRADE_STATUS
+                    - generic [ref=f1e1073]: 广期所交易状态
+                - generic [ref=f1e1074] [cursor=pointer]:
+                  - generic [ref=f1e1075]:
+                    - checkbox "GFEX_PROBE_CONNECTED_TIMEOUT_TV_SEC 广期所早连模式超时间隔（秒）"
+                  - generic [ref=f1e1078]:
+                    - strong [ref=f1e1079]: GFEX_PROBE_CONNECTED_TIMEOUT_TV_SEC
+                    - generic [ref=f1e1080]: 广期所早连模式超时间隔（秒）
+                - generic [ref=f1e1081] [cursor=pointer]:
+                  - generic [ref=f1e1082]:
+                    - checkbox "GFEX_PROBE_CONNECTED_TIMEOUT_TV_USEC 广期所早连模式超时间隔（微秒）"
+                  - generic [ref=f1e1085]:
+                    - strong [ref=f1e1086]: GFEX_PROBE_CONNECTED_TIMEOUT_TV_USEC
+                    - generic [ref=f1e1087]: 广期所早连模式超时间隔（微秒）
+                - generic [ref=f1e1088] [cursor=pointer]:
+                  - generic [ref=f1e1089]:
+                    - checkbox "GFEX_PROBE_MODE_X 广期所早连开关"
+                  - generic [ref=f1e1092]:
+                    - strong [ref=f1e1093]: GFEX_PROBE_MODE_X
+                    - generic [ref=f1e1094]: 广期所早连开关
+                - generic [ref=f1e1095] [cursor=pointer]:
+                  - generic [ref=f1e1096]:
+                    - checkbox "GFEX_PROBE_TIMEOUT_TV_SEC 广期所早连模式超时间隔（秒）"
+                  - generic [ref=f1e1099]:
+                    - strong [ref=f1e1100]: GFEX_PROBE_TIMEOUT_TV_SEC
+                    - generic [ref=f1e1101]: 广期所早连模式超时间隔（秒）
+                - generic [ref=f1e1102] [cursor=pointer]:
+                  - generic [ref=f1e1103]:
+                    - checkbox "GFEX_PROBE_TIMEOUT_TV_USEC 广期所早连模式超时间隔（微秒）"
+                  - generic [ref=f1e1106]:
+                    - strong [ref=f1e1107]: GFEX_PROBE_TIMEOUT_TV_USEC
+                    - generic [ref=f1e1108]: 广期所早连模式超时间隔（微秒）
+                - generic [ref=f1e1109] [cursor=pointer]:
+                  - generic [ref=f1e1110]:
+                    - checkbox "GFEX_SEAT_SELF_PROBE 广期所自探测开关"
+                  - generic [ref=f1e1113]:
+                    - strong [ref=f1e1114]: GFEX_SEAT_SELF_PROBE
+                    - generic [ref=f1e1115]: 广期所自探测开关
+                - generic [ref=f1e1116] [cursor=pointer]:
+                  - generic [ref=f1e1117]:
+                    - checkbox "GFEX_SUPPORT_MULTI_SEAT 广期所多线程模式"
+                  - generic [ref=f1e1120]:
+                    - strong [ref=f1e1121]: GFEX_SUPPORT_MULTI_SEAT
+                    - generic [ref=f1e1122]: 广期所多线程模式
+                - generic [ref=f1e1123] [cursor=pointer]:
+                  - generic [ref=f1e1124]:
+                    - checkbox "GFEX_USE_FENS_SL 广期所fens优选配置"
+                  - generic [ref=f1e1127]:
+                    - strong [ref=f1e1128]: GFEX_USE_FENS_SL
+                    - generic [ref=f1e1129]: 广期所fens优选配置
+                - generic [ref=f1e1130] [cursor=pointer]:
+                  - generic [ref=f1e1131]:
+                    - checkbox "HARDWARE_SUPPORT_OPTION 硬件是否支持期权"
+                  - generic [ref=f1e1134]:
+                    - strong [ref=f1e1135]: HARDWARE_SUPPORT_OPTION
+                    - generic [ref=f1e1136]: 硬件是否支持期权
+                - generic [ref=f1e1137] [cursor=pointer]:
+                  - generic [ref=f1e1138]:
+                    - checkbox "HDS_DOWNLOAD_PATH 自动更新文件夹地址"
+                  - generic [ref=f1e1141]:
+                    - strong [ref=f1e1142]: HDS_DOWNLOAD_PATH
+                    - generic [ref=f1e1143]: 自动更新文件夹地址
+                - generic [ref=f1e1144] [cursor=pointer]:
+                  - generic [ref=f1e1145]:
+                    - checkbox "HDS_SVR_EMC_LISTEN_IP HDS-EMC服务器地址"
+                  - generic [ref=f1e1148]:
+                    - strong [ref=f1e1149]: HDS_SVR_EMC_LISTEN_IP
+                    - generic [ref=f1e1150]: HDS-EMC服务器地址
+                - generic [ref=f1e1151] [cursor=pointer]:
+                  - generic [ref=f1e1152]:
+                    - checkbox "HDS_SVR_EMC_LISTEN_PORT HDS-EMC服务器端口"
+                  - generic [ref=f1e1155]:
+                    - strong [ref=f1e1156]: HDS_SVR_EMC_LISTEN_PORT
+                    - generic [ref=f1e1157]: HDS-EMC服务器端口
+                - generic [ref=f1e1158] [cursor=pointer]:
+                  - generic [ref=f1e1159]:
+                    - checkbox "HDS_SVR_HDC_LISTEN_IP HDS-HDC服务器地址"
+                  - generic [ref=f1e1162]:
+                    - strong [ref=f1e1163]: HDS_SVR_HDC_LISTEN_IP
+                    - generic [ref=f1e1164]: HDS-HDC服务器地址
+                - generic [ref=f1e1165] [cursor=pointer]:
+                  - generic [ref=f1e1166]:
+                    - checkbox "HDS_SVR_HDC_LISTEN_PORT HDS-HDC服务器端口"
+                  - generic [ref=f1e1169]:
+                    - strong [ref=f1e1170]: HDS_SVR_HDC_LISTEN_PORT
+                    - generic [ref=f1e1171]: HDS-HDC服务器端口
+                - generic [ref=f1e1172] [cursor=pointer]:
+                  - generic [ref=f1e1173]:
+                    - checkbox "HISTORY_TRADING_DATA_DB 历史交易数据库"
+                  - generic [ref=f1e1176]:
+                    - strong [ref=f1e1177]: HISTORY_TRADING_DATA_DB
+                    - generic [ref=f1e1178]: 历史交易数据库
+                - generic [ref=f1e1179] [cursor=pointer]:
+                  - generic [ref=f1e1180]:
+                    - checkbox "IS_QUIT_WHEN_BP_CHECK_FAILED 开启ot和bp资金一致性校验"
+                  - generic [ref=f1e1183]:
+                    - strong [ref=f1e1184]: IS_QUIT_WHEN_BP_CHECK_FAILED
+                    - generic [ref=f1e1185]: 开启ot和bp资金一致性校验
+                - generic [ref=f1e1186] [cursor=pointer]:
+                  - generic [ref=f1e1187]:
+                    - checkbox "IS_QUIT_WHEN_POS_CHECK_FAILED 开启ot和bp仓位一致性校验"
+                  - generic [ref=f1e1190]:
+                    - strong [ref=f1e1191]: IS_QUIT_WHEN_POS_CHECK_FAILED
+                    - generic [ref=f1e1192]: 开启ot和bp仓位一致性校验
+                - generic [ref=f1e1193] [cursor=pointer]:
+                  - generic [ref=f1e1194]:
+                    - checkbox "IS_STEP_FEE_BY_OPT_SERIES 是否按期权系列计算信息量和阶梯申报费"
+                  - generic [ref=f1e1197]:
+                    - strong [ref=f1e1198]: IS_STEP_FEE_BY_OPT_SERIES
+                    - generic [ref=f1e1199]: 是否按期权系列计算信息量和阶梯申报费
+                - generic [ref=f1e1200] [cursor=pointer]:
+                  - generic [ref=f1e1201]:
+                    - checkbox "KIWI_MAC_ADDR KIWI网络相关的配置 mac地址"
+                  - generic [ref=f1e1204]:
+                    - strong [ref=f1e1205]: KIWI_MAC_ADDR
+                    - generic [ref=f1e1206]: KIWI网络相关的配置 mac地址
+                - generic [ref=f1e1207] [cursor=pointer]:
+                  - generic [ref=f1e1208]:
+                    - checkbox "LICENSE_CHECK_HINT 软件授权到期提醒开关"
+                  - generic [ref=f1e1211]:
+                    - strong [ref=f1e1212]: LICENSE_CHECK_HINT
+                    - generic [ref=f1e1213]: 软件授权到期提醒开关
+                - generic [ref=f1e1214] [cursor=pointer]:
+                  - generic [ref=f1e1215]:
+                    - checkbox "LICENSE_EXPIRE_DATE 暂无描述"
+                  - generic [ref=f1e1218]:
+                    - strong [ref=f1e1219]: LICENSE_EXPIRE_DATE
+                    - generic [ref=f1e1220]: 暂无描述
+                - generic [ref=f1e1221] [cursor=pointer]:
+                  - generic [ref=f1e1222]:
+                    - checkbox "LICENSE_REMAIN_DAYS 暂无描述"
+                  - generic [ref=f1e1225]:
+                    - strong [ref=f1e1226]: LICENSE_REMAIN_DAYS
+                    - generic [ref=f1e1227]: 暂无描述
+                - generic [ref=f1e1228] [cursor=pointer]:
+                  - generic [ref=f1e1229]:
+                    - checkbox "LOG_DATA_DB 日志数据库连接串"
+                  - generic [ref=f1e1232]:
+                    - strong [ref=f1e1233]: LOG_DATA_DB
+                    - generic [ref=f1e1234]: 日志数据库连接串
+                - generic [ref=f1e1235] [cursor=pointer]:
+                  - generic [ref=f1e1236]:
+                    - checkbox "LOG_SERVER_IP 日志服务器地址"
+                  - generic [ref=f1e1239]:
+                    - strong [ref=f1e1240]: LOG_SERVER_IP
+                    - generic [ref=f1e1241]: 日志服务器地址
+                - generic [ref=f1e1242] [cursor=pointer]:
+                  - generic [ref=f1e1243]:
+                    - checkbox "LOG_SERVER_PORT 日志服务器端口"
+                  - generic [ref=f1e1246]:
+                    - strong [ref=f1e1247]: LOG_SERVER_PORT
+                    - generic [ref=f1e1248]: 日志服务器端口
+                - generic [ref=f1e1249] [cursor=pointer]:
+                  - generic [ref=f1e1250]:
+                    - checkbox "MARKET_RESP_BIND_CPU 市场回单绑定的cpu id" [checked]
+                  - generic [ref=f1e1253]:
+                    - strong [ref=f1e1254]: MARKET_RESP_BIND_CPU
+                    - generic [ref=f1e1255]: 市场回单绑定的cpu id
+                - generic [ref=f1e1256] [cursor=pointer]:
+                  - generic [ref=f1e1257]:
+                    - checkbox "MARKET_RESP_ENABLE 是否开启回单加速"
+                  - generic [ref=f1e1260]:
+                    - strong [ref=f1e1261]: MARKET_RESP_ENABLE
+                    - generic [ref=f1e1262]: 是否开启回单加速
+                - generic [ref=f1e1263] [cursor=pointer]:
+                  - generic [ref=f1e1264]:
+                    - checkbox "MARKET_RESP_USE_MKT_TIMESTAMP 1012消息使用市场时间戳"
+                  - generic [ref=f1e1267]:
+                    - strong [ref=f1e1268]: MARKET_RESP_USE_MKT_TIMESTAMP
+                    - generic [ref=f1e1269]: 1012消息使用市场时间戳
+                - generic [ref=f1e1270] [cursor=pointer]:
+                  - generic [ref=f1e1271]:
+                    - checkbox "MARKET_RESP_USING_DEV 市场回单绑定的网卡"
+                  - generic [ref=f1e1274]:
+                    - strong [ref=f1e1275]: MARKET_RESP_USING_DEV
+                    - generic [ref=f1e1276]: 市场回单绑定的网卡
+                - generic [ref=f1e1277] [cursor=pointer]:
+                  - generic [ref=f1e1278]:
+                    - checkbox "MARKET_RESP_USING_DEV_2 市场回单绑定的网卡2"
+                  - generic [ref=f1e1281]:
+                    - strong [ref=f1e1282]: MARKET_RESP_USING_DEV_2
+                    - generic [ref=f1e1283]: 市场回单绑定的网卡2
+                - generic [ref=f1e1284] [cursor=pointer]:
+                  - generic [ref=f1e1285]:
+                    - checkbox "MARKET_RESP_USING_DEV_3 市场回单绑定的网卡3"
+                  - generic [ref=f1e1288]:
+                    - strong [ref=f1e1289]: MARKET_RESP_USING_DEV_3
+                    - generic [ref=f1e1290]: 市场回单绑定的网卡3
+                - generic [ref=f1e1291] [cursor=pointer]:
+                  - generic [ref=f1e1292]:
+                    - checkbox "MARKET_SESSION_IDLE_REPORT_LOG 加热日志开关"
+                  - generic [ref=f1e1295]:
+                    - strong [ref=f1e1296]: MARKET_SESSION_IDLE_REPORT_LOG
+                    - generic [ref=f1e1297]: 加热日志开关
+                - generic [ref=f1e1298] [cursor=pointer]:
+                  - generic [ref=f1e1299]:
+                    - checkbox "MKT_PL_USING_LAST_PRICE 持仓盈亏是否用最新价计算"
+                  - generic [ref=f1e1302]:
+                    - strong [ref=f1e1303]: MKT_PL_USING_LAST_PRICE
+                    - generic [ref=f1e1304]: 持仓盈亏是否用最新价计算
+                - generic [ref=f1e1305] [cursor=pointer]:
+                  - generic [ref=f1e1306]:
+                    - checkbox "MULTI_MARKET_DEV_ENABLE 多运营商报盘开关"
+                  - generic [ref=f1e1309]:
+                    - strong [ref=f1e1310]: MULTI_MARKET_DEV_ENABLE
+                    - generic [ref=f1e1311]: 多运营商报盘开关
+                - generic [ref=f1e1312] [cursor=pointer]:
+                  - generic [ref=f1e1313]:
+                    - checkbox "NEGATIVE_MKT_PL_IN_BP 持仓亏损是否影响可用资金"
+                  - generic [ref=f1e1316]:
+                    - strong [ref=f1e1317]: NEGATIVE_MKT_PL_IN_BP
+                    - generic [ref=f1e1318]: 持仓亏损是否影响可用资金
+                - generic [ref=f1e1319] [cursor=pointer]:
+                  - generic [ref=f1e1320]:
+                    - checkbox "OPEN_LIMIT_RISK_ENABLE 是否开启开仓量风控"
+                  - generic [ref=f1e1323]:
+                    - strong [ref=f1e1324]: OPEN_LIMIT_RISK_ENABLE
+                    - generic [ref=f1e1325]: 是否开启开仓量风控
+                - generic [ref=f1e1326] [cursor=pointer]:
+                  - generic [ref=f1e1327]:
+                    - checkbox "OPERATOR_ERR_PWD_LIMITED 操作员最大密码错误次数"
+                  - generic [ref=f1e1330]:
+                    - strong [ref=f1e1331]: OPERATOR_ERR_PWD_LIMITED
+                    - generic [ref=f1e1332]: 操作员最大密码错误次数
+                - generic [ref=f1e1333] [cursor=pointer]:
+                  - generic [ref=f1e1334]:
+                    - checkbox "OPERATOR_PWD_COMPLEX 操作员密码复杂度"
+                  - generic [ref=f1e1337]:
+                    - strong [ref=f1e1338]: OPERATOR_PWD_COMPLEX
+                    - generic [ref=f1e1339]: 操作员密码复杂度
+                - generic [ref=f1e1340] [cursor=pointer]:
+                  - generic [ref=f1e1341]:
+                    - checkbox "OPERATOR_PWD_MIN_LEN 操作员密码最小长度"
+                  - generic [ref=f1e1344]:
+                    - strong [ref=f1e1345]: OPERATOR_PWD_MIN_LEN
+                    - generic [ref=f1e1346]: 操作员密码最小长度
+                - generic [ref=f1e1347] [cursor=pointer]:
+                  - generic [ref=f1e1348]:
+                    - checkbox "OPERATOR_PWD_VALID_DAY 操作员密码有效天数"
+                  - generic [ref=f1e1351]:
+                    - strong [ref=f1e1352]: OPERATOR_PWD_VALID_DAY
+                    - generic [ref=f1e1353]: 操作员密码有效天数
+                - generic [ref=f1e1354] [cursor=pointer]:
+                  - generic [ref=f1e1355]:
+                    - checkbox "ORDER_AUTO_SUSPEND 订单是否自动挂起"
+                  - generic [ref=f1e1358]:
+                    - strong [ref=f1e1359]: ORDER_AUTO_SUSPEND
+                    - generic [ref=f1e1360]: 订单是否自动挂起
+                - generic [ref=f1e1361] [cursor=pointer]:
+                  - generic [ref=f1e1362]:
+                    - checkbox "PNTR_SPVS_LAST_REPORT_TIME 采集信息上报时间间隔"
+                  - generic [ref=f1e1365]:
+                    - strong [ref=f1e1366]: PNTR_SPVS_LAST_REPORT_TIME
+                    - generic [ref=f1e1367]: 采集信息上报时间间隔
+                - generic [ref=f1e1368] [cursor=pointer]:
+                  - generic [ref=f1e1369]:
+                    - checkbox "PNTR_SPVS_USE_TEST_KEY_PAIR 当前环境是否使用测试版本的密钥对标志"
+                  - generic [ref=f1e1372]:
+                    - strong [ref=f1e1373]: PNTR_SPVS_USE_TEST_KEY_PAIR
+                    - generic [ref=f1e1374]: 当前环境是否使用测试版本的密钥对标志
+                - generic [ref=f1e1375] [cursor=pointer]:
+                  - generic [ref=f1e1376]:
+                    - checkbox "PROBE_CONNECT_CLIENT_NUM 探测连接客户端数量"
+                  - generic [ref=f1e1379]:
+                    - strong [ref=f1e1380]: PROBE_CONNECT_CLIENT_NUM
+                    - generic [ref=f1e1381]: 探测连接客户端数量
+                - generic [ref=f1e1382] [cursor=pointer]:
+                  - generic [ref=f1e1383]:
+                    - checkbox "PROBE_MAX_COUNT 探测最大次数"
+                  - generic [ref=f1e1386]:
+                    - strong [ref=f1e1387]: PROBE_MAX_COUNT
+                    - generic [ref=f1e1388]: 探测最大次数
+                - generic [ref=f1e1389] [cursor=pointer]:
+                  - generic [ref=f1e1390]:
+                    - checkbox "PROBE_TIMEOUT_USEC 探测超时微秒"
+                  - generic [ref=f1e1393]:
+                    - strong [ref=f1e1394]: PROBE_TIMEOUT_USEC
+                    - generic [ref=f1e1395]: 探测超时微秒
+                - generic [ref=f1e1396] [cursor=pointer]:
+                  - generic [ref=f1e1397]:
+                    - checkbox "PROBE_WAIT_USEC 探测循环间隔微秒"
+                  - generic [ref=f1e1400]:
+                    - strong [ref=f1e1401]: PROBE_WAIT_USEC
+                    - generic [ref=f1e1402]: 探测循环间隔微秒
+                - generic [ref=f1e1403] [cursor=pointer]:
+                  - generic [ref=f1e1404]:
+                    - checkbox "QUERY_MARKET_SESSION_RETURN_FRONT_IP 开启查询席位配置的前置IP"
+                  - generic [ref=f1e1407]:
+                    - strong [ref=f1e1408]: QUERY_MARKET_SESSION_RETURN_FRONT_IP
+                    - generic [ref=f1e1409]: 开启查询席位配置的前置IP
+                - generic [ref=f1e1410] [cursor=pointer]:
+                  - generic [ref=f1e1411]:
+                    - checkbox "QUOTE_MODIFY_ENABLE 是否支持顶单"
+                  - generic [ref=f1e1414]:
+                    - strong [ref=f1e1415]: QUOTE_MODIFY_ENABLE
+                    - generic [ref=f1e1416]: 是否支持顶单
+                - generic [ref=f1e1417] [cursor=pointer]:
+                  - generic [ref=f1e1418]:
+                    - checkbox "QUOTE_MODIFY_ENABLE_LEN 顶单缓存map容量"
+                  - generic [ref=f1e1421]:
+                    - strong [ref=f1e1422]: QUOTE_MODIFY_ENABLE_LEN
+                    - generic [ref=f1e1423]: 顶单缓存map容量
+                - generic [ref=f1e1424] [cursor=pointer]:
+                  - generic [ref=f1e1425]:
+                    - checkbox "REM_MARKET_TIME_SECTION1 第一个时间段"
+                  - generic [ref=f1e1428]:
+                    - strong [ref=f1e1429]: REM_MARKET_TIME_SECTION1
+                    - generic [ref=f1e1430]: 第一个时间段
+                - generic [ref=f1e1431] [cursor=pointer]:
+                  - generic [ref=f1e1432]:
+                    - checkbox "REM_MARKET_TIME_SECTION2 第二个时间段"
+                  - generic [ref=f1e1435]:
+                    - strong [ref=f1e1436]: REM_MARKET_TIME_SECTION2
+                    - generic [ref=f1e1437]: 第二个时间段
+                - generic [ref=f1e1438] [cursor=pointer]:
+                  - generic [ref=f1e1439]:
+                    - checkbox "REM_MARKET_TIME_SECTION3 第三个时间段"
+                  - generic [ref=f1e1442]:
+                    - strong [ref=f1e1443]: REM_MARKET_TIME_SECTION3
+                    - generic [ref=f1e1444]: 第三个时间段
+                - generic [ref=f1e1445] [cursor=pointer]:
+                  - generic [ref=f1e1446]:
+                    - checkbox "REM_TO_MKT_MESSAGE_DROPCOPY_ENABLE rem到市场是否日志记录"
+                  - generic [ref=f1e1449]:
+                    - strong [ref=f1e1450]: REM_TO_MKT_MESSAGE_DROPCOPY_ENABLE
+                    - generic [ref=f1e1451]: rem到市场是否日志记录
+                - generic [ref=f1e1452] [cursor=pointer]:
+                  - generic [ref=f1e1453]:
+                    - checkbox "RINGBUFFER_RSP_BIND_CPU RINGBUFFER回单绑定cpu的id"
+                  - generic [ref=f1e1456]:
+                    - strong [ref=f1e1457]: RINGBUFFER_RSP_BIND_CPU
+                    - generic [ref=f1e1458]: RINGBUFFER回单绑定cpu的id
+                - generic [ref=f1e1459] [cursor=pointer]:
+                  - generic [ref=f1e1460]:
+                    - checkbox "RISK_DATA_DB 风控数据库连接串"
+                  - generic [ref=f1e1463]:
+                    - strong [ref=f1e1464]: RISK_DATA_DB
+                    - generic [ref=f1e1465]: 风控数据库连接串
+                - generic [ref=f1e1466] [cursor=pointer]:
+                  - generic [ref=f1e1467]:
+                    - checkbox "SELF_EXE_CHECK_ENABLE 自成交检查"
+                  - generic [ref=f1e1470]:
+                    - strong [ref=f1e1471]: SELF_EXE_CHECK_ENABLE
+                    - generic [ref=f1e1472]: 自成交检查
+                - generic [ref=f1e1473] [cursor=pointer]:
+                  - generic [ref=f1e1474]:
+                    - checkbox "SESSION_COUNT_UPPER_LIMIT 支持的席位数量（范围1-64）"
+                  - generic [ref=f1e1477]:
+                    - strong [ref=f1e1478]: SESSION_COUNT_UPPER_LIMIT
+                    - generic [ref=f1e1479]: 支持的席位数量（范围1-64）
+                - generic [ref=f1e1480] [cursor=pointer]:
+                  - generic [ref=f1e1481]:
+                    - checkbox "SESSION_PRIORITY_FLOWCTRL_THRESHOLD 席位优选流控门限值"
+                  - generic [ref=f1e1484]:
+                    - strong [ref=f1e1485]: SESSION_PRIORITY_FLOWCTRL_THRESHOLD
+                    - generic [ref=f1e1486]: 席位优选流控门限值
+                - generic [ref=f1e1487] [cursor=pointer]:
+                  - generic [ref=f1e1488]:
+                    - checkbox "SESSION_PRIORITY_FLOWCTRL_TIME 席位优选流控单位时间"
+                  - generic [ref=f1e1491]:
+                    - strong [ref=f1e1492]: SESSION_PRIORITY_FLOWCTRL_TIME
+                    - generic [ref=f1e1493]: 席位优选流控单位时间
+                - generic [ref=f1e1494] [cursor=pointer]:
+                  - generic [ref=f1e1495]:
+                    - checkbox "SESSION_PRIORITY_SWITCH 是否开启席位优选功能"
+                  - generic [ref=f1e1498]:
+                    - strong [ref=f1e1499]: SESSION_PRIORITY_SWITCH
+                    - generic [ref=f1e1500]: 是否开启席位优选功能
+                - generic [ref=f1e1501] [cursor=pointer]:
+                  - generic [ref=f1e1502]:
+                    - checkbox "SHFE_FENS_LIST 上期所fens列表"
+                  - generic [ref=f1e1505]:
+                    - strong [ref=f1e1506]: SHFE_FENS_LIST
+                    - generic [ref=f1e1507]: 上期所fens列表
+                - generic [ref=f1e1508] [cursor=pointer]:
+                  - generic [ref=f1e1509]:
+                    - checkbox "SHFE_PROBE_FENS 上期所是否探测fens"
+                  - generic [ref=f1e1512]:
+                    - strong [ref=f1e1513]: SHFE_PROBE_FENS
+                    - generic [ref=f1e1514]: 上期所是否探测fens
+                - generic [ref=f1e1515] [cursor=pointer]:
+                  - generic [ref=f1e1516]:
+                    - checkbox "SHFE_SEAT_SELF_PROBE 是否开启上期所席位自探测"
+                  - generic [ref=f1e1519]:
+                    - strong [ref=f1e1520]: SHFE_SEAT_SELF_PROBE
+                    - generic [ref=f1e1521]: 是否开启上期所席位自探测
+                - generic [ref=f1e1522] [cursor=pointer]:
+                  - generic [ref=f1e1523]:
+                    - checkbox "SHFE_SEAT_SELF_PROBE_MAX_SECONDS 上期所席位自探测最长时间（s）"
+                  - generic [ref=f1e1526]:
+                    - strong [ref=f1e1527]: SHFE_SEAT_SELF_PROBE_MAX_SECONDS
+                    - generic [ref=f1e1528]: 上期所席位自探测最长时间（s）
+                - generic [ref=f1e1529] [cursor=pointer]:
+                  - generic [ref=f1e1530]:
+                    - checkbox "SHFE_SEAT_SELF_PROBE_WAIT_USEC 上期所席位自探测等待时间"
+                  - generic [ref=f1e1533]:
+                    - strong [ref=f1e1534]: SHFE_SEAT_SELF_PROBE_WAIT_USEC
+                    - generic [ref=f1e1535]: 上期所席位自探测等待时间
+                - generic [ref=f1e1536] [cursor=pointer]:
+                  - generic [ref=f1e1537]:
+                    - checkbox "SHFE_STABLE_FRONT_CONN_TIME_USEC 上期所稳定连接时间长度"
+                  - generic [ref=f1e1540]:
+                    - strong [ref=f1e1541]: SHFE_STABLE_FRONT_CONN_TIME_USEC
+                    - generic [ref=f1e1542]: 上期所稳定连接时间长度
+                - generic [ref=f1e1543] [cursor=pointer]:
+                  - generic [ref=f1e1544]:
+                    - checkbox "SHFE_USE_FENS_SL 上期fens连接模式"
+                  - generic [ref=f1e1547]:
+                    - strong [ref=f1e1548]: SHFE_USE_FENS_SL
+                    - generic [ref=f1e1549]: 上期fens连接模式
+                - generic [ref=f1e1550] [cursor=pointer]:
+                  - generic [ref=f1e1551]:
+                    - checkbox "SHFE_WAIT_TIME_FOR_LOGIN_ERROR_75 上期所出现errorId 75时重登间隔"
+                  - generic [ref=f1e1554]:
+                    - strong [ref=f1e1555]: SHFE_WAIT_TIME_FOR_LOGIN_ERROR_75
+                    - generic [ref=f1e1556]: 上期所出现errorId 75时重登间隔
+                - generic [ref=f1e1557] [cursor=pointer]:
+                  - generic [ref=f1e1558]:
+                    - checkbox "SUPPORT_TRUNK_TWO 是否使用整合版二期协议"
+                  - generic [ref=f1e1561]:
+                    - strong [ref=f1e1562]: SUPPORT_TRUNK_TWO
+                    - generic [ref=f1e1563]: 是否使用整合版二期协议
+                - generic [ref=f1e1564] [cursor=pointer]:
+                  - generic [ref=f1e1565]:
+                    - checkbox "TCP_CONN_COUNT_LIMIT_PER_SECOND 每秒最大连接数"
+                  - generic [ref=f1e1568]:
+                    - strong [ref=f1e1569]: TCP_CONN_COUNT_LIMIT_PER_SECOND
+                    - generic [ref=f1e1570]: 每秒最大连接数
+                - generic [ref=f1e1571] [cursor=pointer]:
+                  - generic [ref=f1e1572]:
+                    - checkbox "TCP_CONN_FUSING_SECONDS 熔断时间"
+                  - generic [ref=f1e1575]:
+                    - strong [ref=f1e1576]: TCP_CONN_FUSING_SECONDS
+                    - generic [ref=f1e1577]: 熔断时间
+                - generic [ref=f1e1578] [cursor=pointer]:
+                  - generic [ref=f1e1579]:
+                    - checkbox "TCP_CONN_TIME_INTERVAL 两次连接的时间间隔"
+                  - generic [ref=f1e1582]:
+                    - strong [ref=f1e1583]: TCP_CONN_TIME_INTERVAL
+                    - generic [ref=f1e1584]: 两次连接的时间间隔
+                - generic [ref=f1e1585] [cursor=pointer]:
+                  - generic [ref=f1e1586]:
+                    - checkbox "TCP_ORDER_ENABLE 是否启用tcp报单功能"
+                  - generic [ref=f1e1589]:
+                    - strong [ref=f1e1590]: TCP_ORDER_ENABLE
+                    - generic [ref=f1e1591]: 是否启用tcp报单功能
+                - generic [ref=f1e1592] [cursor=pointer]:
+                  - generic [ref=f1e1593]:
+                    - checkbox "TCP_SERVER_BIND_CPU tcp server绑定的cpu id"
+                  - generic [ref=f1e1596]:
+                    - strong [ref=f1e1597]: TCP_SERVER_BIND_CPU
+                    - generic [ref=f1e1598]: tcp server绑定的cpu id
+                - generic [ref=f1e1599] [cursor=pointer]:
+                  - generic [ref=f1e1600]:
+                    - checkbox "TRADER_ERR_PWD_LIMITED 交易员最大密码错误次数"
+                  - generic [ref=f1e1603]:
+                    - strong [ref=f1e1604]: TRADER_ERR_PWD_LIMITED
+                    - generic [ref=f1e1605]: 交易员最大密码错误次数
+                - generic [ref=f1e1606] [cursor=pointer]:
+                  - generic [ref=f1e1607]:
+                    - checkbox "TRADE_ORDER_TIME_OUT_LIMITED 待报状态超时时间"
+                  - generic [ref=f1e1610]:
+                    - strong [ref=f1e1611]: TRADE_ORDER_TIME_OUT_LIMITED
+                    - generic [ref=f1e1612]: 待报状态超时时间
+                - generic [ref=f1e1613] [cursor=pointer]:
+                  - generic [ref=f1e1614]:
+                    - checkbox "TRADING_DATA_DB 实时交易数据库"
+                  - generic [ref=f1e1617]:
+                    - strong [ref=f1e1618]: TRADING_DATA_DB
+                    - generic [ref=f1e1619]: 实时交易数据库
+                - generic [ref=f1e1620] [cursor=pointer]:
+                  - generic [ref=f1e1621]:
+                    - checkbox "USER_TOKEN_CANCEL_ENABLE 是否支持tag11撤单"
+                  - generic [ref=f1e1624]:
+                    - strong [ref=f1e1625]: USER_TOKEN_CANCEL_ENABLE
+                    - generic [ref=f1e1626]: 是否支持tag11撤单
+                - generic [ref=f1e1627] [cursor=pointer]:
+                  - generic [ref=f1e1628]:
+                    - checkbox "USER_TOKEN_CANCEL_ENABLE_LEN tag11撤单buff容量"
+                  - generic [ref=f1e1631]:
+                    - strong [ref=f1e1632]: USER_TOKEN_CANCEL_ENABLE_LEN
+                    - generic [ref=f1e1633]: tag11撤单buff容量
+                - generic [ref=f1e1634] [cursor=pointer]:
+                  - generic [ref=f1e1635]:
+                    - checkbox "WARM_ORDER_REPORT_USEC 加热单频率"
+                  - generic [ref=f1e1638]:
+                    - strong [ref=f1e1639]: WARM_ORDER_REPORT_USEC
+                    - generic [ref=f1e1640]: 加热单频率
+                - generic [ref=f1e1641] [cursor=pointer]:
+                  - generic [ref=f1e1642]:
+                    - checkbox "X25_KEY_VALUE 暂无描述"
+                  - generic [ref=f1e1645]:
+                    - strong [ref=f1e1646]: X25_KEY_VALUE
+                    - generic [ref=f1e1647]: 暂无描述
+                - generic [ref=f1e1648] [cursor=pointer]:
+                  - generic [ref=f1e1649]:
+                    - checkbox "ZCE_COMBO_ENABLE 郑商所组合开关"
+                  - generic [ref=f1e1652]:
+                    - strong [ref=f1e1653]: ZCE_COMBO_ENABLE
+                    - generic [ref=f1e1654]: 郑商所组合开关
+              - button "预采集并保存" [ref=f1e1655] [cursor=pointer]

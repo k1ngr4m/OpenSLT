@@ -1,0 +1,572 @@
+[   24328ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24329ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24330ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24330ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24330ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24331ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24331ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24331ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24331ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24332ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   24332ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92800ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92800ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92800ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92800ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92800ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92801ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92801ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92801ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92801ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92802ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[   92802ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119716ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119717ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119717ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119717ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119717ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119718ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119718ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119718ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119718ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119718ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  119719ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180417ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180418ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180418ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180418ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180418ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180419ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180419ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180419ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180419ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180420ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085
+[  180420ms] [WARNING] ElementPlusError: [el-checkbox] [API] label act as value is about to be deprecated in version 3.0.0, please use value instead.
+For more detail, please visit: https://element-plus.org/en-US/component/checkbox.html
+
+    at debugWarn (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085:37)
+    at watch.immediate (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10179:14)
+    at callWithErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2377:19)
+    at callWithAsyncErrorHandling (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2384:17)
+    at baseWatchOptions.call (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3071:47)
+    at job (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2107:18)
+    at watch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:2142:7)
+    at doWatch (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3099:23)
+    at watch2 (http://127.0.0.1:7777/node_modules/.vite/deps/chunk-FT3SB2S6.js?v=dc0701a7:3032:10)
+    at useDeprecated (http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:10178:3) @ http://127.0.0.1:7777/node_modules/.vite/deps/element-plus.js?v=dc0701a7:9085

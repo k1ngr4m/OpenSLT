@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import WorkflowDocumentWrite
-from app.workflow_node_configs import MarketStartupConfig, OrderPreparationConfig, ParserConfig, RemStartupConfig, ServerConfig, StatisticsConfig, WiringConfirmationConfig, parse_node_config
+from app.workflow_node_configs import MarketStartupConfig, OrderPreparationConfig, ParserConfig, REM_STARTUP_DEFAULT_COMMANDS, RemStartupConfig, ServerConfig, StatisticsConfig, WiringConfirmationConfig, parse_node_config
 
 
 def test_workflow_document_discriminates_node_config_by_node_type() -> None:
@@ -39,6 +39,23 @@ def test_workflow_document_discriminates_node_config_by_node_type() -> None:
 def test_runtime_config_parser_uses_the_same_contract() -> None:
     rem_startup = parse_node_config("rem_startup", {})
     assert isinstance(rem_startup, RemStartupConfig)
+    assert rem_startup.commands == list(REM_STARTUP_DEFAULT_COMMANDS)
+
+    normalized_rem = parse_node_config("rem_startup", {
+        "commands": ["  export MODE=test  ", "\n", "cd data\nprintf '%s' \"$MODE\""],
+    })
+    assert normalized_rem.commands == [
+        "export MODE=test",
+        "cd data",
+        "printf '%s' \"$MODE\"",
+    ]
+
+    with pytest.raises(ValidationError):
+        parse_node_config("rem_startup", {"commands": ["x" * 4097]})
+    with pytest.raises(ValidationError):
+        parse_node_config("rem_startup", {"commands": ["x" * 4000] * 9})
+    with pytest.raises(ValidationError):
+        parse_node_config("rem_startup", {"commands": ["true"] * 101})
 
     market_startup = parse_node_config("market_startup", {
         "scripts": [{"filename": "start.sh", "checksum": "a" * 64}],

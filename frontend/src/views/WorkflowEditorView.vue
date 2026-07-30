@@ -11,6 +11,7 @@ import { resourceText } from '@/utils/status'
 import { buildWiringSnapshot, wiringInterfaceNameDefaults } from '@/utils/wiring'
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
+import { DEFAULT_REM_STARTUP_COMMANDS, normalizeRemStartupCommands, remStartupCommandText } from '@/utils/remCommands'
 import {
   applyDatabaseConfigTemplate,
   filterDatabaseConfigItems,
@@ -50,6 +51,7 @@ const fetchingContracts = ref(false)
 const scanningContracts = ref(false)
 let contractFilesRequestId = 0
 const globalKeySearch = ref('')
+const remCommandEditorText = ref('')
 const databaseConfigItems = ref<DatabaseConfigItem[]>([])
 const databaseConfigCatalogLoading = ref(false)
 const databaseConfigCatalogLoaded = ref(false)
@@ -141,6 +143,9 @@ const selectedMarketScriptRows = computed(() => {
     return { selection, file, status }
   })
 })
+const remCommandCount = computed(() => normalizeRemStartupCommands(
+  remStartupCommandText(selectedNode.value?.config.commands),
+).length)
 
 function makeKey() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -354,7 +359,7 @@ function nodeDescription(type: string) {
     server_config: '通过 SSH 采集软硬件信息',
     database_config: '读取 t_global_settings',
     wiring_confirmation: '阻断流程并等待机房确认',
-    rem_startup: '停止服务、清理数据流并重新启动全部柜台服务',
+    rem_startup: '按配置顺序在共享 Shell 中执行 REM 启动命令',
     market_startup: '按配置顺序执行模拟市场根目录下的启动脚本',
     order_preparation: '启动发单工具，运行时按需发单',
     slnic_start_capture: '调用脚本开始四路抓包',
@@ -375,8 +380,10 @@ function remWorkdir() {
   return String(selectedResourceMap.value.rem?.remote_path || '').replace(/\/+$/, '') || '未配置远端路径'
 }
 
-function remCommands() {
-  return ['./stop_rem.sh', './makeneat.sh', './start_rem_all.sh']
+function updateRemCommands(value: string) {
+  if (!selectedNode.value || selectedNode.value.node_type !== 'rem_startup') return
+  selectedNode.value.config.commands = normalizeRemStartupCommands(value)
+  markDirty()
 }
 
 function slnicCommands(type: string) {
@@ -399,6 +406,7 @@ function defaultNode(type: string): WorkflowNode {
       config: { diagram: 'resource', ...names },
     }
   }
+  if (type === 'rem_startup') return { node_key: key, position: 0, node_type: type, name: '启动rem柜台', config: { commands: [...DEFAULT_REM_STARTUP_COMMANDS] } }
   if (type === 'market_startup') return { node_key: key, position: 0, node_type: type, name: '启动模拟市场', config: { scripts: [] } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return {
@@ -783,6 +791,9 @@ watch(selectedNode, async node => {
   previewSnapshots.value = []
   globalKeySearch.value = ''
   selectedDatabaseConfigTemplateId.value = null
+  remCommandEditorText.value = node?.node_type === 'rem_startup'
+    ? remStartupCommandText(node.config.commands)
+    : ''
   if (node?.node_type === 'database_config') await loadDatabaseConfigTemplates()
   if (node?.node_type === 'order_preparation') { await loadOrderConfigs(); await loadContractFiles() }
   if (node?.node_type === 'parser_parse') { await loadParserConfigs(); await ensureParserXmlSelections() }
@@ -936,13 +947,25 @@ onMounted(load)
           <template v-else-if="selectedNode.node_type === 'rem_startup'">
             <div class="slnic-summary">
               <div><span>REM 柜台资源</span><strong>{{ selectedResourceMap.rem?.name || '资源池未绑定' }}</strong></div>
-              <div><span>执行模式</span><strong>固定远程脚本</strong></div>
+              <div><span>执行模式</span><strong>可配置 Shell 命令</strong></div>
               <div class="wide"><span>工作目录</span><code>{{ remWorkdir() }}</code></div>
             </div>
             <el-alert v-if="!selectedResourceMap.rem" title="请先在左侧场景资源池绑定 REM 柜台" type="warning" :closable="false" show-icon />
+            <el-alert v-if="!remCommandCount" title="至少输入一条 REM 启动命令后才能发布" type="warning" :closable="false" show-icon />
             <div class="section-label">执行命令（按顺序）</div>
-            <div class="slnic-commands"><code v-for="command in remCommands()" :key="command">{{ command }}</code></div>
-            <p class="slnic-note">任一命令失败都会停止后续执行；重试节点时将从 stop_rem.sh 重新开始。</p>
+            <el-input
+              v-model="remCommandEditorText"
+              type="textarea"
+              :rows="7"
+              :readonly="!editable"
+              :maxlength="32768"
+              resize="vertical"
+              spellcheck="false"
+              class="rem-command-editor"
+              placeholder="一行一条 Shell 命令"
+              @input="value => updateRemCommands(String(value))"
+            />
+            <p class="slnic-note">空白行会被忽略。命令在同一个 Shell 中执行，前一行的 cd、export 会影响后续命令；任一命令失败都会停止，重试时从第一条重新开始。</p>
           </template>
 
           <template v-else-if="selectedNode.node_type === 'market_startup'">
@@ -1069,6 +1092,7 @@ onMounted(load)
 .flow-node,.flow-empty,.wiring-placeholder,.node-picker button{border-radius:8px}.wiring-editor-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin:20px 0 10px}.wiring-editor-heading strong,.wiring-editor-heading span{display:block}.wiring-editor-heading span{max-width:240px;margin-top:4px;color:var(--ui-text-tertiary);font-size:11px;line-height:1.45}.wiring-editor-heading+.el-alert{margin-bottom:10px}.contract-previews{margin-top:12px}.contract-preview-title{display:flex;align-items:center;gap:8px;min-width:0}.contract-preview-title small{color:#7d8a92}.checksum{display:grid;gap:4px;margin-bottom:10px}.checksum span{font-size:10px;color:#7d8a92}.checksum code{font-size:10px;line-height:1.5;overflow-wrap:anywhere;color:#34444d}.snapshot dl{grid-template-columns:minmax(0,1fr) minmax(96px,35%);column-gap:12px}.snapshot dt,.snapshot dd{min-width:0;line-height:1.45;overflow-wrap:anywhere}.snapshot dt{font-family:Cascadia Code,Consolas,monospace;font-size:10px}.snapshot dd{font-variant-numeric:tabular-nums}@media(max-width:1250px){.editor-grid{grid-template-columns:180px minmax(320px,1fr) 300px}.resource-panel{padding:12px}.property-panel{padding:14px}.workflow-canvas{padding:16px 12px 48px}.flow-column,.flow-node,.flow-empty{width:290px}}
 .contract-empty{min-height:96px;margin-top:10px;border:1px dashed #ccd8dd;border-radius:8px;display:grid;place-items:center;color:#829099;font-size:11px}
 .flow-node.violet{border-left-color:#7669b5}.node-icon.violet{background:#eeebf8;color:#6556a5}.node-catalog{display:grid;gap:22px}.node-category h3{margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid #e6ebee;color:#697780;font-size:12px;font-weight:600}.slnic-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 14px}.slnic-summary>div{padding:11px;border:1px solid #e3e0ef;border-radius:8px;background:#f8f7fc}.slnic-summary .wide{grid-column:1/-1}.slnic-summary span,.slnic-summary strong,.slnic-summary code{display:block}.slnic-summary span{font-size:10px;color:#7f8991}.slnic-summary strong,.slnic-summary code{margin-top:5px;font-size:12px;overflow-wrap:anywhere}.slnic-commands{display:grid;gap:7px}.slnic-commands code{padding:10px;border-radius:7px;background:#242632;color:#d9e6df;font-size:11px;line-height:1.45;overflow-wrap:anywhere}.slnic-note{color:#7c8991;font-size:11px;line-height:1.6}
+.rem-command-editor :deep(.el-textarea__inner){background:#242632;color:#d9e6df;font:12px/1.7 "Cascadia Code","JetBrains Mono",Consolas,monospace;box-shadow:inset 0 0 0 1px #39404f}.rem-command-editor :deep(.el-textarea__inner:focus){box-shadow:inset 0 0 0 1px var(--ui-primary)}.rem-command-editor :deep(.el-textarea__inner[readonly]){cursor:default}
 .market-script-options{display:grid;max-height:190px;margin-top:10px;overflow:auto;border:1px solid #e0e7ea;border-radius:8px}.market-script-options :deep(.el-checkbox){height:auto;margin:0;padding:9px 11px;border-bottom:1px solid #edf1f3}.market-script-options :deep(.el-checkbox:last-of-type){border-bottom:0}.market-script-options strong,.market-script-options small{display:block}.market-script-options small{margin-top:3px;color:#85929a;font-size:10px}.market-script-order{display:grid;gap:7px}.market-script-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px;border:1px solid #dfe6ea;border-radius:7px}.market-script-row.invalid{border-color:#e3b268;background:#fffaf1}.market-script-row strong,.market-script-row small{display:block;overflow-wrap:anywhere}.market-script-row small{margin-top:3px;color:#85929a;font-size:10px}.market-script-row.invalid small{color:#a66e20}.market-script-index{display:grid;width:22px;height:22px;place-items:center;border-radius:5px;background:#edf3f4;color:#627078;font-size:10px;font-weight:700}.market-script-actions{display:flex;align-items:center}.market-script-actions :deep(.el-button){margin:0}
 
 .template-toolbar{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,32px);gap:6px;align-items:center}.template-toolbar :deep(.el-button){width:32px;height:32px;margin:0}.catalog-alert{margin-bottom:8px}.catalog-alert :deep(.el-alert__content){min-width:0}.stale-key-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:8px 10px;border:1px solid #efd39a;border-radius:6px;background:#fff9ec;color:#8a641f;font-size:11px}.stale-key-row :deep(.el-button){flex:0 0 auto}.key-grid{min-height:94px}.key-options :deep(.el-checkbox){height:auto;min-height:36px;padding:5px 0;align-items:flex-start}.key-options :deep(.el-checkbox__input){margin-top:2px}.key-options :deep(.el-checkbox__label){min-width:0;white-space:normal;font-family:inherit}.key-option-copy,.key-option-copy strong,.key-option-copy small{display:block}.key-option-copy strong{font:11px/1.4 Cascadia Code,Consolas,monospace;overflow-wrap:anywhere}.key-option-copy small{margin-top:2px;color:#839099;font-size:10px;line-height:1.45}

@@ -20,7 +20,7 @@ from app.services.resource_relations import (
     workflow_resource_ids,
 )
 from app.wiring_profiles import build_wiring_snapshot, wiring_interface_names
-from app.workflow_node_configs import ORDER_ACTIONS
+from app.workflow_node_configs import ORDER_ACTIONS, REM_STARTUP_DEFAULT_COMMANDS
 
 SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
 NODE_TYPES = {
@@ -265,10 +265,13 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                         })
         elif node.node_type == "rem_startup":
             rem_resource = resources.get("rem")
+            commands = config.get("commands", list(REM_STARTUP_DEFAULT_COMMANDS))
             if not rem_resource or rem_resource.is_deleted or not rem_resource.is_enabled:
                 errors.append({**prefix, "field": "resource", "message": "启动 REM 柜台需要绑定已启用的 REM 资源"})
             elif not rem_resource.remote_path.strip():
                 errors.append({**prefix, "field": "resource", "message": "REM 资源未配置远端路径"})
+            if not commands:
+                errors.append({**prefix, "field": "commands", "message": "启动 REM 柜台至少需要一条命令"})
         elif node.node_type == "market_startup":
             market_resource = resources.get("market")
             scripts = config.get("scripts") or []

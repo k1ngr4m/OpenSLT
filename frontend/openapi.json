@@ -1855,7 +1855,16 @@
       },
       "RemStartupConfig": {
         "additionalProperties": false,
-        "properties": {},
+        "properties": {
+          "commands": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Commands",
+            "type": "array"
+          }
+        },
         "title": "RemStartupConfig",
         "type": "object"
       },

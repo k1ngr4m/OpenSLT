@@ -1879,7 +1879,10 @@ export interface components {
             refresh_token: string;
         };
         /** RemStartupConfig */
-        RemStartupConfig: Record<string, unknown>;
+        RemStartupConfig: {
+            /** Commands */
+            commands?: string[];
+        };
         /** RemStartupNodeOut */
         RemStartupNodeOut: {
             config?: components["schemas"]["RemStartupConfig"];

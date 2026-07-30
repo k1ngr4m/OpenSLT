@@ -106,11 +106,11 @@ describe('useRunStepPresentation contract preview', () => {
     }
   })
 
-  it('presents the fixed REM startup sequence and execution result', () => {
+  it('presents configured REM startup commands and execution result', () => {
     const step = {
       ...orderStep(),
       node_type: 'rem_startup',
-      config_snapshot: {},
+      config_snapshot: { commands: ['export MODE=prod', './start_rem.sh --all'] },
       result_summary: {
         resource_id: 3,
         resource_name: 'REM-03',
@@ -118,9 +118,8 @@ describe('useRunStepPresentation contract preview', () => {
         exit_code: 0,
         duration_ms: 1250,
         commands: [
-          { script: './stop_rem.sh', exit_code: 0 },
-          { script: './makeneat.sh', exit_code: 0 },
-          { script: './start_rem_all.sh', exit_code: 0 },
+          { command: 'export MODE=prod', exit_code: 0 },
+          { command: './start_rem.sh --all', exit_code: 0 },
         ],
       },
     } as RunStep
@@ -128,12 +127,13 @@ describe('useRunStepPresentation contract preview', () => {
     const presentation = useRunStepPresentation(run, computed(() => step), {})
 
     expect(presentation.configRows.value).toEqual([
-      { label: 'REM 动作', value: '停止服务 → 清理数据流 → 启动服务' },
-      { label: '固定脚本', value: './stop_rem.sh → ./makeneat.sh → ./start_rem_all.sh', mono: true },
+      { label: '命令数量', value: '2 条' },
+      { label: '执行顺序', value: 'export MODE=prod → ./start_rem.sh --all', mono: true },
     ])
     expect(presentation.resultRows.value).toEqual(expect.arrayContaining([
       { label: '资源', value: 'REM-03' },
-      { label: '完成命令', value: '3/3' },
+      { label: '完成命令', value: '2/2' },
+      { label: '执行顺序', value: 'export MODE=prod → ./start_rem.sh --all', mono: true },
       { label: '退出码', value: 0 },
     ]))
   })

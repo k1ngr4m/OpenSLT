@@ -1,6 +1,7 @@
 import { computed, type ComputedRef, type Ref } from 'vue'
 import type { ContractFilePreview, InfoRow, JsonMap, RunDetail, RunStep } from '@/types/run'
 import { formatBytes, formatDate, formatDuration, formatValue, isJsonMap, nodeTypeText, normalizeContractFile, optionalNumber, optionalString, stringValue } from '@/utils/runDetail'
+import { DEFAULT_REM_STARTUP_COMMANDS } from '@/utils/remCommands'
 import { statusText } from '@/utils/status'
 
 export function useRunStepPresentation(
@@ -98,9 +99,12 @@ export function useRunStepPresentation(
       return rows
     }
     if (step.node_type === 'rem_startup') {
+      const commands = Array.isArray(config.commands)
+        ? config.commands.filter(command => typeof command === 'string') as string[]
+        : [...DEFAULT_REM_STARTUP_COMMANDS]
       return [
-        { label: 'REM 动作', value: '停止服务 → 清理数据流 → 启动服务' },
-        { label: '固定脚本', value: './stop_rem.sh → ./makeneat.sh → ./start_rem_all.sh', mono: true },
+        { label: '命令数量', value: `${commands.length} 条` },
+        { label: '执行顺序', value: commands.join(' → ') || '-', mono: true },
       ]
     }
     if (step.node_type === 'market_startup') {
@@ -177,10 +181,14 @@ export function useRunStepPresentation(
     }
     if (step.node_type === 'rem_startup') {
       const commands = Array.isArray(result.commands) ? result.commands.filter(isJsonMap) : []
+      const configuredCommands = Array.isArray(selectedConfig.value.commands)
+        ? selectedConfig.value.commands
+        : DEFAULT_REM_STARTUP_COMMANDS
       return [
         { label: '资源', value: stringValue(result.resource_name, result.resource_id ? resourceDisplayName(Number(result.resource_id)) : '-') },
         { label: '远端工作目录', value: stringValue(result.remote_workdir), mono: true },
-        { label: '完成命令', value: `${commands.filter(command => command.exit_code === 0).length}/${commands.length || 3}` },
+        { label: '完成命令', value: `${commands.filter(command => command.exit_code === 0).length}/${configuredCommands.length}` },
+        { label: '执行顺序', value: commands.map(command => stringValue(command.command, '')).filter(Boolean).join(' → ') || '-', mono: true },
         { label: '退出码', value: optionalNumber(result.exit_code) ?? '-' },
         { label: '执行耗时', value: formatDuration(optionalNumber(result.duration_ms)) },
       ]
