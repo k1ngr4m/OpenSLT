@@ -22,3 +22,4 @@ build/
 /.playwright/
 /.playwright-cli/
 /docs/
+/output/
