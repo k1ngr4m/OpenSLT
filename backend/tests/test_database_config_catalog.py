@@ -4,6 +4,7 @@ import pytest
 
 from app.adapters.database import DatabaseOperationError
 from app.services.database_config_catalog import detect_setting_columns, read_setting_catalog
+from app.services.workflow_capture import _read_database_values
 
 
 class FakeCursor:
@@ -68,3 +69,29 @@ def test_catalog_rejects_unknown_schema_and_duplicate_keys():
     with pytest.raises(DatabaseOperationError) as duplicate_error:
         read_setting_catalog(connection)
     assert duplicate_error.value.code == "GLOBAL_SETTINGS_KEYS_AMBIGUOUS"
+
+
+@pytest.mark.parametrize(
+    ("columns", "rows", "expected"),
+    [
+        (
+            ["setting_key", "setting_value", "description"],
+            [("SETTING_A", "captured", "  配置说明  "), ("SETTING_B", "N", "  ")],
+            {"SETTING_A": ("captured", "配置说明"), "SETTING_B": ("N", None)},
+        ),
+        (
+            ["setting_key", "setting_value"],
+            [("SETTING_A", "captured", None)],
+            {"SETTING_A": ("captured", None)},
+        ),
+    ],
+)
+def test_capture_values_include_optional_normalized_descriptions(columns, rows, expected):
+    values, key_column, value_column = _read_database_values(
+        FakeConnection(columns, rows),
+        list(expected),
+    )
+
+    assert values == expected
+    assert key_column == "setting_key"
+    assert value_column == "setting_value"

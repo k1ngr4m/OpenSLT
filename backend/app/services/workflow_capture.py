@@ -21,6 +21,40 @@ from app.services.workflow_core import (
 from app.services.database_config_catalog import TABLE_NAME, detect_setting_columns, quote_identifier
 from app.workflow_node_configs import DatabaseConfig, ServerConfig, parse_node_config
 
+
+DatabaseCaptureValue = typing.Tuple[typing.Any, typing.Optional[str]]
+
+
+def _read_database_values(
+    connection: typing.Any,
+    keys: list[str],
+) -> tuple[dict[str, DatabaseCaptureValue], str, str]:
+    with connection.cursor() as cursor:
+        cursor.execute(f"SHOW COLUMNS FROM {quote_identifier(TABLE_NAME)}")
+        key_column, value_column, description_column = detect_setting_columns(
+            [str(row[0]) for row in cursor.fetchall()]
+        )
+        description_sql = (
+            quote_identifier(description_column) if description_column else "NULL"
+        )
+        placeholders = ",".join(["%s"] * len(keys))
+        sql = (
+            f"SELECT {quote_identifier(key_column)}, {quote_identifier(value_column)}, "
+            f"{description_sql} "
+            f"FROM {quote_identifier(TABLE_NAME)} "
+            f"WHERE {quote_identifier(key_column)} IN ({placeholders})"
+        )
+        cursor.execute(sql, keys)
+        values = {
+            str(row[0]): (
+                row[1],
+                (str(row[2]).strip() or None) if row[2] is not None else None,
+            )
+            for row in cursor.fetchall()
+        }
+    return values, key_column, value_column
+
+
 def _ssh_options(resource: Resource) -> dict:
     options: dict[str, typing.Any] = {
         "host": resource.host, "port": resource.ssh_port, "username": resource.username,
@@ -151,32 +185,24 @@ async def capture_database(
     db.commit()
     try:
         async with mysql_adapter.connection(resource, database_name) as connection:
-            def query() -> tuple[dict[str, typing.Any], str]:
-                with connection.cursor() as cursor:
-                    cursor.execute(f"SHOW COLUMNS FROM {quote_identifier(TABLE_NAME)}")
-                    key_column, value_column, _ = detect_setting_columns(
-                        [str(row[0]) for row in cursor.fetchall()]
-                    )
-                    placeholders = ",".join(["%s"] * len(keys))
-                    sql = (
-                        f"SELECT {quote_identifier(key_column)}, {quote_identifier(value_column)} "
-                        f"FROM {quote_identifier(TABLE_NAME)} "
-                        f"WHERE {quote_identifier(key_column)} IN ({placeholders})"
-                    )
-                    cursor.execute(sql, keys)
-                    return {str(row[0]): row[1] for row in cursor.fetchall()}, f"{database_name}.t_global_settings.{key_column}/{value_column}"
+            def query() -> tuple[dict[str, tuple[typing.Any, typing.Optional[str]]], str]:
+                values, key_column, value_column = _read_database_values(connection, keys)
+                return values, f"{database_name}.t_global_settings.{key_column}/{value_column}"
             values, source = await to_thread(query)
         failed = False
         for key in keys:
             if key in values:
+                value, description = values[key]
                 snapshot.items.append(ConfigurationCaptureItem(
-                    item_key=key, item_label=key, value_text=str(values[key]), source_reference=source,
-                    raw_output=str(values[key]), exit_code=0, status="succeeded",
+                    item_key=key, item_label=key, item_description=description,
+                    value_text=str(value), source_reference=source,
+                    raw_output=str(value), exit_code=0, status="succeeded",
                 ))
             else:
                 failed = True
                 snapshot.items.append(ConfigurationCaptureItem(
-                    item_key=key, item_label=key, source_reference=source, raw_output="",
+                    item_key=key, item_label=key, item_description=None,
+                    source_reference=source, raw_output="",
                     status="failed", error_message="配置项不存在",
                 ))
         snapshot.status = "failed" if failed else "succeeded"

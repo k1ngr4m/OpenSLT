@@ -1330,6 +1330,8 @@ export interface components {
             exit_code: number | null;
             /** Id */
             id: number;
+            /** Item Description */
+            item_description: string | null;
             /** Item Key */
             item_key: string;
             /** Item Label */

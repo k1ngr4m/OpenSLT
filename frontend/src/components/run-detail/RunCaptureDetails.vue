@@ -34,8 +34,14 @@ defineProps<{
         <el-table :data="snapshot.items" size="small" empty-text="暂无采集项">
           <el-table-column label="配置项" min-width="150">
             <template #default="scope">
-              <strong>{{ scope.row.item_label }}</strong>
-              <p class="muted mono capture-key">{{ scope.row.item_key }}</p>
+              <template v-if="snapshot.source_type === 'database'">
+                <strong class="mono">{{ scope.row.item_key }}</strong>
+                <p class="muted capture-description">{{ scope.row.item_description || '暂无描述' }}</p>
+              </template>
+              <template v-else>
+                <strong>{{ scope.row.item_label }}</strong>
+                <p class="muted mono capture-key">{{ scope.row.item_key }}</p>
+              </template>
             </template>
           </el-table-column>
           <el-table-column label="采集值" min-width="220">
@@ -66,7 +72,7 @@ defineProps<{
 .capture-title{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}.capture-title h4{margin:0;font-size:15px}
 .capture-snapshot-list{display:grid;gap:14px}.capture-snapshot{padding:14px;border:1px solid var(--ui-border);border-radius:8px;background:var(--ui-surface)}
 .capture-snapshot-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.capture-snapshot-head strong,.capture-snapshot-head span{display:block}.capture-snapshot-head .muted{margin-top:4px;font-size:12px}
-.capture-key{margin:4px 0 0;font-size:11px}.capture-value{line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.capture-key,.capture-description{margin:4px 0 0;font-size:11px;line-height:1.45;word-break:break-word}.capture-value{line-height:1.55;white-space:pre-wrap;word-break:break-word}
 .raw-output-fold{margin-top:8px}.raw-output-fold summary{color:var(--ui-primary);font-size:12px;cursor:pointer}.raw-output-fold pre{max-height:180px;overflow:auto;margin:8px 0 0;padding:10px;border-radius:6px;background:var(--ui-terminal);color:#d1dde0;font:12px/1.6 "Cascadia Code",Consolas,monospace}
 .empty-line{padding:14px;border-radius:8px;color:var(--ui-text-tertiary);background:var(--ui-surface)}
 </style>

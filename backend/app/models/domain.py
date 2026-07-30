@@ -472,6 +472,7 @@ class ConfigurationCaptureItem(Base):
     snapshot_id: Mapped[int] = mapped_column(ForeignKey("t_configuration_capture_snapshots.id", ondelete="CASCADE"), index=True)
     item_key: Mapped[str] = mapped_column(String(128), index=True)
     item_label: Mapped[str] = mapped_column(String(128))
+    item_description: Mapped[typing.Union[str, None]] = mapped_column(Text)
     value_text: Mapped[typing.Union[str, None]] = mapped_column(Text)
     source_reference: Mapped[str] = mapped_column(Text, default="")
     raw_output: Mapped[str] = mapped_column(Text, default="")

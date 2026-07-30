@@ -170,6 +170,17 @@
             "title": "Id",
             "type": "integer"
           },
+          "item_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Item Description"
+          },
           "item_key": {
             "title": "Item Key",
             "type": "string"
@@ -206,6 +217,7 @@
           "id",
           "item_key",
           "item_label",
+          "item_description",
           "value_text",
           "source_reference",
           "raw_output",

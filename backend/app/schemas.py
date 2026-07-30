@@ -685,6 +685,7 @@ class CaptureItemOut(ORMModel):
     id: int
     item_key: str
     item_label: str
+    item_description: typing.Union[str, None]
     value_text: typing.Union[str, None]
     source_reference: str
     raw_output: str

@@ -262,9 +262,9 @@ def test_database_preview_releases_platform_write_lock_during_remote_read(
 
         def execute(self, statement, _parameters=None):
             self.rows = (
-                [("setting_key",), ("setting_value",)]
+                [("setting_key",), ("setting_value",), ("description",)]
                 if statement.startswith("SHOW COLUMNS")
-                else [("SETTING_A", "captured")]
+                else [("SETTING_A", "captured", "采集配置说明")]
             )
 
         def fetchall(self):
@@ -297,6 +297,7 @@ def test_database_preview_releases_platform_write_lock_during_remote_read(
     assert preview.status_code == 200, preview.text
     assert preview.json()[0]["status"] == "succeeded"
     assert preview.json()[0]["items"][0]["value_text"] == "captured"
+    assert preview.json()[0]["items"][0]["item_description"] == "采集配置说明"
     with SessionLocal() as db:
         assert db.query(AuditLog).filter(AuditLog.action == "test.concurrent_write").count() == 1
 
