@@ -28,7 +28,7 @@ import type {
   LogScope,
   RunStep,
 } from '@/types/run'
-import { formatBytes, formatDate, formatTime, nodeTypeText, normalizeContractFile, presentRunMetric } from '@/utils/runDetail'
+import { formatBytes, formatDate, formatTime, nodeTypeText, normalizeContractFile, presentRunMetric, sortArtifactsNewestFirst } from '@/utils/runDetail'
 import { businessText, resourceText } from '@/utils/status'
 
 const route = useRoute()
@@ -56,6 +56,7 @@ const canRegenerateReports = computed(() => Boolean(
   auth.canOperate && run.value?.status === 'completed' && isWorkflowRun.value,
 ))
 const metricRows = computed(() => (run.value?.metrics || []).map(presentRunMetric))
+const artifactsNewestFirst = computed(() => sortArtifactsNewestFirst(run.value?.artifacts || []))
 const isTerminalRunStatus = computed(() => ['completed', 'cancelled', 'execution_failed', 'parse_failed', 'precheck_failed', 'timed_out'].includes(run.value?.status || ''))
 const currentStep = computed(() => findCurrentStep(run.value?.steps || []))
 const selectedStep = computed(() => {
@@ -753,7 +754,7 @@ watch(
               <div><h3>报告版本</h3><p class="muted">重新生成会创建下一版本，历史文件保持不变。</p></div>
               <el-button :icon="Refresh" :loading="regeneratingReports" @click="regenerateReports">重新生成报告</el-button>
             </div>
-            <el-table :data="run.artifacts" empty-text="暂无产物">
+            <el-table :data="artifactsNewestFirst" empty-text="暂无产物">
               <el-table-column prop="name" label="文件" />
               <el-table-column prop="artifact_type" label="类型" width="140" />
               <el-table-column label="大小" width="110"><template #default="scope">{{ formatBytes(scope.row.size) }}</template></el-table-column>

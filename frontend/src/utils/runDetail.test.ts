@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { RunMetric } from '@/types/run'
-import { presentRunMetric } from '@/utils/runDetail'
+import type { RunArtifact, RunMetric } from '@/types/run'
+import { presentRunMetric, sortArtifactsNewestFirst } from '@/utils/runDetail'
 
 function metric(overrides: Partial<RunMetric> = {}): RunMetric {
   return {
@@ -37,5 +37,18 @@ describe('presentRunMetric', () => {
       sourceFile: '-',
       sourcePath: '',
     })
+  })
+})
+
+describe('sortArtifactsNewestFirst', () => {
+  it('sorts by creation time descending without mutating the source array', () => {
+    const artifacts = [
+      { id: 1, created_at: '2026-07-28T10:00:00+08:00' },
+      { id: 3, created_at: '2026-07-29T10:00:00+08:00' },
+      { id: 2, created_at: '2026-07-29T10:00:00+08:00' },
+    ] as RunArtifact[]
+
+    expect(sortArtifactsNewestFirst(artifacts).map(item => item.id)).toEqual([3, 2, 1])
+    expect(artifacts.map(item => item.id)).toEqual([1, 3, 2])
   })
 })

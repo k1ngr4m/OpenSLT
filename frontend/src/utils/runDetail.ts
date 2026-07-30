@@ -1,4 +1,4 @@
-import type { ContractFilePreview, JsonMap, RunMetric } from '@/types/run'
+import type { ContractFilePreview, JsonMap, RunArtifact, RunMetric } from '@/types/run'
 import { formatBeijingDateTime, formatBeijingTime } from '@/utils/time'
 
 export const nodeTypeText: Record<string, string> = {
@@ -65,6 +65,16 @@ export function formatBytes(value: number) {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
   return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+export function sortArtifactsNewestFirst(artifacts: RunArtifact[]) {
+  return [...artifacts].sort((left, right) => {
+    const leftTime = Date.parse(left.created_at)
+    const rightTime = Date.parse(right.created_at)
+    const timeDifference = (Number.isNaN(rightTime) ? -Infinity : rightTime)
+      - (Number.isNaN(leftTime) ? -Infinity : leftTime)
+    return timeDifference || right.id - left.id
+  })
 }
 
 function metricDetailText(metric: RunMetric, key: string) {
