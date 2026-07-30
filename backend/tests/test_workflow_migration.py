@@ -110,7 +110,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0003"
+        ).scalar_one() == "0004"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -164,6 +164,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0001_initial.py",
         "0002_database_config_templates.py",
         "0003_workflow_version_generations.py",
+        "0004_observability_logs.py",
     }
 
     completed = subprocess.run(
@@ -173,4 +174,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0003 (head)"
+    assert completed.stdout.strip() == "0004 (head)"

@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import SessionLocal
-from app.core.logging import trace_id_ctx
+from app.core.logging import trace_id_ctx, user_id_ctx
 from app.core.security import CredentialSecretError, decode_token, decrypt_secret
 from app.core.time import beijing_now
 from app.models import Resource, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, User
@@ -652,7 +652,7 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, actor_id
 
 
 async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token: str) -> None:
-    trace_token = trace_id_ctx.set(str(uuid4()))
+    trace_token = trace_id_ctx.set(trace_id_ctx.get() or str(uuid4()))
     started_at = beijing_now()
     actor_id: typing.Union[int, None] = None
     resource: typing.Union[TerminalResource, None] = None
@@ -679,6 +679,8 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
             await _close(websocket, close_code)
             return
         actor_id, resource = context
+        user_id_ctx.set(actor_id)
+        websocket.state.observability_user_id = actor_id
         await websocket.accept()
         await _send(websocket, {"type": "status", "status": "connecting", "message": "正在建立终端会话"})
 
@@ -794,6 +796,8 @@ async def handle_order_workflow_terminal(
         await _close(websocket, 4403)
         return
     actor_id, resource, session = typing.cast(typing.Tuple[int, TerminalResource, str], context)
+    user_id_ctx.set(actor_id)
+    websocket.state.observability_user_id = actor_id
     await websocket.accept()
     await _send(websocket, {"type": "status", "status": "connecting", "message": "正在连接发单 tmux 会话"})
     options: typing.Dict[str, object] = {

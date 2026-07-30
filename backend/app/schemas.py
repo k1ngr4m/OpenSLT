@@ -873,6 +873,7 @@ class VerdictWrite(BaseModel):
 
 class LogOut(ORMModel):
     id: int
+    event_id: typing.Union[str, None] = None
     log_type: str
     level: str
     event: str
@@ -882,9 +883,48 @@ class LogOut(ORMModel):
     run_id: typing.Union[int, None]
     step_id: typing.Union[int, None]
     source: str
+    duration_ms: typing.Union[int, None] = None
+    result: typing.Union[str, None] = None
+    http_method: typing.Union[str, None] = None
+    http_status: typing.Union[int, None] = None
+    database_scope: typing.Union[str, None] = None
+    sql_fingerprint: typing.Union[str, None] = None
     detail: typing.Dict[str, Any]
     is_redacted: bool
     created_at: datetime
+
+
+class LogSummaryOut(ORMModel):
+    id: int
+    event_id: typing.Union[str, None]
+    log_type: str
+    level: str
+    event: str
+    message: str
+    trace_id: str
+    user_id: typing.Union[int, None]
+    run_id: typing.Union[int, None]
+    step_id: typing.Union[int, None]
+    source: str
+    duration_ms: typing.Union[int, None]
+    result: typing.Union[str, None]
+    http_method: typing.Union[str, None]
+    http_status: typing.Union[int, None]
+    database_scope: typing.Union[str, None]
+    sql_fingerprint: typing.Union[str, None]
+    created_at: datetime
+
+
+class LogSearchPage(BaseModel):
+    items: typing.List[LogSummaryOut]
+    total: int
+    page: int
+    page_size: int
+
+
+class LogDetailOut(BaseModel):
+    summary: LogSummaryOut
+    payload: typing.Dict[str, Any]
 
 
 class AuditOut(ORMModel):

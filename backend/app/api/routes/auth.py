@@ -11,6 +11,7 @@ from app.api.deps import admin_only, get_current_user
 from app.api.routes.common import not_found
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.logging import user_id_ctx
 from app.core.security import create_access_token, create_refresh_token, decode_token, hash_password, token_fingerprint, verify_password
 from app.core.time import beijing_now, from_unix_timestamp
 from app.models import RefreshToken, User
@@ -26,6 +27,8 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         write_audit(db, "login", "user", user.id if user else payload.username, user, request, "failed")
         db.commit()
         raise HTTPException(status_code=401, detail={"code": "INVALID_CREDENTIALS", "message": "用户名或密码错误"})
+    user_id_ctx.set(user.id)
+    request.state.observability_user_id = user.id
     access = create_access_token(user.id, user.role)
     refresh = create_refresh_token(user.id)
     decoded = decode_token(refresh, "refresh")
@@ -37,7 +40,7 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 
 @router.post("/auth/refresh", response_model=TokenPair)
-def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
+def refresh(payload: RefreshRequest, request: Request, db: Session = Depends(get_db)) -> TokenPair:
     try:
         decoded = decode_token(payload.refresh_token, "refresh")
         stored = db.scalar(select(RefreshToken).where(RefreshToken.fingerprint == token_fingerprint(payload.refresh_token)))
@@ -47,6 +50,8 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair
     now = beijing_now()
     if not stored or stored.revoked_at or stored.expires_at <= now or not user or not user.is_active:
         raise HTTPException(status_code=401, detail={"code": "INVALID_REFRESH_TOKEN", "message": "刷新令牌无效"})
+    user_id_ctx.set(user.id)
+    request.state.observability_user_id = user.id
     stored.revoked_at = now
     new_refresh = create_refresh_token(user.id)
     new_decoded = decode_token(new_refresh, "refresh")

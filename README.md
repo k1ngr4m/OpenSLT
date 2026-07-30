@@ -277,6 +277,22 @@ RHEL 7.9 x86_64 无互联网部署请使用
 - 生产环境应限制 Web 入口来源、为远端账号配置最小权限，并使用内网 CA 提供 HTTPS。
 - 数据库、`openslt.env`、密钥和产物必须按同一恢复点备份，并定期执行恢复演练。
 
+## 日志与可观测性
+
+运行时会记录 `/api/v1`、`/health`、WebSocket 会话、平台数据库 SQL 和资源数据库
+SQL。结构化权威日志按日期写入 `LOG_DIR/http`、`LOG_DIR/sql` 和
+`LOG_DIR/websocket`，数据库中的 `t_log_records` 仅保存日志中心所需的检索索引。
+
+JSON、表单和文本正文默认最多记录 64 KiB；文件、multipart、二进制和超限正文仅
+记录内容类型、大小与 SHA-256。密码、JWT、Token、Cookie、私钥和数据库凭据在写入
+文件或索引前统一脱敏。日志中心仅允许管理员读取脱敏后的完整详情，测试人员只能查看
+访问和 SQL 摘要，访客无法访问这些日志类型。
+
+高频日志默认可检索 30 天，随后压缩归档 90 天并自动删除。相关环境变量为
+`OBSERVABILITY_BODY_LIMIT_BYTES`、`OBSERVABILITY_SQL_LIMIT_BYTES`、
+`OBSERVABILITY_SQL_PARAMS_LIMIT_BYTES`、`OBSERVABILITY_QUEUE_SIZE`、
+`OBSERVABILITY_HOT_RETENTION_DAYS` 和 `OBSERVABILITY_ARCHIVE_RETENTION_DAYS`。
+
 ## 常见问题
 
 ### 登录后为什么不能编辑或执行任务？

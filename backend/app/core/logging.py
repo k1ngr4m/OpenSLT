@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+import json
 import logging
 import re
 import sys
@@ -16,15 +17,49 @@ from app.core.config import settings
 from app.core.time import beijing_now
 
 trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="")
+user_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("user_id", default=None)
+run_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("run_id", default=None)
+step_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("step_id", default=None)
+sql_logging_suppressed_ctx: ContextVar[bool] = ContextVar(
+    "sql_logging_suppressed", default=False
+)
+
+SENSITIVE_KEYS = {
+    "access_token",
+    "authorization",
+    "cookie",
+    "credential",
+    "database_password",
+    "jwt",
+    "password",
+    "passwd",
+    "private_key",
+    "refresh_token",
+    "secret",
+    "set_cookie",
+    "set-cookie",
+    "token",
+    "x_api_key",
+    "x-api-key",
+}
 
 SENSITIVE_PATTERNS = [
-    re.compile(r"(?i)(password|passwd|token|secret|authorization|cookie)(\s*[=:]\s*)([^\s,;&]+)"),
+    re.compile(r"(?i)(password|passwd|token|secret|authorization|cookie|api[-_]?key)(\s*[=:]\s*)([^\s,;&]+)"),
     re.compile(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]+"),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S),
 ]
 
 
 def redact(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if _is_sensitive_key(str(key)) else redact(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [redact(item) for item in value]
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
     if not isinstance(value, str):
         return value
     result = value
@@ -41,11 +76,35 @@ def redact(value: Any) -> Any:
     return result
 
 
+def _is_sensitive_key(key: str) -> bool:
+    normalized = key.casefold().replace("-", "_")
+    if normalized.startswith("has_") or normalized in {"token_type"}:
+        return False
+    if normalized in {item.replace("-", "_") for item in SENSITIVE_KEYS}:
+        return True
+    return normalized.endswith(
+        ("_password", "_passwd", "_private_key", "_token", "_secret", "_cookie")
+    ) or normalized.startswith(("encrypted_password", "encrypted_private_key"))
+
+
+def bounded_json(value: Any, limit: int) -> typing.Tuple[Any, bool]:
+    safe = redact(value)
+    serialized = json.dumps(safe, ensure_ascii=False, default=str, separators=(",", ":"))
+    encoded = serialized.encode("utf-8")
+    if len(encoded) <= limit:
+        return safe, False
+    preview = encoded[:limit].decode("utf-8", errors="ignore")
+    return {"preview": preview, "original_bytes": len(encoded)}, True
+
+
 def add_context(_: Any, __: str, event_dict: typing.Dict[str, Any]) -> typing.Dict[str, Any]:
     event_dict.setdefault("trace_id", trace_id_ctx.get() or str(uuid4()))
+    event_dict.setdefault("user_id", user_id_ctx.get())
+    event_dict.setdefault("run_id", run_id_ctx.get())
+    event_dict.setdefault("step_id", step_id_ctx.get())
     event_dict.setdefault("service", "openslt-api")
     event_dict.setdefault("environment", settings.environment)
-    return {key: redact(value) for key, value in event_dict.items()}
+    return typing.cast(typing.Dict[str, Any], redact(event_dict))
 
 
 def add_beijing_timestamp(

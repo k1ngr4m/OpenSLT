@@ -4,7 +4,6 @@ import typing
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -17,6 +16,8 @@ from app.api.router import router
 from app.core.config import settings
 from app.core.database import SessionLocal, engine, validate_database_server
 from app.core.logging import configure_logging, logger, trace_id_ctx
+from app.core.observability import writer
+from app.core.observability_middleware import ObservabilityMiddleware
 from app.core.security import CredentialSecretError, hash_password
 from app.models import BusinessType, User
 from app.services.durable_tasks import (
@@ -48,6 +49,7 @@ async def internal_scheduler() -> None:
     loop = asyncio.get_running_loop()
     next_lock_reclaim = loop.time()
     next_retention_cleanup = loop.time() + 300
+    next_observability_retry = loop.time() + 60
     while True:
         now = loop.time()
         db = SessionLocal()
@@ -64,6 +66,9 @@ async def internal_scheduler() -> None:
             db.close()
         for task_id in task_ids:
             asyncio.create_task(execute_claimed_task(task_id))
+        if now >= next_observability_retry:
+            writer.retry_pending()
+            next_observability_retry = now + 60
         if now >= next_retention_cleanup:
             db = SessionLocal()
             try:
@@ -79,6 +84,7 @@ async def internal_scheduler() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    writer.start()
     with engine.connect() as connection:
         database_server = validate_database_server(connection)
     if database_server is not None:
@@ -108,18 +114,12 @@ async def lifespan(_: FastAPI):
             with suppress(asyncio.CancelledError):
                 await scheduler_task
         logger.info("application_stopped")
+        writer.stop()
 
 
 app = FastAPI(title=settings.app_name, version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:7777", "http://127.0.0.1:7777"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-
-@app.middleware("http")
-async def trace_middleware(request: Request, call_next):
-    trace_id = request.headers.get("x-trace-id") or str(uuid4()); token = trace_id_ctx.set(trace_id)
-    try:
-        response = await call_next(request); response.headers["X-Trace-ID"] = trace_id; return response
-    finally: trace_id_ctx.reset(token)
+app.add_middleware(ObservabilityMiddleware)
 
 
 @app.exception_handler(HTTPException)

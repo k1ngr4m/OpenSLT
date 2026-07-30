@@ -4,18 +4,19 @@ import typing
 from collections.abc import Callable
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.logging import user_id_ctx
 from app.core.security import decode_token
 from app.models import User
 
 bearer = HTTPBearer(auto_error=False)
 
 
-def get_current_user(credentials: typing.Union[HTTPAuthorizationCredentials, None] = Depends(bearer), db: Session = Depends(get_db)) -> User:
+def get_current_user(request: Request, credentials: typing.Union[HTTPAuthorizationCredentials, None] = Depends(bearer), db: Session = Depends(get_db)) -> User:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "NOT_AUTHENTICATED", "message": "请先登录"})
     try:
@@ -25,6 +26,8 @@ def get_current_user(credentials: typing.Union[HTTPAuthorizationCredentials, Non
         user = None
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "INVALID_TOKEN", "message": "登录凭据无效或已过期"})
+    user_id_ctx.set(user.id)
+    request.state.observability_user_id = user.id
     return user
 
 
@@ -38,4 +41,3 @@ def require_roles(*roles: str) -> Callable:
 
 admin_only = require_roles("admin")
 operators = require_roles("admin", "tester")
-

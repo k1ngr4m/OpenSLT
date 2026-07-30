@@ -193,6 +193,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/logs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Logs */
+        get: operations["search_logs_api_v1_logs_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/logs/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Log Detail */
+        get: operations["log_detail_api_v1_logs__event_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plans": {
         parameters: {
             query?: never;
@@ -1520,6 +1554,12 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** LogDetailOut */
+        LogDetailOut: {
+            /** Payload */
+            payload: Record<string, unknown>;
+            summary: components["schemas"]["LogSummaryOut"];
+        };
         /** LogOut */
         LogOut: {
             /**
@@ -1527,10 +1567,20 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Database Scope */
+            database_scope?: string | null;
             /** Detail */
             detail: Record<string, unknown>;
+            /** Duration Ms */
+            duration_ms?: number | null;
             /** Event */
             event: string;
+            /** Event Id */
+            event_id?: string | null;
+            /** Http Method */
+            http_method?: string | null;
+            /** Http Status */
+            http_status?: number | null;
             /** Id */
             id: number;
             /** Is Redacted */
@@ -1541,10 +1591,67 @@ export interface components {
             log_type: string;
             /** Message */
             message: string;
+            /** Result */
+            result?: string | null;
             /** Run Id */
             run_id: number | null;
             /** Source */
             source: string;
+            /** Sql Fingerprint */
+            sql_fingerprint?: string | null;
+            /** Step Id */
+            step_id: number | null;
+            /** Trace Id */
+            trace_id: string;
+            /** User Id */
+            user_id: number | null;
+        };
+        /** LogSearchPage */
+        LogSearchPage: {
+            /** Items */
+            items: components["schemas"]["LogSummaryOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** LogSummaryOut */
+        LogSummaryOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Database Scope */
+            database_scope: string | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Event */
+            event: string;
+            /** Event Id */
+            event_id: string | null;
+            /** Http Method */
+            http_method: string | null;
+            /** Http Status */
+            http_status: number | null;
+            /** Id */
+            id: number;
+            /** Level */
+            level: string;
+            /** Log Type */
+            log_type: string;
+            /** Message */
+            message: string;
+            /** Result */
+            result: string | null;
+            /** Run Id */
+            run_id: number | null;
+            /** Source */
+            source: string;
+            /** Sql Fingerprint */
+            sql_fingerprint: string | null;
             /** Step Id */
             step_id: number | null;
             /** Trace Id */
@@ -3259,6 +3366,85 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_logs_api_v1_logs_search_get: {
+        parameters: {
+            query?: {
+                group?: string | null;
+                log_type?: string | null;
+                level?: string | null;
+                trace_id?: string | null;
+                user_id?: number | null;
+                event?: string | null;
+                keyword?: string | null;
+                http_method?: string | null;
+                http_path?: string | null;
+                http_status?: number | null;
+                database_scope?: string | null;
+                sql_fingerprint?: string | null;
+                result?: string | null;
+                min_duration_ms?: number | null;
+                time_from?: string | null;
+                time_to?: string | null;
+                page?: number;
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogSearchPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    log_detail_api_v1_logs__event_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogDetailOut"];
                 };
             };
             /** @description Validation Error */

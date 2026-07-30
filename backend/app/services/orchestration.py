@@ -11,12 +11,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import logger, redact
+from app.core.observability import archive_observability_files
 from app.core.time import as_beijing, beijing_now
 from app.models import Artifact, AuditLog, LogRecord, Metric, Resource, ResourceLock, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, TestScenario
 from app.services.events import broker
@@ -594,8 +595,23 @@ def queued_run_ids(db: Session, limit: int = 20) -> typing.List[int]:
 def archive_and_clean_logs(db: Session) -> typing.Dict[str, int]:
     now = beijing_now()
     log_cutoff = now - timedelta(days=settings.app_log_retention_days)
+    observability_cutoff = now - timedelta(days=settings.observability_hot_retention_days)
     audit_cutoff = now - timedelta(days=settings.audit_log_retention_days)
-    old_logs = db.scalars(select(LogRecord).where(LogRecord.created_at < log_cutoff)).all()
+    observability_types = ["access", "sql", "websocket"]
+    old_logs = db.scalars(
+        select(LogRecord).where(
+            or_(
+                and_(
+                    LogRecord.log_type.in_(observability_types),
+                    LogRecord.created_at < observability_cutoff,
+                ),
+                and_(
+                    LogRecord.log_type.notin_(observability_types),
+                    LogRecord.created_at < log_cutoff,
+                ),
+            )
+        )
+    ).all()
     old_audits = db.scalars(select(AuditLog).where(AuditLog.created_at < audit_cutoff)).all()
     archive_dir = settings.log_dir / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
@@ -611,6 +627,7 @@ def archive_and_clean_logs(db: Session) -> typing.Dict[str, int]:
             for record in old_audits:
                 output.write(json.dumps({"id": record.id, "actor_id": record.actor_id, "action": record.action, "object_type": record.object_type, "object_id": record.object_id, "result": record.result, "trace_id": record.trace_id, "created_at": record.created_at.isoformat()}, ensure_ascii=False) + "\n")
                 db.delete(record)
-    db.add(AuditLog(action="retention.cleanup", object_type="log_records", result="success", trace_id=str(uuid4()), detail={"logs_archived": len(old_logs), "audits_archived": len(old_audits)}))
+    observability_files = archive_observability_files()
+    db.add(AuditLog(action="retention.cleanup", object_type="log_records", result="success", trace_id=str(uuid4()), detail={"logs_archived": len(old_logs), "audits_archived": len(old_audits), **observability_files}))
     db.commit()
-    return {"logs_archived": len(old_logs), "audits_archived": len(old_audits)}
+    return {"logs_archived": len(old_logs), "audits_archived": len(old_audits), **observability_files}

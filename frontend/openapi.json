@@ -715,8 +715,8 @@
           },
           "database_port": {
             "default": 3306,
-            "maximum": 65535,
-            "minimum": 1,
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Database Port",
             "type": "integer"
           },
@@ -759,7 +759,7 @@
           "resource_id": {
             "anyOf": [
               {
-                "minimum": 1,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -770,8 +770,8 @@
           },
           "ssh_port": {
             "default": 22,
-            "maximum": 65535,
-            "minimum": 1,
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Ssh Port",
             "type": "integer"
           },
@@ -880,6 +880,23 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "LogDetailOut": {
+        "properties": {
+          "payload": {
+            "title": "Payload",
+            "type": "object"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/LogSummaryOut"
+          }
+        },
+        "required": [
+          "summary",
+          "payload"
+        ],
+        "title": "LogDetailOut",
+        "type": "object"
+      },
       "LogOut": {
         "properties": {
           "created_at": {
@@ -887,13 +904,68 @@
             "title": "Created At",
             "type": "string"
           },
+          "database_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Scope"
+          },
           "detail": {
             "title": "Detail",
             "type": "object"
           },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
           "event": {
             "title": "Event",
             "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "http_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Method"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
           },
           "id": {
             "title": "Id",
@@ -915,6 +987,17 @@
             "title": "Message",
             "type": "string"
           },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
           "run_id": {
             "anyOf": [
               {
@@ -929,6 +1012,17 @@
           "source": {
             "title": "Source",
             "type": "string"
+          },
+          "sql_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Fingerprint"
           },
           "step_id": {
             "anyOf": [
@@ -973,6 +1067,206 @@
           "created_at"
         ],
         "title": "LogOut",
+        "type": "object"
+      },
+      "LogSearchPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LogSummaryOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size"
+        ],
+        "title": "LogSearchPage",
+        "type": "object"
+      },
+      "LogSummaryOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "database_scope": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Scope"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "http_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Method"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Http Status"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "string"
+          },
+          "log_type": {
+            "title": "Log Type",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "sql_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql Fingerprint"
+          },
+          "step_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Id"
+          },
+          "trace_id": {
+            "title": "Trace Id",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "event_id",
+          "log_type",
+          "level",
+          "event",
+          "message",
+          "trace_id",
+          "user_id",
+          "run_id",
+          "step_id",
+          "source",
+          "duration_ms",
+          "result",
+          "http_method",
+          "http_status",
+          "database_scope",
+          "sql_fingerprint",
+          "created_at"
+        ],
+        "title": "LogSummaryOut",
         "type": "object"
       },
       "LoginRequest": {
@@ -2071,7 +2365,7 @@
           "resource_id": {
             "anyOf": [
               {
-                "minimum": 1,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2095,8 +2389,8 @@
           },
           "ssh_port": {
             "default": 22,
-            "maximum": 65535,
-            "minimum": 1,
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Ssh Port",
             "type": "integer"
           },
@@ -2447,8 +2741,8 @@
           "database_port": {
             "anyOf": [
               {
-                "maximum": 65535,
-                "minimum": 1,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2529,8 +2823,8 @@
           "query_port": {
             "anyOf": [
               {
-                "maximum": 65535,
-                "minimum": 1,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2560,8 +2854,8 @@
           },
           "ssh_port": {
             "default": 22,
-            "maximum": 65535,
-            "minimum": 1,
+            "maximum": 65535.0,
+            "minimum": 1.0,
             "title": "Ssh Port",
             "type": "integer"
           },
@@ -2580,8 +2874,8 @@
           "trade_tcp_port": {
             "anyOf": [
               {
-                "maximum": 65535,
-                "minimum": 1,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2593,8 +2887,8 @@
           "trade_udp_port": {
             "anyOf": [
               {
-                "maximum": 65535,
-                "minimum": 1,
+                "maximum": 65535.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -2643,8 +2937,8 @@
           "timeout_minutes": {
             "anyOf": [
               {
-                "maximum": 1440,
-                "minimum": 1,
+                "maximum": 1440.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -3526,7 +3820,7 @@
         "properties": {
           "max_latency_ns": {
             "default": 999999999,
-            "minimum": 1,
+            "minimum": 1.0,
             "title": "Max Latency Ns",
             "type": "integer"
           },
@@ -4377,7 +4671,7 @@
         "additionalProperties": false,
         "properties": {
           "expected_revision": {
-            "minimum": 1,
+            "minimum": 1.0,
             "title": "Expected Revision",
             "type": "integer"
           },
@@ -4462,7 +4756,7 @@
         "additionalProperties": false,
         "properties": {
           "source_version_id": {
-            "exclusiveMinimum": 0,
+            "exclusiveMinimum": 0.0,
             "title": "Source Version Id",
             "type": "integer"
           }
@@ -4696,7 +4990,7 @@
   },
   "info": {
     "title": "OpenSLT",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5254,6 +5548,367 @@
           }
         ],
         "summary": "Query Logs"
+      }
+    },
+    "/api/v1/logs/search": {
+      "get": {
+        "operationId": "search_logs_api_v1_logs_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "group",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group"
+            }
+          },
+          {
+            "in": "query",
+            "name": "log_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Log Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Level"
+            }
+          },
+          {
+            "in": "query",
+            "name": "trace_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Trace Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "event",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Event"
+            }
+          },
+          {
+            "in": "query",
+            "name": "keyword",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Keyword"
+            }
+          },
+          {
+            "in": "query",
+            "name": "http_method",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Http Method"
+            }
+          },
+          {
+            "in": "query",
+            "name": "http_path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Http Path"
+            }
+          },
+          {
+            "in": "query",
+            "name": "http_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Http Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "database_scope",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Database Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sql_fingerprint",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sql Fingerprint"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Result"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_duration_ms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Duration Ms"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "time_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Time To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogSearchPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search Logs"
+      }
+    },
+    "/api/v1/logs/{event_id}": {
+      "get": {
+        "operationId": "log_detail_api_v1_logs__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Log Detail"
       }
     },
     "/api/v1/plans": {
