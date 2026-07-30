@@ -14,7 +14,9 @@ import {
   SwitchButton,
   Fold,
   Expand,
-  CircleCheck,
+  House,
+  PieChart,
+  Setting,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -38,11 +40,16 @@ const sidebarClass = computed(() => ({
   'is-collapsed': collapsed.value,
   'is-mobile-open': mobileNavOpen.value,
 }))
+const managementMode = computed(() => route.meta.section === 'management')
 const activePath = computed(() => {
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
   return ['/dashboard', '/runs', '/plans', '/resources', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
 const beijingText = computed(() => `${formatBeijingDateTime(now.value)}`)
+const navToggleLabel = computed(() => {
+  if (isMobile.value) return '打开导航'
+  return collapsed.value ? '展开导航' : '收起导航'
+})
 
 function syncViewport() {
   isMobile.value = window.innerWidth < 768
@@ -62,6 +69,14 @@ function toggleNavigation() {
 
 function closeMobileNavigation() {
   if (isMobile.value) mobileNavOpen.value = false
+}
+
+function openHome() {
+  return router.push('/dashboard')
+}
+
+function openManagementCenter() {
+  return router.push('/plans')
 }
 
 async function logout() {
@@ -95,7 +110,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <nav aria-label="主导航">
+      <nav class="sidebar-nav" aria-label="主导航">
         <el-menu
           router
           :collapse="collapsed"
@@ -103,35 +118,38 @@ onBeforeUnmount(() => {
           class="nav"
           @select="closeMobileNavigation"
         >
-          <div v-if="!collapsed" class="nav-label">任务</div>
-          <el-menu-item index="/dashboard">
-            <el-icon><DataAnalysis /></el-icon>
-            <template #title>工作台</template>
-          </el-menu-item>
-          <el-menu-item index="/runs">
-            <el-icon><Monitor /></el-icon>
-            <template #title>测速运行</template>
-          </el-menu-item>
+          <template v-if="managementMode">
+            <div v-if="!collapsed" class="nav-label">配置</div>
+            <el-menu-item index="/plans">
+              <el-icon><Document /></el-icon>
+              <template #title>方案与场景</template>
+            </el-menu-item>
+            <el-menu-item index="/resources">
+              <el-icon><SetUp /></el-icon>
+              <template #title>资源管理</template>
+            </el-menu-item>
 
-          <div v-if="!collapsed" class="nav-label">配置</div>
-          <el-menu-item index="/plans">
-            <el-icon><Document /></el-icon>
-            <template #title>方案与场景</template>
-          </el-menu-item>
-          <el-menu-item index="/resources">
-            <el-icon><SetUp /></el-icon>
-            <template #title>资源管理</template>
-          </el-menu-item>
-
-          <div v-if="!collapsed" class="nav-label">系统</div>
-          <el-menu-item index="/logs">
-            <el-icon><Files /></el-icon>
-            <template #title>日志中心</template>
-          </el-menu-item>
-          <el-menu-item v-if="auth.isAdmin" index="/users">
-            <el-icon><User /></el-icon>
-            <template #title>用户管理</template>
-          </el-menu-item>
+            <div v-if="!collapsed" class="nav-label">系统</div>
+            <el-menu-item index="/logs">
+              <el-icon><Files /></el-icon>
+              <template #title>日志中心</template>
+            </el-menu-item>
+            <el-menu-item v-if="auth.isAdmin" index="/users">
+              <el-icon><User /></el-icon>
+              <template #title>用户管理</template>
+            </el-menu-item>
+          </template>
+          <template v-else>
+            <div v-if="!collapsed" class="nav-label">任务</div>
+            <el-menu-item index="/dashboard">
+              <el-icon><DataAnalysis /></el-icon>
+              <template #title>工作台</template>
+            </el-menu-item>
+            <el-menu-item index="/runs">
+              <el-icon><Monitor /></el-icon>
+              <template #title>测速运行</template>
+            </el-menu-item>
+          </template>
         </el-menu>
       </nav>
 
@@ -159,15 +177,56 @@ onBeforeUnmount(() => {
     <section class="workspace">
       <header class="topbar">
         <div class="topbar-start">
-          <el-tooltip :content="isMobile ? '打开导航' : (collapsed ? '展开导航' : '收起导航')" placement="bottom">
-            <el-button text circle class="nav-toggle" :aria-label="collapsed ? '展开导航' : '收起导航'" @click="toggleNavigation">
+          <el-tooltip :content="navToggleLabel" placement="bottom">
+            <el-button text circle class="nav-toggle" :aria-label="navToggleLabel" @click="toggleNavigation">
               <el-icon><Expand v-if="collapsed || isMobile" /><Fold v-else /></el-icon>
             </el-button>
           </el-tooltip>
         </div>
-        <div class="topbar-meta">
-          <time class="beijing-time mono" :datetime="now.toISOString()">{{ beijingText }}</time>
-          <VersionHistory />
+
+        <nav class="section-nav" aria-label="页面导航">
+          <button
+            class="section-nav-item"
+            :class="{ 'is-active': !managementMode }"
+            type="button"
+            :aria-current="!managementMode ? 'page' : undefined"
+            @click="openHome"
+          >
+            <el-icon><House /></el-icon>
+            <span class="section-nav-label">首页</span>
+          </button>
+          <span class="charts-tooltip">
+            <button
+              class="section-nav-item is-disabled"
+              type="button"
+              aria-disabled="true"
+              aria-describedby="charts-unavailable"
+              @click.prevent
+            >
+              <el-icon><PieChart /></el-icon>
+              <span class="section-nav-label">图表</span>
+            </button>
+            <span id="charts-unavailable" class="topbar-tooltip" role="tooltip">图表功能暂未开放</span>
+          </span>
+        </nav>
+
+        <div class="topbar-end">
+          <div class="topbar-meta">
+            <time class="beijing-time mono" :datetime="now.toISOString()">{{ beijingText }}</time>
+            <VersionHistory />
+          </div>
+          <el-tooltip v-if="auth.canOperate" content="管理中心" placement="bottom">
+            <el-button
+              text
+              circle
+              class="management-center"
+              :class="{ 'is-active': managementMode }"
+              aria-label="管理中心"
+              @click="openManagementCenter"
+            >
+              <el-icon><Setting /></el-icon>
+            </el-button>
+          </el-tooltip>
         </div>
       </header>
       <main id="main-content" class="main" tabindex="-1">
@@ -188,7 +247,7 @@ onBeforeUnmount(() => {
 .brand-copy strong,.brand-copy small,.account-copy strong,.account-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand-copy strong{color:#f4fbfb;font-size:15px;font-weight:650;letter-spacing:-.02em}
 .brand-copy small,.account-copy small{margin-top:2px;color:#86a9ae;font-size:10px}
-nav{min-height:0;flex:1;overflow:auto}
+.sidebar-nav{min-height:0;flex:1;overflow:auto}
 .nav{padding:10px 8px 18px;border:0;background:transparent;--el-menu-bg-color:transparent;--el-menu-text-color:#aac1c4;--el-menu-hover-bg-color:var(--ui-sidebar-hover);--el-menu-active-color:#ecfffb}
 .nav-label{padding:13px 10px 6px;color:#658b90;font-size:10px;font-weight:600;letter-spacing:.12em}
 .nav :deep(.el-menu-item){position:relative;height:42px;margin:2px 0;border-radius:6px;font-size:13px;font-weight:500;transition:color var(--ui-transition),background-color var(--ui-transition)}
@@ -202,16 +261,32 @@ nav{min-height:0;flex:1;overflow:auto}
 .sidebar-foot :deep(.el-button){flex:0 0 auto;color:#7da1a6}
 .sidebar-foot :deep(.el-button:hover){color:#dff7f2;background:rgba(255,255,255,.08)}
 .workspace{display:flex;min-width:0;flex:1;flex-direction:column}
-.topbar{position:sticky;z-index:20;top:0;display:flex;flex:0 0 52px;align-items:center;justify-content:space-between;gap:20px;height:52px;padding:0 24px;border-bottom:1px solid var(--ui-border);background:rgba(255,255,255,.94);backdrop-filter:blur(12px)}
-.topbar-start,.service-health{display:flex;align-items:center}
+.topbar{position:sticky;z-index:20;top:0;display:grid;grid-template-columns:minmax(40px,1fr) auto minmax(40px,1fr);flex:0 0 52px;align-items:center;gap:16px;height:52px;padding:0 24px;border-bottom:1px solid var(--ui-border);background:rgba(255,255,255,.94);backdrop-filter:blur(12px)}
+.topbar-start{display:flex;align-items:center;justify-self:start}
 .topbar-start{gap:8px}
 .nav-toggle{color:var(--ui-text-secondary)}
+.section-nav{display:flex;align-self:stretch;align-items:stretch;justify-self:center;gap:4px;overflow:visible}
+.section-nav-item{position:relative;display:flex;min-width:72px;align-items:center;justify-content:center;gap:7px;padding:0 13px;border:0;background:transparent;color:var(--ui-text-secondary);font-size:13px;font-weight:600;cursor:pointer;transition:color var(--ui-transition),background-color var(--ui-transition)}
+.section-nav-item::after{position:absolute;right:12px;bottom:0;left:12px;height:2px;border-radius:2px 2px 0 0;background:var(--ui-primary);content:"";opacity:0;transform:scaleX(.55);transition:opacity var(--ui-transition),transform var(--ui-transition)}
+.section-nav-item:not(.is-disabled):hover{background:var(--ui-primary-soft);color:var(--ui-primary-hover)}
+.section-nav-item:not(.is-disabled):active{transform:translateY(1px)}
+.section-nav-item.is-active{color:var(--ui-primary)}
+.section-nav-item.is-active::after{opacity:1;transform:scaleX(1)}
+.section-nav-item.is-disabled{color:#aeb9bc;cursor:not-allowed}
+.section-nav-item .el-icon{font-size:18px}
+.charts-tooltip{position:relative;display:flex}
+.topbar-tooltip{position:absolute;z-index:40;top:calc(100% + 8px);left:50%;width:max-content;max-width:180px;padding:8px 10px;border-radius:4px;background:#303133;color:#fff;font-size:12px;font-weight:400;line-height:1.4;opacity:0;pointer-events:none;transform:translate(-50%,-4px);transition:opacity var(--ui-transition),transform var(--ui-transition)}
+.topbar-tooltip::before{position:absolute;top:-4px;left:50%;width:8px;height:8px;background:#303133;content:"";transform:translateX(-50%) rotate(45deg)}
+.charts-tooltip:hover .topbar-tooltip,.charts-tooltip:focus-within .topbar-tooltip{opacity:1;transform:translate(-50%,0)}
+.topbar-end{display:flex;align-items:center;justify-self:end;gap:12px;min-width:max-content}
 .topbar-meta{display:grid;justify-items:end;gap:3px;min-width:max-content}
-.service-health{gap:7px;color:var(--ui-success);font-size:12px;font-weight:500}
-.service-health .el-icon{font-size:15px}
 .beijing-time{color:var(--ui-text-tertiary);font-size:11px}
+.management-center{color:#e97924;transition:color var(--ui-transition),background-color var(--ui-transition),transform var(--ui-transition)}
+.management-center:hover,.management-center.is-active{color:#cf6419;background:#fff0e5}
+.management-center:active{transform:translateY(1px)}
+.management-center :deep(.el-icon){font-size:19px}
 .main{min-width:0;flex:1;outline:none}
 .nav-scrim{position:fixed;z-index:25;inset:0;border:0;background:rgba(5,25,29,.5)}
 @media(max-width:1199px){.topbar{padding-inline:16px}}
-@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{padding-inline:12px}.topbar-meta{gap:2px}.beijing-time{font-size:10px}.service-health span{display:none}}
+@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{gap:6px;padding-inline:8px}.section-nav{gap:2px}.section-nav-item{min-width:38px;padding-inline:9px}.section-nav-item::after{right:8px;left:8px}.section-nav-label,.beijing-time{display:none}.topbar-end{gap:3px}.topbar-meta{gap:0}.topbar-tooltip{max-width:150px}}
 </style>
