@@ -135,6 +135,19 @@
   margin: 0;
 }
 
+.wiring-detail-section .el-alert {
+  margin-bottom: 12px;
+}
+
+.wiring-name-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.wiring-name-actions .el-button {
+  margin: 0;
+}
+
 .workflow-terminal-section {
   padding: 18px;
   margin: 4px 0 18px;
@@ -166,27 +179,6 @@
   border-radius: 8px;
   background: var(--ui-surface-subtle);
   color: var(--ui-text-secondary);
-}
-
-.json-fold {
-  margin-top: 14px;
-}
-
-.json-fold summary {
-  color: var(--ui-primary);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.json-fold pre {
-  max-height: 260px;
-  overflow: auto;
-  padding: 12px;
-  margin: 10px 0 0;
-  border-radius: 8px;
-  background: var(--ui-terminal);
-  color: #d1d5db;
-  font: 12px/1.6 "Cascadia Code", Consolas, monospace;
 }
 
 .mini-table {
@@ -348,6 +340,52 @@
   margin: 6px -4px 0;
   border-radius: 8px;
   background: #f7fafa;
+}
+
+.metrics-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.metrics-table {
+  min-width: 690px;
+}
+
+.metrics-table :deep(.el-table__cell) {
+  padding-block: 12px;
+}
+
+.metric-label {
+  color: var(--ui-text-primary);
+  font-weight: 600;
+}
+
+.metric-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.metric-value strong {
+  color: var(--ui-text-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.metric-value span {
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+}
+
+.metric-source {
+  display: block;
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .verdict {

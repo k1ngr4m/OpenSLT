@@ -31,7 +31,7 @@ describe('VersionHistory', () => {
     const dialog = wrapper.get('[role="dialog"]')
     expect(dialog.text()).toContain('版本更新说明')
     expect(dialog.text()).toContain('当前版本')
-    expect(dialog.text()).toContain('日期未记录')
+    expect(dialog.text()).toContain('2026-07-29')
     expect(dialog.text().indexOf('v0.2.1')).toBeLessThan(dialog.text().indexOf('v0.2.0'))
 
     const currentReleaseChanges = dialog.findAll('.release-entry')[0].findAll('li')

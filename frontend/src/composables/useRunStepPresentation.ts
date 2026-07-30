@@ -347,8 +347,6 @@ export function useRunStepPresentation(
   const parserOutputFiles = computed(() => Array.isArray(selectedResult.value.output_files) ? selectedResult.value.output_files : [])
   const parserTableRows = computed(() => Object.entries(selectedResult.value.table_rows || {}).map(([name, count]) => ({ name, count })))
   const inputChecksums = computed(() => Object.entries(selectedResult.value.input_checksums || {}).map(([name, checksum]) => ({ name, checksum })))
-  const showRawConfig = computed(() => selectedStep.value ? Object.keys(selectedConfig.value).length > 0 : false)
-  const showRawResult = computed(() => selectedStep.value ? Object.keys(selectedResult.value).length > 0 : false)
   const showCaptureDetails = computed(() => ['server_config', 'database_config'].includes(selectedStep.value?.node_type || ''))
 
   return {
@@ -364,8 +362,6 @@ export function useRunStepPresentation(
     selectedContractFileIds,
     selectedResult,
     showCaptureDetails,
-    showRawConfig,
-    showRawResult,
     summaryRows,
   }
 }

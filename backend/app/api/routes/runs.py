@@ -34,7 +34,7 @@ from app.models import (
     Verdict,
 )
 from app.adapters.database import DatabaseOperationError, validate_database
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -309,6 +309,106 @@ def list_run_step_capture_snapshots(run_id: int, step_id: int, _: User = Depends
     ).all())
 
 
+@router.put(
+    "/runs/{run_id}/steps/{step_id}/wiring-interface-names",
+    response_model=RunOut,
+)
+def update_wiring_interface_names(
+    run_id: int,
+    step_id: int,
+    payload: WiringInterfaceNamesWrite,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> TestRun:
+    db.scalar(
+        select(RunStep)
+        .where(RunStep.id == step_id, RunStep.run_id == run_id)
+        .with_for_update()
+    )
+    run = load_run(db, run_id)
+    step = next((item for item in run.steps if item.id == step_id), None)
+    try:
+        if not step or step.node_type != "wiring_confirmation":
+            raise WorkflowError("WIRING_NODE_REQUIRED", "当前节点不是接线确认节点", 409)
+        current = next((item for item in run.steps if item.status != "succeeded"), None)
+        allowed = (
+            (run.status == "awaiting_step_start" and step.status == "pending")
+            or (run.status == "awaiting_step_completion" and step.status == "waiting")
+        )
+        if not allowed or not current or current.id != step.id:
+            raise WorkflowError("WIRING_EDIT_NOT_ALLOWED", "当前接线确认节点不能修改网卡名称", 409)
+
+        config = dict(step.config_snapshot or {})
+        snapshot_value = config.get("wiring_snapshot")
+        if not isinstance(snapshot_value, dict):
+            raise WorkflowError("WIRING_SNAPSHOT_REQUIRED", "当前节点没有可编辑的接线图", 409)
+        snapshot = dict(snapshot_value)
+        auxiliary_names = list(payload.auxiliary_interface_names)
+        is_soft_core = snapshot.get("topology_kind") == "soft_core"
+        if is_soft_core and auxiliary_names:
+            raise WorkflowError("WIRING_INTERFACE_COUNT_INVALID", "软核接线图只允许配置两个接口名称", 422)
+        if not is_soft_core and len(auxiliary_names) != 2:
+            raise WorkflowError("WIRING_INTERFACE_COUNT_INVALID", "整合版接线图需要配置四个接口名称", 422)
+
+        old_names = {
+            "client_interface_name": str((snapshot.get("client_interface") or {}).get("name") or ""),
+            "market_interface_name": str((snapshot.get("market_interface") or {}).get("name") or ""),
+            "auxiliary_interface_names": list(snapshot.get("auxiliary_interfaces") or []),
+        }
+        new_names = {
+            "client_interface_name": payload.client_interface_name,
+            "market_interface_name": payload.market_interface_name,
+            "auxiliary_interface_names": auxiliary_names,
+        }
+        snapshot["client_interface"] = {
+            **dict(snapshot.get("client_interface") or {}),
+            "name": payload.client_interface_name,
+        }
+        snapshot["market_interface"] = {
+            **dict(snapshot.get("market_interface") or {}),
+            "name": payload.market_interface_name,
+        }
+        snapshot["auxiliary_interfaces"] = auxiliary_names
+        config.update(new_names)
+        config["wiring_snapshot"] = snapshot
+        step.config_snapshot = config
+        detail = {"run_id": run.id, "old_names": old_names, "new_names": new_names}
+        append_log(
+            db,
+            run,
+            "wiring.interface_names_updated",
+            "接线网卡名称已更新",
+            step=step,
+            source="user",
+            detail=detail,
+        )
+        write_audit(
+            db,
+            "run.wiring_interface_names",
+            "run_step",
+            step.id,
+            actor,
+            request,
+            detail=detail,
+        )
+        db.commit()
+        return load_run(db, run.id)
+    except WorkflowError as exc:
+        write_audit(
+            db,
+            "run.wiring_interface_names",
+            "run_step",
+            step_id,
+            actor,
+            request,
+            result="failed",
+            detail={"run_id": run.id, "code": exc.code},
+        )
+        db.commit()
+        raise workflow_http_error(exc) from exc
+
+
 @router.post("/runs/{run_id}/start", response_model=RunOut)
 async def run_start(run_id: int, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
     run = load_run(db, run_id)
@@ -523,7 +623,7 @@ async def get_statistics_csv_files(
         ))
         if not parser_resource:
             raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
-        return await list_statistics_csv_files(parser_resource, run)
+        return await list_statistics_csv_files(parser_resource, run, step)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
 

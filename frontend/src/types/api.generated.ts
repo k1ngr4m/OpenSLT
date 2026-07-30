@@ -940,6 +940,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/steps/{step_id}/wiring-interface-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Wiring Interface Names */
+        put: operations["update_wiring_interface_names_api_v1_runs__run_id__steps__step_id__wiring_interface_names_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/verdict": {
         parameters: {
             query?: never;
@@ -2987,6 +3004,15 @@ export interface components {
              * @enum {string}
              */
             node_type: "wiring_confirmation";
+        };
+        /** WiringInterfaceNamesWrite */
+        WiringInterfaceNamesWrite: {
+            /** Auxiliary Interface Names */
+            auxiliary_interface_names?: string[];
+            /** Client Interface Name */
+            client_interface_name: string;
+            /** Market Interface Name */
+            market_interface_name: string;
         };
         /** WorkflowDocumentOut */
         WorkflowDocumentOut: {
@@ -5363,6 +5389,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatisticsInputSelectionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_wiring_interface_names_api_v1_runs__run_id__steps__step_id__wiring_interface_names_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WiringInterfaceNamesWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
                 };
             };
             /** @description Validation Error */

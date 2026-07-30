@@ -740,6 +740,19 @@ class RunCreate(BaseModel):
     timeout_minutes: typing.Union[int, None] = Field(default=None, ge=1, le=1440)
 
 
+WiringInterfaceName = Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class WiringInterfaceNamesWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    client_interface_name: WiringInterfaceName
+    market_interface_name: WiringInterfaceName
+    auxiliary_interface_names: typing.List[WiringInterfaceName] = Field(
+        default_factory=list, max_length=2
+    )
+
+
 class OrderActionRequest(BaseModel):
     action: OrderAction
 

@@ -76,6 +76,10 @@ def create_statistics_run(
     )
     db.add(artifact)
     db.flush()
+    parser.result_summary = {
+        "remote_workdir": f"/tmp/parser/.openslt-runs/r{run.id}-s{parser.id}-a0-test",
+        "output_files": [artifact.name],
+    }
     return run, parser, statistics, artifact
 
 
@@ -197,12 +201,44 @@ async def test_statistics_csv_listing_filters_scope_and_file_types(
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     with SessionLocal() as db:
-        run, parser, _step, _artifact = create_statistics_run(
+        run, parser, step, _artifact = create_statistics_run(
             db, plan["id"], scenario["id"], tmp_path
         )
         resource = db.get(Resource, parser_data["id"])
-        current_directory = f"r{run.id}-s{parser.id}-a0-current"
-        other_directory = f"r{run.id + 1}-s{parser.id}-a0-other"
+        parser.result_summary = {
+            "remote_workdir": f"/tmp/parser/.openslt-runs/r{run.id}-s{parser.id}-a0-old",
+            "output_files": ["old.csv"],
+        }
+        step.position = 4
+        db.flush()
+        failed_parser = RunStep(
+            run_id=run.id, code="failed-parse", name="Failed Parse",
+            node_type="parser_parse", position=2, status="failed", progress=100,
+            config_snapshot={}, result_summary={
+                "remote_workdir": "/tmp/parser/.openslt-runs/failed-a1",
+                "output_files": ["failed.csv"],
+            },
+        )
+        latest_parser = RunStep(
+            run_id=run.id, code="latest-parse", name="Latest Parse",
+            node_type="parser_parse", position=3, status="succeeded", progress=100,
+            config_snapshot={}, result_summary={},
+        )
+        later_parser = RunStep(
+            run_id=run.id, code="later-parse", name="Later Parse",
+            node_type="parser_parse", position=5, status="succeeded", progress=100,
+            config_snapshot={}, result_summary={
+                "remote_workdir": "/tmp/parser/.openslt-runs/later-a0",
+                "output_files": ["later.csv"],
+            },
+        )
+        run.steps.extend([failed_parser, latest_parser, later_parser])
+        db.flush()
+        latest_directory = f"/tmp/parser/.openslt-runs/r{run.id}-s{latest_parser.id}-a2-final"
+        latest_parser.result_summary = {
+            "remote_workdir": latest_directory,
+            "output_files": ["result.csv", "UPPER.CSV", "missing.csv", "nested.csv"],
+        }
 
         def entry(name, file_type, size=10):
             return SimpleNamespace(
@@ -213,23 +249,17 @@ async def test_statistics_csv_listing_filters_scope_and_file_types(
         regular = statistics_execution.asyncssh.FILEXFER_TYPE_REGULAR
         directory = statistics_execution.asyncssh.FILEXFER_TYPE_DIRECTORY
         paths = {
-            "/tmp/parser": [
-                entry("root.csv", regular), entry("note.txt", regular),
-                entry("fake.csv", directory), entry(".openslt-runs", directory),
-            ],
-            "/tmp/parser/.openslt-runs": [
-                entry(current_directory, directory),
-                entry(other_directory, directory),
-                entry(f"r{run.id}-s999-a0-unrelated", directory),
-            ],
-            f"/tmp/parser/.openslt-runs/{current_directory}": [
+            latest_directory: [
                 entry("result.csv", regular), entry("UPPER.CSV", regular),
-                entry("nested.csv", directory),
+                entry("t_fut_orders.csv", regular), entry("unlisted.csv", regular),
+                entry("nested.csv", directory), entry("note.txt", regular),
             ],
         }
+        scanned_paths = []
 
         class ListingSFTP:
             def scandir(self, path):
+                scanned_paths.append(path)
                 async def generate():
                     for item in paths.get(path, []):
                         yield item
@@ -252,12 +282,37 @@ async def test_statistics_csv_listing_filters_scope_and_file_types(
             return ListingConnection()
 
         monkeypatch.setattr(statistics_execution.asyncssh, "connect", fake_connect)
-        listing = await list_statistics_csv_files(resource, run)
+        listing = await list_statistics_csv_files(resource, run, step)
+        assert listing["directory"] == latest_directory
+        assert scanned_paths == [latest_directory]
         assert [item["relative_path"] for item in listing["files"]] == [
-            "root.csv",
-            f".openslt-runs/{current_directory}/UPPER.CSV",
-            f".openslt-runs/{current_directory}/result.csv",
+            "UPPER.CSV",
+            "result.csv",
         ]
+        assert {item["source"] for item in listing["files"]} == {"current_run"}
+
+
+@pytest.mark.asyncio
+async def test_statistics_csv_listing_requires_valid_prior_parser_result(
+    client, admin_headers, tmp_path
+):
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, parser, step, _artifact = create_statistics_run(
+            db, plan["id"], scenario["id"], tmp_path
+        )
+        resource = db.get(Resource, parser_data["id"])
+        parser.status = "failed"
+        with pytest.raises(WorkflowError) as missing:
+            await list_statistics_csv_files(resource, run, step)
+        assert missing.value.code == "STATISTICS_PARSER_RESULT_REQUIRED"
+
+        parser.status = "succeeded"
+        parser.result_summary = {"output_files": ["result.csv"]}
+        with pytest.raises(WorkflowError) as invalid:
+            await list_statistics_csv_files(resource, run, step)
+        assert invalid.value.code == "STATISTICS_PARSER_RESULT_INVALID"
 
 
 def test_statistics_output_contract_and_script_name_validation():
@@ -314,12 +369,12 @@ def test_statistics_inputs_endpoint_rejects_invalid_path_and_wrong_state(
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
 
-    async def fake_list(_resource, _run):
+    async def fake_list(_resource, _run, _step):
         return {
-            "directory": "/tmp/parser",
+            "directory": "/tmp/parser/.openslt-runs/final",
             "files": [{
                 "relative_path": "latency.csv", "filename": "latency.csv",
-                "source": "root", "size": 12,
+                "source": "current_run", "size": 12,
                 "modified_at": "2026-07-28T10:00:00+08:00",
             }],
         }
@@ -533,15 +588,15 @@ async def test_statistics_executes_selected_remote_csv_without_upload(
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     listing = {
-        "directory": "/tmp/parser",
+        "directory": "/tmp/parser/.openslt-runs/final",
         "files": [{
             "relative_path": "latency.csv", "filename": "latency.csv",
-            "source": "root", "size": 12,
+            "source": "current_run", "size": 12,
             "modified_at": "2026-07-28T10:00:00+08:00",
         }],
     }
 
-    async def fake_list(_resource, _run):
+    async def fake_list(_resource, _run, _step):
         return listing
 
     commands = []
@@ -569,12 +624,49 @@ async def test_statistics_executes_selected_remote_csv_without_upload(
             SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
             {"parser": resource},
         )
-        assert shlex.split(commands[0])[1] == "/tmp/parser/latency.csv"
+        assert shlex.split(commands[0])[1] == "/tmp/parser/.openslt-runs/final/latency.csv"
         assert connections[-1].sftp.put_calls == []
         assert result["statistics_results"][0]["source_path"] == "latency.csv"
         metric = db.query(Metric).filter(Metric.run_id == run.id).first()
         assert metric.detail["source_path"] == "latency.csv"
         assert metric.detail["source_artifact_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_statistics_rejects_remote_csv_changed_after_selection(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    current_size = 12
+
+    async def fake_list(_resource, _run, _step):
+        return {
+            "directory": "/tmp/parser/.openslt-runs/final",
+            "files": [{
+                "relative_path": "latency.csv", "filename": "latency.csv",
+                "source": "current_run", "size": current_size,
+                "modified_at": "2026-07-28T10:00:00+08:00",
+            }],
+        }
+
+    monkeypatch.setattr(statistics_execution, "list_statistics_csv_files", fake_list)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(
+            db, plan["id"], scenario["id"], tmp_path
+        )
+        resource = db.get(Resource, parser_data["id"])
+        await select_statistics_inputs(
+            db, run, step, resource, ["latency.csv"], actor_id=1
+        )
+        current_size = 13
+        with pytest.raises(WorkflowError) as changed:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert changed.value.code == "STATISTICS_INPUT_CHANGED"
 
 
 def test_statistics_script_list_endpoint(client, admin_headers, monkeypatch):

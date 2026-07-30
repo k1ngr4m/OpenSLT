@@ -1,4 +1,4 @@
-import type { ContractFilePreview, JsonMap } from '@/types/run'
+import type { ContractFilePreview, JsonMap, RunMetric } from '@/types/run'
 import { formatBeijingDateTime, formatBeijingTime } from '@/utils/time'
 
 export const nodeTypeText: Record<string, string> = {
@@ -67,8 +67,19 @@ export function formatBytes(value: number) {
   return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function prettyJson(value: JsonMap) {
-  return JSON.stringify(value, null, 2)
+function metricDetailText(metric: RunMetric, key: string) {
+  const value = metric.detail[key]
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+export function presentRunMetric(metric: RunMetric) {
+  const sourceFile = metricDetailText(metric, 'source_file')
+  return {
+    ...metric,
+    displayName: metricDetailText(metric, 'metric_label') || metric.name,
+    sourceFile: sourceFile || '-',
+    sourcePath: metricDetailText(metric, 'source_path'),
+  }
 }
 
 export function contractTypeLabel(type?: string | null) {

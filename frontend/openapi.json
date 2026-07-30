@@ -4710,6 +4710,39 @@
         "title": "WiringConfirmationNodeWrite",
         "type": "object"
       },
+      "WiringInterfaceNamesWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "auxiliary_interface_names": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2,
+            "title": "Auxiliary Interface Names",
+            "type": "array"
+          },
+          "client_interface_name": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Client Interface Name",
+            "type": "string"
+          },
+          "market_interface_name": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Market Interface Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_interface_name",
+          "market_interface_name"
+        ],
+        "title": "WiringInterfaceNamesWrite",
+        "type": "object"
+      },
       "WorkflowDocumentOut": {
         "properties": {
           "draft": {
@@ -8920,6 +8953,69 @@
           }
         ],
         "summary": "Update Statistics Inputs"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/wiring-interface-names": {
+      "put": {
+        "operationId": "update_wiring_interface_names_api_v1_runs__run_id__steps__step_id__wiring_interface_names_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WiringInterfaceNamesWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Wiring Interface Names"
       }
     },
     "/api/v1/runs/{run_id}/verdict": {

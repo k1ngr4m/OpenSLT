@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowLeft, CircleCheck, Download, Refresh, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, CircleCheck, Close, Download, EditPen, Refresh, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import RunCaptureDetails from '@/components/run-detail/RunCaptureDetails.vue'
 import RunContractFiles from '@/components/run-detail/RunContractFiles.vue'
@@ -17,6 +17,7 @@ import { useOrderActions } from '@/composables/useOrderActions'
 import { useParserExports } from '@/composables/useParserExports'
 import { useStatisticsInputs } from '@/composables/useStatisticsInputs'
 import { useRunStepPresentation } from '@/composables/useRunStepPresentation'
+import { useWiringInterfaceNames } from '@/composables/useWiringInterfaceNames'
 import { useWorkflowTerminal } from '@/composables/useWorkflowTerminal'
 import { useAuthStore } from '@/stores/auth'
 import type {
@@ -27,9 +28,8 @@ import type {
   LogScope,
   RunStep,
 } from '@/types/run'
-import { formatBytes, formatDate, formatTime, nodeTypeText, normalizeContractFile, prettyJson } from '@/utils/runDetail'
+import { formatBytes, formatDate, formatTime, nodeTypeText, normalizeContractFile, presentRunMetric } from '@/utils/runDetail'
 import { businessText, resourceText } from '@/utils/status'
-import type { WiringSnapshot } from '@/utils/wiring'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -55,11 +55,32 @@ const canEditVerdict = computed(() => Boolean(
 const canRegenerateReports = computed(() => Boolean(
   auth.canOperate && run.value?.status === 'completed' && isWorkflowRun.value,
 ))
+const metricRows = computed(() => (run.value?.metrics || []).map(presentRunMetric))
 const isTerminalRunStatus = computed(() => ['completed', 'cancelled', 'execution_failed', 'parse_failed', 'precheck_failed', 'timed_out'].includes(run.value?.status || ''))
 const currentStep = computed(() => findCurrentStep(run.value?.steps || []))
 const selectedStep = computed(() => {
   const steps = run.value?.steps || []
   return steps.find(step => step.id === selectedStepId.value) || currentStep.value || steps[0] || null
+})
+const {
+  canEditWiringNames,
+  cancelEditingWiringNames,
+  editingWiringNames,
+  saveWiringInterfaceNames,
+  savingWiringNames,
+  startEditingWiringNames,
+  updateWiringInterfaceName,
+  wiringActionBlocked,
+  wiringNamesDirty,
+  wiringSnapshot,
+  wiringValidationMessage,
+} = useWiringInterfaceNames({
+  canOperate: computed(() => auth.canOperate),
+  currentStep,
+  selectedStep,
+  run,
+  runId,
+  reload: load,
 })
 const {
   handleWorkflowTerminalCommand,
@@ -119,8 +140,6 @@ const {
   selectedContractFileIds,
   selectedResult,
   showCaptureDetails,
-  showRawConfig,
-  showRawResult,
   summaryRows,
 } = useRunStepPresentation(run, selectedStep, contractPreviewCache)
 const {
@@ -175,11 +194,6 @@ const canCompleteCurrent = computed(() => Boolean(
 const orderTerminalSocketPath = computed(() => selectedStep.value?.node_type === 'order_preparation'
   ? `/ws/runs/${runId}/steps/${selectedStep.value.id}/order-terminal`
   : '')
-
-const wiringSnapshot = computed(() => {
-  const value = selectedConfig.value.wiring_snapshot
-  return value && typeof value === 'object' ? value as unknown as WiringSnapshot : null
-})
 const filteredLogs = computed(() => {
   if (logScope.value === 'all') return logs.value
   return logs.value.filter(log => log.step_id === logScope.value)
@@ -345,7 +359,7 @@ watch(
           type="primary"
           :icon="VideoPlay"
           :loading="actingStepId === currentStep.id || terminalCommandPendingStepId === currentStep.id"
-          :disabled="Boolean(exportingTable) || statisticsActionBlocked"
+          :disabled="Boolean(exportingTable) || statisticsActionBlocked || wiringActionBlocked"
           @click="currentStep && stepAction(currentStep, 'start')"
         >开始</el-button>
         <el-button
@@ -353,6 +367,7 @@ watch(
           type="success"
           :icon="CircleCheck"
           :loading="actingStepId === currentStep.id"
+          :disabled="wiringActionBlocked"
           @click="currentStep && stepAction(currentStep, currentStep.node_type === 'wiring_confirmation' ? 'confirm' : 'complete')"
         >{{ currentStep.node_type === 'wiring_confirmation' ? '确认接线' : '完成' }}</el-button>
         <el-button
@@ -443,7 +458,7 @@ watch(
                 <div class="section-heading">
                   <div>
                     <h3>统计输入 CSV</h3>
-                    <p class="muted">从解析资源根目录及本次运行的解析目录中选择；统计脚本将直接读取远端文件。</p>
+                    <p class="muted">仅可选择当前节点前最近一次成功解析生成的 CSV；统计脚本将直接读取远端文件。</p>
                   </div>
                   <div class="parser-export-actions">
                     <el-tag v-if="canSelectStatisticsInputs" type="success" effect="plain">可选择</el-tag>
@@ -455,11 +470,11 @@ watch(
                   <el-checkbox v-for="file in displayedStatisticsCsvFiles" :key="file.relative_path" :value="file.relative_path">
                     <span class="statistics-input-copy">
                       <strong>{{ file.relative_path }}</strong>
-                      <small>{{ file.source === 'root' ? '解析资源根目录' : '本次运行解析目录' }} · {{ formatBytes(file.size) }} · {{ formatDate(file.modified_at) }}</small>
+                      <small>最近解析结果 · {{ formatBytes(file.size) }} · {{ formatDate(file.modified_at) }}</small>
                     </span>
                   </el-checkbox>
                 </el-checkbox-group>
-                <div v-if="!loadingStatisticsCsvFiles && !displayedStatisticsCsvFiles.length" class="empty-line">允许范围内暂无可统计的远端 CSV</div>
+                <div v-if="!loadingStatisticsCsvFiles && !displayedStatisticsCsvFiles.length" class="empty-line">最近一次解析结果中暂无可统计的 CSV</div>
                 <div v-if="auth.canOperate && canSelectStatisticsInputs" class="statistics-selection-actions">
                   <span class="muted">已勾选 {{ selectedRelativePaths.length }} 个<span v-if="statisticsSelectionDirty"> · 尚未保存</span></span>
                   <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!selectedRelativePaths.length || !statisticsSelectionDirty" @click="saveStatisticsInputs">保存输入选择</el-button>
@@ -567,11 +582,39 @@ watch(
                 <div v-if="showWorkflowTerminal && !workflowTerminalResource" class="empty-line">当前运行没有{{ workflowTerminalResourceText }}，无法加载 SSH 终端</div>
               </section>
 
-              <WiringTopologyDiagram
-                v-if="selectedStep.node_type === 'wiring_confirmation'"
-                :snapshot="wiringSnapshot"
-                empty-message="该历史节点使用旧版占位图，确认流程仍可正常执行"
-              />
+              <section v-if="selectedStep.node_type === 'wiring_confirmation'" class="detail-section wiring-detail-section">
+                <div class="section-heading">
+                  <h3>接线拓扑</h3>
+                  <div v-if="editingWiringNames" class="wiring-name-actions">
+                    <el-button :icon="Close" :disabled="savingWiringNames" @click="cancelEditingWiringNames">取消</el-button>
+                    <el-button
+                      type="primary"
+                      :icon="Check"
+                      :loading="savingWiringNames"
+                      :disabled="!wiringNamesDirty || Boolean(wiringValidationMessage)"
+                      @click="saveWiringInterfaceNames"
+                    >保存</el-button>
+                  </div>
+                  <el-button
+                    v-else-if="canEditWiringNames"
+                    :icon="EditPen"
+                    @click="startEditingWiringNames"
+                  >编辑网卡名称</el-button>
+                </div>
+                <el-alert
+                  v-if="editingWiringNames && wiringValidationMessage"
+                  :title="wiringValidationMessage"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                />
+                <WiringTopologyDiagram
+                  :snapshot="wiringSnapshot"
+                  :editable="editingWiringNames"
+                  empty-message="该历史节点使用旧版占位图，确认流程仍可正常执行"
+                  @interface-name-change="updateWiringInterfaceName"
+                />
+              </section>
 
               <section class="detail-section">
                 <h3>节点配置</h3>
@@ -581,10 +624,6 @@ watch(
                     <dd :class="{ mono: row.mono }">{{ row.value || '-' }}</dd>
                   </template>
                 </dl>
-                <details v-if="showRawConfig" class="json-fold">
-                  <summary>原始配置</summary>
-                  <pre>{{ prettyJson(selectedConfig) }}</pre>
-                </details>
               </section>
 
               <section class="detail-section">
@@ -667,10 +706,6 @@ watch(
                   </template>
                 </div>
 
-                <details v-if="showRawResult" class="json-fold">
-                  <summary>原始结果</summary>
-                  <pre>{{ prettyJson(selectedResult) }}</pre>
-                </details>
               </section>
 
               <section class="detail-section compact-snapshot">
@@ -690,13 +725,26 @@ watch(
           </el-tab-pane>
 
           <el-tab-pane label="指标与结论" name="metrics">
-            <el-table :data="run.metrics" empty-text="暂无指标">
-              <el-table-column prop="name" label="指标" />
-              <el-table-column label="值">
-                <template #default="scope"><strong>{{ Number(scope.row.value).toFixed(3) }}</strong> {{ scope.row.unit }}</template>
-              </el-table-column>
-              <el-table-column prop="sample_count" label="样本数" />
-            </el-table>
+            <div class="metrics-table-scroll">
+              <el-table :data="metricRows" empty-text="暂无指标" class="metrics-table">
+                <el-table-column label="指标" min-width="140">
+                  <template #default="scope"><span class="metric-label">{{ scope.row.displayName }}</span></template>
+                </el-table-column>
+                <el-table-column label="值" width="170">
+                  <template #default="scope">
+                    <span class="metric-value"><strong>{{ Number(scope.row.value).toFixed(3) }}</strong><span>{{ scope.row.unit }}</span></span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="sample_count" label="样本数" width="100" />
+                <el-table-column label="数据来源" min-width="280">
+                  <template #default="scope">
+                    <el-tooltip :disabled="!scope.row.sourcePath" :content="scope.row.sourcePath" placement="top-start">
+                      <span class="metric-source">{{ scope.row.sourceFile }}</span>
+                    </el-tooltip>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
             <div v-if="run.verdict" class="verdict"><h3>结论</h3><p>最终结论：{{ run.verdict.final_result || '待复核' }}</p><p>{{ run.verdict.issue_description }}</p><p class="muted">{{ run.verdict.notes }}</p></div>
           </el-tab-pane>
 

@@ -226,6 +226,98 @@ def test_run_snapshots_selected_resource_ips(
     assert frozen["client_interface"]["ip_address"] == "180.1.1.188"
 
 
+def test_run_wiring_interface_names_can_be_edited_until_confirmation(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    resources = [
+        create_resource(client, admin_headers, resource_payload(f"{kind}-editable", kind))
+        for kind in ("rem", "market", "slnic")
+    ]
+    resource_ids = [resource["id"] for resource in resources]
+    plan, scenario = create_plan_scenario(
+        client, admin_headers, resource_ids=resource_ids
+    )
+    save_wiring_workflow(client, admin_headers, scenario, resource_ids)
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish",
+        headers=admin_headers,
+    )
+    assert published.status_code == 200, published.text
+    created = client.post(
+        "/api/v1/runs",
+        headers=admin_headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": resource_ids,
+        },
+    ).json()
+    run_id = created["id"]
+    step_id = created["steps"][0]["id"]
+    endpoint = f"/api/v1/runs/{run_id}/steps/{step_id}/wiring-interface-names"
+    assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
+
+    before_start = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "client_interface_name": " client-before-start ",
+            "market_interface_name": "market-before-start",
+            "auxiliary_interface_names": [],
+        },
+    )
+    assert before_start.status_code == 200, before_start.text
+    before_config = before_start.json()["steps"][0]["config_snapshot"]
+    assert before_config["client_interface_name"] == "client-before-start"
+    assert before_config["wiring_snapshot"]["client_interface"]["name"] == "client-before-start"
+
+    blank_name = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "client_interface_name": " ",
+            "market_interface_name": "market-before-start",
+            "auxiliary_interface_names": [],
+        },
+    )
+    assert blank_name.status_code == 422
+
+    assert client.post(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/start", headers=admin_headers
+    ).status_code == 200
+    waiting = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "client_interface_name": "client-confirmed",
+            "market_interface_name": "market-confirmed",
+            "auxiliary_interface_names": [],
+        },
+    )
+    assert waiting.status_code == 200, waiting.text
+    waiting_config = waiting.json()["steps"][0]["config_snapshot"]
+    assert waiting_config["market_interface_name"] == "market-confirmed"
+    assert waiting_config["wiring_snapshot"]["market_interface"]["name"] == "market-confirmed"
+
+    assert client.post(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/confirm", headers=admin_headers
+    ).status_code == 200
+    after_confirmation = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "client_interface_name": "too-late-client",
+            "market_interface_name": "too-late-market",
+            "auxiliary_interface_names": [],
+        },
+    )
+    assert after_confirmation.status_code == 409
+    reloaded = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    final_config = reloaded["steps"][0]["config_snapshot"]
+    assert final_config["client_interface_name"] == "client-confirmed"
+    assert final_config["market_interface_name"] == "market-confirmed"
+
+
 def test_integrated_wiring_names_are_saved_validated_and_frozen(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:

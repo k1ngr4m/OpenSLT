@@ -122,6 +122,7 @@ def _remote_csv_detail(
 async def list_statistics_csv_files(
     resource: Resource,
     run: TestRun,
+    step: RunStep,
 ) -> dict[str, typing.Any]:
     if resource.is_deleted or not resource.is_enabled or resource.resource_type != "parser":
         raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
@@ -129,51 +130,75 @@ async def list_statistics_csv_files(
     if not directory:
         raise WorkflowError("STATISTICS_SOURCE_PATH_REQUIRED", "解析工具远端路径不能为空", 409)
 
-    parser_step_ids = {
-        item.id for item in run.steps if item.node_type == "parser_parse"
-    }
-    allowed_run_prefixes = tuple(
-        f"r{run.id}-s{step_id}-a" for step_id in sorted(parser_step_ids)
+    parser_step = next(
+        (
+            item
+            for item in sorted(run.steps, key=lambda candidate: candidate.position, reverse=True)
+            if item.node_type == "parser_parse"
+            and item.status == "succeeded"
+            and item.position < step.position
+        ),
+        None,
     )
+    if parser_step is None:
+        raise WorkflowError(
+            "STATISTICS_PARSER_RESULT_REQUIRED",
+            "当前统计节点之前没有成功的数据解析结果",
+            409,
+        )
+    summary = parser_step.result_summary or {}
+    raw_workdir = summary.get("remote_workdir")
+    raw_output_files = summary.get("output_files")
+    if not isinstance(raw_workdir, str) or not raw_workdir.strip():
+        raise WorkflowError(
+            "STATISTICS_PARSER_RESULT_INVALID",
+            "最近的数据解析结果缺少有效的远端目录",
+            409,
+        )
+    remote_workdir = posixpath.normpath(raw_workdir.strip())
+    resource_directory = posixpath.normpath(directory)
+    if remote_workdir == resource_directory or not remote_workdir.startswith(
+        f"{resource_directory}/"
+    ):
+        raise WorkflowError(
+            "STATISTICS_PARSER_RESULT_INVALID",
+            "最近的数据解析结果目录不属于当前解析资源",
+            409,
+        )
+    if not isinstance(raw_output_files, list):
+        raise WorkflowError(
+            "STATISTICS_PARSER_RESULT_INVALID",
+            "最近的数据解析结果缺少有效的 CSV 输出清单",
+            409,
+        )
+    output_files = {
+        name
+        for name in raw_output_files
+        if isinstance(name, str)
+        and name == posixpath.basename(name)
+        and name.lower().endswith(".csv")
+    }
+    if not output_files:
+        raise WorkflowError(
+            "STATISTICS_PARSER_RESULT_INVALID",
+            "最近的数据解析结果没有可用的 CSV 输出",
+            409,
+        )
+
     rows: list[dict[str, typing.Any]] = []
     connection = None
     sftp = None
     try:
         connection = await asyncssh.connect(**_ssh_options(resource))
         sftp = await connection.start_sftp_client()
-        async for entry in sftp.scandir(directory):
+        async for entry in sftp.scandir(remote_workdir):
             if (
-                entry.filename.lower().endswith(".csv")
+                entry.filename in output_files
+                and entry.filename.lower().endswith(".csv")
                 and entry.attrs.type == asyncssh.FILEXFER_TYPE_REGULAR
             ):
                 rows.append(_remote_csv_detail(
-                    entry.filename, entry.filename, "root", entry.attrs
-                ))
-
-        runs_directory = posixpath.join(directory, ".openslt-runs")
-        try:
-            run_entries = [entry async for entry in sftp.scandir(runs_directory)]
-        except (asyncssh.SFTPError, OSError):
-            run_entries = []
-        for run_entry in run_entries:
-            if (
-                run_entry.attrs.type != asyncssh.FILEXFER_TYPE_DIRECTORY
-                or not allowed_run_prefixes
-                or not run_entry.filename.startswith(allowed_run_prefixes)
-            ):
-                continue
-            remote_run_directory = posixpath.join(runs_directory, run_entry.filename)
-            async for entry in sftp.scandir(remote_run_directory):
-                if (
-                    not entry.filename.lower().endswith(".csv")
-                    or entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR
-                ):
-                    continue
-                relative_path = posixpath.join(
-                    ".openslt-runs", run_entry.filename, entry.filename
-                )
-                rows.append(_remote_csv_detail(
-                    relative_path, entry.filename, "current_run", entry.attrs
+                    entry.filename, entry.filename, "current_run", entry.attrs
                 ))
     except WorkflowError:
         raise
@@ -189,8 +214,8 @@ async def list_statistics_csv_files(
             connection.close()
             with suppress(Exception):
                 await connection.wait_closed()
-    rows.sort(key=lambda item: (item["source"] != "root", item["relative_path"]))
-    return {"directory": directory, "files": rows}
+    rows.sort(key=lambda item: item["relative_path"])
+    return {"directory": remote_workdir, "files": rows}
 
 
 async def select_statistics_inputs(
@@ -205,7 +230,7 @@ async def select_statistics_inputs(
         raise WorkflowError("STATISTICS_INPUTS_REQUIRED", "请至少选择一个统计 CSV", 409)
     if len(relative_paths) != len(set(relative_paths)):
         raise WorkflowError("STATISTICS_INPUTS_DUPLICATE", "统计输入不能重复", 400)
-    listing = await list_statistics_csv_files(resource, run)
+    listing = await list_statistics_csv_files(resource, run, step)
     available = {item["relative_path"]: item for item in listing["files"]}
     try:
         inputs = [dict(available[path]) for path in relative_paths]
@@ -267,7 +292,7 @@ async def _execution_inputs(
     selected = require_statistics_selection(db, run, step)
     if all("artifact" in item for item in selected):
         return selected
-    listing = await list_statistics_csv_files(resource, run)
+    listing = await list_statistics_csv_files(resource, run, step)
     available = {item["relative_path"]: item for item in listing["files"]}
     resolved: list[dict[str, typing.Any]] = []
     for item in selected:
@@ -277,12 +302,17 @@ async def _execution_inputs(
             raise WorkflowError(
                 "STATISTICS_INPUT_CHANGED", f"远端统计输入 {relative_path} 已不存在", 409
             )
+        if (
+            current["size"] != item.get("size")
+            or current["modified_at"] != item.get("modified_at")
+        ):
+            raise WorkflowError(
+                "STATISTICS_INPUT_CHANGED", f"远端统计输入 {relative_path} 已发生变化", 409
+            )
         resolved.append({
             **current,
             "source_path": relative_path,
-            "absolute_path": posixpath.join(
-                resource.remote_path.strip().rstrip("/"), relative_path
-            ),
+            "absolute_path": posixpath.join(listing["directory"], relative_path),
         })
     return resolved
 

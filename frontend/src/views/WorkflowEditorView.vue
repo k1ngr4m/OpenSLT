@@ -1366,7 +1366,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
               <div><span>执行方式</span><strong>直接读取远端 CSV · JSON 输出</strong></div>
               <div class="wide"><span>脚本目录</span><code>{{ selectedResourceMap.parser?.remote_path || '-' }}</code></div>
             </div>
-            <el-alert title="运行到该节点后，在运行详情页选择解析资源根目录或本次运行解析目录中的 CSV。" type="info" :closable="false" show-icon />
+            <el-alert title="运行到该节点后，在运行详情页选择前一个最近成功解析节点生成的 CSV。" type="info" :closable="false" show-icon />
           </template>
           <template v-else-if="selectedNode.node_type === 'report_generation'">
             <div class="section-label">自动汇总范围</div>
