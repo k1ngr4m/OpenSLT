@@ -8,7 +8,7 @@ import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useAuthStore } from '@/stores/auth'
 import type { EditableWorkflowNode as WorkflowNode, WorkflowNodeType } from '@/types/api'
 import { resourceText } from '@/utils/status'
-import { buildWiringSnapshot } from '@/utils/wiring'
+import { buildWiringSnapshot, wiringInterfaceNameDefaults } from '@/utils/wiring'
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
 import {
@@ -107,6 +107,7 @@ const wiringPreview = computed(() => buildWiringSnapshot(
   selectedResourceMap.value.rem,
   selectedResourceMap.value.market,
   selectedResourceMap.value.slnic,
+  selectedNode.value?.node_type === 'wiring_confirmation' ? selectedNode.value.config : {},
 ))
 const wiringValidationMessage = computed(() => {
   if (!selectedResourceMap.value.rem) return '场景资源池尚未绑定 REM 柜台'
@@ -114,6 +115,13 @@ const wiringValidationMessage = computed(() => {
   if (!selectedResourceMap.value.slnic) return '场景资源池尚未绑定 SLNIC 节点'
   if (!selectedResourceMap.value.rem.trade_ip) return '所选 REM 尚未配置交易 IP'
   if (!wiringPreview.value) return '模拟市场或 SLNIC 的 Linux 地址不是有效 IPv4 地址'
+  if (!wiringPreview.value.client_interface.name.trim()) return '请输入第 1 个接口名称'
+  if (!wiringPreview.value.market_interface.name.trim()) return '请输入第 2 个接口名称'
+  if (selectedPlan.value?.business_code !== 'fut_mm') {
+    if (wiringPreview.value.auxiliary_interfaces.length !== 2) return '整合版接线图需要配置第 3、4 个接口名称'
+    if (!wiringPreview.value.auxiliary_interfaces[0]?.trim()) return '请输入第 3 个接口名称'
+    if (!wiringPreview.value.auxiliary_interfaces[1]?.trim()) return '请输入第 4 个接口名称'
+  }
   return ''
 })
 const selectedContractFiles = computed(() => {
@@ -142,6 +150,15 @@ function applyDocument(data: any) {
   const preferredKey = selectedKey.value
   documentData.value = data
   nodes.value = JSON.parse(JSON.stringify(data.draft.nodes || []))
+  const defaults = wiringInterfaceNameDefaults(
+    plans.value.find(item => item.id === data.scenario?.plan_id)?.business_code || '',
+  )
+  for (const node of nodes.value) {
+    if (node.node_type !== 'wiring_confirmation') continue
+    node.config.client_interface_name ??= defaults.client_interface_name
+    node.config.market_interface_name ??= defaults.market_interface_name
+    node.config.auxiliary_interface_names ??= [...defaults.auxiliary_interface_names]
+  }
   for (const type of resourceTypes) resourceSelections[type] = null
   for (const id of data.draft.resource_ids || []) {
     const resource = resources.value.find(item => item.id === id)
@@ -372,7 +389,16 @@ function defaultNode(type: string): WorkflowNode {
   const key = makeKey()
   if (type === 'server_config') return { node_key: key, position: 0, node_type: type, name: '获取服务器配置', config: { targets: [] } }
   if (type === 'database_config') return { node_key: key, position: 0, node_type: type, name: '获取数据库配置', config: { database_name: '', keys: [] } }
-  if (type === 'wiring_confirmation') return { node_key: key, position: 0, node_type: type, name: '接线确认', config: { diagram: 'resource' } }
+  if (type === 'wiring_confirmation') {
+    const names = wiringInterfaceNameDefaults(selectedPlan.value?.business_code || '')
+    return {
+      node_key: key,
+      position: 0,
+      node_type: type,
+      name: '接线确认',
+      config: { diagram: 'resource', ...names },
+    }
+  }
   if (type === 'market_startup') return { node_key: key, position: 0, node_type: type, name: '启动模拟市场', config: { scripts: [] } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return {
@@ -432,6 +458,22 @@ function removeNode(index: number) {
   const [removed] = nodes.value.splice(index, 1)
   normalizePositions(); dirty.value = true
   if (selectedKey.value === removed.node_key) selectedKey.value = nodes.value[Math.min(index, nodes.value.length - 1)]?.node_key || ''
+}
+
+function updateWiringInterfaceName(
+  slot: 'client' | 'market' | 'auxiliary',
+  value: string,
+  index?: number,
+) {
+  const node = selectedNode.value
+  if (!editable.value || node?.node_type !== 'wiring_confirmation') return
+  if (slot === 'client') node.config.client_interface_name = value
+  else if (slot === 'market') node.config.market_interface_name = value
+  else {
+    node.config.auxiliary_interface_names ||= ['', '']
+    node.config.auxiliary_interface_names[index ?? 0] = value
+  }
+  markDirty()
 }
 function dropNode(targetIndex: number) {
   const sourceIndex = nodes.value.findIndex(item => item.node_key === draggingKey.value)
@@ -861,7 +903,13 @@ onMounted(load)
             </div>
             <el-alert v-if="selectedNode.config.diagram === 'placeholder'" title="该节点仍使用旧版占位图，创建新草稿后可升级" type="info" :closable="false" show-icon />
             <el-alert v-else-if="wiringValidationMessage" :title="wiringValidationMessage" type="warning" :closable="false" show-icon />
-            <WiringTopologyDiagram :snapshot="selectedNode.config.diagram === 'resource' ? wiringPreview : null" compact :empty-message="selectedNode.config.diagram === 'placeholder' ? '旧版节点未绑定资源接线图' : wiringValidationMessage" />
+            <WiringTopologyDiagram
+              :snapshot="selectedNode.config.diagram === 'resource' ? wiringPreview : null"
+              :editable="editable && selectedNode.config.diagram === 'resource'"
+              compact
+              :empty-message="selectedNode.config.diagram === 'placeholder' ? '旧版节点未绑定资源接线图' : wiringValidationMessage"
+              @interface-name-change="updateWiringInterfaceName"
+            />
           </template>
 
           <template v-else-if="selectedNode.node_type === 'order_preparation'">

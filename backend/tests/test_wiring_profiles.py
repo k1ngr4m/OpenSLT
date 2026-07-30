@@ -50,7 +50,8 @@ def save_wiring_workflow(
     headers: dict[str, str],
     scenario: dict,
     resource_ids: list[int],
-) -> None:
+    config: dict | None = None,
+) -> dict:
     document = client.get(f"/api/v1/scenarios/{scenario['id']}/workflow", headers=headers).json()
     saved = client.put(
         f"/api/v1/scenarios/{scenario['id']}/workflow",
@@ -62,11 +63,50 @@ def save_wiring_workflow(
                 "node_key": "wiring",
                 "node_type": "wiring_confirmation",
                 "name": "确认接线",
-                "config": {"diagram": "resource"},
+                "config": config or {"diagram": "resource"},
             }],
         },
     )
     assert saved.status_code == 200, saved.text
+    return saved.json()
+
+
+def create_business_scenario(
+    client: TestClient,
+    headers: dict[str, str],
+    business_code: str,
+    resource_ids: list[int],
+) -> tuple[dict, dict]:
+    plan_response = client.post(
+        "/api/v1/plans",
+        headers=headers,
+        json={
+            "name": f"{business_code}-plan",
+            "business_code": business_code,
+            "description": "wiring test",
+            "default_resource_ids": resource_ids,
+            "config_version": "1.0",
+            "is_enabled": True,
+        },
+    )
+    assert plan_response.status_code == 201, plan_response.text
+    plan = plan_response.json()
+    scenario_response = client.post(
+        "/api/v1/scenarios",
+        headers=headers,
+        json={
+            "plan_id": plan["id"],
+            "name": f"{business_code}-scenario",
+            "scenario_type": "order",
+            "config_version": "1.0",
+            "expected_artifacts": ["pcapng"],
+            "default_resource_ids": resource_ids,
+            "required_resource_types": ["rem", "market", "slnic"],
+            "is_enabled": True,
+        },
+    )
+    assert scenario_response.status_code == 201, scenario_response.text
+    return plan, scenario_response.json()
 
 
 def test_rem_more_config_round_trip_and_validation(
@@ -184,3 +224,97 @@ def test_run_snapshots_selected_resource_ips(
     reloaded = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
     frozen = reloaded["steps"][0]["config_snapshot"]["wiring_snapshot"]
     assert frozen["client_interface"]["ip_address"] == "180.1.1.188"
+
+
+def test_integrated_wiring_names_are_saved_validated_and_frozen(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    business_code = "rem_two"
+    rem = create_resource(
+        client,
+        admin_headers,
+        resource_payload("REM-integrated", "rem", business_code=business_code),
+    )
+    market = create_resource(
+        client,
+        admin_headers,
+        resource_payload("Market-integrated", "market", business_code=business_code),
+    )
+    slnic = create_resource(
+        client,
+        admin_headers,
+        resource_payload("SLNIC-integrated", "slnic", business_code=business_code),
+    )
+    resource_ids = [rem["id"], market["id"], slnic["id"]]
+    plan, scenario = create_business_scenario(
+        client, admin_headers, business_code, resource_ids
+    )
+    names = {
+        "diagram": "resource",
+        "client_interface_name": "client-custom",
+        "market_interface_name": "market-custom",
+        "auxiliary_interface_names": ["aux-custom-1", "aux-custom-2"],
+    }
+    saved = save_wiring_workflow(
+        client, admin_headers, scenario, resource_ids, names
+    )
+    assert saved["draft"]["nodes"][0]["config"] == names
+
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish",
+        headers=admin_headers,
+    )
+    assert published.status_code == 200, published.text
+    created = client.post(
+        "/api/v1/runs",
+        headers=admin_headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": resource_ids,
+        },
+    )
+    assert created.status_code == 201, created.text
+    snapshot = created.json()["steps"][0]["config_snapshot"]["wiring_snapshot"]
+    assert snapshot["client_interface"]["name"] == "client-custom"
+    assert snapshot["market_interface"]["name"] == "market-custom"
+    assert snapshot["auxiliary_interfaces"] == ["aux-custom-1", "aux-custom-2"]
+
+
+def test_integrated_wiring_requires_all_four_interface_names(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    business_code = "rem_two_mm"
+    resources = [
+        create_resource(
+            client,
+            admin_headers,
+            resource_payload(f"{kind}-blank", kind, business_code=business_code),
+        )
+        for kind in ("rem", "market", "slnic")
+    ]
+    resource_ids = [resource["id"] for resource in resources]
+    _, scenario = create_business_scenario(
+        client, admin_headers, business_code, resource_ids
+    )
+    save_wiring_workflow(
+        client,
+        admin_headers,
+        scenario,
+        resource_ids,
+        {
+            "diagram": "resource",
+            "client_interface_name": "1(mac0)",
+            "market_interface_name": "2(mac1)",
+            "auxiliary_interface_names": ["", "4(mac3)"],
+        },
+    )
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish",
+        headers=admin_headers,
+    )
+    assert published.status_code == 422
+    assert any(
+        "接口名称不能为空" in item["message"]
+        for item in published.json()["errors"]
+    )

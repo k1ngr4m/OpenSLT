@@ -19,7 +19,7 @@ from app.services.resource_relations import (
     sync_workflow_resources,
     workflow_resource_ids,
 )
-from app.wiring_profiles import build_wiring_snapshot
+from app.wiring_profiles import build_wiring_snapshot, wiring_interface_names
 from app.workflow_node_configs import ORDER_ACTIONS
 
 SLNIC_NODE_TYPES = {"slnic_start_capture", "slnic_stop_capture", "slnic_merge_capture"}
@@ -218,10 +218,44 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
                     errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定模拟市场"})
                 if not slnic_resource:
                     errors.append({**prefix, "field": "resource", "message": "接线确认需要绑定 SLNIC 节点"})
+                try:
+                    client_name, market_name, auxiliary_names = wiring_interface_names(
+                        scenario.plan.business_code,
+                        client_interface_name=config.get("client_interface_name"),
+                        market_interface_name=config.get("market_interface_name"),
+                        auxiliary_interface_names=config.get("auxiliary_interface_names"),
+                    )
+                    required_names = [client_name, market_name]
+                    if scenario.plan.business_code != "fut_mm":
+                        required_names.extend(auxiliary_names)
+                        if len(auxiliary_names) != 2:
+                            errors.append({
+                                **prefix,
+                                "field": "auxiliary_interface_names",
+                                "message": "整合版接线图需要配置第 3、4 个接口名称",
+                            })
+                    if any(not name.strip() for name in required_names):
+                        errors.append({
+                            **prefix,
+                            "field": "interface_names",
+                            "message": "接线图接口名称不能为空",
+                        })
+                except KeyError:
+                    errors.append({
+                        **prefix,
+                        "field": "interface_names",
+                        "message": "接线图业务类型不受支持",
+                    })
                 if rem_resource and market_resource and slnic_resource:
                     try:
                         build_wiring_snapshot(
-                            rem_resource, market_resource, slnic_resource, scenario.plan.business_code
+                            rem_resource,
+                            market_resource,
+                            slnic_resource,
+                            scenario.plan.business_code,
+                            client_interface_name=config.get("client_interface_name"),
+                            market_interface_name=config.get("market_interface_name"),
+                            auxiliary_interface_names=config.get("auxiliary_interface_names"),
                         )
                     except (KeyError, ValueError):
                         errors.append({

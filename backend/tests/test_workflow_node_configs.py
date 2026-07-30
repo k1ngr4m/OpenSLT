@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas import WorkflowDocumentWrite
-from app.workflow_node_configs import MarketStartupConfig, OrderPreparationConfig, ParserConfig, RemStartupConfig, ServerConfig, StatisticsConfig, parse_node_config
+from app.workflow_node_configs import MarketStartupConfig, OrderPreparationConfig, ParserConfig, RemStartupConfig, ServerConfig, StatisticsConfig, WiringConfirmationConfig, parse_node_config
 
 
 def test_workflow_document_discriminates_node_config_by_node_type() -> None:
@@ -90,3 +90,26 @@ def test_runtime_config_parser_uses_the_same_contract() -> None:
     })
     assert isinstance(statistics, StatisticsConfig)
     assert statistics.max_latency_ns == 999999999
+
+
+def test_wiring_interface_names_are_trimmed_and_bounded() -> None:
+    config = parse_node_config("wiring_confirmation", {
+        "diagram": "resource",
+        "client_interface_name": " client0 ",
+        "market_interface_name": " market0 ",
+        "auxiliary_interface_names": [" aux0 ", "aux1"],
+    })
+    assert isinstance(config, WiringConfirmationConfig)
+    assert config.client_interface_name == "client0"
+    assert config.market_interface_name == "market0"
+    assert config.auxiliary_interface_names == ["aux0", "aux1"]
+
+    with pytest.raises(ValidationError):
+        parse_node_config("wiring_confirmation", {
+            "client_interface_name": "x" * 33,
+        })
+
+    with pytest.raises(ValidationError):
+        parse_node_config("wiring_confirmation", {
+            "auxiliary_interface_names": ["3(mac2)", "4(mac3)", "5(mac4)"],
+        })

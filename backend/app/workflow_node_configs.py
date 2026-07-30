@@ -50,6 +50,32 @@ class DatabaseConfig(WorkflowNodeConfig):
 
 class WiringConfirmationConfig(WorkflowNodeConfig):
     diagram: str = "placeholder"
+    client_interface_name: typing.Optional[str] = Field(default=None, max_length=32)
+    market_interface_name: typing.Optional[str] = Field(default=None, max_length=32)
+    auxiliary_interface_names: typing.Optional[typing.List[str]] = Field(
+        default=None, max_length=2
+    )
+
+    @field_validator("client_interface_name", "market_interface_name", mode="before")
+    @classmethod
+    def trim_interface_name(cls, value: typing.Any) -> typing.Any:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("auxiliary_interface_names", mode="before")
+    @classmethod
+    def trim_auxiliary_interface_names(cls, value: typing.Any) -> typing.Any:
+        if not isinstance(value, list):
+            return value
+        return [item.strip() if isinstance(item, str) else item for item in value]
+
+    @field_validator("auxiliary_interface_names")
+    @classmethod
+    def validate_auxiliary_interface_name_lengths(
+        cls, value: typing.Optional[typing.List[str]]
+    ) -> typing.Optional[typing.List[str]]:
+        if value is not None and any(len(item) > 32 for item in value):
+            raise ValueError("接线接口名称不能超过 32 个字符")
+        return value
 
 
 class RemStartupConfig(WorkflowNodeConfig):

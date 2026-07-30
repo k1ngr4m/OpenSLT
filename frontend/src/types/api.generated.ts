@@ -2692,11 +2692,17 @@ export interface components {
         };
         /** WiringConfirmationConfig */
         WiringConfirmationConfig: {
+            /** Auxiliary Interface Names */
+            auxiliary_interface_names?: string[] | null;
+            /** Client Interface Name */
+            client_interface_name?: string | null;
             /**
              * Diagram
              * @default placeholder
              */
             diagram: string;
+            /** Market Interface Name */
+            market_interface_name?: string | null;
         };
         /** WiringConfirmationNodeOut */
         WiringConfirmationNodeOut: {

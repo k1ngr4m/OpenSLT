@@ -36,13 +36,61 @@ describe('WiringTopologyDiagram', () => {
     expect(content).toContain(marketInterface)
     expect(content).toContain('客户端上行')
     expect(content).toContain('市场下行')
-    for (const [name, expected] of Object.entries(expectedLinks)) {
+    const hardCore = businessCode !== 'fut_mm'
+    const paths = hardCore
+      ? {
+          ...expectedLinks,
+          'market-uplink-main': { d: 'M350 272 H490 V350 H642', tone: 'uplink' },
+          'market-downlink-main': { d: 'M642 380 H548 V299 H350', tone: 'downlink' },
+          'market-downlink-slnic-2': { d: 'M548 299 V548 H350', tone: 'downlink' },
+        }
+      : expectedLinks
+    for (const [name, expected] of Object.entries(paths)) {
       const link = wrapper.get(`[data-link="${name}"]`)
       expect(link.attributes('d')).toBe(expected.d)
       expect(link.classes()).toContain(expected.tone)
       expect(link.attributes('marker-end')).toContain(`wiring-${expected.tone}-`)
     }
-    expect(wrapper.findAll('.auxiliary-interface rect')).toHaveLength(businessCode === 'fut_mm' ? 0 : 2)
+    expect(wrapper.findAll('.hard-core-interface-row')).toHaveLength(hardCore ? 4 : 0)
+    if (hardCore) {
+      expect(wrapper.findAll('.hard-core-interface-row rect').map(rect => [
+        rect.attributes('y'),
+        rect.attributes('height'),
+      ])).toEqual([
+        ['194', '58'], ['252', '58'], ['310', '58'], ['368', '58'],
+      ])
+      expect(wrapper.get('[data-link="market-uplink-main"]').attributes('d')).toContain('M350 272')
+      expect(wrapper.get('[data-link="market-downlink-main"]').attributes('d')).toContain('H350')
+    }
+  })
+
+  it('edits all four integrated names in place and keeps read-only diagrams static', async () => {
+    const snapshot = buildWiringSnapshot(
+      'rem_two',
+      { id: 1, name: 'REM-01', host: '10.1.51.8', trade_ip: '180.1.1.101' },
+      { id: 3, name: 'Market-01', host: '10.1.51.101' },
+      { id: 2, name: 'SLNIC-01', host: '10.1.51.210' },
+    )
+    const editable = mount(WiringTopologyDiagram, {
+      props: { snapshot, editable: true },
+      global: { stubs: { ElIcon: true } },
+    })
+    const inputs = editable.findAll('.interface-name input')
+    expect(inputs).toHaveLength(4)
+    await inputs[0].setValue('client-custom')
+    await inputs[2].setValue('aux-custom')
+    expect(editable.emitted('interface-name-change')).toEqual([
+      ['client', 'client-custom', undefined],
+      ['auxiliary', 'aux-custom', 0],
+    ])
+
+    const readonly = mount(WiringTopologyDiagram, {
+      props: { snapshot },
+      global: { stubs: { ElIcon: true } },
+    })
+    expect(readonly.findAll('.interface-name input')).toHaveLength(0)
+    expect(readonly.text()).toContain('1(mac0)')
+    expect(readonly.text()).toContain('4(mac3)')
   })
 
   it('renders an actionable empty state', () => {

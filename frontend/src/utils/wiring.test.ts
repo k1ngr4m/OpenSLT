@@ -34,4 +34,33 @@ describe('wiring snapshots', () => {
       { id: 3, name: 'SLNIC', host: '10.1.1.3' },
     )).toBeNull()
   })
+
+  it('overrides all four integrated interface names without changing their positions', () => {
+    const snapshot = buildWiringSnapshot(
+      'rem_two',
+      { id: 1, name: 'REM', trade_ip: '10.1.1.1' },
+      { id: 2, name: '市场', host: '10.1.1.2' },
+      { id: 3, name: 'SLNIC', host: '10.1.1.3' },
+      {
+        client_interface_name: 'client-custom',
+        market_interface_name: 'market-custom',
+        auxiliary_interface_names: ['aux-1', 'aux-2'],
+      },
+    )
+    expect(snapshot?.client_interface.name).toBe('client-custom')
+    expect(snapshot?.market_interface.name).toBe('market-custom')
+    expect(snapshot?.auxiliary_interfaces).toEqual(['aux-1', 'aux-2'])
+  })
+
+  it('keeps legacy presets when interface name overrides are absent', () => {
+    const snapshot = buildWiringSnapshot(
+      'fut_mm',
+      { id: 1, name: 'REM', trade_ip: '10.1.1.1' },
+      { id: 2, name: '市场', host: '10.1.1.2' },
+      { id: 3, name: 'SLNIC', host: '10.1.1.3' },
+    )
+    expect(snapshot?.client_interface.name).toBe('enp101s0d1')
+    expect(snapshot?.market_interface.name).toBe('enp23s0')
+    expect(snapshot?.auxiliary_interfaces).toEqual([])
+  })
 })

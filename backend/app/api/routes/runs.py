@@ -137,6 +137,9 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
                     resources_by_type["market"],
                     resources_by_type["slnic"],
                     plan.business_code,
+                    client_interface_name=step.config_snapshot.get("client_interface_name"),
+                    market_interface_name=step.config_snapshot.get("market_interface_name"),
+                    auxiliary_interface_names=step.config_snapshot.get("auxiliary_interface_names"),
                 )
             except (KeyError, ValueError) as exc:
                 raise HTTPException(

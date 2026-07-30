@@ -4180,10 +4180,49 @@
       "WiringConfirmationConfig": {
         "additionalProperties": false,
         "properties": {
+          "auxiliary_interface_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auxiliary Interface Names"
+          },
+          "client_interface_name": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Interface Name"
+          },
           "diagram": {
             "default": "placeholder",
             "title": "Diagram",
             "type": "string"
+          },
+          "market_interface_name": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Interface Name"
           }
         },
         "title": "WiringConfirmationConfig",
