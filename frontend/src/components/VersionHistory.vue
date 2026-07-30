@@ -1,8 +1,26 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { appVersion, releaseChangeLabels, releaseHistory } from '@/releaseMetadata'
+import type { ReleaseChange } from '@/releaseMetadata'
 
 const visible = ref(false)
+
+const releaseChangeTypeOrder: readonly ReleaseChange['type'][] = [
+  'added',
+  'changed',
+  'fixed',
+  'removed',
+  'security',
+]
+
+function groupChangesByType(changes: readonly ReleaseChange[]): ReleaseChange[] {
+  return releaseChangeTypeOrder.flatMap(type => changes.filter(change => change.type === type))
+}
+
+const displayReleaseHistory = releaseHistory.map(release => ({
+  ...release,
+  changes: groupChangesByType(release.changes),
+}))
 </script>
 
 <template>
@@ -22,7 +40,7 @@ const visible = ref(false)
     append-to-body
   >
     <div class="release-list">
-      <article v-for="(release, index) in releaseHistory" :key="release.version" class="release-entry">
+      <article v-for="(release, index) in displayReleaseHistory" :key="release.version" class="release-entry">
         <header class="release-heading">
           <div>
             <strong>v{{ release.version }}</strong>

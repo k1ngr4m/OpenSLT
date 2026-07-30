@@ -299,7 +299,7 @@ tar -tzf "release/${PACKAGE}.tar.gz" | grep -E \
 在内网存放目录重新定义变量并校验：
 
 ```bash
-VERSION=0.2.0
+VERSION=0.2.1
 PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
 
 sha256sum -c "${PACKAGE}.tar.gz.sha256"
@@ -711,7 +711,7 @@ systemctl status openslt-api nginx --no-pager
 校验并解压新包后进入新目录：
 
 ```bash
-VERSION=0.2.0
+VERSION=0.2.1
 PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
 
 sha256sum -c "${PACKAGE}.tar.gz.sha256"
