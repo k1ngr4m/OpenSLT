@@ -1,5 +1,10 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "changed",
+      "text": "资源新增与编辑抽屉改为紧凑双列表单布局。"
+    }
+  ],
   "releases": [
     {
       "version": "0.2.1",

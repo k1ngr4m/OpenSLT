@@ -499,7 +499,7 @@ onMounted(load)
       </el-table>
     </div>
 
-    <el-drawer v-model="dialog" :title="editing ? '编辑资源' : '新增资源'" size="720px" destroy-on-close>
+    <el-drawer v-model="dialog" :title="editing ? '编辑资源' : '新增资源'" size="720px" destroy-on-close class="resource-config-drawer">
       <el-steps v-if="form.resource_type === 'database'" :active="databaseStep - 1" align-center finish-status="success" class="database-steps">
         <el-step title="连接配置" description="填写 MySQL 与可选跳板机信息" />
         <el-step title="选择数据库" description="读取当前账号可见的业务数据库" />
@@ -666,5 +666,342 @@ onMounted(load)
 </template>
 
 <style scoped>
-.resource-filters>.el-select{width:160px}.keyword-filter{width:300px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.resource-table{overflow:hidden}.resource-table :deep(.mono){font-size:11px}.port-input :deep(.el-input__wrapper){padding-right:32px;padding-left:32px}.port-input :deep(.el-input-number__decrease),.port-input :deep(.el-input-number__increase){width:30px}.connection-test-result{margin-top:4px}.more-config-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 18px;padding:12px 0 9px;border-bottom:1px solid var(--ui-border)}.more-config-heading strong,.more-config-heading span{display:block}.more-config-heading strong{font-size:13px}.more-config-heading span{margin-top:3px;color:var(--ui-text-tertiary);font-size:11px}.more-config-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:16px}.more-config-grid .trade-ip-field{grid-column:1;grid-row:1}.more-config-grid .trade-tcp-field{grid-column:2;grid-row:1}.more-config-grid .trade-udp-field{grid-column:2;grid-row:2}.more-config-grid .query-ip-field{grid-column:1;grid-row:3}.more-config-grid .query-port-field{grid-column:2;grid-row:3}.database-steps{margin:-4px 0 22px;padding:0 40px}.database-selection-step{min-height:330px;padding:6px 0 0}.database-connection-summary{display:flex;align-items:center;gap:22px;padding:14px 16px;margin-bottom:22px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-surface-subtle)}.database-connection-summary>div{display:flex;min-width:0;flex-direction:column;gap:4px}.database-connection-summary small{color:var(--ui-text-tertiary);font-size:11px}.database-connection-summary strong{overflow:hidden;max-width:250px;color:var(--ui-text-primary);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}.database-connection-summary .el-tag{margin-left:auto}.database-picker{margin:0}.database-picker :deep(.el-select__wrapper){min-height:42px}.database-option{display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px}.database-selection-meta{display:flex;align-items:center;justify-content:space-between;margin:8px 0 0 110px;color:var(--ui-text-secondary);font-size:12px}.database-discovery-error{margin:0 0 14px 110px;padding:9px 12px;border-radius:5px;background:#fff1f2;color:var(--ui-danger);font-size:12px}@media(max-width:767px){.resource-filters>*{width:100%!important}.filter-count{margin-left:0}.database-steps{padding:0}.database-selection-meta,.database-discovery-error{margin-left:0}.more-config-heading{align-items:flex-start}.more-config-grid{display:block}}
+.resource-filters > .el-select {
+  width: 160px;
+}
+
+.keyword-filter {
+  width: 300px;
+}
+
+.filter-count {
+  margin-left: auto;
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+}
+
+.resource-table {
+  overflow: hidden;
+}
+
+.resource-table :deep(.mono) {
+  font-size: 11px;
+}
+
+:global(.resource-config-drawer) {
+  width: min(720px, 100vw) !important;
+}
+
+:global(.resource-config-drawer .el-drawer__header) {
+  height: 58px;
+  margin: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+:global(.resource-config-drawer .el-drawer__title) {
+  color: var(--ui-text-primary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 58px;
+}
+
+:global(.resource-config-drawer .el-drawer__close-btn) {
+  width: 32px;
+  height: 32px;
+  margin: 13px 0;
+  color: var(--ui-text-primary);
+  font-size: 18px;
+}
+
+:global(.resource-config-drawer .el-drawer__body) {
+  padding: 20px 20px 24px;
+}
+
+:global(.resource-config-drawer .el-drawer__footer) {
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-surface);
+}
+
+:global(.resource-config-drawer .el-form-item) {
+  display: flex;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+:global(.resource-config-drawer .el-form-item__label) {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px 0 0;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 32px;
+}
+
+:global(.resource-config-drawer .el-form-item__content) {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  line-height: 32px;
+}
+
+:global(.resource-config-drawer .el-input__wrapper),
+:global(.resource-config-drawer .el-select__wrapper) {
+  min-height: 32px;
+  border-radius: 5px;
+}
+
+:global(.resource-config-drawer .el-input__inner),
+:global(.resource-config-drawer .el-select__placeholder),
+:global(.resource-config-drawer .el-select__selected-item) {
+  height: 30px;
+  font-size: 14px;
+  line-height: 30px;
+}
+
+:global(.resource-config-drawer .el-textarea__inner) {
+  min-height: 52px;
+  border-radius: 5px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+:global(.resource-config-drawer .el-radio-group),
+:global(.resource-config-drawer .el-radio),
+:global(.resource-config-drawer .el-switch) {
+  height: 32px;
+}
+
+:global(.resource-config-drawer .el-radio-button__inner) {
+  height: 32px;
+  padding: 7px 14px;
+  font-size: 14px;
+  line-height: 16px;
+}
+
+:global(.resource-config-drawer .el-radio) {
+  margin-right: 12px;
+}
+
+:global(.resource-config-drawer .el-radio__label) {
+  padding-left: 6px;
+  font-size: 14px;
+}
+
+:global(.resource-config-drawer .el-button) {
+  min-height: 36px;
+}
+
+:global(.resource-config-drawer .el-button + .el-button) {
+  margin-left: 8px;
+}
+
+.port-input {
+  height: 32px;
+}
+
+.port-input :deep(.el-input__wrapper) {
+  padding-right: 32px;
+  padding-left: 32px;
+}
+
+.port-input :deep(.el-input-number__decrease),
+.port-input :deep(.el-input-number__increase) {
+  width: 30px;
+  height: 30px;
+}
+
+.connection-test-result {
+  margin-top: 4px;
+}
+
+.more-config-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 2px 0 18px;
+  padding: 10px 0 9px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.more-config-heading strong,
+.more-config-heading span {
+  display: block;
+}
+
+.more-config-heading strong {
+  font-size: 13px;
+}
+
+.more-config-heading span {
+  margin-top: 3px;
+  color: var(--ui-text-tertiary);
+  font-size: 11px;
+}
+
+.more-config-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.more-config-grid .trade-ip-field {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.more-config-grid .trade-tcp-field {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.more-config-grid .trade-udp-field {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.more-config-grid .query-ip-field {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.more-config-grid .query-port-field {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.database-steps {
+  margin: -4px 0 22px;
+  padding: 0 40px;
+}
+
+.database-selection-step {
+  min-height: 330px;
+  padding: 6px 0 0;
+}
+
+.database-connection-summary {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  background: var(--ui-surface-subtle);
+}
+
+.database-connection-summary > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.database-connection-summary small {
+  color: var(--ui-text-tertiary);
+  font-size: 11px;
+}
+
+.database-connection-summary strong {
+  overflow: hidden;
+  max-width: 250px;
+  color: var(--ui-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-connection-summary .el-tag {
+  margin-left: auto;
+}
+
+.database-picker {
+  margin: 0;
+}
+
+.database-picker :deep(.el-select__wrapper) {
+  min-height: 42px;
+}
+
+.database-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.database-selection-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 0 0 110px;
+  color: var(--ui-text-secondary);
+  font-size: 12px;
+}
+
+.database-discovery-error {
+  margin: 0 0 14px 110px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  background: #fff1f2;
+  color: var(--ui-danger);
+  font-size: 12px;
+}
+
+@media (max-width: 767px) {
+  .resource-filters > * {
+    width: 100% !important;
+  }
+
+  .filter-count {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 599px) {
+  :global(.resource-config-drawer) {
+    width: 100vw !important;
+  }
+
+  :global(.resource-config-drawer .el-drawer__body) {
+    padding: 16px;
+  }
+
+  :global(.resource-config-drawer .el-form-item) {
+    display: block;
+  }
+
+  :global(.resource-config-drawer .el-form-item__label) {
+    justify-content: flex-start;
+    width: auto !important;
+  }
+
+  .database-steps {
+    padding: 0;
+  }
+
+  .database-selection-meta,
+  .database-discovery-error {
+    margin-left: 0;
+  }
+
+  .more-config-heading {
+    align-items: flex-start;
+  }
+
+  .more-config-grid {
+    display: block;
+  }
+}
 </style>

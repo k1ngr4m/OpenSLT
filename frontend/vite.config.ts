@@ -18,6 +18,11 @@ const elementPlusComponentDirectories: Record<string, string> = {
   ElTableColumn: 'table',
 }
 
+const additionalElementPlusStyles: Record<string, string[]> = {
+  ElRadioButton: ['element-plus/theme-chalk/el-radio-button.css'],
+  ElRadioGroup: ['element-plus/theme-chalk/el-radio-group.css'],
+}
+
 function directElementPlusComponent(name: string) {
   if (!/^El[A-Z]/.test(name)) return
   const componentName = name
@@ -31,6 +36,7 @@ function directElementPlusComponent(name: string) {
     sideEffects: [
       'element-plus/es/components/base/style/css',
       `element-plus/es/components/${directory}/style/css`,
+      ...(additionalElementPlusStyles[name] ?? []),
     ],
   }
 }
