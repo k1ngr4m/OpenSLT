@@ -69,11 +69,25 @@ def test_npm_cache_is_reinstalled_offline_and_bound_to_lock_file() -> None:
     offline_install = '"$NPM_BIN" --prefix "$FRONTEND_DIR" ci --offline'
     remove_modules = 'rm -rf -- "$FRONTEND_DIR/node_modules"'
     lock_metadata = "package_lock_sha256=$PACKAGE_LOCK_SHA"
+    persistent_cache = 'PERSISTENT_NPM_CACHE_DIR="$CACHE_DIR/npm/$PACKAGE_LOCK_SHA"'
+    cached_install = "Validating cached npm dependencies without network"
+    populate_cache = "Populating the npm cache from package-lock.json"
 
-    for marker in (online_install, offline_install, remove_modules, lock_metadata):
+    for marker in (
+        online_install,
+        offline_install,
+        remove_modules,
+        lock_metadata,
+        persistent_cache,
+        cached_install,
+        populate_cache,
+    ):
         assert marker in builder
-    assert builder.index(online_install) < builder.index(remove_modules)
-    assert builder.index(remove_modules) < builder.index(offline_install)
+
+    online_install_at = builder.index(online_install, builder.index(populate_cache))
+    remove_modules_at = builder.index(remove_modules, online_install_at)
+    offline_install_at = builder.index(offline_install, remove_modules_at)
+    assert online_install_at < remove_modules_at < offline_install_at
 
 
 def test_bundled_node_is_installed_without_replacing_system_node() -> None:

@@ -1,4 +1,4 @@
-# OpenSLT 自动化测速平台
+# OpenSLT 自动化测试平台
 
 OpenSLT 是面向盛立 REM 期货测速工作的内网 Web 平台。它将测试资源、方案、场景、
 执行步骤、日志、统计结果和报告集中管理，用可审计、可复现的流程替代分散的脚本与
@@ -262,7 +262,8 @@ RHEL 7.9 x86_64 无互联网部署请使用
 需要在 RHEL 7.9 内网机直接修改前端时，外网制包增加 `--bundle-node`。该模式使用
 `linux-x64-glibc-217` 社区构建，不覆盖系统 Node；运行时安装到
 `/opt/openslt-node`，npm 缓存安装到 `/var/cache/openslt/npm`。具体校验、风险和使用
-方式见离线部署手册。
+方式见离线部署手册。外网制包机连续生成离线包时，可给制包脚本传入 `--cache-dir`
+复用 RPM、Node、npm 和 pip 缓存。
 
 默认数据库模式为 `existing`，不会安装、配置、启停或清理 MariaDB，也不会管理
 数据库账号。使用 `provision` 或 `initialize` 前必须先阅读离线手册中的影响说明。

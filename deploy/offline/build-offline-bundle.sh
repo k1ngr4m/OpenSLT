@@ -9,6 +9,7 @@ RPM_DIR=""
 OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
 SKIP_TESTS=false
+CACHE_DIR=""
 BUNDLE_PYTHON=false
 PYTHON_RUNTIME_ROOT="/opt/rh/rh-python38"
 BUNDLE_NODE=false
@@ -26,6 +27,7 @@ Options:
   --rpm-dir DIR       RPM repository created by collect-rpms-rhel7.sh
   --output DIR        Output directory (default: release/)
   --version VERSION   Assert the canonical VERSION value (optional)
+  --cache-dir DIR     Reuse Node.js, npm, and pip caches between runs
   --bundle-python     Include /opt/rh/rh-python38 for Python bootstrap
   --bundle-node       Include Node.js, npm, and a verified offline npm cache
   --node-version VER  linux-x64-glibc-217 Node version (default: 20.20.2)
@@ -56,6 +58,10 @@ while (($#)); do
             ;;
         --version)
             VERSION="$2"
+            shift 2
+            ;;
+        --cache-dir)
+            CACHE_DIR="$2"
             shift 2
             ;;
         --bundle-python)
@@ -124,6 +130,17 @@ if [[ -n "$VERSION" && "$VERSION" != "$PROJECT_VERSION" ]]; then
     exit 2
 fi
 VERSION="$PROJECT_VERSION"
+if [[ -n "$CACHE_DIR" ]]; then
+    mkdir -p "$CACHE_DIR"
+    CACHE_DIR="$(cd -- "$CACHE_DIR" && pwd)"
+    case "$CACHE_DIR/" in
+        "$PROJECT_ROOT"/*)
+            printf -- '--cache-dir must be outside the project root: %s\n' "$CACHE_DIR" >&2
+            exit 2
+            ;;
+    esac
+    export PIP_CACHE_DIR="$CACHE_DIR/pip"
+fi
 if [[ "$BUNDLE_PYTHON" == true ]]; then
     [[ -d "$PYTHON_RUNTIME_ROOT" ]] || {
         printf 'The rh-python38 runtime is missing: %s\n' "$PYTHON_RUNTIME_ROOT" >&2
@@ -219,11 +236,40 @@ if [[ "$BUNDLE_NODE" == true ]]; then
     NODE_RELEASE_URL="${NODE_BASE_URL%/}/v${NODE_VERSION}"
     DOWNLOADED_NODE_ARCHIVE="$BUILD_ROOT/$NODE_ARCHIVE_NAME"
     DOWNLOADED_NODE_SHASUMS="$BUILD_ROOT/SHASUMS256.txt"
+    CACHED_NODE_ARCHIVE=""
+    CACHED_NODE_SHASUMS=""
 
     if [[ -n "$NODE_ARCHIVE" ]]; then
         cp -p "$NODE_ARCHIVE" "$DOWNLOADED_NODE_ARCHIVE"
         cp -p "$NODE_SHASUMS" "$DOWNLOADED_NODE_SHASUMS"
         NODE_SOURCE="local:$NODE_ARCHIVE_NAME"
+    elif [[ -n "$CACHE_DIR" ]]; then
+        NODE_CACHE_DIR="$CACHE_DIR/node/v$NODE_VERSION"
+        CACHED_NODE_ARCHIVE="$NODE_CACHE_DIR/$NODE_ARCHIVE_NAME"
+        CACHED_NODE_SHASUMS="$NODE_CACHE_DIR/SHASUMS256.txt"
+        mkdir -p "$NODE_CACHE_DIR"
+        if [[ -f "$CACHED_NODE_ARCHIVE" && -f "$CACHED_NODE_SHASUMS" ]]; then
+            printf '[OpenSLT] Reusing cached Node.js %s archive.\n' "$NODE_VERSION"
+            cp -p "$CACHED_NODE_ARCHIVE" "$DOWNLOADED_NODE_ARCHIVE"
+            cp -p "$CACHED_NODE_SHASUMS" "$DOWNLOADED_NODE_SHASUMS"
+            NODE_SOURCE="cache:$CACHED_NODE_ARCHIVE"
+        else
+            command -v curl >/dev/null 2>&1 || {
+                printf 'curl is required to download the Node.js runtime.\n' >&2
+                exit 1
+            }
+            printf '[OpenSLT] Downloading Node.js checksums...\n'
+            curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
+                --retry-max-time 900 --connect-timeout 30 --max-time 600 \
+                --speed-limit 1024 --speed-time 60 \
+                --output "$DOWNLOADED_NODE_SHASUMS" "$NODE_RELEASE_URL/SHASUMS256.txt"
+            printf '[OpenSLT] Downloading %s (about 48 MB)...\n' "$NODE_ARCHIVE_NAME"
+            curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
+                --retry-max-time 900 --connect-timeout 30 --max-time 600 \
+                --speed-limit 1024 --speed-time 60 \
+                --output "$DOWNLOADED_NODE_ARCHIVE" "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
+            NODE_SOURCE="$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
+        fi
     else
         command -v curl >/dev/null 2>&1 || {
             printf 'curl is required to download the Node.js runtime.\n' >&2
@@ -255,6 +301,10 @@ if [[ "$BUNDLE_NODE" == true ]]; then
         printf 'Expected: %s\nActual:   %s\n' "$NODE_EXPECTED_SHA" "$NODE_ACTUAL_SHA" >&2
         exit 1
     }
+    if [[ -n "$CACHED_NODE_ARCHIVE" && "$NODE_SOURCE" != cache:* ]]; then
+        cp -p "$DOWNLOADED_NODE_ARCHIVE" "$CACHED_NODE_ARCHIVE"
+        cp -p "$DOWNLOADED_NODE_SHASUMS" "$CACHED_NODE_SHASUMS"
+    fi
 
     printf '[OpenSLT] Extracting and validating Node.js %s...\n' "$NODE_VERSION"
     mkdir -p "$STAGING/node-runtime"
@@ -283,21 +333,48 @@ if [[ "$BUNDLE_NODE" == true ]]; then
 
     FRONTEND_DIR="$STAGING/app/frontend"
     NPM_CACHE_DIR="$STAGING/npm-cache"
+    PACKAGE_LOCK_SHA="$(sha256sum "$FRONTEND_DIR/package-lock.json" | awk '{print $1}')"
+    PERSISTENT_NPM_CACHE_DIR=""
     mkdir -p "$NPM_CACHE_DIR"
-    printf '[OpenSLT] Populating the npm cache from package-lock.json...\n'
-    "$NPM_BIN" --prefix "$FRONTEND_DIR" ci \
-        --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund
-    rm -rf -- "$FRONTEND_DIR/node_modules"
-    printf '[OpenSLT] Validating a network-free npm installation...\n'
-    "$NPM_BIN" --prefix "$FRONTEND_DIR" ci --offline \
-        --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund
+    if [[ -n "$CACHE_DIR" ]]; then
+        PERSISTENT_NPM_CACHE_DIR="$CACHE_DIR/npm/$PACKAGE_LOCK_SHA"
+        if [[ -d "$PERSISTENT_NPM_CACHE_DIR/_cacache" ]]; then
+            printf '[OpenSLT] Reusing cached npm dependencies for package-lock.json.\n'
+            cp -a "$PERSISTENT_NPM_CACHE_DIR/." "$NPM_CACHE_DIR/"
+        fi
+    fi
+    NPM_INSTALLED_FROM_CACHE=false
+    if [[ -d "$NPM_CACHE_DIR/_cacache" ]]; then
+        printf '[OpenSLT] Validating cached npm dependencies without network...\n'
+        if "$NPM_BIN" --prefix "$FRONTEND_DIR" ci --offline \
+            --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund; then
+            NPM_INSTALLED_FROM_CACHE=true
+        else
+            printf '[OpenSLT] Cached npm dependencies are incomplete; rebuilding the cache.\n'
+            rm -rf -- "$FRONTEND_DIR/node_modules" "$NPM_CACHE_DIR"
+            mkdir -p "$NPM_CACHE_DIR"
+        fi
+    fi
+    if [[ "$NPM_INSTALLED_FROM_CACHE" == false ]]; then
+        printf '[OpenSLT] Populating the npm cache from package-lock.json...\n'
+        "$NPM_BIN" --prefix "$FRONTEND_DIR" ci \
+            --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund
+        rm -rf -- "$FRONTEND_DIR/node_modules"
+        printf '[OpenSLT] Validating a network-free npm installation...\n'
+        "$NPM_BIN" --prefix "$FRONTEND_DIR" ci --offline \
+            --cache "$NPM_CACHE_DIR" --include=dev --no-audit --no-fund
+        if [[ -n "$PERSISTENT_NPM_CACHE_DIR" ]]; then
+            rm -rf -- "$PERSISTENT_NPM_CACHE_DIR"
+            mkdir -p "$(dirname -- "$PERSISTENT_NPM_CACHE_DIR")"
+            cp -a "$NPM_CACHE_DIR" "$PERSISTENT_NPM_CACHE_DIR"
+        fi
+    fi
     if [[ "$SKIP_TESTS" == false ]]; then
         "$NPM_BIN" --prefix "$FRONTEND_DIR" run test
     fi
     "$NPM_BIN" --prefix "$FRONTEND_DIR" run build
     rm -rf -- "$FRONTEND_DIR/node_modules" "$NPM_CACHE_DIR/_logs"
 
-    PACKAGE_LOCK_SHA="$(sha256sum "$FRONTEND_DIR/package-lock.json" | awk '{print $1}')"
     cat >"$STAGING/node-runtime/METADATA" <<EOF
 node_version=$NODE_VERSION
 npm_version=$NPM_VERSION

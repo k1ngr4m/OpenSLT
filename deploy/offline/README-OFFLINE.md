@@ -147,6 +147,8 @@ chmod +x deploy/offline/*.sh
 deploy/offline/make-offline-package.sh \
   --python "${PYTHON}" \
   --version "${VERSION}" \
+  --cache-dir /var/cache/openslt/packaging \
+  --bundle-python \
   --bundle-node
 ```
 
@@ -167,7 +169,22 @@ release/openslt-offline-rhel7-x86_64-${VERSION}.tar.gz
 release/openslt-offline-rhel7-x86_64-${VERSION}.tar.gz.sha256
 ```
 
-可以使用 `--output /指定目录` 修改输出目录。`--skip-tests` 会跳过 Python wheelhouse
+可以使用 `--output /指定目录` 修改输出目录。`--cache-dir` 会复用 RPM、Node.js 归档、
+npm lock 缓存和 pip 缓存，适合在同一台外网制包机上连续制包；脚本仍会校验 Node
+SHA、执行 `npm ci --offline`、Python wheelhouse 回装和测试。仓库镜像、RPM 清单或
+Node 来源变化后，使用 `--refresh-cache` 重新收集：
+
+```bash
+deploy/offline/make-offline-package.sh \
+  --python "${PYTHON}" \
+  --version "${VERSION}" \
+  --cache-dir /var/cache/openslt/packaging \
+  --refresh-cache \
+  --bundle-python \
+  --bundle-node
+```
+
+`--skip-tests` 会跳过 Python wheelhouse
 回装、后端测试和前端测试；带 Node 的包仍必须通过 `npm ci --offline` 和生产构建验证。
 该选项只应用于临时诊断包，不应作为正式交付包。
 
@@ -264,6 +281,7 @@ deploy/offline/build-offline-bundle.sh \
   --python "${PYTHON}" \
   --rpm-dir /tmp/openslt-rpms \
   --version "${VERSION}" \
+  --cache-dir /var/cache/openslt/packaging \
   --bundle-node
 ```
 

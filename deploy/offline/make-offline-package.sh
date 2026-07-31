@@ -8,6 +8,8 @@ PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
 SKIP_TESTS=false
+CACHE_DIR=""
+REFRESH_CACHE=false
 NGINX_REPO_URL=""
 BUNDLE_PYTHON=false
 BUNDLE_NODE=false
@@ -26,6 +28,8 @@ Options:
   --python PATH       Python >=3.8 executable
   --output DIR        Output directory (default: release/)
   --version VERSION   Assert the canonical VERSION value (optional)
+  --cache-dir DIR     Reuse RPM, Node.js, npm, and pip caches between runs
+  --refresh-cache     Clear --cache-dir before collecting dependencies
   --nginx-repo-url URL
                       Alternate RHEL 7 Nginx repository base URL
   --bundle-python     Include the installed RHEL 7 rh-python38 runtime
@@ -55,6 +59,14 @@ while (($#)); do
         --version)
             VERSION="$2"
             shift 2
+            ;;
+        --cache-dir)
+            CACHE_DIR="$2"
+            shift 2
+            ;;
+        --refresh-cache)
+            REFRESH_CACHE=true
+            shift
             ;;
         --nginx-repo-url)
             NGINX_REPO_URL="$2"
@@ -126,6 +138,23 @@ if [[ -n "$VERSION" && "$VERSION" != "$PROJECT_VERSION" ]]; then
     exit 2
 fi
 VERSION="$PROJECT_VERSION"
+if [[ "$REFRESH_CACHE" == true && -z "$CACHE_DIR" ]]; then
+    printf -- '--refresh-cache requires --cache-dir.\n' >&2
+    exit 2
+fi
+if [[ -n "$CACHE_DIR" ]]; then
+    if [[ "$REFRESH_CACHE" == true ]]; then
+        rm -rf -- "$CACHE_DIR"
+    fi
+    mkdir -p "$CACHE_DIR"
+    CACHE_DIR="$(cd -- "$CACHE_DIR" && pwd)"
+    case "$CACHE_DIR/" in
+        "$PROJECT_ROOT"/*)
+            printf -- '--cache-dir must be outside the project root: %s\n' "$CACHE_DIR" >&2
+            exit 2
+            ;;
+    esac
+fi
 if [[ "$BUNDLE_NODE" == false ]]; then
     [[ -f "$PROJECT_ROOT/frontend/dist/index.html" ]] || {
         printf 'frontend/dist is missing. Build it on a Node.js 20+ host first.\n' >&2
@@ -176,6 +205,9 @@ fi
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$WORK_DIR"' EXIT
 RPM_DIR="$WORK_DIR/rpms"
+if [[ -n "$CACHE_DIR" ]]; then
+    RPM_DIR="$CACHE_DIR/rpms"
+fi
 
 printf '[OpenSLT] Collecting the complete RHEL 7 RPM dependency set...\n'
 COLLECT_ARGS=(--output "$RPM_DIR")
@@ -189,6 +221,7 @@ BUILD_ARGS=(
     --version "$VERSION"
 )
 [[ "$SKIP_TESTS" == true ]] && BUILD_ARGS+=(--skip-tests)
+[[ -n "$CACHE_DIR" ]] && BUILD_ARGS+=(--cache-dir "$CACHE_DIR")
 [[ "$BUNDLE_PYTHON" == true ]] && BUILD_ARGS+=(--bundle-python)
 if [[ "$BUNDLE_NODE" == true ]]; then
     BUILD_ARGS+=(--bundle-node --node-version "$NODE_VERSION" --node-base-url "$NODE_BASE_URL")

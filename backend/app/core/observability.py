@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from app.core.config import settings
 from app.core.logging import (
     redact,
@@ -23,6 +25,9 @@ from app.core.logging import (
     user_id_ctx,
 )
 from app.core.time import beijing_now
+
+
+_INDEX_BATCH_SIZE = 128
 
 
 class ObservabilityWriter:
@@ -99,32 +104,76 @@ class ObservabilityWriter:
     def _run(self) -> None:
         self._replay_pending()
         while True:
-            item = self._queue.get()
+            batch = [self._queue.get()]
             try:
-                if item is None:
+                while len(batch) < _INDEX_BATCH_SIZE:
+                    try:
+                        batch.append(self._queue.get_nowait())
+                    except queue.Empty:
+                        break
+
+                if batch[0] is None:
                     self._replay_pending()
                     return
-                marker = item.pop("_flush_marker", None)
-                try:
-                    if item.get("event") == "observability_replay_pending":
-                        self._replay_pending()
-                    else:
-                        self._process(item)
-                finally:
+
+                indexable: typing.List[typing.Dict[str, typing.Any]] = []
+                markers: typing.List[threading.Event] = []
+                stop_after_batch = False
+                for item in batch:
+                    if item is None:
+                        stop_after_batch = True
+                        continue
+                    marker = item.pop("_flush_marker", None)
                     if marker:
-                        marker.set()
-            except Exception as exc:
-                self._write_emergency(
-                    {
-                        "event": "observability_writer_failed",
-                        "error_type": type(exc).__name__,
-                        "message": str(exc),
-                    }
-                )
+                        markers.append(marker)
+                    try:
+                        if item.get("event") == "observability_replay_pending":
+                            self._replay_pending()
+                        else:
+                            event = self._write_event(item)
+                            if self._should_index(event):
+                                indexable.append(event)
+                    except Exception as exc:
+                        self._write_emergency(
+                            {
+                                "event": "observability_writer_failed",
+                                "error_type": type(exc).__name__,
+                                "message": str(exc),
+                            }
+                        )
+
+                if indexable:
+                    try:
+                        self._persist_index_batch(indexable)
+                    except Exception:
+                        for event in indexable:
+                            self._append_pending(event)
+                for marker in markers:
+                    marker.set()
+                if stop_after_batch:
+                    self._replay_pending()
+                    return
             finally:
-                self._queue.task_done()
+                for _ in batch:
+                    self._queue.task_done()
 
     def _process(self, event: typing.Dict[str, typing.Any]) -> None:
+        event = self._write_event(event)
+        if self._should_index(event):
+            try:
+                self._persist_index(event)
+            except Exception:
+                self._append_pending(event)
+
+    @staticmethod
+    def _should_index(event: typing.Dict[str, typing.Any]) -> bool:
+        return bool(
+            settings.observability_index_enabled
+            and event.get("index", True)
+            and event.get("category") != "internal"
+        )
+
+    def _write_event(self, event: typing.Dict[str, typing.Any]) -> typing.Dict[str, typing.Any]:
         category = str(event.get("category") or "application")
         path = self._event_path(category, str(event["timestamp"])[:10])
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -138,72 +187,81 @@ class ObservabilityWriter:
             "offset": offset,
             "length": len(payload),
         }
-        if (
-            settings.observability_index_enabled
-            and event.get("index", True)
-            and category != "internal"
-        ):
-            try:
-                self._persist_index(event)
-            except Exception:
-                self._append_pending(event)
+        return event
 
     def _persist_index(self, event: typing.Dict[str, typing.Any]) -> None:
+        self._persist_index_batch([event])
+
+    def _persist_index_batch(self, events: typing.List[typing.Dict[str, typing.Any]]) -> None:
         from app.core.database import SessionLocal
         from app.models import LogRecord
 
-        locator = typing.cast(typing.Dict[str, typing.Any], event.get("_locator") or {})
-        summary = _event_summary(event)
+        if not events:
+            return
+
         token = sql_logging_suppressed_ctx.set(True)
         db = SessionLocal()
         try:
-            if db.query(LogRecord.id).filter(LogRecord.event_id == event["event_id"]).first():
-                return
-            detail = {
-                key: value
-                for key, value in summary.items()
-                if key
-                not in {
-                    "message",
-                    "http_method",
-                    "http_status",
-                    "database_scope",
-                    "sql_fingerprint",
-                }
-            }
-            detail.update(
-                {
-                    "file_offset": locator.get("offset"),
-                    "file_length": locator.get("length"),
-                }
+            event_ids = [str(event["event_id"]) for event in events]
+            existing_ids = set(
+                db.scalars(
+                    select(LogRecord.event_id).where(LogRecord.event_id.in_(event_ids))
+                ).all()
             )
-            db.add(
-                LogRecord(
-                    event_id=str(event["event_id"]),
-                    log_type=str(event.get("log_type") or event.get("category") or "application"),
-                    level=str(event.get("level") or "INFO").upper(),
-                    event=str(event.get("event") or "observability_event"),
-                    message=str(event.get("message") or summary.get("message") or ""),
-                    trace_id=str(event.get("trace_id") or ""),
-                    user_id=event.get("user_id"),
-                    run_id=event.get("run_id"),
-                    step_id=event.get("step_id"),
-                    source=str(event.get("source") or "api"),
-                    duration_ms=_optional_int(event.get("duration_ms")),
-                    result=str(event.get("result")) if event.get("result") is not None else None,
-                    http_method=summary.get("http_method"),
-                    http_status=_optional_int(summary.get("http_status")),
-                    database_scope=summary.get("database_scope"),
-                    sql_fingerprint=summary.get("sql_fingerprint"),
-                    detail=detail,
-                    artifact_path=locator.get("path"),
-                    is_redacted=True,
-                )
-            )
+            for event in events:
+                if str(event["event_id"]) in existing_ids:
+                    continue
+                db.add(self._log_record(event))
             db.commit()
         finally:
             db.close()
             sql_logging_suppressed_ctx.reset(token)
+
+    @staticmethod
+    def _log_record(event: typing.Dict[str, typing.Any]) -> typing.Any:
+        from app.models import LogRecord
+
+        locator = typing.cast(typing.Dict[str, typing.Any], event.get("_locator") or {})
+        summary = _event_summary(event)
+        detail = {
+            key: value
+            for key, value in summary.items()
+            if key
+            not in {
+                "message",
+                "http_method",
+                "http_status",
+                "database_scope",
+                "sql_fingerprint",
+            }
+        }
+        detail.update(
+            {
+                "file_offset": locator.get("offset"),
+                "file_length": locator.get("length"),
+            }
+        )
+        return LogRecord(
+            event_id=str(event["event_id"]),
+            log_type=str(event.get("log_type") or event.get("category") or "application"),
+            level=str(event.get("level") or "INFO").upper(),
+            event=str(event.get("event") or "observability_event"),
+            message=str(event.get("message") or summary.get("message") or ""),
+            trace_id=str(event.get("trace_id") or ""),
+            user_id=event.get("user_id"),
+            run_id=event.get("run_id"),
+            step_id=event.get("step_id"),
+            source=str(event.get("source") or "api"),
+            duration_ms=_optional_int(event.get("duration_ms")),
+            result=str(event.get("result")) if event.get("result") is not None else None,
+            http_method=summary.get("http_method"),
+            http_status=_optional_int(summary.get("http_status")),
+            database_scope=summary.get("database_scope"),
+            sql_fingerprint=summary.get("sql_fingerprint"),
+            detail=detail,
+            artifact_path=locator.get("path"),
+            is_redacted=True,
+        )
 
     def _append_pending(self, event: typing.Dict[str, typing.Any]) -> None:
         path = Path(settings.log_dir) / "pending" / "index-pending.jsonl"

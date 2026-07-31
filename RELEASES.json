@@ -2,7 +2,23 @@
   "unreleased": [
     {
       "type": "changed",
+      "text": "优化工作流版本下拉入口的图标样式。"
+    },
+    {
+      "type": "fixed",
+      "text": "修复慢速环境下观测日志索引逐条提交导致后台 flush 超时的问题。"
+    },
+    {
+      "type": "changed",
+      "text": "离线制包支持复用 RPM、Node、npm 和 pip 缓存以缩短重复打包时间。"
+    },
+    {
+      "type": "changed",
       "text": "优化日志、审计、任务队列和数据库控制台相关数据库操作的查询性能。"
+    },
+    {
+      "type": "changed",
+      "text": "平台名称改为 OpenSLT 自动化测试平台，并调整首页侧边栏分组。"
     }
   ],
   "releases": [
