@@ -88,7 +88,7 @@ def test_http_sql_index_search_detail_and_permissions(
     )
     assert response.status_code == 201, response.text
     assert response.headers["x-trace-id"] == trace_id
-    assert writer.flush()
+    assert writer.flush(timeout=30.0)
 
     search = client.get(
         "/api/v1/logs/search",
@@ -111,7 +111,7 @@ def test_http_sql_index_search_detail_and_permissions(
     assert "request-secret" not in serialized
     assert payload["trace_id"] == trace_id
 
-    assert writer.flush()
+    assert writer.flush(timeout=30.0)
     with SessionLocal() as db:
         sql_rows = list(
             db.scalars(

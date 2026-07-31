@@ -76,7 +76,7 @@ node_archive_matches_shasums() {
 
     [[ -f "$archive" && -f "$shasums" ]] || return 1
     expected_sha="$(awk -v filename="$NODE_ARCHIVE_NAME" \
-        '$2 == filename { print $1 }' "$shasums")"
+        '$2 == filename{ print $1 }' "$shasums")"
     [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
     actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
     [[ "${actual_sha,,}" == "${expected_sha,,}" ]]
