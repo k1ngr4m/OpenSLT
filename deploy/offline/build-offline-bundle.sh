@@ -47,6 +47,41 @@ build. With --bundle-node, the bundled runtime builds and validates it.
 EOF
 }
 
+download_with_resume() {
+    local url="$1"
+    local output="$2"
+    local curl_args=(
+        --fail --location --show-error --progress-bar --retry 6 --retry-delay 5
+        --retry-max-time 1800 --connect-timeout 30 --max-time 1800
+        --speed-limit 1024 --speed-time 120
+    )
+
+    mkdir -p "$(dirname -- "$output")"
+    if [[ -s "$output" ]]; then
+        if curl "${curl_args[@]}" --continue-at - --output "$output" "$url"; then
+            return 0
+        fi
+        printf '[OpenSLT] Resume failed for %s; restarting the download.\n' \
+            "$(basename -- "$output")" >&2
+        rm -f -- "$output"
+    fi
+    curl "${curl_args[@]}" --output "$output" "$url"
+}
+
+node_archive_matches_shasums() {
+    local archive="$1"
+    local shasums="$2"
+    local expected_sha
+    local actual_sha
+
+    [[ -f "$archive" && -f "$shasums" ]] || return 1
+    expected_sha="$(awk -v filename="$NODE_ARCHIVE_NAME" \
+        '$2 == filename { print $1 }' "$shasums")"
+    [[ "$expected_sha" =~ ^[0-9a-fA-F]{64}$ ]] || return 1
+    actual_sha="$(sha256sum "$archive" | awk '{print $1}')"
+    [[ "${actual_sha,,}" == "${expected_sha,,}" ]]
+}
+
 while (($#)); do
     case "$1" in
         --python)
@@ -262,26 +297,26 @@ if [[ "$BUNDLE_NODE" == true ]]; then
         CACHED_NODE_ARCHIVE="$NODE_CACHE_DIR/$NODE_ARCHIVE_NAME"
         CACHED_NODE_SHASUMS="$NODE_CACHE_DIR/SHASUMS256.txt"
         mkdir -p "$NODE_CACHE_DIR"
-        if [[ -f "$CACHED_NODE_ARCHIVE" && -f "$CACHED_NODE_SHASUMS" ]]; then
+        if node_archive_matches_shasums "$CACHED_NODE_ARCHIVE" "$CACHED_NODE_SHASUMS"; then
             printf '[OpenSLT] Reusing cached Node.js %s archive.\n' "$NODE_VERSION"
             cp -p "$CACHED_NODE_ARCHIVE" "$DOWNLOADED_NODE_ARCHIVE"
             cp -p "$CACHED_NODE_SHASUMS" "$DOWNLOADED_NODE_SHASUMS"
             NODE_SOURCE="cache:$CACHED_NODE_ARCHIVE"
         else
+            if [[ -f "$CACHED_NODE_ARCHIVE" || -f "$CACHED_NODE_SHASUMS" ]]; then
+                printf '[OpenSLT] Cached Node.js archive is incomplete or invalid; resuming download.\n'
+            fi
             command -v curl >/dev/null 2>&1 || {
                 printf 'curl is required to download the Node.js runtime.\n' >&2
                 exit 1
             }
             printf '[OpenSLT] Downloading Node.js checksums...\n'
-            curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
-                --retry-max-time 900 --connect-timeout 30 --max-time 600 \
-                --speed-limit 1024 --speed-time 60 \
-                --output "$DOWNLOADED_NODE_SHASUMS" "$NODE_RELEASE_URL/SHASUMS256.txt"
+            rm -f -- "$CACHED_NODE_SHASUMS"
+            download_with_resume "$NODE_RELEASE_URL/SHASUMS256.txt" "$CACHED_NODE_SHASUMS"
             printf '[OpenSLT] Downloading %s (about 48 MB)...\n' "$NODE_ARCHIVE_NAME"
-            curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
-                --retry-max-time 900 --connect-timeout 30 --max-time 600 \
-                --speed-limit 1024 --speed-time 60 \
-                --output "$DOWNLOADED_NODE_ARCHIVE" "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
+            download_with_resume "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME" "$CACHED_NODE_ARCHIVE"
+            cp -p "$CACHED_NODE_ARCHIVE" "$DOWNLOADED_NODE_ARCHIVE"
+            cp -p "$CACHED_NODE_SHASUMS" "$DOWNLOADED_NODE_SHASUMS"
             NODE_SOURCE="$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
         fi
     else
@@ -290,15 +325,9 @@ if [[ "$BUNDLE_NODE" == true ]]; then
             exit 1
         }
         printf '[OpenSLT] Downloading Node.js checksums...\n'
-        curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
-            --retry-max-time 900 --connect-timeout 30 --max-time 600 \
-            --speed-limit 1024 --speed-time 60 \
-            --output "$DOWNLOADED_NODE_SHASUMS" "$NODE_RELEASE_URL/SHASUMS256.txt"
+        download_with_resume "$NODE_RELEASE_URL/SHASUMS256.txt" "$DOWNLOADED_NODE_SHASUMS"
         printf '[OpenSLT] Downloading %s (about 48 MB)...\n' "$NODE_ARCHIVE_NAME"
-        curl --fail --location --show-error --progress-bar --retry 3 --retry-delay 2 \
-            --retry-max-time 900 --connect-timeout 30 --max-time 600 \
-            --speed-limit 1024 --speed-time 60 \
-            --output "$DOWNLOADED_NODE_ARCHIVE" "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
+        download_with_resume "$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME" "$DOWNLOADED_NODE_ARCHIVE"
         NODE_SOURCE="$NODE_RELEASE_URL/$NODE_ARCHIVE_NAME"
     fi
 
