@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from '@/ui/elementPlusServices'
-import { ArrowLeft, Bottom, Check, Close, Connection, Delete, Document, Edit, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, Bottom, CaretBottom, Check, Close, Connection, Delete, Document, Edit, Files, Plus, Promotion, Refresh, Search, SwitchButton, Tickets, Top, VideoPause, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -1110,7 +1110,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
               <button class="version-trigger" type="button">
                 <span>流程版本 v{{ selectedVersion?.version_no || 1 }}</span>
                 <el-tag size="small" :type="versionTagType(selectedVersion)">{{ versionStatusText(selectedVersion) }}</el-tag>
-                <el-icon><Bottom /></el-icon>
+                <span class="version-trigger-icon" aria-hidden="true"><el-icon><CaretBottom /></el-icon></span>
               </button>
             </template>
             <div class="version-manager" v-loading="versionsLoading || versionActionLoading">
@@ -1429,7 +1429,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
 .workflow-page{min-height:100dvh;height:100dvh;overflow:hidden}
 .workflow-header{height:72px;flex:0 0 72px;padding-inline:18px}
 .header-left>div{min-width:0}.title-line h1{max-width:42vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.header-actions :deep(.el-button){white-space:nowrap}
-.version-trigger{display:flex;align-items:center;gap:7px;margin-top:6px;padding:0;border:0;color:var(--ui-text-secondary);background:transparent;font-size:12px;cursor:pointer}.version-trigger:hover{color:var(--ui-primary)}
+.version-trigger{display:flex;align-items:center;gap:7px;margin:5px 0 0 -6px;padding:3px 5px 3px 6px;border:0;border-radius:8px;color:var(--ui-text-secondary);background:transparent;font-size:12px;cursor:pointer;transition:color var(--ui-transition),background-color var(--ui-transition),transform var(--ui-transition)}.version-trigger:hover{color:var(--ui-primary);background:rgba(14,128,111,.07)}.version-trigger:active{transform:translateY(1px)}.version-trigger:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}.version-trigger-icon{display:grid;width:24px;height:24px;place-items:center;border:1px solid transparent;border-radius:7px;color:var(--ui-primary);background:rgba(14,128,111,.08);transition:background-color var(--ui-transition),border-color var(--ui-transition),color var(--ui-transition)}.version-trigger-icon :deep(svg){width:14px;height:14px}.version-trigger:hover .version-trigger-icon{border-color:rgba(14,128,111,.22);background:#fff;color:var(--ui-primary-hover)}
 .version-manager{display:grid;gap:12px}.version-manager-title{display:flex;align-items:center;justify-content:space-between;gap:12px}.version-list{display:grid;max-height:280px;overflow:auto;border:1px solid var(--ui-border);border-radius:8px}.version-list button{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:0;border-bottom:1px solid var(--ui-border);color:var(--ui-text-primary);background:#fff;text-align:left;cursor:pointer}.version-list button:last-child{border-bottom:0}.version-list button:hover,.version-list button.active{background:var(--ui-primary-soft)}.version-list button.active{box-shadow:inset 3px 0 0 var(--ui-primary)}.version-list strong,.version-list small{display:block}.version-list small{margin-top:3px;color:var(--ui-text-tertiary);font-size:10px}.version-manager-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.version-manager-actions :deep(.el-button){margin:0}
 .workflow-tabs{height:calc(100dvh - 72px);background:var(--ui-surface-subtle)}.workflow-tabs :deep(.el-tabs__header){height:48px;margin:0;padding:0 24px;border-bottom:1px solid var(--ui-border);background:#fff}.workflow-tabs :deep(.el-tabs__nav-wrap::after){display:none}.workflow-tabs :deep(.el-tabs__item){height:48px}.workflow-tabs :deep(.el-tabs__content){height:calc(100% - 48px)}.workflow-tabs :deep(.el-tab-pane){height:100%}
 .editor-grid{grid-template-columns:minmax(420px,1fr) 390px;height:100%;min-height:0}.workflow-canvas{min-width:0}.property-panel{display:block;min-width:0}.property-title>div:nth-child(2){min-width:0}.property-close{display:none;margin-left:auto}.node-save-actions{position:sticky;z-index:2;bottom:-20px;display:flex;justify-content:flex-end;gap:8px;margin:24px -20px -20px;padding:14px 20px;border-top:1px solid var(--ui-border);background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}
