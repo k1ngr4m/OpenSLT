@@ -248,34 +248,51 @@ onMounted(async () => {
       <div v-if="!loading && !runs.length" class="empty-state"><div><strong>尚无测速运行</strong><span>选择方案、场景和资源后即可创建第一条运行。</span><br><el-button v-if="auth.canOperate" class="empty-action" type="primary" @click="open">创建运行</el-button></div></div>
     </section>
 
-    <el-drawer v-model="drawer" title="创建测速运行" size="560px" destroy-on-close class="run-drawer">
-      <div class="drawer-intro"><strong>配置一次独立的测速执行</strong><p>先选择方案和场景，再确认本次运行需要锁定的执行资源。</p></div>
-      <el-form label-position="top">
-        <el-form-item label="测速方案" required>
-          <el-select v-model="form.plan_id" filterable style="width:100%" placeholder="请选择启用的方案" @change="handlePlanChange">
-            <el-option v-for="plan in plans.filter(item => item.is_enabled)" :key="plan.id" :label="`${plan.name}  |  ${businessText[plan.business_code]}`" :value="plan.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="测速场景" required>
-          <el-select v-model="form.scenario_id" filterable style="width:100%" placeholder="请选择场景" @change="handleScenarioChange">
-            <el-option v-for="scenario in availableScenarios.filter(item => item.is_enabled)" :key="scenario.id" :label="`${scenario.name}  |  v${scenario.config_version}`" :value="scenario.id" />
-          </el-select>
-        </el-form-item>
+    <el-drawer v-model="drawer" title="创建测速运行" size="600px" destroy-on-close class="run-drawer">
+      <div class="drawer-intro">
+        <div><strong>配置一次独立的测速执行</strong><p>选择方案和场景后，确认本次运行锁定的执行资源。</p></div>
+        <div class="drawer-flow" aria-label="创建步骤"><span>方案</span><i></i><span>场景</span><i></i><span>资源</span></div>
+      </div>
+      <el-form label-position="top" class="create-run-form">
+        <div class="plan-grid">
+          <el-form-item label="测速方案" required>
+            <el-select v-model="form.plan_id" filterable style="width:100%" placeholder="请选择启用的方案" @change="handlePlanChange">
+              <el-option v-for="plan in plans.filter(item => item.is_enabled)" :key="plan.id" :label="`${plan.name}  |  ${businessText[plan.business_code]}`" :value="plan.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="测速场景" required>
+            <el-select v-model="form.scenario_id" filterable style="width:100%" placeholder="请选择场景" @change="handleScenarioChange">
+              <el-option v-for="scenario in availableScenarios.filter(item => item.is_enabled)" :key="scenario.id" :label="`${scenario.name}  |  v${scenario.config_version}`" :value="scenario.id" />
+            </el-select>
+          </el-form-item>
+        </div>
 
         <section v-if="selectedScenario" class="resource-section">
           <div class="resource-heading"><div><strong>执行资源</strong><span>已带入场景默认值，可替换同类型资源</span></div><el-tag effect="plain">{{ requiredTypes.length }} 类</el-tag></div>
-          <el-form-item v-for="type in requiredTypes" :key="type" :label="resourceText[type] || type" required>
-            <el-select v-model="resourceSelections[type]" filterable style="width:100%" :placeholder="resourceOptions(type).length ? '请选择可用资源' : '暂无可用资源'">
-              <el-option v-for="resource in resourceOptions(type)" :key="resource.id" :label="resourceOptionLabel(resource)" :value="resource.id" :disabled="resource.health_status === 'unhealthy'" />
-            </el-select>
-            <p v-if="!resourceOptions(type).length" class="field-help danger">当前业务没有启用的{{ resourceText[type] || type }}</p>
-          </el-form-item>
+          <div class="resource-list">
+            <article v-for="type in requiredTypes" :key="type" class="resource-card" :class="{ empty: !resourceOptions(type).length }">
+              <div class="resource-card-head">
+                <strong>{{ resourceText[type] || type }}</strong>
+                <span class="resource-card-count" :class="{ danger: !resourceOptions(type).length }">{{ resourceOptions(type).length }} 个可用</span>
+              </div>
+              <el-form-item :label="resourceText[type] || type" required>
+                <el-select v-model="resourceSelections[type]" filterable style="width:100%" :placeholder="resourceOptions(type).length ? '请选择可用资源' : '暂无可用资源'">
+                  <el-option v-for="resource in resourceOptions(type)" :key="resource.id" :label="resourceOptionLabel(resource)" :value="resource.id" :disabled="resource.health_status === 'unhealthy'" />
+                </el-select>
+                <p v-if="!resourceOptions(type).length" class="field-help danger">当前业务没有启用的{{ resourceText[type] || type }}</p>
+              </el-form-item>
+            </article>
+          </div>
           <el-alert v-if="!requiredTypes.length" title="该场景尚未配置资源，请先编辑场景" type="warning" :closable="false" show-icon />
         </section>
 
         <section v-if="selectedScenario && requiredTypes.length" class="create-summary">
           <strong>运行摘要</strong>
-          <dl><dt>业务</dt><dd>{{ businessText[selectedPlan?.business_code || ''] || '-' }}</dd><dt>方案 / 场景</dt><dd>{{ selectedPlan?.name }} / {{ selectedScenario.name }}</dd><dt>将锁定资源</dt><dd>{{ Object.values(resourceSelections).filter(Boolean).length }} / {{ requiredTypes.length }}</dd></dl>
+          <div class="summary-tiles">
+            <div><span>业务</span><strong>{{ businessText[selectedPlan?.business_code || ''] || '-' }}</strong></div>
+            <div><span>方案 / 场景</span><strong>{{ selectedPlan?.name }} / {{ selectedScenario.name }}</strong></div>
+            <div><span>将锁定资源</span><strong class="mono">{{ Object.values(resourceSelections).filter(Boolean).length }} / {{ requiredTypes.length }}</strong></div>
+          </div>
         </section>
       </el-form>
       <template #footer><div class="drawer-footer"><el-button @click="drawer=false">取消</el-button><el-button type="primary" :loading="creating" :disabled="!canCreate" @click="create">创建并查看运行</el-button></div></template>
@@ -285,5 +302,14 @@ onMounted(async () => {
 
 <style scoped>
 .runs-page{max-width:1600px}.keyword-filter{width:min(360px,32vw)}.short-filter{width:160px}.filter-count{margin-left:auto;color:var(--ui-text-secondary);font-size:11px}.load-error{margin-bottom:14px}.table-panel{overflow:hidden}.clickable :deep(.el-table__row){cursor:pointer}.clickable strong,.clickable small{display:block}.clickable small{margin-top:3px}.run-id-cell{display:flex;align-items:center;gap:5px}.run-id-cell strong{font-size:12px}.run-id-cell .el-button{min-height:28px;opacity:0;transition:opacity var(--ui-transition)}.el-table__row:hover .run-id-cell .el-button,.run-id-cell:focus-within .el-button{opacity:1}.table-time{color:var(--ui-text-secondary);font-size:11px}.empty-action{margin-top:18px}.drawer-intro{margin:-4px 0 20px;padding:14px 15px;border-radius:8px;background:var(--ui-surface-subtle)}.drawer-intro strong{font-size:14px}.drawer-intro p{margin:4px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.6}.resource-section{margin-top:24px;padding-top:20px;border-top:1px solid var(--ui-border)}.resource-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:17px}.resource-heading strong,.resource-heading span{display:block}.resource-heading strong{font-size:14px}.resource-heading span{margin-top:4px;color:var(--ui-text-secondary);font-size:11px}.field-help{margin:5px 0 0;font-size:11px}.create-summary{margin-top:24px;padding:15px;border:1px solid var(--ui-border);border-radius:8px;background:#f8fbfb}.create-summary>strong{font-size:13px}.create-summary dl{display:grid;grid-template-columns:86px 1fr;gap:8px 12px;margin:12px 0 0;font-size:12px}.create-summary dt{color:var(--ui-text-secondary)}.create-summary dd{margin:0;color:var(--ui-text-primary)}.drawer-footer{display:flex;justify-content:flex-end;gap:8px}
-@media(max-width:767px){.keyword-filter,.short-filter{width:100%}.filter-count{margin-left:0}.run-id-cell .el-button{opacity:1}}
+:deep(.run-drawer .el-drawer__header){align-items:center;margin:0;padding:18px 22px 14px;border-bottom:1px solid var(--ui-border)}
+:deep(.run-drawer .el-drawer__title){color:var(--ui-text-primary);font-size:18px;font-weight:750}
+:deep(.run-drawer .el-drawer__body){padding:18px 22px 22px;overflow:auto;background:linear-gradient(180deg,#fff 0%,#f8fbfb 100%)}
+:deep(.run-drawer .el-drawer__footer){padding:14px 22px;border-top:1px solid var(--ui-border);background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}
+.drawer-intro{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;margin:0 0 16px;padding:12px 14px;border:1px solid #dce8e9;border-radius:8px;background:#f5f9f9}.drawer-intro strong{display:block;color:var(--ui-text-primary);font-size:14px;line-height:1.35}.drawer-intro p{margin:3px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.45}.drawer-flow{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid var(--ui-border);border-radius:7px;background:#fff;color:var(--ui-text-secondary);font-size:11px;font-weight:650;white-space:nowrap}.drawer-flow i{width:16px;height:1px;background:var(--ui-border-strong)}
+.create-run-form :deep(.el-form-item){margin-bottom:0}.create-run-form :deep(.el-form-item__label){height:auto;margin-bottom:6px;color:var(--ui-text-primary);font-size:13px;font-weight:700;line-height:1.35}.create-run-form :deep(.el-select__wrapper){min-height:36px;border-radius:7px;transition:box-shadow var(--ui-transition),background-color var(--ui-transition)}.create-run-form :deep(.el-select__wrapper:hover){background:#fbfdfd}
+.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}.resource-section{margin-top:0;padding-top:16px;border-top:1px solid var(--ui-border)}.resource-heading{align-items:center;margin-bottom:12px}.resource-heading strong{color:var(--ui-text-primary);font-size:15px}.resource-heading span{margin-top:3px;font-size:12px;line-height:1.35}.resource-list{display:grid;gap:9px}.resource-card{padding:10px 11px 11px;border:1px solid var(--ui-border);border-radius:8px;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.72);transition:border-color var(--ui-transition),box-shadow var(--ui-transition),transform var(--ui-transition)}.resource-card:hover{border-color:var(--ui-border-strong);box-shadow:0 5px 16px rgba(19,43,48,.06);transform:translateY(-1px)}.resource-card.empty{background:#fbf7f7}.resource-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}.resource-card-head strong{min-width:0;overflow:hidden;color:var(--ui-text-primary);font-size:13px;text-overflow:ellipsis;white-space:nowrap}.resource-card-head strong::after{color:var(--ui-danger);content:" *"}.resource-card-count{flex:0 0 auto;color:var(--ui-text-tertiary);font-size:11px;font-weight:650}.resource-card-count.danger,.field-help.danger{color:var(--ui-danger)}.resource-card :deep(.el-form-item__label){display:none}.resource-card :deep(.el-form-item__content){display:block}.field-help{margin:6px 0 0;font-size:11px;line-height:1.45}
+.create-summary{margin-top:14px;padding:13px;border-color:#dbe7e8;background:#fff}.create-summary>strong{display:block;color:var(--ui-text-primary);font-size:14px}.summary-tiles{display:grid;grid-template-columns:.85fr 1.35fr .8fr;gap:9px;margin-top:10px}.summary-tiles>div{min-width:0;padding:10px 11px;border:1px solid var(--ui-border);border-radius:7px;background:#f7fafa}.summary-tiles span,.summary-tiles strong{display:block;min-width:0}.summary-tiles span{color:var(--ui-text-secondary);font-size:11px;font-weight:650}.summary-tiles strong{margin-top:5px;overflow:hidden;color:var(--ui-text-primary);font-size:13px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}.summary-tiles .mono{color:var(--ui-primary);font-size:17px;font-weight:750}
+.drawer-footer{align-items:center;justify-content:flex-end;gap:10px}.drawer-footer :deep(.el-button){min-width:92px;margin-left:0}.drawer-footer :deep(.el-button--primary){min-width:150px}
+@media(max-width:767px){.keyword-filter,.short-filter{width:100%}.filter-count{margin-left:0}.run-id-cell .el-button{opacity:1}:deep(.run-drawer){width:min(100vw,600px)!important}.drawer-intro,.plan-grid,.summary-tiles{grid-template-columns:1fr}.drawer-flow{width:100%;justify-content:center}.resource-card:hover{transform:none}.drawer-footer{display:grid;grid-template-columns:1fr 1fr}.drawer-footer :deep(.el-button),.drawer-footer :deep(.el-button--primary){width:100%;min-width:0}}
 </style>

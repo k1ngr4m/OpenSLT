@@ -409,10 +409,10 @@ watch(
           <el-tab-pane label="节点详情" name="detail">
             <div v-if="selectedStep" class="node-detail">
               <div class="node-title">
-                <div>
+                <div class="node-title-main">
                   <p class="eyebrow">当前查看节点</p>
                   <h2>{{ selectedStep.position }}. {{ selectedStep.name }}</h2>
-                  <p class="muted">{{ nodeTypeText[selectedStep.node_type] || selectedStep.node_type }}</p>
+                  <p class="node-type-label">{{ nodeTypeText[selectedStep.node_type] || selectedStep.node_type }}</p>
                 </div>
                 <StatusBadge :status="selectedStep.status" show-raw />
               </div>
@@ -700,10 +700,18 @@ watch(
 
                 <div v-if="selectedArtifacts.length" class="artifact-links">
                   <template v-for="artifact in selectedArtifacts" :key="artifact.id">
-                    <el-button v-if="canDownloadArtifact(artifact.artifact_type)" link type="primary" @click="download(artifact.id)">
-                      下载 {{ artifact.name }}
+                    <el-button
+                      v-if="canDownloadArtifact(artifact.artifact_type)"
+                      class="artifact-download-button"
+                      :icon="Download"
+                      plain
+                      type="primary"
+                      :title="artifact.name"
+                      @click="download(artifact.id)"
+                    >
+                      <span class="artifact-name">{{ artifact.name }}</span>
                     </el-button>
-                    <el-tag v-else type="info" effect="plain">{{ artifact.name }} · 受限</el-tag>
+                    <el-tag v-else class="artifact-restricted" type="info" effect="plain">{{ artifact.name }} · 受限</el-tag>
                   </template>
                 </div>
 

@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from '@/ui/elementPlusServices'
-import { Delete, Edit, Folder, FolderOpened, Plus } from '@element-plus/icons-vue'
+import { CaretRight, Delete, Edit, Folder, FolderOpened, Plus } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
@@ -331,7 +331,7 @@ onMounted(load)
           <el-collapse-item v-for="p in visiblePlans" :key="p.id" :name="p.id">
             <template #title>
               <div class="plan-head">
-                <div><strong>{{ p.name }}</strong><el-tag size="small" effect="plain">{{ businessText[p.business_code] }}</el-tag><span class="muted">v{{ p.config_version }}</span></div>
+                <div class="plan-title-main"><span class="plan-toggle-icon" :class="{ open: activePlans.includes(p.id) }" aria-hidden="true"><el-icon><CaretRight /></el-icon></span><strong>{{ p.name }}</strong><el-tag size="small" effect="plain">{{ businessText[p.business_code] }}</el-tag><span class="muted">v{{ p.config_version }}</span></div>
                 <div v-if="auth.canOperate" @click.stop><el-button link type="primary" @click="openScenario(undefined, p.id)">新增场景</el-button><el-button link @click="openPlan(p)">编辑</el-button><el-button link @click="copyPlan(p)">复制</el-button><el-tooltip content="删除方案" placement="top"><el-button link type="danger" :icon="Delete" aria-label="删除方案" @click="removePlan(p)" /></el-tooltip></div>
               </div>
             </template>
@@ -357,34 +357,56 @@ onMounted(load)
       <template #footer><el-button @click="directoryDialog = false">取消</el-button><el-button type="primary" @click="saveDirectory">保存</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="planDialog" :title="planEdit ? '编辑方案' : '新增方案'" width="600px">
-      <el-form label-width="90px">
-        <el-form-item v-if="planEdit" label="所属目录"><el-select v-model="plan.directory_id" style="width: 100%"><el-option v-for="item in directories" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
-        <el-form-item label="名称"><el-input v-model="plan.name" /></el-form-item>
-        <el-form-item label="业务"><el-select v-model="plan.business_code"><el-option v-for="(value, key) in businessText" :key="key" :label="value" :value="key" /></el-select></el-form-item>
-        <el-form-item label="配置版本"><el-input v-model="plan.config_version" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="plan.description" type="textarea" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="plan.is_enabled" /></el-form-item>
+    <el-dialog v-model="planDialog" :title="planEdit ? '编辑方案' : '新增方案'" width="640px" class="plan-config-dialog">
+      <div class="dialog-intro">
+        <div><strong>方案基础信息</strong><p>定义业务归属、版本和描述，场景会挂载在方案下统一管理。</p></div>
+        <div class="dialog-flow" aria-label="方案配置项"><span>基础信息</span><i></i><span>业务</span><i></i><span>版本</span></div>
+      </div>
+      <el-form label-position="top" class="config-dialog-form">
+        <div class="plan-form-grid">
+          <el-form-item v-if="planEdit" label="所属目录" class="wide"><el-select v-model="plan.directory_id" style="width: 100%"><el-option v-for="item in directories" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
+          <el-form-item label="名称"><el-input v-model="plan.name" /></el-form-item>
+          <el-form-item label="业务"><el-select v-model="plan.business_code" style="width:100%"><el-option v-for="(value, key) in businessText" :key="key" :label="value" :value="key" /></el-select></el-form-item>
+          <el-form-item label="配置版本"><el-input v-model="plan.config_version" /></el-form-item>
+          <el-form-item label="启用">
+            <div class="enable-toggle"><span>{{ plan.is_enabled ? '启用后可创建场景和运行' : '停用后将从可选方案中隐藏' }}</span><el-switch v-model="plan.is_enabled" /></div>
+          </el-form-item>
+          <el-form-item label="描述" class="wide"><el-input v-model="plan.description" type="textarea" :rows="3" placeholder="补充方案用途、测评范围或特殊说明" /></el-form-item>
+        </div>
       </el-form>
-      <template #footer><el-button @click="planDialog = false">取消</el-button><el-button type="primary" @click="savePlan">保存</el-button></template>
+      <template #footer><div class="dialog-footer-actions"><el-button @click="planDialog = false">取消</el-button><el-button type="primary" @click="savePlan">保存</el-button></div></template>
     </el-dialog>
 
-    <el-dialog v-model="scenarioDialog" :title="scenarioEdit ? '编辑场景' : '新增场景'" width="760px">
-      <el-form label-width="110px">
-        <el-row :gutter="16">
-          <el-col :span="12"><el-form-item label="所属方案"><el-select v-model="scenario.plan_id" :disabled="!scenarioEdit" style="width: 100%" @change="handleScenarioPlanChange"><el-option v-for="item in visiblePlans" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="场景名称"><el-input v-model="scenario.name" /></el-form-item></el-col>
-          <el-col :span="24"><div class="resource-heading"><strong>场景资源</strong><span class="muted">按需选择，每种类型最多一个</span></div></el-col>
-          <el-col v-for="type in resourceTypes" :key="type" :span="12">
-            <el-form-item :label="resourceText[type] || type" :required="legacyRequiredTypes.includes(type)">
-              <el-select v-model="resourceSelections[type]" clearable filterable style="width: 100%" :placeholder="resourceOptions(type).length ? '请选择' : '暂无可用资源'">
-                <el-option v-for="resource in resourceOptions(type)" :key="resource.id" :label="resourceOptionLabel(resource)" :value="resource.id" :disabled="!resource.is_enabled" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+    <el-dialog v-model="scenarioDialog" :title="scenarioEdit ? '编辑场景' : '新增场景'" width="820px" class="scenario-config-dialog">
+      <div class="dialog-intro">
+        <div><strong>场景基础配置</strong><p>选择所属方案、命名场景，并按资源类型绑定默认执行资源。</p></div>
+        <div class="dialog-flow" aria-label="场景配置项"><span>方案</span><i></i><span>场景</span><i></i><span>资源</span></div>
+      </div>
+      <el-form label-position="top" class="config-dialog-form">
+        <div class="scenario-form-grid">
+          <el-form-item label="所属方案"><el-select v-model="scenario.plan_id" :disabled="!scenarioEdit" style="width: 100%" @change="handleScenarioPlanChange"><el-option v-for="item in visiblePlans" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
+          <el-form-item label="场景名称"><el-input v-model="scenario.name" /></el-form-item>
+        </div>
+        <section class="scenario-resource-section">
+          <div class="resource-heading"><strong>场景资源</strong><span class="muted">按需选择，每种类型最多一个</span></div>
+          <div class="scenario-resource-grid">
+            <article v-for="type in resourceTypes" :key="type" class="scenario-resource-card" :class="{ required: legacyRequiredTypes.includes(type), empty: !resourceOptions(type).length }">
+              <div class="scenario-resource-head">
+                <strong>{{ resourceText[type] || type }}</strong>
+                <span :class="{ danger: !resourceOptions(type).length }">{{ resourceOptions(type).length }} 个可用</span>
+              </div>
+              <el-form-item :label="resourceText[type] || type" :required="legacyRequiredTypes.includes(type)">
+                <el-select v-model="resourceSelections[type]" clearable filterable style="width: 100%" :placeholder="resourceOptions(type).length ? '请选择' : '暂无可用资源'">
+                  <el-option v-for="resource in resourceOptions(type)" :key="resource.id" :label="resourceOptionLabel(resource)" :value="resource.id" :disabled="!resource.is_enabled" />
+                </el-select>
+              </el-form-item>
+              <p v-if="legacyRequiredTypes.includes(type)" class="resource-note">原有场景要求保留此类资源</p>
+              <p v-else-if="!resourceOptions(type).length" class="resource-note danger">当前业务暂无可用{{ resourceText[type] || type }}</p>
+            </article>
+          </div>
+        </section>
       </el-form>
-      <template #footer><el-button @click="scenarioDialog = false">取消</el-button><el-button type="primary" @click="saveScenario">保存</el-button></template>
+      <template #footer><div class="dialog-footer-actions"><el-button @click="scenarioDialog = false">取消</el-button><el-button type="primary" @click="saveScenario">保存</el-button></div></template>
     </el-dialog>
   </div>
 </template>
@@ -401,9 +423,14 @@ onMounted(load)
 .directory-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.directory-select small{color:var(--ui-text-tertiary)}
 .default-label{margin-right:10px;color:var(--ui-text-tertiary);font-size:11px}.directory-actions{display:none;align-items:center;padding-right:4px}.directory-item:hover .directory-actions,.directory-item:focus-within .directory-actions{display:flex}.directory-actions :deep(.el-button){width:28px;height:28px;margin:0}
 .directory-content{min-width:0;padding:18px 0 0 24px}.directory-content-head{min-height:42px;margin-bottom:16px}.directory-content-head h2{margin:0;font-size:18px;font-weight:650}.directory-content-head p{margin:3px 0 0;font-size:12px}
-.plans{min-height:100px;border:0}.plans :deep(.el-collapse-item){overflow:hidden;margin-bottom:12px;padding:0 18px;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:#fff;transition:border-color var(--ui-transition),box-shadow var(--ui-transition)}.plans :deep(.el-collapse-item:hover){border-color:var(--ui-border-strong)}.plans :deep(.el-collapse-item__header){height:58px;border-bottom:0}.plans :deep(.el-collapse-item__wrap){border-bottom:0}.plans :deep(.el-collapse-item__content){padding-bottom:18px}
-.plan-head{display:flex;width:100%;align-items:center;justify-content:space-between;gap:16px;padding-right:16px}.plan-head>div:first-child{display:flex;align-items:center;min-width:0}.plan-head strong{overflow:hidden;margin-right:12px;font-size:15px;text-overflow:ellipsis;white-space:nowrap}.plan-head .el-tag{margin-right:10px}.plan-head .muted{font-size:11px}
+.plans{min-height:100px;border:0}.plans :deep(.el-collapse-item){overflow:hidden;margin-bottom:12px;padding:0 12px;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:#fff;transition:border-color var(--ui-transition),box-shadow var(--ui-transition)}.plans :deep(.el-collapse-item:hover){border-color:var(--ui-border-strong)}.plans :deep(.el-collapse-item__header){height:58px;align-items:center;border-bottom:0}.plans :deep(.el-collapse-item__arrow){display:none}.plans :deep(.el-collapse-item__wrap){border-bottom:0}.plans :deep(.el-collapse-item__content){padding-bottom:18px}
+.plan-head{display:flex;width:100%;min-height:58px;align-items:center;justify-content:space-between;gap:14px;padding-right:8px}.plan-title-main{display:flex;min-height:38px;align-items:center;min-width:0}.plan-toggle-icon{display:grid;flex:0 0 auto;width:24px;height:24px;margin-right:8px;place-items:center;border:1px solid transparent;border-radius:7px;color:var(--ui-primary);background:rgba(14,128,111,.08);transition:background-color var(--ui-transition),border-color var(--ui-transition),color var(--ui-transition),transform var(--ui-transition)}.plan-toggle-icon :deep(svg){width:13px;height:13px}.plan-toggle-icon.open{transform:rotate(90deg)}.plans :deep(.el-collapse-item__header:hover) .plan-toggle-icon{border-color:rgba(14,128,111,.22);background:#fff;color:var(--ui-primary-hover)}.plan-head strong{overflow:hidden;margin-right:10px;font-size:15px;text-overflow:ellipsis;white-space:nowrap}.plan-head .el-tag{margin-right:8px}.plan-head .muted{font-size:11px;line-height:1}
 .tag{margin:2px 5px 2px 0}.resource-heading{display:flex;align-items:baseline;gap:12px;margin:2px 0 14px;padding-bottom:10px;border-bottom:1px solid var(--ui-border)}.resource-heading .muted{font-size:12px}.empty-action{margin-top:18px}.directory-empty{min-height:260px;border:1px dashed var(--ui-border);border-radius:var(--ui-radius-panel);background:transparent}
+:deep(.plan-config-dialog),:deep(.scenario-config-dialog){border-radius:10px;overflow:hidden}.plan-config-dialog :deep(.el-dialog__header),.scenario-config-dialog :deep(.el-dialog__header){margin:0;padding:22px 28px 16px;border-bottom:1px solid var(--ui-border)}.plan-config-dialog :deep(.el-dialog__title),.scenario-config-dialog :deep(.el-dialog__title){color:var(--ui-text-primary);font-size:21px;font-weight:750}.plan-config-dialog :deep(.el-dialog__body),.scenario-config-dialog :deep(.el-dialog__body){padding:18px 28px 22px;background:linear-gradient(180deg,#fff 0%,#f8fbfb 100%)}.plan-config-dialog :deep(.el-dialog__footer),.scenario-config-dialog :deep(.el-dialog__footer){padding:14px 28px 18px;border-top:1px solid var(--ui-border);background:rgba(255,255,255,.96);backdrop-filter:blur(8px)}
+.dialog-intro{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;margin-bottom:16px;padding:12px 14px;border:1px solid #dce8e9;border-radius:8px;background:#f5f9f9}.dialog-intro strong,.dialog-intro p{display:block}.dialog-intro strong{color:var(--ui-text-primary);font-size:14px;line-height:1.35}.dialog-intro p{margin:3px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.45}.dialog-flow{display:flex;align-items:center;gap:7px;padding:7px 8px;border:1px solid var(--ui-border);border-radius:7px;background:#fff;color:var(--ui-text-secondary);font-size:11px;font-weight:650;white-space:nowrap}.dialog-flow i{width:16px;height:1px;background:var(--ui-border-strong)}
+.config-dialog-form :deep(.el-form-item){margin-bottom:0}.config-dialog-form :deep(.el-form-item__label){height:auto;margin-bottom:6px;color:var(--ui-text-primary);font-size:13px;font-weight:700;line-height:1.35}.config-dialog-form :deep(.el-input__wrapper),.config-dialog-form :deep(.el-select__wrapper),.config-dialog-form :deep(.el-textarea__inner){border-radius:7px;transition:box-shadow var(--ui-transition),background-color var(--ui-transition)}.config-dialog-form :deep(.el-input__wrapper),.config-dialog-form :deep(.el-select__wrapper){min-height:38px}.config-dialog-form :deep(.el-input__wrapper:hover),.config-dialog-form :deep(.el-select__wrapper:hover),.config-dialog-form :deep(.el-textarea__inner:hover){background:#fbfdfd}
+.plan-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}.plan-form-grid .wide{grid-column:1/-1}.enable-toggle{display:flex;min-height:38px;align-items:center;justify-content:space-between;gap:12px;padding:0 12px;border:1px solid var(--ui-border);border-radius:7px;background:#fff}.enable-toggle span{min-width:0;color:var(--ui-text-secondary);font-size:12px;line-height:1.35}.enable-toggle :deep(.el-switch){flex:0 0 auto}
+.scenario-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;margin-bottom:16px}.scenario-resource-section{padding-top:14px;border-top:1px solid var(--ui-border)}.scenario-resource-section .resource-heading{align-items:center;margin:0 0 12px;padding:0;border:0}.scenario-resource-section .resource-heading strong{color:var(--ui-text-primary);font-size:15px}.scenario-resource-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.scenario-resource-card{position:relative;min-width:0;padding:10px 11px 11px;border:1px solid var(--ui-border);border-radius:8px;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.72);transition:border-color var(--ui-transition),box-shadow var(--ui-transition),transform var(--ui-transition)}.scenario-resource-card:hover{border-color:var(--ui-border-strong);box-shadow:0 5px 16px rgba(19,43,48,.06);transform:translateY(-1px)}.scenario-resource-card.required{border-color:#d4c399;background:#fffdf7}.scenario-resource-card.empty{background:#fbf7f7}.scenario-resource-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}.scenario-resource-head strong{min-width:0;overflow:hidden;color:var(--ui-text-primary);font-size:13px;text-overflow:ellipsis;white-space:nowrap}.scenario-resource-card.required .scenario-resource-head strong::after{color:var(--ui-warning);content:" *"}.scenario-resource-head span{flex:0 0 auto;color:var(--ui-text-tertiary);font-size:11px;font-weight:650}.scenario-resource-head span.danger,.resource-note.danger{color:var(--ui-danger)}.scenario-resource-card :deep(.el-form-item__label){display:none}.scenario-resource-card :deep(.el-form-item__content){display:block}.resource-note{margin:6px 0 0;color:var(--ui-warning);font-size:11px;line-height:1.45}.dialog-footer-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px}.dialog-footer-actions :deep(.el-button){min-width:88px;margin-left:0}.dialog-footer-actions :deep(.el-button--primary){min-width:104px}
 @media(max-width:900px){.plan-workspace{display:block}.directory-panel{padding:12px 0;border-right:0;border-bottom:1px solid var(--ui-border)}.directory-list{overflow-x:auto;flex-direction:row;padding-bottom:4px}.directory-item{min-width:180px;background:var(--ui-surface)}.directory-content{padding:18px 0 0}.directory-actions{display:flex}}
-@media(max-width:767px){.directory-content-head{align-items:flex-start}.plans :deep(.el-collapse-item){padding-inline:12px}.plan-head{align-items:flex-start;flex-direction:column;padding:10px 14px 10px 0}.plan-head>div:last-child{display:flex;flex-wrap:wrap}.plans :deep(.el-collapse-item__header){height:auto;min-height:58px}}
+@media(max-width:767px){.directory-content-head{align-items:flex-start}.plans :deep(.el-collapse-item){padding-inline:12px}.plan-head{min-height:0;align-items:flex-start;flex-direction:column;padding:10px 14px 10px 0}.plan-title-main{width:100%;min-height:32px}.plan-toggle-icon{width:24px;height:24px;margin-right:8px}.plan-head>div:last-child{display:flex;flex-wrap:wrap}.plans :deep(.el-collapse-item__header){height:auto;min-height:58px}.plan-config-dialog :deep(.el-dialog),.scenario-config-dialog :deep(.el-dialog){width:calc(100vw - 24px)!important}.plan-config-dialog :deep(.el-dialog__header),.scenario-config-dialog :deep(.el-dialog__header){padding:18px 18px 14px}.plan-config-dialog :deep(.el-dialog__body),.scenario-config-dialog :deep(.el-dialog__body){padding:16px 18px 18px}.plan-config-dialog :deep(.el-dialog__footer),.scenario-config-dialog :deep(.el-dialog__footer){padding:12px 18px 16px}.dialog-intro,.plan-form-grid,.scenario-form-grid,.scenario-resource-grid{grid-template-columns:1fr}.dialog-flow{width:100%;justify-content:center}.scenario-resource-card:hover{transform:none}.dialog-footer-actions{display:grid;grid-template-columns:1fr 1fr}.dialog-footer-actions :deep(.el-button),.dialog-footer-actions :deep(.el-button--primary){width:100%;min-width:0}}
 </style>
