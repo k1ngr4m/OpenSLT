@@ -77,13 +77,19 @@ async function mountLayout(path: string, role: User['role']) {
 }
 
 describe('ShellLayout navigation', () => {
-  it('shows only task navigation in home mode', async () => {
+  it('shows the workspace before the speed-test navigation group in home mode', async () => {
     const { wrapper } = await mountLayout('/dashboard', 'admin')
     const navigation = wrapper.get('.el-menu-stub')
+    const navigationText = navigation.text()
 
-    expect(navigation.text()).toContain('工作台')
-    expect(navigation.text()).toContain('测速运行')
-    expect(navigation.text()).not.toContain('方案与场景')
+    expect(wrapper.get('.brand-copy small').text()).toBe('自动化测试平台')
+    expect(navigationText).toContain('工作台')
+    expect(navigationText).toContain('测速')
+    expect(navigationText).toContain('测速运行')
+    expect(navigationText.indexOf('工作台')).toBeLessThan(navigationText.indexOf('测速'))
+    expect(navigationText.indexOf('测速')).toBeLessThan(navigationText.indexOf('测速运行'))
+    expect(navigationText).not.toContain('任务')
+    expect(navigationText).not.toContain('方案与场景')
     expect(wrapper.get('.section-nav-item').classes()).toContain('is-active')
     expect(wrapper.find('.management-center').exists()).toBe(true)
     expect(wrapper.get('.management-center').classes()).not.toContain('is-active')

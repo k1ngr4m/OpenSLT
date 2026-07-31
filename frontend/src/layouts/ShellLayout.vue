@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
         </div>
         <div v-show="!collapsed || isMobile" class="brand-copy">
           <strong>OpenSLT</strong>
-          <small>自动化测速平台</small>
+          <small>自动化测试平台</small>
         </div>
       </div>
 
@@ -134,11 +134,11 @@ onBeforeUnmount(() => {
             </el-menu-item>
           </template>
           <template v-else>
-            <div v-if="!collapsed" class="nav-label">任务</div>
             <el-menu-item index="/dashboard">
               <el-icon><DataAnalysis /></el-icon>
               <template #title>工作台</template>
             </el-menu-item>
+            <div v-if="!collapsed" class="nav-label">测速</div>
             <el-menu-item index="/runs">
               <el-icon><Monitor /></el-icon>
               <template #title>测速运行</template>
