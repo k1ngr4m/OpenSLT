@@ -216,13 +216,7 @@ def _delete_run_database_records(db: Session, run_id: int) -> None:
         db.execute(delete(model).where(model.run_id == run_id))
     db.execute(delete(RunStep).where(RunStep.run_id == run_id))
 
-    task_ids = [
-        task.id
-        for task in db.scalars(select(DurableTask)).all()
-        if str((task.payload or {}).get("run_id")) == str(run_id)
-    ]
-    if task_ids:
-        db.execute(delete(DurableTask).where(DurableTask.id.in_(task_ids)))
+    db.execute(delete(DurableTask).where(DurableTask.run_id == run_id))
     db.execute(delete(TestRun).where(TestRun.id == run_id))
 
 

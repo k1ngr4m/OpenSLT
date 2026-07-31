@@ -179,6 +179,16 @@ def _json_value(value: Any) -> Any:
     return str(value)
 
 
+def _count_limited_rows(cursor: typing.Any, limit: int) -> int:
+    total = 0
+    while total <= limit:
+        rows = cursor.fetchmany(min(200, limit + 1 - total))
+        if not rows:
+            break
+        total += len(rows)
+    return total
+
+
 class MySQLAdapter:
     async def discover_databases(self, config: DatabaseDiscoveryConfig) -> typing.Tuple[typing.List[str], int]:
         ssh_connection = None
@@ -317,11 +327,14 @@ class MySQLAdapter:
                         with connection.cursor() as cursor:
                             cursor.execute("SELECT 1")
                             one = cursor.fetchone()
-                            cursor.execute("SELECT VERSION()")
-                            return one, cursor.fetchone()
+                            if version is None:
+                                cursor.execute("SELECT VERSION()")
+                                return one, cursor.fetchone()
+                            return one, None
 
                     one, version_row = await to_thread(check)
-                    version = version_row[0] if version_row else None
+                    if version_row:
+                        version = version_row[0]
                     details.append({"database": database_name, "ok": bool(one), "version": version})
             except Exception as exc:
                 details.append({"database": database_name, "ok": False, "message": str(exc)})
@@ -362,7 +375,7 @@ class MySQLAdapter:
             def count() -> int:
                 with connection.cursor() as cursor:
                     cursor.execute(plan.count_sql)
-                    return len(cursor.fetchall())
+                    return _count_limited_rows(cursor, UPDATE_LIMIT)
 
             return await to_thread(count)
 
@@ -378,7 +391,7 @@ class MySQLAdapter:
                 try:
                     with connection.cursor() as cursor:
                         cursor.execute(f"{plan.count_sql} FOR UPDATE")
-                        current_rows = len(cursor.fetchall())
+                        current_rows = _count_limited_rows(cursor, UPDATE_LIMIT)
                         if current_rows > UPDATE_LIMIT:
                             raise DatabaseOperationError(
                                 "UPDATE_LIMIT_EXCEEDED",

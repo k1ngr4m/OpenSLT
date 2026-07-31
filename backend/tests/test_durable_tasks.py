@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 from app.core.database import SessionLocal
 from app.models import DurableTask, ResourceLock, TestRun as RunModel
@@ -23,6 +24,7 @@ def test_enqueue_is_idempotent_and_claim_is_exclusive(client) -> None:
         second = enqueue_task(db, "start_run", {"run_id": 42}, "start:42:v1")
         db.commit()
         assert first.id == second.id
+        assert first.run_id == 42
         task_id = first.id
 
     with SessionLocal() as db:
@@ -33,6 +35,41 @@ def test_enqueue_is_idempotent_and_claim_is_exclusive(client) -> None:
         assert task.status == "running"
         assert task.attempts == 1
         assert task.locked_by == "worker-a"
+
+
+def test_recover_abandoned_tasks_uses_indexed_run_id(client) -> None:
+    with SessionLocal() as db:
+        run = RunModel(
+            run_number="R20260731120000-QUEUE",
+            plan_id=1,
+            scenario_id=1,
+            business_code="fut_mm",
+            status="resource_queue",
+            resource_ids=[],
+            config_snapshot={},
+            trace_id="queued-run",
+            created_by=1,
+        )
+        db.add(run)
+        db.flush()
+        enqueue_task(
+            db,
+            "start_run",
+            {"run_id": run.id},
+            f"existing-start-run:{run.id}:v0",
+        )
+        db.commit()
+
+        assert recover_abandoned_tasks(db) == 0
+        tasks = list(
+            db.scalars(
+                select(DurableTask).where(
+                    DurableTask.task_type == "start_run",
+                    DurableTask.run_id == run.id,
+                )
+            ).all()
+        )
+        assert len(tasks) == 1
 
 
 def test_expired_task_lease_is_recovered_and_reclaimed(client) -> None:

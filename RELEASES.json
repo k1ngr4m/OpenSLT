@@ -1,5 +1,10 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "changed",
+      "text": "优化日志、审计、任务队列和数据库控制台相关数据库操作的查询性能。"
+    }
+  ],
   "releases": [
     {
       "version": "0.2.0",

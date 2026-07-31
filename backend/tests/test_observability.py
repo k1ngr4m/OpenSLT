@@ -15,7 +15,8 @@ from app.core.observability import archive_observability_files, writer
 from app.core.observability_middleware import BodyCapture
 from app.core.sql_observability import sql_fingerprint, sql_template
 from app.core.time import beijing_now
-from app.models import LogRecord
+from app.models import AuditLog, LogRecord
+from app.api.routes.observability import _iter_audit_log_export
 
 
 def test_recursive_redaction_and_sql_template() -> None:
@@ -186,6 +187,45 @@ def test_observability_file_retention(monkeypatch: typing.Any, tmp_path: Path) -
         assert not expired.exists()
     finally:
         monkeypatch.setattr(settings, "log_dir", original_log_dir)
+
+
+def test_audit_log_export_streams_complete_batches(client: TestClient) -> None:
+    with SessionLocal() as db:
+        for index in range(5):
+            db.add(
+                AuditLog(
+                    actor_id=1,
+                    action=f"audit.test.{index}",
+                    object_type="test",
+                    object_id=str(index),
+                    result="success",
+                    trace_id=f"audit-export-{index}",
+                    detail={},
+                )
+            )
+        db.commit()
+
+    chunks = list(
+        _iter_audit_log_export(
+            actor_id=1,
+            source_ip="127.0.0.1",
+            user_agent="pytest",
+            trace_id="audit-export",
+            batch_size=2,
+        )
+    )
+    assert len(chunks) == 4
+    exported = b"".join(chunks).decode("utf-8-sig")
+    assert "id,time_beijing,actor_id,action,object_type,object_id,result,trace_id" in exported
+    for index in range(5):
+        assert f"audit.test.{index}" in exported
+
+    with SessionLocal() as db:
+        audit = db.scalar(
+            select(AuditLog).where(AuditLog.action == "audit.export")
+        )
+        assert audit is not None
+        assert audit.detail["count"] == 5
 
 
 def test_sql_logging_suppression_context() -> None:

@@ -110,7 +110,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0006"
+        ).scalar_one() == "0007"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -155,6 +155,69 @@ def test_plan_directory_migration_backfills_existing_plans(tmp_path: Path) -> No
         ).fetchone() == (1,)
 
 
+def test_durable_task_run_id_migration_backfills_and_indexes(tmp_path: Path) -> None:
+    database_path = tmp_path / "durable-task-run-id.sqlite3"
+    _alembic(database_path, "upgrade", "0006")
+
+    with sqlite3.connect(database_path) as connection:
+        timestamp = "2026-07-31 00:00:00"
+        connection.execute(
+            "INSERT INTO t_users "
+            "(id, username, display_name, password_hash, role, is_active, last_login_at, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "migration-user", "迁移用户", "hash", "admin", 1, None, timestamp, timestamp),
+        )
+        connection.execute(
+            "INSERT INTO t_test_plans "
+            "(id, directory_id, name, business_code, description, default_resource_ids, config_version, "
+            "is_enabled, created_by, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, 1, "已有方案", "fut_mm", "", "[]", "1.0", 1, 1, timestamp, timestamp),
+        )
+        connection.execute(
+            "INSERT INTO t_test_scenarios "
+            "(id, plan_id, name, scenario_type, config_version, expected_artifacts, "
+            "default_resource_ids, required_resource_types, is_enabled, workflow_status, "
+            "draft_workflow_version_id, published_workflow_version_id, is_archived, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, 1, "已有场景", "order", "1.0", "[]", "[]", "[]", 1, "draft", None, None, 0, timestamp, timestamp),
+        )
+        connection.execute(
+            "INSERT INTO t_test_runs "
+            "(id, run_number, plan_id, scenario_id, workflow_version_id, business_code, status, "
+            "status_version, progress, resource_ids, config_snapshot, trace_id, created_by, "
+            "started_at, finished_at, timeout_at, error_code, error_message, queue_reason, "
+            "paused_from, logs_complete, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "R20260731000000-MIG", 1, 1, None, "fut_mm", "resource_queue", 0, 0, "[]", "{}", "trace", 1, None, None, None, None, None, None, None, 1, timestamp, timestamp),
+        )
+        connection.execute(
+            "INSERT INTO t_durable_tasks "
+            "(id, task_type, payload, idempotency_key, status, attempts, max_attempts, "
+            "available_at, lease_expires_at, locked_by, last_error, created_at, started_at, finished_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "start_run", '{"run_id":1}', "migration:start:1", "queued", 0, 3, timestamp, None, None, None, timestamp, None, None),
+        )
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "head")
+
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    durable_indexes = {index["name"] for index in inspector.get_indexes("t_durable_tasks")}
+    log_indexes = {index["name"] for index in inspector.get_indexes("t_log_records")}
+    audit_indexes = {index["name"] for index in inspector.get_indexes("t_audit_logs")}
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            "SELECT run_id FROM t_durable_tasks WHERE id = 1"
+        ).fetchone() == (1,)
+    engine.dispose()
+    assert "ix_t_durable_tasks_run_id" in durable_indexes
+    assert "ix_t_durable_tasks_task_status_run" in durable_indexes
+    assert "ix_t_log_records_log_type_created" in log_indexes
+    assert "ix_t_audit_logs_action_created" in audit_indexes
+
+
 def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     environment = dict(os.environ)
     environment["DATABASE_URL"] = (
@@ -184,6 +247,7 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
         "ALTER TABLE t_test_scenarios ADD CONSTRAINT "
         "fk_test_scenarios_draft_workflow_version_id"
     ) in sql
+    assert "ALTER TABLE t_durable_tasks ADD COLUMN run_id INTEGER" in sql
 
 
 def test_expected_migration_revisions_remain() -> None:
@@ -199,6 +263,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0004_observability_logs.py",
         "0005_plan_directories.py",
         "0006_capture_item_descriptions.py",
+        "0007_database_operation_indexes.py",
     }
 
     completed = subprocess.run(
@@ -208,4 +273,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0006 (head)"
+    assert completed.stdout.strip() == "0007 (head)"

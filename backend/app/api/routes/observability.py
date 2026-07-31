@@ -9,13 +9,14 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import admin_only, get_current_user
 from app.api.routes.common import not_found
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import SessionLocal, get_db
+from app.core.logging import trace_id_ctx
 from app.core.observability import read_event_payload
 from app.models import Artifact, AuditLog, LogRecord, User
 from app.schemas import AuditOut, LogDetailOut, LogOut, LogSearchPage, LogSummaryOut
@@ -148,11 +149,83 @@ def list_audit_logs(action: typing.Union[str, None] = None, object_type: typing.
     return list(db.scalars(query.order_by(AuditLog.created_at.desc()).limit(2000)).all())
 
 
+def _iter_audit_log_export(
+    *,
+    actor_id: typing.Optional[int],
+    source_ip: typing.Optional[str],
+    user_agent: typing.Optional[str],
+    trace_id: str,
+    batch_size: int = 1000,
+) -> typing.Iterator[bytes]:
+    db = SessionLocal()
+    exported = 0
+    last_created_at = None
+    last_id = None
+    try:
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["id", "time_beijing", "actor_id", "action", "object_type", "object_id", "result", "trace_id"])
+        yield ("\ufeff" + output.getvalue()).encode("utf-8")
+
+        while True:
+            query = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(batch_size)
+            if last_created_at is not None and last_id is not None:
+                query = query.where(
+                    or_(
+                        AuditLog.created_at < last_created_at,
+                        and_(
+                            AuditLog.created_at == last_created_at,
+                            AuditLog.id < last_id,
+                        ),
+                    )
+                )
+            rows = list(db.scalars(query).all())
+            if not rows:
+                break
+            output = io.StringIO()
+            writer = csv.writer(output)
+            for row in rows:
+                writer.writerow([row.id, row.created_at.isoformat(), row.actor_id, row.action, row.object_type, row.object_id, row.result, row.trace_id])
+            exported += len(rows)
+            last = rows[-1]
+            last_created_at = last.created_at
+            last_id = last.id
+            yield output.getvalue().encode("utf-8")
+
+        db.add(
+            AuditLog(
+                actor_id=actor_id,
+                action="audit.export",
+                object_type="audit_log",
+                object_id=None,
+                result="success",
+                source_ip=source_ip,
+                user_agent=user_agent,
+                trace_id=trace_id,
+                detail={"count": exported},
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 @router.get("/audit-logs/export")
 def export_audit_logs(request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> StreamingResponse:
-    rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc())).all(); output = io.StringIO(); writer = csv.writer(output); writer.writerow(["id", "time_beijing", "actor_id", "action", "object_type", "object_id", "result", "trace_id"])
-    for row in rows: writer.writerow([row.id, row.created_at.isoformat(), row.actor_id, row.action, row.object_type, row.object_id, row.result, row.trace_id])
-    write_audit(db, "audit.export", "audit_log", None, actor, request, detail={"count": len(rows)}); db.commit(); return StreamingResponse(iter([output.getvalue().encode("utf-8-sig")]), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=audit-logs.csv"})
+    del db
+    source_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    trace_id = trace_id_ctx.get()
+    return StreamingResponse(
+        _iter_audit_log_export(
+            actor_id=actor.id,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            trace_id=trace_id,
+        ),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=audit-logs.csv"},
+    )
 
 
 @router.get("/artifacts/{artifact_id}/download")

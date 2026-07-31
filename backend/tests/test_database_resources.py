@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.adapters.database import DatabaseDiscoveryConfig, mysql_adapter, parse_select, parse_update
+from app.adapters.database import DatabaseDiscoveryConfig, _count_limited_rows, mysql_adapter, parse_select, parse_update
 from app.core.database import SessionLocal
 from app.models import AuditLog
 
@@ -299,6 +299,20 @@ def test_sql_safety_rejects_cross_database_and_unsafe_updates():
         pass
     else:
         raise AssertionError("cross-database SELECT was accepted")
+
+
+def test_update_preview_count_stops_after_limit() -> None:
+    class FakeCursor:
+        def __init__(self) -> None:
+            self.fetches = 0
+
+        def fetchmany(self, size: int):
+            self.fetches += 1
+            return [(index,) for index in range(size)]
+
+    cursor = FakeCursor()
+    assert _count_limited_rows(cursor, 1000) == 1001
+    assert cursor.fetches < 10
 
 
 def discovery_payload(**overrides):

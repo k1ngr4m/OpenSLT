@@ -92,6 +92,7 @@ def test_delete_run_removes_related_records_and_artifacts(
             DurableTask(
                 task_type="start_run",
                 payload={"run_id": run["id"]},
+                run_id=run["id"],
                 idempotency_key=f"delete-test:{run['id']}",
                 status="succeeded",
                 attempts=1,
@@ -113,10 +114,7 @@ def test_delete_run_removes_related_records_and_artifacts(
         assert db.get(RunModel, run["id"]) is None
         assert db.scalar(select(Artifact).where(Artifact.run_id == run["id"])) is None
         assert db.scalar(select(LogRecord).where(LogRecord.run_id == run["id"])) is None
-        assert all(
-            str((task.payload or {}).get("run_id")) != str(run["id"])
-            for task in db.scalars(select(DurableTask)).all()
-        )
+        assert db.scalar(select(DurableTask).where(DurableTask.run_id == run["id"])) is None
         audit = db.scalar(
             select(AuditLog).where(
                 AuditLog.action == "run.delete",

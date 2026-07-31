@@ -320,6 +320,8 @@ class DurableTask(Base):
     __tablename__ = "t_durable_tasks"
     __table_args__ = (
         Index("ix_durable_task_dispatch", "status", "available_at", "lease_expires_at"),
+        Index("ix_t_durable_tasks_run_id", "run_id"),
+        Index("ix_t_durable_tasks_task_status_run", "task_type", "status", "run_id"),
         Index(
             "ix_t_durable_tasks_idempotency_key",
             "idempotency_key",
@@ -330,6 +332,9 @@ class DurableTask(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     task_type: Mapped[str] = mapped_column(String(64), index=True)
     payload: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    run_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("t_test_runs.id", ondelete="CASCADE")
+    )
     idempotency_key: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -522,6 +527,10 @@ class LogRecord(Base):
     __table_args__ = (
         Index("ix_t_log_records_run_created", "run_id", "created_at"),
         Index("ix_t_log_records_trace_created", "trace_id", "created_at"),
+        Index("ix_t_log_records_log_type_created", "log_type", "created_at"),
+        Index("ix_t_log_records_database_scope_created", "database_scope", "created_at"),
+        Index("ix_t_log_records_sql_fingerprint_created", "sql_fingerprint", "created_at"),
+        Index("ix_t_log_records_result_created", "result", "created_at"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[typing.Union[str, None]] = mapped_column(String(64), unique=True, index=True)
@@ -589,6 +598,9 @@ class Verdict(TimestampMixin, Base):
 
 class ResourceLock(Base):
     __tablename__ = "t_resource_locks"
+    __table_args__ = (
+        Index("ix_t_resource_locks_active_resource", "resource_id", "released_at"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     resource_id: Mapped[int] = mapped_column(ForeignKey("t_resources.id"), index=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
@@ -602,6 +614,10 @@ class ResourceLock(Base):
 
 class AuditLog(Base):
     __tablename__ = "t_audit_logs"
+    __table_args__ = (
+        Index("ix_t_audit_logs_action_created", "action", "created_at"),
+        Index("ix_t_audit_logs_object_type_created", "object_type", "created_at"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     actor_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_users.id"), index=True)
     action: Mapped[str] = mapped_column(String(128), index=True)

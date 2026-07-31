@@ -22,6 +22,16 @@ WORKER_ID = "%s:%s:%s" % (socket.gethostname(), os.getpid(), uuid4().hex[:8])
 TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step"})
 
 
+def _payload_run_id(payload: typing.Mapping[str, typing.Any]) -> typing.Optional[int]:
+    value = payload.get("run_id")
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def enqueue_task(
     db: Session,
     task_type: str,
@@ -38,6 +48,8 @@ def enqueue_task(
         select(DurableTask).where(DurableTask.idempotency_key == idempotency_key)
     )
     if existing is not None:
+        if existing.run_id is None:
+            existing.run_id = _payload_run_id(payload)
         if reactivate and existing.status in {"succeeded", "failed"}:
             existing.status = "queued"
             existing.attempts = 0
@@ -51,6 +63,7 @@ def enqueue_task(
     task = DurableTask(
         task_type=task_type,
         payload=dict(payload),
+        run_id=_payload_run_id(payload),
         idempotency_key=idempotency_key,
         max_attempts=max_attempts,
         available_at=available_at or beijing_now(),
@@ -149,16 +162,15 @@ def recover_abandoned_tasks(db: Session) -> int:
         )
         .values(status="queued", locked_by=None, lease_expires_at=None, available_at=now)
     )
-    active_start_run_ids = {
-        int(task.payload["run_id"])
-        for task in db.scalars(
-            select(DurableTask).where(
+    active_start_run_ids = set(
+        db.scalars(
+            select(DurableTask.run_id).where(
                 DurableTask.task_type == "start_run",
                 DurableTask.status.in_({"queued", "running"}),
+                DurableTask.run_id.is_not(None),
             )
         ).all()
-        if task.payload.get("run_id") is not None
-    }
+    )
     queued_runs = list(
         db.scalars(
             select(TestRun).where(
