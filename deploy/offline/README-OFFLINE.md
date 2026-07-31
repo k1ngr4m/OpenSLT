@@ -184,9 +184,11 @@ deploy/offline/make-offline-package.sh \
   --bundle-node
 ```
 
-`--skip-tests` 会跳过 Python wheelhouse
-回装、后端测试和前端测试；带 Node 的包仍必须通过 `npm ci --offline` 和生产构建验证。
-该选项只应用于临时诊断包，不应作为正式交付包。
+`--skip-python-tests` 会跳过 Python wheelhouse 回装校验和后端测试，但仍会构建
+Python wheelhouse；适合 Python 测试过慢时生成临时诊断包。`--skip-frontend-tests`
+会在带 Node 的制包流程中跳过前端测试。`--skip-tests` 保留为兼容参数，等价于同时
+跳过 Python 和前端测试；带 Node 的包仍必须通过 `npm ci --offline` 和生产构建验证。
+这些跳过测试的选项只应用于临时诊断包，不应作为正式交付包。
 
 不需要在内网修改前端时，可以不传 `--bundle-node`，但必须提前按第 4.1 节生成当前
 `frontend/dist`。

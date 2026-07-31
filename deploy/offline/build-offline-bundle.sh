@@ -8,7 +8,8 @@ PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 RPM_DIR=""
 OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
-SKIP_TESTS=false
+SKIP_PYTHON_TESTS=false
+SKIP_FRONTEND_TESTS=false
 CACHE_DIR=""
 BUNDLE_PYTHON=false
 PYTHON_RUNTIME_ROOT="/opt/rh/rh-python38"
@@ -34,7 +35,11 @@ Options:
   --node-base-url URL Unofficial Node.js release base URL
   --node-archive FILE Use a predownloaded Node .tar.gz archive
   --node-shasums FILE Use a predownloaded SHASUMS256.txt (required with archive)
-  --skip-tests        Skip Python wheel validation and test suites
+  --skip-python-tests
+                      Skip Python wheel installation validation and pytest
+  --skip-frontend-tests
+                      Skip frontend tests when building with --bundle-node
+  --skip-tests        Skip both Python and frontend tests
   -h, --help          Show this help
 
 Without --bundle-node, frontend/dist must already contain a current production
@@ -88,8 +93,17 @@ while (($#)); do
             NODE_SHASUMS="$2"
             shift 2
             ;;
+        --skip-python-tests)
+            SKIP_PYTHON_TESTS=true
+            shift
+            ;;
+        --skip-frontend-tests)
+            SKIP_FRONTEND_TESTS=true
+            shift
+            ;;
         --skip-tests)
-            SKIP_TESTS=true
+            SKIP_PYTHON_TESTS=true
+            SKIP_FRONTEND_TESTS=true
             shift
             ;;
         --help|-h)
@@ -369,7 +383,7 @@ if [[ "$BUNDLE_NODE" == true ]]; then
             cp -a "$NPM_CACHE_DIR" "$PERSISTENT_NPM_CACHE_DIR"
         fi
     fi
-    if [[ "$SKIP_TESTS" == false ]]; then
+    if [[ "$SKIP_FRONTEND_TESTS" == false ]]; then
         "$NPM_BIN" --prefix "$FRONTEND_DIR" run test
     fi
     "$NPM_BIN" --prefix "$FRONTEND_DIR" run build
@@ -403,7 +417,7 @@ APP_WHEEL="$(find "$STAGING/wheelhouse" -maxdepth 1 -type f -name 'openslt-*.whl
     exit 1
 }
 
-if [[ "$SKIP_TESTS" == false ]]; then
+if [[ "$SKIP_PYTHON_TESTS" == false ]]; then
     VALIDATE_VENV="$BUILD_ROOT/validate-venv"
     "$PYTHON" -m venv "$VALIDATE_VENV"
     printf '[OpenSLT] Validating a network-free wheel installation...\n'

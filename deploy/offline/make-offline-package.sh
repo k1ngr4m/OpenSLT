@@ -7,7 +7,8 @@ PROJECT_ROOT="$(cd -- "$SCRIPT_DIR/../.." && pwd)"
 PYTHON="/opt/rh/rh-python38/root/usr/bin/python3.8"
 OUTPUT_DIR="$PROJECT_ROOT/release"
 VERSION=""
-SKIP_TESTS=false
+SKIP_PYTHON_TESTS=false
+SKIP_FRONTEND_TESTS=false
 CACHE_DIR=""
 REFRESH_CACHE=false
 NGINX_REPO_URL=""
@@ -38,7 +39,11 @@ Options:
   --node-base-url URL Unofficial Node.js release base URL
   --node-archive FILE Use a predownloaded Node .tar.gz archive
   --node-shasums FILE Use a predownloaded SHASUMS256.txt (required with archive)
-  --skip-tests        Skip Python wheel validation and test suites
+  --skip-python-tests
+                      Skip Python wheel installation validation and pytest
+  --skip-frontend-tests
+                      Skip frontend tests when building with --bundle-node
+  --skip-tests        Skip both Python and frontend tests
   -h, --help          Show this help
 
 Without --bundle-node, frontend/dist must already have been built on a Node.js
@@ -96,8 +101,17 @@ while (($#)); do
             NODE_SHASUMS="$2"
             shift 2
             ;;
+        --skip-python-tests)
+            SKIP_PYTHON_TESTS=true
+            shift
+            ;;
+        --skip-frontend-tests)
+            SKIP_FRONTEND_TESTS=true
+            shift
+            ;;
         --skip-tests)
-            SKIP_TESTS=true
+            SKIP_PYTHON_TESTS=true
+            SKIP_FRONTEND_TESTS=true
             shift
             ;;
         --help|-h)
@@ -220,7 +234,8 @@ BUILD_ARGS=(
     --output "$OUTPUT_DIR"
     --version "$VERSION"
 )
-[[ "$SKIP_TESTS" == true ]] && BUILD_ARGS+=(--skip-tests)
+[[ "$SKIP_PYTHON_TESTS" == true ]] && BUILD_ARGS+=(--skip-python-tests)
+[[ "$SKIP_FRONTEND_TESTS" == true ]] && BUILD_ARGS+=(--skip-frontend-tests)
 [[ -n "$CACHE_DIR" ]] && BUILD_ARGS+=(--cache-dir "$CACHE_DIR")
 [[ "$BUNDLE_PYTHON" == true ]] && BUILD_ARGS+=(--bundle-python)
 if [[ "$BUNDLE_NODE" == true ]]; then
