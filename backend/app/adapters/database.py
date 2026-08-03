@@ -25,7 +25,6 @@ from pymysql.cursors import SSCursor
 from sqlglot import exp
 
 from app.core.compat import to_thread
-from app.core.sql_observability import connect_resource_database
 from app.core.security import decrypt_secret
 from app.models import Resource
 
@@ -220,7 +219,7 @@ class MySQLAdapter:
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
             connection = await to_thread(
-                connect_resource_database,
+                pymysql.connect,
                 host=host,
                 port=port,
                 user=config.database_username,
@@ -290,9 +289,7 @@ class MySQLAdapter:
                 ssl_context.check_hostname = False
                 ssl_context.verify_mode = ssl.CERT_NONE
             connection = await to_thread(
-                connect_resource_database,
-                resource_id=resource.id,
-                observability_database=database_name,
+                pymysql.connect,
                 host=host,
                 port=port,
                 user=resource.database_username or "",

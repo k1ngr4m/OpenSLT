@@ -27,8 +27,8 @@ router = APIRouter()
 
 @router.get("/logs", response_model=typing.List[LogOut])
 def query_logs(log_type: typing.Union[str, None] = None, level: typing.Union[str, None] = None, trace_id: typing.Union[str, None] = None, keyword: typing.Union[str, None] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[LogRecord]:
-    query = select(LogRecord)
-    if user.role == "visitor": query = query.where(LogRecord.log_type.notin_(["command", "remote_command", "access", "sql", "websocket"]))
+    query = select(LogRecord).where(LogRecord.log_type != "sql")
+    if user.role == "visitor": query = query.where(LogRecord.log_type.notin_(["command", "remote_command", "access", "websocket"]))
     if log_type: query = query.where(LogRecord.log_type == log_type)
     if level: query = query.where(LogRecord.level == level.upper())
     if trace_id: query = query.where(LogRecord.trace_id == trace_id)
@@ -48,8 +48,6 @@ def search_logs(
     http_method: typing.Union[str, None] = None,
     http_path: typing.Union[str, None] = None,
     http_status: typing.Union[int, None] = None,
-    database_scope: typing.Union[str, None] = None,
-    sql_fingerprint: typing.Union[str, None] = None,
     result: typing.Union[str, None] = None,
     min_duration_ms: typing.Union[int, None] = Query(default=None, ge=0),
     time_from: typing.Union[datetime, None] = None,
@@ -59,17 +57,19 @@ def search_logs(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> LogSearchPage:
-    query = select(LogRecord)
+    query = select(LogRecord).where(LogRecord.log_type != "sql")
     if user.role == "visitor":
         query = query.where(
             LogRecord.log_type.notin_(
-                ["command", "remote_command", "access", "sql", "websocket"]
+                ["command", "remote_command", "access", "websocket"]
             )
         )
     if group == "application":
-        query = query.where(LogRecord.log_type.notin_(["access", "sql", "websocket"]))
-    elif group in {"access", "sql", "websocket"}:
+        query = query.where(LogRecord.log_type.notin_(["access", "websocket"]))
+    elif group in {"access", "websocket"}:
         query = query.where(LogRecord.log_type == group)
+    elif group == "sql":
+        query = query.where(LogRecord.log_type == "__disabled_sql__")
     if log_type:
         query = query.where(LogRecord.log_type == log_type)
     if level:
@@ -90,10 +90,6 @@ def search_logs(
         query = query.where(LogRecord.message.contains(http_path))
     if http_status is not None:
         query = query.where(LogRecord.http_status == http_status)
-    if database_scope:
-        query = query.where(LogRecord.database_scope == database_scope)
-    if sql_fingerprint:
-        query = query.where(LogRecord.sql_fingerprint == sql_fingerprint)
     if result:
         query = query.where(LogRecord.result == result)
     if min_duration_ms is not None:
@@ -126,7 +122,7 @@ def log_detail(
     db: Session = Depends(get_db),
 ) -> LogDetailOut:
     record = db.scalar(select(LogRecord).where(LogRecord.event_id == event_id))
-    if not record:
+    if not record or record.log_type == "sql":
         raise HTTPException(
             status_code=404,
             detail={"code": "LOG_NOT_FOUND", "message": "日志不存在或已过保留期"},

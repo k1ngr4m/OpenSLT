@@ -20,10 +20,6 @@ trace_id_ctx: ContextVar[str] = ContextVar("trace_id", default="")
 user_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("user_id", default=None)
 run_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("run_id", default=None)
 step_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("step_id", default=None)
-sql_logging_suppressed_ctx: ContextVar[bool] = ContextVar(
-    "sql_logging_suppressed", default=False
-)
-
 SENSITIVE_KEYS = {
     "access_token",
     "authorization",

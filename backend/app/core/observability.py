@@ -19,7 +19,6 @@ from app.core.config import settings
 from app.core.logging import (
     redact,
     run_id_ctx,
-    sql_logging_suppressed_ctx,
     step_id_ctx,
     trace_id_ctx,
     user_id_ctx,
@@ -84,7 +83,7 @@ class ObservabilityWriter:
         )
 
     def emit(self, event: typing.Dict[str, typing.Any]) -> None:
-        if not self._running:
+        if not self._running or event.get("category") == "sql":
             return
         safe_event = typing.cast(typing.Dict[str, typing.Any], redact(event))
         safe_event.setdefault("schema_version", 1)
@@ -199,7 +198,6 @@ class ObservabilityWriter:
         if not events:
             return
 
-        token = sql_logging_suppressed_ctx.set(True)
         db = SessionLocal()
         try:
             event_ids = [str(event["event_id"]) for event in events]
@@ -215,7 +213,6 @@ class ObservabilityWriter:
             db.commit()
         finally:
             db.close()
-            sql_logging_suppressed_ctx.reset(token)
 
     @staticmethod
     def _log_record(event: typing.Dict[str, typing.Any]) -> typing.Any:
@@ -277,7 +274,9 @@ class ObservabilityWriter:
         unresolved: typing.List[str] = []
         for line in path.read_text(encoding="utf-8").splitlines():
             try:
-                self._persist_index(json.loads(line))
+                event = json.loads(line)
+                if event.get("category") != "sql":
+                    self._persist_index(event)
             except Exception:
                 unresolved.append(line)
         if unresolved:

@@ -28,8 +28,6 @@ const filters = ref({
   http_method: '',
   http_path: '',
   http_status: undefined as number | undefined,
-  database_scope: '',
-  sql_fingerprint: '',
   min_duration_ms: undefined as number | undefined,
 })
 
@@ -38,7 +36,6 @@ const tabs = computed(() => {
   if (auth.user?.role !== 'visitor') {
     items.push(
       { name: 'access', label: 'HTTP' },
-      { name: 'sql', label: 'SQL' },
       { name: 'websocket', label: 'WebSocket' },
     )
   }
@@ -95,7 +92,7 @@ async function load() {
 function resetFilters() {
   filters.value = {
     level: '', trace_id: '', keyword: '', result: '', http_method: '', http_path: '',
-    http_status: undefined, database_scope: '', sql_fingerprint: '', min_duration_ms: undefined,
+    http_status: undefined, min_duration_ms: undefined,
   }
   timeRange.value = null
   page.value = 1
@@ -181,10 +178,6 @@ onMounted(load)
           <el-input v-model="filters.http_path" clearable placeholder="路径" />
           <el-input-number v-model="filters.http_status" :min="100" :max="599" :controls="false" placeholder="状态码" />
         </div>
-        <div v-if="tab === 'sql'" class="filter-bar secondary-filters">
-          <el-select v-model="filters.database_scope" clearable placeholder="数据库范围"><el-option label="平台数据库" value="platform" /><el-option label="资源数据库" value="resource" /></el-select>
-          <el-input v-model="filters.sql_fingerprint" clearable placeholder="SQL 指纹" class="fingerprint-filter mono" />
-        </div>
         <div class="filter-actions">
           <span>{{ total }} 条<span v-if="activeFilterCount">，{{ activeFilterCount }} 项筛选</span></span>
           <el-button text @click="resetFilters">重置</el-button>
@@ -196,7 +189,6 @@ onMounted(load)
           <el-table-column label="级别" width="95"><template #default="scope"><el-tag :type="levelType(scope.row.level)" effect="plain" size="small">{{ scope.row.level }}</el-tag></template></el-table-column>
           <el-table-column v-if="tab === 'access'" prop="http_method" label="方法" width="82" />
           <el-table-column v-if="tab === 'access'" label="状态" width="82"><template #default="scope">{{ scope.row.http_status || '-' }}</template></el-table-column>
-          <el-table-column v-if="tab === 'sql'" prop="database_scope" label="范围" width="95" />
           <el-table-column prop="event" label="事件" min-width="145" show-overflow-tooltip />
           <el-table-column prop="message" label="消息" min-width="300" show-overflow-tooltip />
           <el-table-column label="耗时" width="90"><template #default="scope"><span class="mono">{{ scope.row.duration_ms == null ? '-' : `${scope.row.duration_ms} ms` }}</span></template></el-table-column>
@@ -223,9 +215,6 @@ onMounted(load)
           <template v-if="detail.payload.category === 'http'">
             <h3>Request</h3><pre>{{ pretty(detail.payload.request) }}</pre><h3>Response</h3><pre>{{ pretty(detail.payload.response) }}</pre>
           </template>
-          <template v-else-if="detail.payload.category === 'sql'">
-            <h3>SQL</h3><pre>{{ detail.payload.statement_template }}</pre><h3>参数</h3><pre>{{ pretty(detail.payload.parameters) }}</pre><h3 v-if="detail.payload.error_type">异常</h3><pre v-if="detail.payload.error_type">{{ pretty({ type: detail.payload.error_type, message: detail.payload.error_message }) }}</pre>
-          </template>
           <template v-else><pre>{{ pretty(detail.payload) }}</pre></template>
         </template>
       </div>
@@ -234,6 +223,6 @@ onMounted(load)
 </template>
 
 <style scoped>
-.logs-page{max-width:1680px}.load-error{margin-bottom:14px}.log-workspace{overflow:hidden;padding:0 18px 18px}.log-workspace :deep(.el-tabs__header){margin-bottom:14px}.log-filters,.secondary-filters{margin-bottom:10px}.log-filters>.el-select,.secondary-filters>.el-select{width:145px}.trace-filter{width:220px}.keyword-filter{width:min(280px,22vw)}.secondary-filters>.el-input{width:260px}.fingerprint-filter{width:360px!important}.filter-actions,.audit-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-bottom:12px;color:var(--ui-text-secondary);font-size:11px}.audit-actions{justify-content:space-between}.table-time{color:var(--ui-text-secondary);font-size:10px}.trace-cell{display:flex;align-items:center;gap:5px}.trace-cell>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}.trace-cell .el-button{min-height:28px;opacity:0}.trace-cell:hover .el-button,.trace-cell:focus-within .el-button{opacity:1}.el-pagination{justify-content:flex-end;margin-top:12px}.detail-content{min-height:180px}.detail-meta{display:grid;grid-template-columns:90px 1fr;gap:8px 12px;margin:0 0 24px}.detail-meta dt{color:var(--ui-text-tertiary)}.detail-meta dd{min-width:0;margin:0;overflow-wrap:anywhere}.detail-content h3{margin:22px 0 8px;font-size:13px}.detail-content pre{max-height:360px;margin:0;overflow:auto;padding:14px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-terminal);color:#d9e8e6;font:11px/1.6 var(--ui-font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.logs-page{max-width:1680px}.load-error{margin-bottom:14px}.log-workspace{overflow:hidden;padding:0 18px 18px}.log-workspace :deep(.el-tabs__header){margin-bottom:14px}.log-filters,.secondary-filters{margin-bottom:10px}.log-filters>.el-select,.secondary-filters>.el-select{width:145px}.trace-filter{width:220px}.keyword-filter{width:min(280px,22vw)}.secondary-filters>.el-input{width:260px}.filter-actions,.audit-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-bottom:12px;color:var(--ui-text-secondary);font-size:11px}.audit-actions{justify-content:space-between}.table-time{color:var(--ui-text-secondary);font-size:10px}.trace-cell{display:flex;align-items:center;gap:5px}.trace-cell>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}.trace-cell .el-button{min-height:28px;opacity:0}.trace-cell:hover .el-button,.trace-cell:focus-within .el-button{opacity:1}.el-pagination{justify-content:flex-end;margin-top:12px}.detail-content{min-height:180px}.detail-meta{display:grid;grid-template-columns:90px 1fr;gap:8px 12px;margin:0 0 24px}.detail-meta dt{color:var(--ui-text-tertiary)}.detail-meta dd{min-width:0;margin:0;overflow-wrap:anywhere}.detail-content h3{margin:22px 0 8px;font-size:13px}.detail-content pre{max-height:360px;margin:0;overflow:auto;padding:14px;border:1px solid var(--ui-border);border-radius:6px;background:var(--ui-terminal);color:#d9e8e6;font:11px/1.6 var(--ui-font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:767px){.log-workspace{padding-inline:12px}.log-filters>*,.secondary-filters>*{width:100%!important}.filter-actions{flex-wrap:wrap}.trace-cell .el-button{opacity:1}.detail-meta{grid-template-columns:1fr}.detail-meta dt{margin-top:6px}}
 </style>

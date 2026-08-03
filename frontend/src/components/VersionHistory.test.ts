@@ -5,11 +5,15 @@ import VersionHistory from './VersionHistory.vue'
 
 
 const ElDialogStub = {
-  props: ['modelValue', 'title'],
-  template: '<section v-if="modelValue" role="dialog"><h2>{{ title }}</h2><slot /></section>',
+  props: ['modelValue', 'title', 'width'],
+  template: '<section v-if="modelValue" role="dialog" :data-width="width"><h2>{{ title }}</h2><slot /></section>',
 }
 
 const ElTagStub = {
+  template: '<span><slot /></span>',
+}
+
+const ElIconStub = {
   template: '<span><slot /></span>',
 }
 
@@ -18,7 +22,7 @@ describe('VersionHistory', () => {
   it('opens the release history with the current version first', async () => {
     const wrapper = mount(VersionHistory, {
       global: {
-        stubs: { ElDialog: ElDialogStub, ElTag: ElTagStub },
+        stubs: { ElDialog: ElDialogStub, ElTag: ElTagStub, ElIcon: ElIconStub },
       },
     })
 
@@ -30,11 +34,18 @@ describe('VersionHistory', () => {
 
     const dialog = wrapper.get('[role="dialog"]')
     expect(dialog.text()).toContain('版本更新说明')
+    expect(dialog.attributes('data-width')).toBe('640px')
     expect(dialog.text()).toContain('当前版本')
     expect(dialog.text()).toContain('2026-07-31')
     expect(dialog.text().indexOf('v0.2.1')).toBeLessThan(dialog.text().indexOf('v0.2.0'))
 
-    const currentReleaseChanges = dialog.findAll('.release-entry')[0].findAll('li')
+    const releaseEntries = dialog.findAll('.release-entry')
+    expect(releaseEntries).toHaveLength(3)
+    expect(releaseEntries[0].attributes('open')).toBe('')
+    expect(releaseEntries[1].attributes('open')).toBeUndefined()
+    expect(releaseEntries[2].attributes('open')).toBeUndefined()
+
+    const currentReleaseChanges = releaseEntries[0].findAll('li')
     expect(currentReleaseChanges.map(change => change.get('.change-type').text())).toEqual([
       '变更',
       '变更',

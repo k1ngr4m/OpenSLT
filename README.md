@@ -179,7 +179,8 @@ JWT 签名密钥和 Fernet 凭据加密密钥在未配置时自动生成并持�
 
 根目录 `VERSION` 是 OpenSLT 唯一版本号来源，使用不带 `v` 前缀的
 `MAJOR.MINOR.PATCH` 格式。Python wheel、FastAPI、主界面和离线部署包都会读取或校验
-这个值。主界面右上角在管理中心按钮右侧显示当前版本，点击版本号可以查看历次更新说明。
+这个值。主界面右上角在管理中心按钮右侧显示当前版本，点击版本号可以查看更新说明；
+弹窗默认展开当前版本，历史版本按需展开。
 
 `RELEASES.json` 保存未发布变更和历史版本记录。修改版本或发布说明后执行：
 
@@ -280,18 +281,17 @@ RHEL 7.9 x86_64 无互联网部署请使用
 
 ## 日志与可观测性
 
-运行时会记录 `/api/v1`、`/health`、WebSocket 会话、平台数据库 SQL 和资源数据库
-SQL。结构化权威日志按日期写入 `LOG_DIR/http`、`LOG_DIR/sql` 和
-`LOG_DIR/websocket`，数据库中的 `t_log_records` 仅保存日志中心所需的检索索引。
+运行时会记录 `/api/v1`、`/health` 和 WebSocket 会话。结构化权威日志按日期写入
+`LOG_DIR/http` 和 `LOG_DIR/websocket`，数据库中的 `t_log_records` 仅保存日志中心
+所需的检索索引。平台数据库和资源数据库的 SQL 不写入日志中心。
 
 JSON、表单和文本正文默认最多记录 64 KiB；文件、multipart、二进制和超限正文仅
 记录内容类型、大小与 SHA-256。密码、JWT、Token、Cookie、私钥和数据库凭据在写入
 文件或索引前统一脱敏。日志中心仅允许管理员读取脱敏后的完整详情，测试人员只能查看
-访问和 SQL 摘要，访客无法访问这些日志类型。
+访问日志摘要，访客无法访问这些日志类型。
 
 高频日志默认可检索 30 天，随后压缩归档 90 天并自动删除。相关环境变量为
-`OBSERVABILITY_BODY_LIMIT_BYTES`、`OBSERVABILITY_SQL_LIMIT_BYTES`、
-`OBSERVABILITY_SQL_PARAMS_LIMIT_BYTES`、`OBSERVABILITY_QUEUE_SIZE`、
+`OBSERVABILITY_BODY_LIMIT_BYTES`、`OBSERVABILITY_QUEUE_SIZE`、
 `OBSERVABILITY_HOT_RETENTION_DAYS` 和 `OBSERVABILITY_ARCHIVE_RETENTION_DAYS`。
 
 ## 常见问题
