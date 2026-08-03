@@ -128,7 +128,7 @@ describe('ShellLayout navigation', () => {
     management.wrapper.unmount()
   })
 
-  it('navigates between home and management without enabling charts', async () => {
+  it('navigates between home and management with only the home section link', async () => {
     const { wrapper, router } = await mountLayout('/dashboard', 'tester')
 
     await wrapper.get('.management-center').trigger('click')
@@ -139,11 +139,11 @@ describe('ShellLayout navigation', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/dashboard')
 
-    const charts = wrapper.get('.section-nav-item.is-disabled')
-    expect(charts.attributes('aria-disabled')).toBe('true')
-    expect(wrapper.get('[role="tooltip"]').text()).toBe('图表功能暂未开放')
-    await charts.trigger('click')
-    expect(router.currentRoute.value.path).toBe('/dashboard')
+    const sectionLinks = wrapper.findAll('.section-nav-item')
+    expect(sectionLinks).toHaveLength(1)
+    expect(sectionLinks[0].text()).toContain('首页')
+    expect(wrapper.find('.section-nav-item.is-disabled').exists()).toBe(false)
+    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

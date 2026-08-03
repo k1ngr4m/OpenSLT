@@ -14,7 +14,6 @@ import {
   Fold,
   Expand,
   House,
-  PieChart,
   Setting,
 } from '@element-plus/icons-vue'
 
@@ -189,19 +188,6 @@ onBeforeUnmount(() => {
             <el-icon><House /></el-icon>
             <span class="section-nav-label">首页</span>
           </button>
-          <span class="charts-tooltip">
-            <button
-              class="section-nav-item is-disabled"
-              type="button"
-              aria-disabled="true"
-              aria-describedby="charts-unavailable"
-              @click.prevent
-            >
-              <el-icon><PieChart /></el-icon>
-              <span class="section-nav-label">图表</span>
-            </button>
-            <span id="charts-unavailable" class="topbar-tooltip" role="tooltip">图表功能暂未开放</span>
-          </span>
         </nav>
 
         <div class="topbar-end">
@@ -259,16 +245,11 @@ onBeforeUnmount(() => {
 .section-nav{display:flex;align-self:stretch;align-items:stretch;justify-self:center;gap:4px;overflow:visible}
 .section-nav-item{position:relative;display:flex;min-width:72px;align-items:center;justify-content:center;gap:7px;padding:0 13px;border:0;background:transparent;color:var(--ui-text-secondary);font-size:13px;font-weight:600;cursor:pointer;transition:color var(--ui-transition),background-color var(--ui-transition)}
 .section-nav-item::after{position:absolute;right:12px;bottom:0;left:12px;height:2px;border-radius:2px 2px 0 0;background:var(--ui-primary);content:"";opacity:0;transform:scaleX(.55);transition:opacity var(--ui-transition),transform var(--ui-transition)}
-.section-nav-item:not(.is-disabled):hover{background:var(--ui-primary-soft);color:var(--ui-primary-hover)}
-.section-nav-item:not(.is-disabled):active{transform:translateY(1px)}
+.section-nav-item:hover{background:var(--ui-primary-soft);color:var(--ui-primary-hover)}
+.section-nav-item:active{transform:translateY(1px)}
 .section-nav-item.is-active{color:var(--ui-primary)}
 .section-nav-item.is-active::after{opacity:1;transform:scaleX(1)}
-.section-nav-item.is-disabled{color:#aeb9bc;cursor:not-allowed}
 .section-nav-item .el-icon{font-size:18px}
-.charts-tooltip{position:relative;display:flex}
-.topbar-tooltip{position:absolute;z-index:40;top:calc(100% + 8px);left:50%;width:max-content;max-width:180px;padding:8px 10px;border-radius:4px;background:#303133;color:#fff;font-size:12px;font-weight:400;line-height:1.4;opacity:0;pointer-events:none;transform:translate(-50%,-4px);transition:opacity var(--ui-transition),transform var(--ui-transition)}
-.topbar-tooltip::before{position:absolute;top:-4px;left:50%;width:8px;height:8px;background:#303133;content:"";transform:translateX(-50%) rotate(45deg)}
-.charts-tooltip:hover .topbar-tooltip,.charts-tooltip:focus-within .topbar-tooltip{opacity:1;transform:translate(-50%,0)}
 .topbar-end{display:flex;align-items:center;justify-self:end;gap:12px;min-width:max-content}
 .management-center{color:var(--ui-text-secondary);transition:color var(--ui-transition),background-color var(--ui-transition),transform var(--ui-transition)}
 .management-center:hover:not(.is-active){color:var(--ui-text-secondary);background:var(--el-fill-color-light)}
@@ -278,5 +259,5 @@ onBeforeUnmount(() => {
 .main{min-width:0;flex:1;outline:none}
 .nav-scrim{position:fixed;z-index:25;inset:0;border:0;background:rgba(5,25,29,.5)}
 @media(max-width:1199px){.topbar{padding-inline:16px}}
-@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{gap:6px;padding-inline:8px}.section-nav{gap:2px}.section-nav-item{min-width:38px;padding-inline:9px}.section-nav-item::after{right:8px;left:8px}.section-nav-label{display:none}.topbar-end{gap:6px}.topbar-tooltip{max-width:150px}}
+@media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{gap:6px;padding-inline:8px}.section-nav{gap:2px}.section-nav-item{min-width:38px;padding-inline:9px}.section-nav-item::after{right:8px;left:8px}.section-nav-label{display:none}.topbar-end{gap:6px}}
 </style>

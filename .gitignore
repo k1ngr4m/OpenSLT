@@ -1,6 +1,8 @@
 .env
 .DS_Store
 .idea/
+/.agents/
+/.claude/
 .venv/
 __pycache__/
 *.py[cod]
