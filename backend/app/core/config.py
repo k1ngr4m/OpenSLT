@@ -36,8 +36,6 @@ class Settings(BaseSettings):
     app_log_retention_days: int = 90
     audit_log_retention_days: int = 365
     observability_body_limit_bytes: int = Field(default=65_536, ge=1_024, le=1_048_576)
-    observability_sql_limit_bytes: int = Field(default=32_768, ge=1_024, le=1_048_576)
-    observability_sql_params_limit_bytes: int = Field(default=8_192, ge=512, le=262_144)
     observability_queue_size: int = Field(default=10_000, ge=100, le=100_000)
     observability_index_enabled: bool = True
     observability_hot_retention_days: int = Field(default=30, ge=1, le=365)

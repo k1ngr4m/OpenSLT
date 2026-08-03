@@ -10,16 +10,15 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.core.logging import redact, sql_logging_suppressed_ctx
-from app.core.observability import archive_observability_files, writer
+from app.core.logging import redact
+from app.core.observability import ObservabilityWriter, archive_observability_files, writer
 from app.core.observability_middleware import BodyCapture
-from app.core.sql_observability import sql_fingerprint, sql_template
 from app.core.time import beijing_now
 from app.models import AuditLog, LogRecord
 from app.api.routes.observability import _iter_audit_log_export
 
 
-def test_recursive_redaction_and_sql_template() -> None:
+def test_recursive_redaction() -> None:
     value = {
         "password": "plain",
         "nested": [{"access_token": "jwt-value", "token_type": "bearer"}],
@@ -33,14 +32,6 @@ def test_recursive_redaction_and_sql_template() -> None:
     assert safe["authorization"] == "[REDACTED]"
     assert safe["has_database_password"] is True
     assert safe["private_key"] == "[REDACTED]"
-
-    template = sql_template("SELECT * FROM users WHERE password = 'secret' AND id = 42")
-    assert "secret" not in template
-    assert "42" not in template
-    assert "[REDACTED]" in template
-    assert template.count("?") == 1
-    assert len(sql_fingerprint(template)) == 64
-
 
 def test_body_capture_redacts_json_and_omits_large_payload() -> None:
     body = BodyCapture("application/json")
@@ -57,7 +48,28 @@ def test_body_capture_redacts_json_and_omits_large_payload() -> None:
     assert "value" not in result
 
 
-def test_http_sql_index_search_detail_and_permissions(
+def test_observability_writer_discards_sql_events(
+    monkeypatch: typing.Any, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(settings, "log_dir", tmp_path)
+    local_writer = ObservabilityWriter()
+    local_writer.start()
+    try:
+        local_writer.emit(
+            {
+                "category": "sql",
+                "event": "sql_execute",
+                "statement_template": "SELECT ?",
+            }
+        )
+        assert local_writer.flush()
+    finally:
+        local_writer.stop()
+
+    assert not (tmp_path / "sql").exists()
+
+
+def test_http_index_search_detail_and_permissions(
     client: TestClient, admin_headers: typing.Dict[str, str], monkeypatch: typing.Any
 ) -> None:
     monkeypatch.setattr(settings, "observability_index_enabled", True)
@@ -113,18 +125,11 @@ def test_http_sql_index_search_detail_and_permissions(
 
     assert writer.flush(timeout=30.0)
     with SessionLocal() as db:
-        sql_rows = list(
-            db.scalars(
-                select(LogRecord).where(
-                    LogRecord.trace_id == trace_id,
-                    LogRecord.log_type == "sql",
-                )
-            ).all()
-        )
-        assert sql_rows
-        assert all(row.database_scope == "platform" for row in sql_rows)
         assert not db.scalar(
-            select(LogRecord).where(LogRecord.message.contains("t_log_records"))
+            select(LogRecord).where(
+                LogRecord.trace_id == trace_id,
+                LogRecord.log_type == "sql",
+            )
         )
 
     visitor = client.post(
@@ -149,6 +154,39 @@ def test_http_sql_index_search_detail_and_permissions(
     assert hidden.status_code == 200
     assert hidden.json()["total"] == 0
     assert client.get(f"/api/v1/logs/{item['event_id']}", headers=visitor_headers).status_code == 403
+
+
+def test_legacy_sql_logs_are_hidden(
+    client: TestClient, admin_headers: typing.Dict[str, str]
+) -> None:
+    event_id = "legacy-sql-log"
+    with SessionLocal() as db:
+        db.add(
+            LogRecord(
+                event_id=event_id,
+                log_type="sql",
+                level="INFO",
+                event="sql_execute",
+                message="platform SELECT (1ms)",
+                trace_id="legacy-sql-trace",
+                source="sqlalchemy",
+                detail={},
+            )
+        )
+        db.commit()
+
+    search = client.get(
+        "/api/v1/logs/search", headers=admin_headers, params={"group": "sql"}
+    )
+    assert search.status_code == 200
+    assert search.json()["total"] == 0
+
+    legacy_list = client.get(
+        "/api/v1/logs", headers=admin_headers, params={"log_type": "sql"}
+    )
+    assert legacy_list.status_code == 200
+    assert legacy_list.json() == []
+    assert client.get(f"/api/v1/logs/{event_id}", headers=admin_headers).status_code == 404
 
 
 def test_observability_file_retention(monkeypatch: typing.Any, tmp_path: Path) -> None:
@@ -226,53 +264,3 @@ def test_audit_log_export_streams_complete_batches(client: TestClient) -> None:
         )
         assert audit is not None
         assert audit.detail["count"] == 5
-
-
-def test_sql_logging_suppression_context() -> None:
-    token = sql_logging_suppressed_ctx.set(True)
-    try:
-        assert sql_logging_suppressed_ctx.get() is True
-    finally:
-        sql_logging_suppressed_ctx.reset(token)
-
-
-def test_resource_database_proxy_records_cursor_and_transaction(monkeypatch: typing.Any) -> None:
-    import app.core.sql_observability as sql_observability
-
-    captured: typing.List[typing.Dict[str, typing.Any]] = []
-
-    class FakeCursor:
-        rowcount = 3
-
-        def execute(self, query: str, args: typing.Any = None) -> int:
-            assert query == "SELECT * FROM orders WHERE account = %s"
-            assert args == ("sensitive-account",)
-            return 3
-
-    class FakeConnection:
-        committed = False
-
-        def cursor(self, cursor_class: typing.Any = None) -> FakeCursor:
-            return FakeCursor()
-
-        def commit(self) -> None:
-            self.committed = True
-
-    monkeypatch.setattr(
-        sql_observability,
-        "_emit_sql",
-        lambda **kwargs: captured.append(kwargs),
-    )
-    raw = FakeConnection()
-    connection = sql_observability.LoggingConnectionProxy(raw, 7, "orders")
-    connection.cursor().execute(
-        "SELECT * FROM orders WHERE account = %s", ("sensitive-account",)
-    )
-    connection.commit()
-
-    assert raw.committed is True
-    assert captured[0]["database_scope"] == "resource"
-    assert captured[0]["resource_id"] == 7
-    assert captured[0]["database"] == "orders"
-    assert captured[0]["rowcount"] == 3
-    assert captured[1]["statement"] == "COMMIT"

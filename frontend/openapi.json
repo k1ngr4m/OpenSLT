@@ -5827,38 +5827,6 @@
           },
           {
             "in": "query",
-            "name": "database_scope",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Database Scope"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sql_fingerprint",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Sql Fingerprint"
-            }
-          },
-          {
-            "in": "query",
             "name": "result",
             "required": false,
             "schema": {

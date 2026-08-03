@@ -3484,8 +3484,6 @@ export interface operations {
                 http_method?: string | null;
                 http_path?: string | null;
                 http_status?: number | null;
-                database_scope?: string | null;
-                sql_fingerprint?: string | null;
                 result?: string | null;
                 min_duration_ms?: number | null;
                 time_from?: string | null;

@@ -12,7 +12,6 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
-from app.core.sql_observability import register_sqlalchemy_observability
 
 
 class Base(DeclarativeBase):
@@ -149,7 +148,6 @@ if settings.database_url.startswith("sqlite"):
     engine_options["connect_args"] = {"check_same_thread": False}
 
 engine = create_engine(settings.database_url, **engine_options)
-register_sqlalchemy_observability(engine)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
