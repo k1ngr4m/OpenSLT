@@ -16,6 +16,21 @@ ORDER_ACTIONS = (
     "cxl_order",
     "stop_order",
 )
+PARSER_ACTIONS = (
+    "write_clt_new_to_rem_accept",
+    "write_clt_new_to_mkt",
+    "write_clt_action_to_mkt",
+    "write_clt_action_quote_to_mkt",
+    "write_mkt_accept_to_clt",
+    "write_mkt_new_to_mkt_accept",
+    "write_clt_new_to_clt_accept",
+    "write_clt_mkt_trade",
+    "write_clt_new_quote_to_rem_accept",
+    "write_clt_new_quote_to_mkt",
+    "write_mkt_quote_accept_to_clt",
+    "write_mkt_quote_new_to_mkt_accept",
+    "write_clt_quote_new_to_clt_accept",
+)
 REM_STARTUP_DEFAULT_COMMANDS = (
     "./stop_rem.sh",
     "./makeneat.sh",
@@ -43,6 +58,21 @@ OrderAction = Literal[
     "new_arbi_order_simple",
     "cxl_order",
     "stop_order",
+]
+ParserAction = Literal[
+    "write_clt_new_to_rem_accept",
+    "write_clt_new_to_mkt",
+    "write_clt_action_to_mkt",
+    "write_clt_action_quote_to_mkt",
+    "write_mkt_accept_to_clt",
+    "write_mkt_new_to_mkt_accept",
+    "write_clt_new_to_clt_accept",
+    "write_clt_mkt_trade",
+    "write_clt_new_quote_to_rem_accept",
+    "write_clt_new_quote_to_mkt",
+    "write_mkt_quote_accept_to_clt",
+    "write_mkt_quote_new_to_mkt_accept",
+    "write_clt_quote_new_to_clt_accept",
 ]
 
 

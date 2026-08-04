@@ -6,7 +6,7 @@ from app.services.workflow_handlers.base import WorkflowExecutionContext
 
 class ParserHandler:
     node_types = ("parser_parse",)
-    terminal_kind = None
+    terminal_kind = "parser"
 
     async def execute(self, context: WorkflowExecutionContext) -> dict:
         result = await workflows.execute_parser_node(

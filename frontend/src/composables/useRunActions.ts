@@ -9,10 +9,11 @@ interface RunActionsOptions {
   runId: number
   reload: () => Promise<void>
   runTerminalStep: (step: RunStep, operation: 'start' | 'retry') => Promise<void>
+  stopWorkflowTerminal?: (step: RunStep) => boolean
 }
 
 export function useRunActions(options: RunActionsOptions) {
-  const { reload, runId, runTerminalStep } = options
+  const { reload, runId, runTerminalStep, stopWorkflowTerminal } = options
   const actingStepId = ref<number | null>(null)
   const regeneratingReports = ref(false)
   const verdictDialog = ref(false)
@@ -54,6 +55,7 @@ export function useRunActions(options: RunActionsOptions) {
         'slnic_start_capture',
         'slnic_stop_capture',
         'slnic_merge_capture',
+        'parser_parse',
       ]
       if (
         terminalNodeTypes.includes(step.node_type)
@@ -63,6 +65,11 @@ export function useRunActions(options: RunActionsOptions) {
         return
       }
       await api.post(`/runs/${runId}/steps/${step.id}/${operation}`)
+      if (operation === 'complete' && step.node_type === 'parser_parse') {
+        if (stopWorkflowTerminal?.(step) === false) {
+          ElMessage.warning('解析节点已完成，但未能向终端发送 Ctrl+C，请手动结束解析进程')
+        }
+      }
       const messages = { start: '节点已开始', complete: '节点已完成', confirm: '接线已确认', retry: '节点已重新执行' }
       ElMessage.success(messages[operation])
       window.setTimeout(reload, 300)

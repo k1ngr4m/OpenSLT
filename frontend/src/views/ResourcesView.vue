@@ -6,6 +6,11 @@ import { RefreshRight, Search } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
+import {
+  parserActionOptions,
+  parserActionsFromCapabilities,
+  parserActionsPayload,
+} from '@/utils/parserActions'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -73,7 +78,7 @@ const parserTools = [
 ]
 
 const empty = () => ({
-  name: '', resource_type: 'rem', market_environment: '', order_tool: '', order_actions: [...orderActionOptions], slnic_model: '', parser_tool: '', business_code: 'fut_mm',
+  name: '', resource_type: 'rem', market_environment: '', order_tool: '', order_actions: [...orderActionOptions], slnic_model: '', parser_tool: '', parser_actions: [...parserActionOptions], business_code: 'fut_mm',
   host: '', ssh_port: 22, username: '', auth_type: 'password', password: '', private_key: '',
   database_engine: 'mysql', database_connection_mode: 'direct', database_host: '',
   database_port: 3306, database_names: [] as string[], database_username: '',
@@ -147,6 +152,7 @@ function handleResourceTypeChange(value: string) {
   }
   else if (value === 'parser') {
     form.parser_tool = form.parser_tool || parserTools[0]
+    if (!Array.isArray(form.parser_actions)) form.parser_actions = [...parserActionOptions]
     setParserToolDefaults(form.parser_tool)
   }
 }
@@ -158,6 +164,7 @@ function open(row?: any) {
   form.order_actions = row?.capabilities?.order_actions?.length ? [...row.capabilities.order_actions] : [...orderActionOptions]
   form.slnic_model = row?.capabilities?.slnic_model || slnicModels.find(item => item.path === row?.remote_path)?.value || ''
   form.parser_tool = row?.capabilities?.parser_tool || parserTools.find(item => `/home/user0/${item}` === row?.remote_path) || ''
+  form.parser_actions = parserActionsFromCapabilities(row?.capabilities)
   form.database_names = [...(row?.database_names || [])]
   if (!form.remote_path) {
     if (form.resource_type === 'market' && form.market_environment) setMarketDefaultPath(form.market_environment)
@@ -320,7 +327,7 @@ async function save() {
   }
   loading.value = true
   try {
-    const { market_environment, order_tool, order_actions, slnic_model, parser_tool, ...payload } = form
+    const { market_environment, order_tool, order_actions, slnic_model, parser_tool, parser_actions, ...payload } = form
     const capabilities = { ...(form.capabilities || {}) }
     if (form.resource_type === 'market') {
       const selected = marketEnvironments.find(item => item.value === market_environment)!
@@ -359,9 +366,10 @@ async function save() {
       Object.assign(capabilities, {
         parser_tool,
         parser_binary: parser_tool,
+        ...parserActionsPayload(parser_actions),
       })
     } else {
-      for (const key of ['parser_tool', 'parser_binary', 'parser_config_filename']) delete capabilities[key]
+      for (const key of ['parser_tool', 'parser_binary', 'parser_config_filename', 'parser_actions']) delete capabilities[key]
     }
     payload.capabilities = capabilities
     if (form.resource_type !== 'database') {
@@ -547,6 +555,14 @@ onMounted(load)
               <el-select v-model="form.parser_tool" placeholder="请选择解析工具" style="width:100%" @change="setParserToolDefaults">
                 <el-option v-for="item in parserTools" :key="item" :label="item" :value="item" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col v-if="form.resource_type === 'parser'" :span="24">
+            <el-form-item label="快捷指令">
+              <el-checkbox-group v-model="form.parser_actions" class="parser-action-options">
+                <el-checkbox v-for="action in parserActionOptions" :key="action" :value="action">{{ action }}</el-checkbox>
+              </el-checkbox-group>
+              <div class="muted">可不选择快捷指令，运行时仍可直接在 SSH 终端输入。</div>
             </el-form-item>
           </el-col>
           <el-col :span="12">

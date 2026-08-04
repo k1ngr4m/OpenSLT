@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { Connection, RefreshRight, VideoPause } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { JsonMap } from '@/types/run'
+import type { ParserAction } from '@/utils/parserActions'
 
 type TerminalState = 'idle' | 'connecting' | 'connected' | 'closed' | 'error'
 
@@ -12,6 +13,12 @@ interface WorkflowCommandPayload {
   run_id: number
   step_id: number
   operation: 'start' | 'retry'
+}
+
+interface ParserActionPayload {
+  run_id: number
+  step_id: number
+  action: ParserAction
 }
 
 const props = withDefaults(defineProps<{
@@ -37,6 +44,7 @@ const emit = defineEmits<{
   status: [message: JsonMap]
   error: [message: string]
   workflowCommand: [message: JsonMap]
+  parserAction: [message: JsonMap]
 }>()
 
 const terminalHost = ref<HTMLElement | null>(null)
@@ -168,6 +176,13 @@ function connect() {
         emit('error', lastError.value)
       }
       emit('workflowCommand', message)
+    } else if (message.type === 'parser_action') {
+      if (message.status === 'failed') {
+        lastError.value = message.message || '解析指令下发失败'
+        writeOutput(`\r\n\x1b[31m${lastError.value}\x1b[0m\r\n`)
+        emit('error', lastError.value)
+      }
+      emit('parserAction', message)
     }
   }
   current.onerror = () => {
@@ -210,6 +225,16 @@ function sendWorkflowStepCommand(payload: WorkflowCommandPayload) {
   return send({ type: 'workflow_step_command', ...payload })
 }
 
+function sendParserAction(payload: ParserActionPayload) {
+  if (!connected.value) return false
+  return send({ type: 'parser_action', ...payload })
+}
+
+function sendControl(data: string) {
+  if (!connected.value) return false
+  return send({ type: 'input', data })
+}
+
 function handleResize() { scheduleSyncSize() }
 
 watch(
@@ -242,6 +267,8 @@ defineExpose({
   disconnect,
   focus,
   sendWorkflowStepCommand,
+  sendParserAction,
+  sendControl,
   connected,
   connecting,
   state,

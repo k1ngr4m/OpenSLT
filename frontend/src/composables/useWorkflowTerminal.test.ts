@@ -51,12 +51,35 @@ const marketStep = {
   node_type: 'market_startup',
 } as RunStep
 
+const parserStep = {
+  ...terminalStep,
+  id: 10,
+  code: 'parser-parse',
+  name: '数据解析',
+  node_type: 'parser_parse',
+  status: 'waiting',
+  result_summary: {
+    supported_parser_actions: ['write_clt_new_to_rem_accept'],
+  },
+} as RunStep
+
 function marketRunDetail(): RunDetail {
   return {
     ...runDetail(),
     steps: [marketStep],
     config_snapshot: {
       resources: [{ id: 5, name: 'Market', type: 'market', host: '10.0.0.5' }],
+    },
+  } as RunDetail
+}
+
+function parserRunDetail(): RunDetail {
+  return {
+    ...runDetail(),
+    status: 'awaiting_step_completion',
+    steps: [parserStep],
+    config_snapshot: {
+      resources: [{ id: 6, name: 'Parser', type: 'parser', host: '10.0.0.6' }],
     },
   } as RunDetail
 }
@@ -172,5 +195,39 @@ describe('useWorkflowTerminal', () => {
       step_id: 9,
       operation: 'start',
     })
+  })
+
+  it('selects the parser panel, sends configured actions, and stops it with control input', () => {
+    const terminal = useWorkflowTerminal({
+      active: ref('detail'),
+      manualStepSelection: ref(false),
+      reload: vi.fn().mockResolvedValue(undefined),
+      run: ref(parserRunDetail()),
+      runId: 11,
+      selectedStep: computed(() => parserStep),
+      selectedStepId: ref(10),
+    })
+    const sendParserAction = vi.fn().mockReturnValue(true)
+    const sendControl = vi.fn().mockReturnValue(true)
+    terminal.parserWorkflowTerminalPanel.value = {
+      connected: true,
+      connecting: false,
+      connect: vi.fn(),
+      sendWorkflowStepCommand: vi.fn(),
+      sendParserAction,
+      sendControl,
+    } as never
+
+    expect(terminal.workflowTerminalKind.value).toBe('parser')
+    expect(terminal.workflowTerminalResource.value?.id).toBe(6)
+    expect(terminal.availableParserActions.value).toEqual(['write_clt_new_to_rem_accept'])
+    expect(terminal.sendParserAction('write_clt_new_to_rem_accept')).toBe(true)
+    expect(sendParserAction).toHaveBeenCalledWith({
+      run_id: 11,
+      step_id: 10,
+      action: 'write_clt_new_to_rem_accept',
+    })
+    expect(terminal.stopWorkflowTerminal(parserStep)).toBe(true)
+    expect(sendControl).toHaveBeenCalledWith('\u0003')
   })
 })

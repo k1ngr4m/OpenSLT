@@ -19,6 +19,7 @@ from app.services import workflow_contracts, workflows
 from app.services.market_scripts import market_script_service
 from app.services.run_state import transition_run, transition_step
 from app.services.workflows import WorkflowError
+from app.workflow_node_configs import PARSER_ACTIONS
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -28,6 +29,25 @@ def access_token(headers: typing.Dict[str, str]) -> str:
 
 def terminal_url(resource_id: int, token: str) -> str:
     return f"/api/v1/ws/resources/{resource_id}/terminal?token={token}"
+
+
+def test_parser_terminal_actions_default_and_resource_override():
+    assert terminal_service.parser_actions_for_resource(SimpleNamespace(capabilities={})) == PARSER_ACTIONS
+    assert terminal_service.parser_actions_for_resource(
+        SimpleNamespace(capabilities={"parser_actions": [PARSER_ACTIONS[1], PARSER_ACTIONS[0]]})
+    ) == (PARSER_ACTIONS[1], PARSER_ACTIONS[0])
+
+
+def test_parser_start_command_uses_isolated_workdir_and_xml_filename():
+    assert terminal_service.build_parser_start_command(
+        "/home/user0/soft_dce_speed_analysis_v7/.openslt-runs/r1-s2-a0-abcd1234",
+        "/home/user0/soft_dce_speed_analysis_v7/soft_dce_speed_analysis_v7",
+        "soft_dce_speed_analysis.xml",
+    ) == (
+        "cd /home/user0/soft_dce_speed_analysis_v7/.openslt-runs/r1-s2-a0-abcd1234 && "
+        "/home/user0/soft_dce_speed_analysis_v7/soft_dce_speed_analysis_v7 "
+        "soft_dce_speed_analysis.xml"
+    )
 
 
 def dispatch_terminal_step(
@@ -477,6 +497,306 @@ class FakeConnection:
 
     async def wait_closed(self) -> None:
         return None
+
+
+def prepare_waiting_parser_lease_run(
+    client: TestClient,
+    headers: typing.Dict[str, str],
+) -> tuple[dict, dict]:
+    resource, run = create_slnic_start_run(client, headers)
+    with SessionLocal() as db:
+        stored_resource = db.get(Resource, resource["id"])
+        stored_run = db.get(RunModel, run["id"])
+        stored_step = stored_run.steps[0]
+        stored_node = db.get(ScenarioWorkflowNode, stored_step.workflow_node_id)
+        stored_resource.resource_type = "parser"
+        stored_resource.capabilities = {
+            "parser_tool": "soft_cffex_speed_analysis_v2",
+            "parser_binary": "soft_cffex_speed_analysis_v2",
+            "parser_actions": [PARSER_ACTIONS[0]],
+        }
+        stored_step.node_type = "parser_parse"
+        stored_node.node_type = "parser_parse"
+        transition_run(stored_run, "awaiting_step_completion")
+        transition_step(stored_step, "waiting")
+        stored_step.result_summary = {
+            "mode": "terminal",
+            "remote_workdir": "/tmp/openslt/.openslt-runs/parser-lease-test",
+            "input_checksums": {"t_fut_orders.csv": "input-checksum"},
+            "supported_parser_actions": [PARSER_ACTIONS[0]],
+            "parser_action_history": [],
+        }
+        db.commit()
+    resource["resource_type"] = "parser"
+    resource["capabilities"] = {"parser_actions": [PARSER_ACTIONS[0]]}
+    run = client.get(f"/api/v1/runs/{run['id']}", headers=headers).json()
+    return resource, run
+
+
+@pytest.mark.asyncio
+async def test_parser_action_write_failure_is_not_recorded_as_dispatched(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+):
+    resource, run = prepare_waiting_parser_lease_run(client, admin_headers)
+    step = run["steps"][0]
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = [{
+                "type": "parser_action",
+                "run_id": run["id"],
+                "step_id": step["id"],
+                "action": PARSER_ACTIONS[0],
+            }]
+            self.sent: list[dict] = []
+
+        async def receive_json(self):
+            if self.messages:
+                return self.messages.pop(0)
+            raise WebSocketDisconnect()
+
+        async def send_json(self, payload: dict):
+            self.sent.append(payload)
+
+    process = FakeProcess()
+
+    def fail_write(_data: str) -> None:
+        raise BrokenPipeError("parser input closed")
+
+    process.stdin.write = fail_write
+    websocket = FakeWebSocket()
+    lease = terminal_service.ParserTerminalLease(run_id=run["id"], step_id=step["id"])
+    terminal_resource = terminal_service.TerminalResource(
+        id=resource["id"],
+        name=resource["name"],
+        resource_type="parser",
+        host=resource["host"],
+        port=resource["ssh_port"],
+        username=resource["username"],
+        password=None,
+        private_key=None,
+        remote_path="/tmp/openslt",
+        capabilities={"parser_actions": [PARSER_ACTIONS[0]]},
+    )
+
+    reason = await terminal_service._receive_remote(
+        typing.cast(typing.Any, websocket),
+        typing.cast(typing.Any, process),
+        typing.cast(typing.Any, FakeConnection()),
+        actor_id=1,
+        resource=terminal_resource,
+        lease=lease,
+    )
+
+    assert reason == "client_disconnected"
+    assert websocket.sent[0]["type"] == "parser_action"
+    assert websocket.sent[0]["code"] == "SSH_COMMAND_DISPATCH_FAILED"
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_retry"
+    assert updated["steps"][0]["status"] == "failed"
+    assert updated["steps"][0]["result_summary"]["parser_action_history"] == []
+
+
+@pytest.mark.asyncio
+async def test_parser_action_rejection_uses_parser_action_response_type(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+):
+    resource, run = prepare_waiting_parser_lease_run(client, admin_headers)
+    step = run["steps"][0]
+    terminal_resource = terminal_service.TerminalResource(
+        id=resource["id"],
+        name=resource["name"],
+        resource_type="parser",
+        host=resource["host"],
+        port=resource["ssh_port"],
+        username=resource["username"],
+        password=None,
+        private_key=None,
+        remote_path="/tmp/openslt",
+        capabilities={"parser_actions": [PARSER_ACTIONS[0]]},
+    )
+
+    with SessionLocal() as db:
+        response = await terminal_service._dispatch_parser_action(
+            db=db,
+            actor_id=1,
+            resource=terminal_resource,
+            run_id=run["id"],
+            step_id=step["id"],
+            action=PARSER_ACTIONS[1],
+            lease=terminal_service.ParserTerminalLease(run_id=run["id"], step_id=step["id"]),
+        )
+
+    assert response["type"] == "parser_action"
+    assert response["status"] == "failed"
+    assert response["code"] == "PARSER_ACTION_NOT_ALLOWED"
+
+
+def test_parser_terminal_session_error_fails_active_lease(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = prepare_waiting_parser_lease_run(client, admin_headers)
+    step = run["steps"][0]
+
+    async def fail_active_session(_websocket, _resource, _actor_id, on_connected, lease):
+        on_connected()
+        lease.run_id = run["id"]
+        lease.step_id = step["id"]
+        raise BrokenPipeError("parser input channel closed")
+
+    monkeypatch.setattr(terminal_service, "_run_remote", fail_active_session)
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(terminal_url(resource["id"], access_token(admin_headers))) as websocket:
+            assert websocket.receive_json()["status"] == "connecting"
+            error = websocket.receive_json()
+            assert error["code"] == "SSH_SESSION_FAILED"
+            websocket.receive_json()
+
+    updated = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
+    assert updated["status"] == "awaiting_step_retry"
+    assert updated["steps"][0]["status"] == "failed"
+    assert updated["steps"][0]["error_message"] == "解析 SSH 终端已断开，节点需要重试"
+    step_retry = client.post(
+        f"/api/v1/runs/{run['id']}/steps/{step['id']}/retry",
+        headers=admin_headers,
+    )
+    assert step_retry.status_code == 409
+    assert step_retry.json()["code"] == "PARSER_TERMINAL_REQUIRED"
+    run_retry = client.post(f"/api/v1/runs/{run['id']}/retry", headers=admin_headers)
+    assert run_retry.status_code == 409
+    assert run_retry.json()["code"] == "PARSER_TERMINAL_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_parser_output_registration_failure_leaves_no_partial_outputs(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = prepare_waiting_parser_lease_run(client, admin_headers)
+
+    class OutputSFTP:
+        def scandir(self, _directory):
+            async def entries():
+                for filename in ("first.csv", "second.csv"):
+                    yield SimpleNamespace(
+                        filename=filename,
+                        attrs=SimpleNamespace(
+                            type=workflows.asyncssh.FILEXFER_TYPE_REGULAR,
+                            size=4,
+                            mtime=1,
+                        ),
+                    )
+            return entries()
+
+        async def get(self, remote_path: str, local_path: str):
+            Path(local_path).write_text(Path(remote_path).name, encoding="utf-8")
+
+        def exit(self):
+            return None
+
+    class OutputConnection:
+        def __init__(self):
+            self.sftp = OutputSFTP()
+
+        async def start_sftp_client(self):
+            return self.sftp
+
+        def close(self):
+            return None
+
+        async def wait_closed(self):
+            return None
+
+    async def fake_connect(**_options):
+        return OutputConnection()
+
+    registrations = 0
+    original_register = workflows._register_parser_artifact
+
+    def fail_second_registration(db, stored_run, stored_step, target):
+        nonlocal registrations
+        registrations += 1
+        if registrations == 2:
+            raise OSError("artifact registry unavailable")
+        return original_register(db, stored_run, stored_step, target)
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflows, "_register_parser_artifact", fail_second_registration)
+
+    with SessionLocal() as db:
+        stored_run = db.get(RunModel, run["id"])
+        stored_step = stored_run.steps[0]
+        stored_resource = db.get(Resource, resource["id"])
+        artifact_directory = workflows._parser_artifact_directory(stored_run, stored_step)
+        with pytest.raises(WorkflowError) as failed:
+            await workflows.collect_parser_outputs(db, stored_run, stored_step, stored_resource)
+        db.rollback()
+
+    assert failed.value.code == "PARSER_OUTPUT_DOWNLOAD_FAILED"
+    assert list(artifact_directory.glob("*.csv")) == []
+    assert list(artifact_directory.glob("*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_parser_output_download_failure_removes_incomplete_temp_file(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = prepare_waiting_parser_lease_run(client, admin_headers)
+
+    class FailingSFTP:
+        def scandir(self, _directory):
+            async def entries():
+                yield SimpleNamespace(
+                    filename="broken.csv",
+                    attrs=SimpleNamespace(
+                        type=workflows.asyncssh.FILEXFER_TYPE_REGULAR,
+                        size=4,
+                        mtime=1,
+                    ),
+                )
+            return entries()
+
+        async def get(self, _remote_path: str, local_path: str):
+            Path(local_path).write_text("partial", encoding="utf-8")
+            raise OSError("download interrupted")
+
+        def exit(self):
+            return None
+
+    class FailingConnection:
+        async def start_sftp_client(self):
+            return FailingSFTP()
+
+        def close(self):
+            return None
+
+        async def wait_closed(self):
+            return None
+
+    async def fake_connect(**_options):
+        return FailingConnection()
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+
+    with SessionLocal() as db:
+        stored_run = db.get(RunModel, run["id"])
+        stored_step = stored_run.steps[0]
+        stored_resource = db.get(Resource, resource["id"])
+        artifact_directory = workflows._parser_artifact_directory(stored_run, stored_step)
+        with pytest.raises(WorkflowError) as failed:
+            await workflows.collect_parser_outputs(db, stored_run, stored_step, stored_resource)
+
+    assert failed.value.code == "PARSER_OUTPUT_DOWNLOAD_FAILED"
+    assert list(artifact_directory.glob("*.csv")) == []
+    assert list(artifact_directory.glob("*.part")) == []
 
 
 def test_remote_terminal_uses_pty_and_forwards_io(

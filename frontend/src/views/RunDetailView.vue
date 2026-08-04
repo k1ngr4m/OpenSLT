@@ -84,6 +84,8 @@ const {
   reload: load,
 })
 const {
+  availableParserActions,
+  handleParserAction,
   handleWorkflowTerminalCommand,
   handleWorkflowTerminalError,
   handleWorkflowTerminalStatus,
@@ -93,15 +95,21 @@ const {
   orderResource,
   orderTerminalSubtitle,
   orderWorkflowTerminalPanel,
+  parserActionPending,
+  parserResource,
+  parserTerminalSubtitle,
+  parserWorkflowTerminalPanel,
   remResource,
   remTerminalSubtitle,
   remWorkflowTerminalPanel,
   runWorkflowStepInTerminal,
+  sendParserAction,
   showWorkflowTerminal,
   slnicResource,
   slnicTerminalSubtitle,
   slnicWorkflowTerminalPanel,
   terminalCommandPendingStepId,
+  stopWorkflowTerminal,
   workflowTerminalKind,
   workflowTerminalResource,
   workflowTerminalResourceText,
@@ -128,7 +136,12 @@ const {
   submitVerdict,
   verdict,
   verdictDialog,
-} = useRunActions({ runId, reload: load, runTerminalStep: runWorkflowStepInTerminal })
+} = useRunActions({
+  runId,
+  reload: load,
+  runTerminalStep: runWorkflowStepInTerminal,
+  stopWorkflowTerminal,
+})
 const {
   configRows,
   contractFiles,
@@ -192,6 +205,21 @@ const canCompleteCurrent = computed(() => Boolean(
   && run.value?.status === 'awaiting_step_completion'
   && (currentStep.value.node_type !== 'order_preparation' || !orderActionUnresolved.value),
 ))
+const canSendParserActions = computed(() => Boolean(
+  currentStep.value?.node_type === 'parser_parse'
+  && currentStep.value.status === 'waiting'
+  && run.value?.status === 'awaiting_step_completion'
+  && !parserActionPending.value,
+))
+const recentParserActionHistory = computed(() => {
+  if (currentStep.value?.node_type !== 'parser_parse') return []
+  const history = currentStep.value.result_summary?.parser_action_history
+  if (!Array.isArray(history)) return []
+  return history
+    .filter((item): item is JsonMap => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+    .slice(-10)
+    .reverse()
+})
 const orderTerminalSocketPath = computed(() => selectedStep.value?.node_type === 'order_preparation'
   ? `/ws/runs/${runId}/steps/${selectedStep.value.id}/order-terminal`
   : '')
@@ -544,6 +572,47 @@ watch(
                   @status="message => handleWorkflowTerminalStatus('order', message)"
                   @error="message => handleWorkflowTerminalError('order', message)"
                 />
+                <SshTerminalPanel
+                  v-if="parserResource"
+                  v-show="workflowTerminalKind === 'parser'"
+                  ref="parserWorkflowTerminalPanel"
+                  :resource-id="parserResource.id"
+                  :title="parserResource.name"
+                  :subtitle="parserTerminalSubtitle"
+                  :active="workflowTerminalKind === 'parser'"
+                  :min-height="320"
+                  @status="message => handleWorkflowTerminalStatus('parser', message)"
+                  @error="message => handleWorkflowTerminalError('parser', message)"
+                  @workflow-command="message => handleWorkflowTerminalCommand('parser', message)"
+                  @parser-action="handleParserAction"
+                />
+                <div v-if="workflowTerminalKind === 'parser' && selectedStep?.id === currentStep?.id && selectedStep?.status === 'waiting'" class="order-action-panel parser-action-panel">
+                  <div class="order-action-heading">
+                    <strong>解析指令</strong>
+                    <span class="muted">{{ availableParserActions.length }} 项可用 · 也可直接在终端输入</span>
+                  </div>
+                  <div class="order-action-buttons">
+                    <el-button
+                      v-for="actionName in availableParserActions"
+                      :key="actionName"
+                      :icon="VideoPlay"
+                      :disabled="!canSendParserActions"
+                      :loading="parserActionPending === actionName"
+                      @click="sendParserAction(actionName)"
+                    >{{ actionName }}</el-button>
+                  </div>
+                  <div v-if="recentParserActionHistory.length" class="order-action-history">
+                    <div class="order-action-history-heading">
+                      <strong>最近发送</strong>
+                      <span class="muted">{{ recentParserActionHistory.length }} 条</span>
+                    </div>
+                    <div v-for="(item, index) in recentParserActionHistory" :key="`${String(item.started_at || '')}-${String(item.action || '')}-${index}`" class="order-action-history-row">
+                      <time class="mono">{{ formatTime(String(item.finished_at || item.started_at || '')) }}</time>
+                      <code>{{ String(item.action || '-') }}</code>
+                      <el-tag type="success" size="small">已发送</el-tag>
+                    </div>
+                  </div>
+                </div>
                 <div v-if="workflowTerminalKind === 'order' && selectedStep?.id === currentStep?.id && selectedStep?.status === 'waiting'" class="order-action-panel">
                   <div class="order-action-heading">
                     <strong>发单指令</strong>
@@ -715,19 +784,6 @@ watch(
                   </template>
                 </div>
 
-              </section>
-
-              <section class="detail-section compact-snapshot">
-                <h3>运行配置快照</h3>
-                <dl class="info-list">
-                  <dt>方案版本</dt><dd>{{ run.config_snapshot?.plan?.config_version || '-' }}</dd>
-                  <dt>场景类型</dt><dd>{{ run.config_snapshot?.scenario?.scenario_type || '-' }}</dd>
-                  <dt>场景版本</dt><dd>{{ run.config_snapshot?.scenario?.config_version || '-' }}</dd>
-                  <dt>资源数</dt><dd>{{ run.resource_ids.length }}</dd>
-                  <dt>创建人 ID</dt><dd>{{ run.created_by }}</dd>
-                  <dt>开始时间</dt><dd>{{ formatDate(run.started_at) }}</dd>
-                  <dt>结束时间</dt><dd>{{ formatDate(run.finished_at) }}</dd>
-                </dl>
               </section>
             </div>
             <el-empty v-else description="暂无节点详情" :image-size="80" />

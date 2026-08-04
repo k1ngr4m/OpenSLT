@@ -15,7 +15,7 @@ from app.models import (
 )
 from app.services.relation_consistency import find_relation_drifts, repair_relation_drifts
 from app.services.resource_relations import sync_node_contract_files, sync_plan_resources
-from backend.tests.conftest import create_plan_scenario, create_resource, publish_workflow
+from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
 def test_resource_relations_are_dual_written_for_scenario_workflow_and_run(

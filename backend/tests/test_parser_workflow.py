@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -8,8 +9,12 @@ import asyncssh
 import pytest
 
 from app.models import Artifact
+from app.core.database import SessionLocal
+from app.models import Resource
 from app.services import order_configs
+from app.services import terminal as terminal_service
 from app.services import orchestration, workflows
+from app.workflow_node_configs import PARSER_ACTIONS
 from conftest import create_plan_scenario, create_resource, publish_workflow
 
 
@@ -210,6 +215,92 @@ def test_parser_tools_are_available_to_every_business(client, admin_headers):
         assert resource["remote_path"] == f"/home/user0/{tool}"
         assert resource["capabilities"]["parser_binary"] == tool
         assert resource["capabilities"]["parser_config_filename"] == expected_config
+        assert resource["capabilities"]["parser_actions"] == list(PARSER_ACTIONS)
+
+
+def test_parser_resource_actions_accept_explicit_subset_and_reject_unknown(client, admin_headers):
+    resource = create_parser_resource(client, admin_headers)
+    subset = [PARSER_ACTIONS[2], PARSER_ACTIONS[0], PARSER_ACTIONS[2]]
+    updated = client.put(
+        f"/api/v1/resources/{resource['id']}",
+        headers=admin_headers,
+        json={
+            "name": resource["name"],
+            "resource_type": "parser",
+            "business_code": resource["business_code"],
+            "host": resource["host"],
+            "ssh_port": resource["ssh_port"],
+            "username": resource["username"],
+            "auth_type": "password",
+            "remote_path": resource["remote_path"],
+            "capabilities": {
+                **resource["capabilities"],
+                "parser_actions": subset,
+            },
+            "version_info": resource["version_info"],
+            "notes": resource["notes"],
+            "is_enabled": True,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["capabilities"]["parser_actions"] == [PARSER_ACTIONS[2], PARSER_ACTIONS[0]]
+
+    explicit_empty = client.put(
+        f"/api/v1/resources/{resource['id']}",
+        headers=admin_headers,
+        json={
+            "name": resource["name"],
+            "resource_type": "parser",
+            "business_code": resource["business_code"],
+            "host": resource["host"],
+            "ssh_port": resource["ssh_port"],
+            "username": resource["username"],
+            "auth_type": "password",
+            "remote_path": resource["remote_path"],
+            "capabilities": {**resource["capabilities"], "parser_actions": []},
+            "version_info": resource["version_info"],
+            "notes": resource["notes"],
+            "is_enabled": True,
+        },
+    )
+    assert explicit_empty.status_code == 200, explicit_empty.text
+    assert explicit_empty.json()["capabilities"]["parser_actions"] == []
+
+    invalid = client.put(
+        f"/api/v1/resources/{resource['id']}",
+        headers=admin_headers,
+        json={
+            "name": resource["name"],
+            "resource_type": "parser",
+            "business_code": resource["business_code"],
+            "host": resource["host"],
+            "ssh_port": resource["ssh_port"],
+            "username": resource["username"],
+            "auth_type": "password",
+            "remote_path": resource["remote_path"],
+            "capabilities": {**resource["capabilities"], "parser_actions": ["rm -rf /"]},
+            "version_info": resource["version_info"],
+            "notes": resource["notes"],
+            "is_enabled": True,
+        },
+    )
+    assert invalid.status_code == 422
+
+
+def test_existing_parser_resource_without_action_config_reads_all_actions(client, admin_headers):
+    resource = create_parser_resource(client, admin_headers)
+    with SessionLocal() as db:
+        stored = db.get(Resource, resource["id"])
+        stored.capabilities = {
+            key: value for key, value in stored.capabilities.items() if key != "parser_actions"
+        }
+        db.commit()
+
+    listed = client.get("/api/v1/resources", headers=admin_headers)
+
+    assert listed.status_code == 200, listed.text
+    loaded = next(item for item in listed.json() if item["id"] == resource["id"])
+    assert loaded["capabilities"]["parser_actions"] == list(PARSER_ACTIONS)
 
 
 def test_parser_config_defaults_and_crud(client, admin_headers, monkeypatch):
@@ -574,19 +665,60 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     class FakeConnection:
         def __init__(self):
             self.sftp = FakeSFTP()
-            self.commands = []
+            self.process = None
+            self.writes = []
+            self.remote_workdir = ""
             self.closed = False
 
         async def start_sftp_client(self):
             return self.sftp
 
-        async def run(self, command, check=False):
-            self.commands.append(command)
-            workdir = command.split(" && ", 1)[0].replace("cd ", "", 1)
-            output_path = f"{workdir}/analysis-result.csv"
-            self.sftp.files[output_path] = b"sequence,latency_us\n1,82.1\n"
-            self.sftp.mtimes[output_path] = 3
-            return SimpleNamespace(exit_status=0, stdout="finished", stderr="")
+        async def create_process(self, _command, **_options):
+            connection = self
+
+            class Stdin:
+                def write(self, data):
+                    connection.writes.append(data)
+                    if data == "\x03":
+                        connection.process.stdout.stop.set()
+                    if "soft_cffex_speed_analysis.xml" in data:
+                        connection.remote_workdir = data.split(" && ", 1)[0].replace("cd ", "", 1)
+                    if data == f"{PARSER_ACTIONS[0]}\r":
+                        output_path = f"{connection.remote_workdir}/analysis-result.csv"
+                        connection.sftp.files[output_path] = b"sequence,latency_us\n1,82.1\n"
+                        connection.sftp.mtimes[output_path] = 3
+
+            class Stdout:
+                def __init__(self):
+                    self.ready = True
+                    self.stop = asyncio.Event()
+
+                async def read(self, _size):
+                    if self.ready:
+                        self.ready = False
+                        return "parser-shell-ready\r\n"
+                    await self.stop.wait()
+                    return ""
+
+            class Process:
+                stdin = Stdin()
+                stdout = Stdout()
+                exit_status = 0
+
+                def change_terminal_size(self, _columns, _rows):
+                    return None
+
+                def close(self):
+                    return None
+
+                async def wait(self):
+                    return None
+
+                async def wait_closed(self):
+                    return None
+
+            self.process = Process()
+            return self.process
 
         def close(self):
             self.closed = True
@@ -610,6 +742,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
     monkeypatch.setattr(workflows, "_load_parser_xml_files", fake_load_xml)
     monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
 
     created = client.post("/api/v1/runs", headers=admin_headers, json={
         "plan_id": plan["id"], "scenario_id": scenario["id"],
@@ -661,18 +794,68 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     )
     assert invalid_export.status_code == 422
 
-    run = complete_workflow(client, admin_headers, created["id"])
+    ordinary_start = client.post(
+        f"/api/v1/runs/{created['id']}/steps/{current['id']}/start",
+        headers=admin_headers,
+    )
+    assert ordinary_start.status_code == 409
+    assert ordinary_start.json()["code"] == "PARSER_TERMINAL_REQUIRED"
+
+    token = admin_headers["Authorization"].removeprefix("Bearer ")
+    terminal_path = f"/api/v1/ws/resources/{parser['id']}/terminal?token={token}"
+    with client.websocket_connect(terminal_path) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        assert websocket.receive_json()["status"] == "connected"
+        assert "parser-shell-ready" in websocket.receive_json()["data"]
+        websocket.send_json({
+            "type": "workflow_step_command",
+            "run_id": created["id"],
+            "step_id": current["id"],
+            "operation": "start",
+        })
+        dispatched = websocket.receive_json()
+        assert dispatched["status"] == "dispatched"
+        assert dispatched["supported_parser_actions"] == list(PARSER_ACTIONS)
+        missing_output = client.post(
+            f"/api/v1/runs/{created['id']}/steps/{current['id']}/complete",
+            headers=admin_headers,
+        )
+        assert missing_output.status_code == 409
+        assert missing_output.json()["code"] == "PARSER_OUTPUT_MISSING"
+        still_waiting = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
+        assert still_waiting["status"] == "awaiting_step_completion"
+        assert still_waiting["steps"][-1]["status"] == "waiting"
+        websocket.send_json({
+            "type": "parser_action",
+            "run_id": created["id"],
+            "step_id": current["id"],
+            "action": PARSER_ACTIONS[0],
+        })
+        action_response = websocket.receive_json()
+        assert action_response["status"] == "dispatched"
+        completed = client.post(
+            f"/api/v1/runs/{created['id']}/steps/{current['id']}/complete",
+            headers=admin_headers,
+        )
+        assert completed.status_code == 200, completed.text
+        websocket.send_json({"type": "input", "data": "\x03"})
+        assert websocket.receive_json()["type"] == "exit"
+
+    run = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
+
     assert run["status"] == "completed"
     parsed = [item for item in run["artifacts"] if item["artifact_type"] == "parsed_csv"]
     assert [item["name"] for item in parsed] == ["analysis-result.csv"]
-    assert len(connection.commands) == 1
-    assert connection.commands[0].startswith(
+    parser_command = next(item.rstrip("\r") for item in connection.writes if "soft_cffex_speed_analysis.xml" in item)
+    assert parser_command.startswith(
         "cd /home/user0/soft_cffex_speed_analysis_v2/.openslt-runs/"
     )
-    assert connection.commands[0].endswith(
+    assert parser_command.endswith(
         " && /home/user0/soft_cffex_speed_analysis_v2/soft_cffex_speed_analysis_v2 soft_cffex_speed_analysis.xml"
     )
-    remote_workdir = connection.commands[0].split(" && ", 1)[0].replace("cd ", "", 1)
+    assert f"{PARSER_ACTIONS[0]}\r" in connection.writes
+    assert connection.writes[-1] == "\x03"
+    remote_workdir = parser_command.split(" && ", 1)[0].replace("cd ", "", 1)
     for filename in (
         "t_fut_orders.csv",
         "t_fut_quotes.csv",
@@ -696,6 +879,9 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     }
     parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
     assert parse_step["result_summary"]["config_database_name"] == "fut_mm_config"
+    assert parse_step["result_summary"]["mode"] == "terminal"
+    assert parse_step["result_summary"]["remote_workdir"] == remote_workdir
+    assert parse_step["result_summary"]["parser_action_history"][-1]["action"] == PARSER_ACTIONS[0]
     exports = parse_step["result_summary"]["parser_input_exports"]
     assert exports["t_fut_orders"]["source"] == "manual"
     assert exports["t_fut_orders"]["row_count"] == 0

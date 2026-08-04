@@ -3,7 +3,7 @@ import { api } from '@/api/client'
 import { useRunActions } from '@/composables/useRunActions'
 import type { RunStep } from '@/types/run'
 
-const message = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+const message = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), warning: vi.fn() }))
 const confirm = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/client', () => ({
@@ -83,6 +83,64 @@ describe('useRunActions', () => {
     await actions.stepAction(terminalStep, 'start')
     expect(runTerminalStep).toHaveBeenCalledWith(terminalStep, 'start')
     expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('routes parser startup and retry through the terminal executor', async () => {
+    const runTerminalStep = vi.fn().mockResolvedValue(undefined)
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep,
+    })
+
+    await actions.stepAction(step('parser_parse'), 'retry')
+    expect(runTerminalStep).toHaveBeenCalledWith(expect.objectContaining({ node_type: 'parser_parse' }), 'retry')
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('stops the parser terminal only after completing the parser step', async () => {
+    const stopWorkflowTerminal = vi.fn().mockReturnValue(true)
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+      stopWorkflowTerminal,
+    })
+    const parserStep = { ...step('parser_parse'), status: 'waiting' as const }
+
+    await actions.stepAction(parserStep, 'complete')
+    expect(api.post).toHaveBeenCalledWith('/runs/11/steps/7/complete')
+    expect(stopWorkflowTerminal).toHaveBeenCalledWith(parserStep)
+  })
+
+  it('warns when parser completion succeeds but Ctrl+C cannot be sent', async () => {
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+      stopWorkflowTerminal: vi.fn().mockReturnValue(false),
+    })
+
+    await actions.stepAction({ ...step('parser_parse'), status: 'waiting' }, 'complete')
+
+    expect(message.warning).toHaveBeenCalledWith('解析节点已完成，但未能向终端发送 Ctrl+C，请手动结束解析进程')
+    expect(message.success).toHaveBeenCalledWith('节点已完成')
+  })
+
+  it('does not stop the parser terminal when completion fails', async () => {
+    const stopWorkflowTerminal = vi.fn().mockReturnValue(true)
+    vi.mocked(api.post).mockRejectedValueOnce(new Error('PARSER_OUTPUT_MISSING'))
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+      stopWorkflowTerminal,
+    })
+
+    await actions.stepAction({ ...step('parser_parse'), status: 'waiting' }, 'complete')
+
+    expect(stopWorkflowTerminal).not.toHaveBeenCalled()
+    expect(message.error).toHaveBeenCalled()
   })
 
   it('routes market startup through the terminal executor', async () => {

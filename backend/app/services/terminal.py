@@ -5,7 +5,7 @@ import asyncio
 import posixpath
 import shlex
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
@@ -28,7 +28,7 @@ from app.services.order_sessions import order_session_name
 from app.services.run_state import transition_run, transition_step
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.slnic import SLNIC_TERMINAL_COMMANDS
-from app.workflow_node_configs import MarketStartupConfig, ShellCommandsConfig, parse_node_config
+from app.workflow_node_configs import PARSER_ACTIONS, MarketStartupConfig, ShellCommandsConfig, parse_node_config
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
@@ -66,6 +66,29 @@ class TerminalResource:
     password: typing.Union[str, None]
     private_key: typing.Union[str, None]
     remote_path: str
+    capabilities: typing.Dict[str, typing.Any] = field(default_factory=dict)
+
+
+@dataclass
+class ParserTerminalLease:
+    run_id: typing.Optional[int] = None
+    step_id: typing.Optional[int] = None
+
+
+def parser_actions_for_resource(resource: typing.Any) -> typing.Tuple[str, ...]:
+    configured = (getattr(resource, "capabilities", None) or {}).get("parser_actions")
+    if configured is None:
+        return PARSER_ACTIONS
+    if not isinstance(configured, list):
+        return ()
+    return tuple(action for action in configured if action in PARSER_ACTIONS)
+
+
+def build_parser_start_command(workdir: str, binary_path: str, config_filename: str) -> str:
+    return (
+        f"cd {shlex.quote(workdir)} && "
+        f"{shlex.quote(binary_path)} {shlex.quote(config_filename)}"
+    )
 
 
 def _clamp(value: object, minimum: int, maximum: int, fallback: int) -> int:
@@ -150,6 +173,7 @@ def _load_context(token: str, resource_id: int) -> typing.Union[typing.Tuple[int
             password=decrypt_secret(resource.encrypted_password),
             private_key=decrypt_secret(resource.encrypted_private_key),
             remote_path=resource.remote_path,
+            capabilities=dict(resource.capabilities or {}),
         )
     finally:
         db.close()
@@ -168,6 +192,10 @@ def _remote_command(resource: TerminalResource) -> typing.Union[str, None]:
 
 def _workflow_command_error(code: str, message: str) -> dict:
     return {"type": "workflow_command", "status": "failed", "code": code, "message": message}
+
+
+def _parser_action_error(code: str, message: str) -> dict:
+    return {"type": "parser_action", "status": "failed", "code": code, "message": message}
 
 
 def _duration_ms(started_at: typing.Union[datetime, None], finished_at: datetime) -> int:
@@ -433,6 +461,205 @@ async def _dispatch_market_terminal_command(
     )
 
 
+async def _dispatch_parser_terminal_command(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run: TestRun,
+    step: RunStep,
+    retrying: bool,
+    connection: asyncssh.SSHClientConnection,
+    lease: ParserTerminalLease,
+) -> typing.Tuple[typing.Union[str, None], dict]:
+    from app.services import workflows
+
+    if resource.resource_type != "parser":
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前终端不是解析工具资源")
+    if not run.workflow_version_id or not step.workflow_node_id:
+        return None, _workflow_command_error("WORKFLOW_NOT_FOUND", "运行关联的工作流不存在")
+    workflow = db.get(ScenarioWorkflowVersion, run.workflow_version_id)
+    node = db.get(ScenarioWorkflowNode, step.workflow_node_id)
+    if not workflow or not node or node.workflow_version_id != workflow.id or step.node_type != "parser_parse":
+        return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不是数据解析节点")
+    resources = list(db.scalars(select(Resource).where(Resource.id.in_(run_resource_ids(run)))).all())
+    run_resources = {item.resource_type: item for item in resources}
+    parser_resource = run_resources.get("parser")
+    if not parser_resource or parser_resource.id != resource.id:
+        return None, _workflow_command_error("INVALID_RESOURCE", "当前解析资源不属于该运行")
+
+    now = beijing_now()
+    if retrying:
+        step.retry_count += 1
+    transition_step(step, "running")
+    step.progress = 0
+    step.started_at = now
+    step.finished_at = None
+    step.duration_ms = None
+    step.error_message = None
+    transition_run(run, "running")
+    run.error_code = None
+    run.error_message = None
+    db.flush()
+    try:
+        summary = await workflows.prepare_parser_terminal_node(
+            db,
+            run,
+            step,
+            node,
+            run_resources,
+            connection,
+            append_log_callback=append_log,
+        )
+        binary = str((parser_resource.capabilities or {}).get("parser_binary") or (parser_resource.capabilities or {}).get("parser_tool") or "").strip()
+        analysis_filename = str((summary.get("parser_xml_files") or {}).get("analysis", {}).get("filename") or "").strip()
+        command = build_parser_start_command(
+            str(summary["remote_workdir"]),
+            posixpath.join(parser_resource.remote_path.rstrip("/"), binary),
+            analysis_filename,
+        )
+        history = list((step.result_summary or {}).get("parser_action_history") or [])[-100:]
+        summary.update({
+            "command": command,
+            "parser_action_history": history,
+            "supported_parser_actions": list(parser_actions_for_resource(parser_resource)),
+            "dispatched_by": actor_id,
+            "dispatched_at": now.isoformat(),
+        })
+    except Exception as exc:
+        failed_at = beijing_now()
+        message = getattr(exc, "message", str(exc))
+        code = getattr(exc, "code", "PARSER_PREPARATION_FAILED")
+        transition_step(step, "failed")
+        step.progress = 0
+        step.error_message = message
+        step.finished_at = failed_at
+        step.duration_ms = _duration_ms(step.started_at, failed_at)
+        transition_run(run, "awaiting_step_retry")
+        run.finished_at = None
+        append_log(
+            db,
+            run,
+            "workflow.step_failed",
+            message,
+            level="ERROR",
+            step=step,
+            source="terminal",
+            detail={"error_code": code, "mode": "terminal"},
+        )
+        db.commit()
+        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+        return None, _workflow_command_error(code, message)
+
+    step.result_summary = summary
+    transition_step(step, "waiting")
+    step.progress = 100
+    step.finished_at = None
+    step.duration_ms = _duration_ms(step.started_at, beijing_now())
+    transition_run(run, "awaiting_step_completion")
+    run.progress = int((step.position - 1) * 100 / max(1, len(run.steps)))
+    append_log(
+        db,
+        run,
+        "workflow.step_retried" if retrying else "workflow.step_started",
+        f"{step.name}{'重试' if retrying else '开始'}，已通过 SSH 终端准备解析输入",
+        step=step,
+        source="terminal",
+        detail={"retry_count": step.retry_count, "mode": "terminal"},
+    )
+    append_log(
+        db,
+        run,
+        "workflow.step_executed",
+        f"{step.name}启动指令已在终端下发，等待手动解析",
+        step=step,
+        source="terminal",
+        detail={"command": command, "remote_workdir": summary["remote_workdir"], "resource_id": resource.id, "mode": "terminal"},
+        log_type="remote_command",
+    )
+    db.commit()
+    broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+    lease.run_id = run.id
+    lease.step_id = step.id
+    return command, {
+        "type": "workflow_command",
+        "status": "dispatched",
+        "command": command,
+        "run_id": run.id,
+        "step_id": step.id,
+        "resource_id": resource.id,
+        "supported_parser_actions": list(parser_actions_for_resource(parser_resource)),
+    }
+
+
+async def _dispatch_parser_action(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run_id: object,
+    step_id: object,
+    action: object,
+    lease: ParserTerminalLease,
+) -> dict:
+    parsed_run_id, parsed_step_id, error = _parse_workflow_command_ids(run_id, step_id)
+    if error:
+        return _parser_action_error(error["code"], error["message"])
+    if lease.run_id != parsed_run_id or lease.step_id != parsed_step_id:
+        return _parser_action_error("INVALID_WORKFLOW_STEP", "当前终端没有对应的解析节点")
+    if not isinstance(action, str) or action not in parser_actions_for_resource(resource):
+        return _parser_action_error("PARSER_ACTION_NOT_ALLOWED", "当前解析资源未配置该指令")
+    run = db.get(TestRun, parsed_run_id, options=[selectinload(TestRun.steps), selectinload(TestRun.resource_links)])
+    if not run or resource.id not in run_resource_ids(run):
+        return _parser_action_error("INVALID_RESOURCE", "当前资源不属于该运行")
+    step = next((item for item in run.steps if item.id == parsed_step_id), None)
+    if not step or step.node_type != "parser_parse" or step.status != "waiting" or run.status != "awaiting_step_completion":
+        return _parser_action_error("INVALID_TRANSITION", "当前状态不能发送解析指令")
+    return {
+        "type": "parser_action",
+        "status": "dispatched",
+        "run_id": run.id,
+        "step_id": step.id,
+        "action": action,
+    }
+
+
+def _record_parser_action_dispatch(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run_id: int,
+    step_id: int,
+    action: str,
+) -> None:
+    run = db.get(TestRun, run_id, options=[selectinload(TestRun.steps)])
+    step = next((item for item in run.steps if item.id == step_id), None) if run else None
+    if not run or not step:
+        return
+    now = beijing_now()
+    history = list((step.result_summary or {}).get("parser_action_history") or [])[-99:]
+    history.append({
+        "action": action,
+        "status": "dispatched",
+        "requested_by": actor_id,
+        "started_at": now.isoformat(),
+        "finished_at": now.isoformat(),
+    })
+    step.result_summary = {**(step.result_summary or {}), "parser_action_history": history}
+    append_log(
+        db,
+        run,
+        "parser.action_dispatched",
+        f"已通过 SSH 终端发送解析指令 {action}",
+        step=step,
+        source="terminal",
+        detail={"action": action, "resource_id": resource.id, "mode": "terminal"},
+        log_type="remote_command",
+    )
+    db.commit()
+
+
 async def _dispatch_order_preparation_command(
     *,
     db,
@@ -566,6 +793,7 @@ async def _dispatch_workflow_step_command(
     run_id: object,
     step_id: object,
     operation: object,
+    lease: typing.Optional[ParserTerminalLease] = None,
 ) -> typing.Tuple[typing.Union[str, None], dict]:
     db = SessionLocal()
     try:
@@ -607,6 +835,19 @@ async def _dispatch_workflow_step_command(
                 run=run,
                 step=step,
                 retrying=retrying,
+            )
+        if terminal_kind == "parser":
+            if lease is None:
+                return None, _workflow_command_error("PARSER_TERMINAL_REQUIRED", "解析节点需要绑定 SSH 终端")
+            return await _dispatch_parser_terminal_command(
+                db=db,
+                actor_id=actor_id,
+                resource=resource,
+                run=run,
+                step=step,
+                retrying=retrying,
+                connection=connection,
+                lease=lease,
             )
         return None, _workflow_command_error("INVALID_WORKFLOW_STEP", "当前节点不支持终端执行")
     finally:
@@ -673,6 +914,41 @@ def _record_workflow_command_dispatch_failure(
         db.close()
 
 
+def _record_parser_terminal_disconnect(lease: ParserTerminalLease, resource: TerminalResource) -> None:
+    if lease.run_id is None or lease.step_id is None:
+        return
+    db = SessionLocal()
+    try:
+        run = db.get(TestRun, lease.run_id, options=[selectinload(TestRun.steps), selectinload(TestRun.resource_links)])
+        if not run or resource.id not in run_resource_ids(run) or run.status != "awaiting_step_completion":
+            return
+        step = next((item for item in run.steps if item.id == lease.step_id), None)
+        if not step or step.node_type != "parser_parse" or step.status != "waiting":
+            return
+        failed_at = beijing_now()
+        transition_step(step, "failed")
+        step.progress = 0
+        step.error_message = "解析 SSH 终端已断开，节点需要重试"
+        step.finished_at = failed_at
+        step.duration_ms = _duration_ms(step.started_at, failed_at)
+        transition_run(run, "awaiting_step_retry")
+        run.finished_at = None
+        append_log(
+            db,
+            run,
+            "workflow.step_failed",
+            step.error_message,
+            level="ERROR",
+            step=step,
+            source="terminal",
+            detail={"error_code": "PARSER_TERMINAL_DISCONNECTED", "mode": "terminal"},
+        )
+        db.commit()
+        broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
+    finally:
+        db.close()
+
+
 async def _receive_remote(
     websocket: WebSocket,
     process: asyncssh.SSHClientProcess,
@@ -680,6 +956,7 @@ async def _receive_remote(
     *,
     actor_id: int,
     resource: TerminalResource,
+    lease: ParserTerminalLease,
 ) -> str:
     while True:
         try:
@@ -705,6 +982,7 @@ async def _receive_remote(
                 run_id=message.get("run_id"),
                 step_id=message.get("step_id"),
                 operation=message.get("operation"),
+                lease=lease,
             )
             if command:
                 try:
@@ -716,6 +994,39 @@ async def _receive_remote(
                         step_id=message.get("step_id"),
                         actor_id=actor_id,
                     )
+            await _send(websocket, response)
+        elif message_type == "parser_action":
+            db = SessionLocal()
+            try:
+                response = await _dispatch_parser_action(
+                    db=db,
+                    actor_id=actor_id,
+                    resource=resource,
+                    run_id=message.get("run_id"),
+                    step_id=message.get("step_id"),
+                    action=message.get("action"),
+                    lease=lease,
+                )
+                if response.get("status") == "dispatched":
+                    process.stdin.write(f"{response['action']}\r")
+                    _record_parser_action_dispatch(
+                        db=db,
+                        actor_id=actor_id,
+                        resource=resource,
+                        run_id=typing.cast(int, response["run_id"]),
+                        step_id=typing.cast(int, response["step_id"]),
+                        action=typing.cast(str, response["action"]),
+                    )
+            except Exception:
+                response = _record_workflow_command_dispatch_failure(
+                    resource=resource,
+                    run_id=message.get("run_id"),
+                    step_id=message.get("step_id"),
+                    actor_id=actor_id,
+                )
+                response["type"] = "parser_action"
+            finally:
+                db.close()
             await _send(websocket, response)
         else:
             await _send(websocket, {"type": "error", "code": "INVALID_MESSAGE", "message": "不支持的终端消息"})
@@ -732,7 +1043,13 @@ async def _send_remote_output(websocket: WebSocket, process: asyncssh.SSHClientP
             return "client_disconnected"
 
 
-async def _run_remote(websocket: WebSocket, resource: TerminalResource, actor_id: int, on_connected: typing.Callable[[], None]) -> str:
+async def _run_remote(
+    websocket: WebSocket,
+    resource: TerminalResource,
+    actor_id: int,
+    on_connected: typing.Callable[[], None],
+    lease: ParserTerminalLease,
+) -> str:
     options: typing.Dict[str, object] = {
         "host": resource.host,
         "port": resource.port,
@@ -766,6 +1083,7 @@ async def _run_remote(websocket: WebSocket, resource: TerminalResource, actor_id
                 connection,
                 actor_id=actor_id,
                 resource=resource,
+                lease=lease,
             )
         )
         sender = asyncio.create_task(_send_remote_output(websocket, process))
@@ -792,6 +1110,7 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
     started_at = beijing_now()
     actor_id: typing.Union[int, None] = None
     resource: typing.Union[TerminalResource, None] = None
+    parser_lease = ParserTerminalLease()
     opened = False
     reason = "connection_failed"
     try:
@@ -826,7 +1145,7 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
             _audit(websocket, actor_id, resource.id, "resource.terminal.open")
 
         try:
-            reason = await _run_remote(websocket, resource, actor_id, record_open)
+            reason = await _run_remote(websocket, resource, actor_id, record_open, parser_lease)
         except Exception as exc:
             if not opened:
                 _audit(
@@ -848,6 +1167,8 @@ async def handle_resource_terminal(websocket: WebSocket, resource_id: int, token
         await _send(websocket, {"type": "status", "status": "closed", "message": "终端会话已结束"})
         await _close(websocket)
     finally:
+        if resource is not None and resource.resource_type == "parser":
+            _record_parser_terminal_disconnect(parser_lease, resource)
         if opened and actor_id is not None and resource is not None:
             duration_ms = max(0, int((beijing_now() - started_at).total_seconds() * 1000))
             _audit(

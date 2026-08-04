@@ -46,7 +46,7 @@ from app.services.workflow_core import (
     workflow_payload,
 )
 from app.services.workflow_publishing import publish, validate_publish
-from app.workflow_node_configs import ParserConfig, ShellCommandsConfig, parse_node_config
+from app.workflow_node_configs import PARSER_ACTIONS, ParserConfig, ShellCommandsConfig, parse_node_config
 
 def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
     return (
@@ -511,6 +511,126 @@ async def _load_parser_xml_files(
     return loaded
 
 
+async def prepare_parser_terminal_node(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    node: ScenarioWorkflowNode,
+    run_resources: dict[str, Resource],
+    connection: typing.Any,
+    append_log_callback: typing.Optional[typing.Callable[..., typing.Any]] = None,
+) -> dict:
+    """Prepare parser inputs and upload them without waiting for the parser process."""
+    parser_resource = run_resources.get("parser")
+    database_resource = run_resources.get("database")
+    if not parser_resource or parser_resource.is_deleted or not parser_resource.is_enabled:
+        raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
+    if not database_resource:
+        raise WorkflowError("PARSER_DATABASE_REQUIRED", "运行资源缺少数据库", 409)
+    raw_config = step.config_snapshot or node.config or {}
+    config = typing.cast(ParserConfig, parse_node_config(node.node_type, raw_config))
+    database_name = config.database_name.strip()
+    try:
+        database_name = validate_database(database_resource, database_name)
+    except DatabaseOperationError as exc:
+        raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+    table_databases = {
+        table: resolve_parser_table_database(database_resource, database_name, table)
+        for table in PARSER_TABLES
+    }
+    binary = str((parser_resource.capabilities or {}).get("parser_binary") or (parser_resource.capabilities or {}).get("parser_tool") or "").strip()
+    directory = parser_resource.remote_path.strip().rstrip("/")
+    if not binary or not directory:
+        raise WorkflowError("PARSER_RESOURCE_INVALID", "解析工具资源配置不完整", 409)
+    xml_files = await _load_parser_xml_files(parser_resource, raw_config)
+    pcap_artifact = _parser_pcap_artifact(db, run, step)
+    remote_workdir = posixpath.join(
+        directory,
+        ".openslt-runs",
+        f"r{run.id}-s{step.id}-a{step.retry_count}-{uuid4().hex[:8]}",
+    )
+    table_rows: dict[str, int] = {}
+    input_checksums: dict[str, str] = {}
+    with tempfile.TemporaryDirectory(prefix="openslt-parser-") as temporary_name:
+        staging = Path(temporary_name)
+        input_files: dict[str, Path] = {}
+        for table in PARSER_TABLES:
+            table_database_name = table_databases[table]
+            snapshot = _valid_parser_input_snapshot(db, run, step, table, table_database_name)
+            if snapshot is None:
+                exported = await export_parser_table_snapshot(
+                    db, run, step, database_resource, table_database_name, table, source="auto"
+                )
+                if append_log_callback:
+                    row_count = int(exported.get("row_count") or 0)
+                    append_log_callback(
+                        db,
+                        run,
+                        "parser.table_skipped" if row_count == 0 else "parser.table_exported",
+                        f"{table} 没有记录，已跳过" if row_count == 0 else f"已自动导出 {table}",
+                        step=step,
+                        source="parser",
+                        detail={key: exported[key] for key in ("table", "artifact_id", "row_count", "checksum", "source")},
+                    )
+                snapshot = _valid_parser_input_snapshot(db, run, step, table, table_database_name)
+            if snapshot is None:
+                raise WorkflowError("PARSER_INPUT_MISSING", f"未能准备解析输入 {table}.csv", 409)
+            artifact, detail = snapshot
+            artifact.is_immutable = True
+            table_rows[table] = int(detail.get("row_count") or 0)
+            input_files[artifact.name] = Path(artifact.path)
+        input_files["merge_pcap.pcapng"] = Path(pcap_artifact.path)
+        xml_staging = {
+            "config.xml": xml_files["config"],
+            "instance.xml": xml_files["instance"],
+            str(xml_files["analysis"]["name"]): xml_files["analysis"],
+        }
+        for filename, detail in xml_staging.items():
+            target = staging / filename
+            target.write_text(str(detail["content"]), encoding="utf-8")
+            input_files[filename] = target
+        for filename, source in input_files.items():
+            input_checksums[filename] = hashlib.sha256(source.read_bytes()).hexdigest()
+
+        sftp = None
+        try:
+            sftp = await connection.start_sftp_client()
+            await sftp.makedirs(remote_workdir, exist_ok=True)
+            for filename, source in input_files.items():
+                await _upload_parser_input(sftp, remote_workdir, filename, source)
+        except WorkflowError:
+            raise
+        except Exception as exc:
+            raise WorkflowError("PARSER_INPUT_UPLOAD_FAILED", f"上传解析输入失败：{exc}", 409) from exc
+        finally:
+            if sftp:
+                with suppress(Exception):
+                    sftp.exit()
+
+    configured_actions = (parser_resource.capabilities or {}).get("parser_actions")
+    supported_actions = PARSER_ACTIONS if configured_actions is None else configured_actions
+    return {
+        **(step.result_summary or {}),
+        "resource_id": parser_resource.id,
+        "resource_name": parser_resource.name,
+        "database_name": database_name,
+        "config_database_name": table_databases["t_account_exchange_code"],
+        "parser_xml_files": {
+            role: {"filename": detail["name"], "checksum": detail["checksum"]}
+            for role, detail in xml_files.items()
+        },
+        "remote_workdir": remote_workdir,
+        "table_rows": table_rows,
+        "input_filenames": sorted(input_checksums),
+        "input_checksums": input_checksums,
+        "pcap_artifact_id": pcap_artifact.id,
+        "mode": "terminal",
+        "exit_code": None,
+        "supported_parser_actions": list(supported_actions),
+        "parser_action_history": [],
+    }
+
+
 def _valid_parser_input_snapshot(
     db: Session,
     run: TestRun,
@@ -707,3 +827,79 @@ async def execute_parser_node(
         "artifact_ids": [item.id for item in output_artifacts],
         "output_files": [item.name for item in output_artifacts],
     }
+
+
+async def collect_parser_outputs(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    parser_resource: Resource,
+) -> dict:
+    """Download CSV files created by an interactive parser session."""
+    summary = step.result_summary or {}
+    remote_workdir = str(summary.get("remote_workdir") or "").strip()
+    root = parser_resource.remote_path.strip().rstrip("/")
+    if not remote_workdir or not root or not remote_workdir.startswith(f"{root}/.openslt-runs/"):
+        raise WorkflowError("PARSER_REMOTE_WORKDIR_INVALID", "解析远端工作目录无效", 409)
+    input_checksums = summary.get("input_checksums")
+    if not isinstance(input_checksums, dict):
+        input_checksums = {}
+    artifact_directory = _parser_artifact_directory(run, step)
+    artifact_directory.mkdir(parents=True, exist_ok=True)
+    connection = None
+    sftp = None
+    partials: list[tuple[Path, Path]] = []
+    replacements: list[tuple[Path, typing.Optional[Path]]] = []
+    try:
+        connection = await asyncssh.connect(**_ssh_options(parser_resource))
+        sftp = await connection.start_sftp_client()
+        snapshot = await _parser_csv_snapshot(sftp, remote_workdir)
+        changed = sorted(name for name in snapshot if name not in input_checksums)
+        if not changed:
+            raise WorkflowError("PARSER_OUTPUT_MISSING", "解析目录没有生成新的 CSV 文件", 409)
+        for filename in changed:
+            target = artifact_directory / filename
+            partial = target.with_name(f".{target.name}.{uuid4().hex}.part")
+            partials.append((partial, target))
+            await sftp.get(posixpath.join(remote_workdir, filename), str(partial))
+        artifacts: list[Artifact] = []
+        for partial, target in partials:
+            backup = None
+            if target.exists():
+                backup = target.with_name(f".{target.name}.{uuid4().hex}.bak")
+                target.replace(backup)
+            replacements.append((target, backup))
+            partial.replace(target)
+            artifacts.append(_register_parser_artifact(db, run, step, target))
+        for _target, backup in replacements:
+            if backup:
+                backup.unlink(missing_ok=True)
+        return {
+            **summary,
+            "artifact_ids": [artifact.id for artifact in artifacts],
+            "output_files": [artifact.name for artifact in artifacts],
+            "exit_code": None,
+            "parser_outputs_collected": True,
+        }
+    except WorkflowError:
+        for target, backup in reversed(replacements):
+            target.unlink(missing_ok=True)
+            if backup and backup.exists():
+                backup.replace(target)
+        raise
+    except Exception as exc:
+        for target, backup in reversed(replacements):
+            target.unlink(missing_ok=True)
+            if backup and backup.exists():
+                backup.replace(target)
+        raise WorkflowError("PARSER_OUTPUT_DOWNLOAD_FAILED", f"下载解析 CSV 失败：{exc}", 409) from exc
+    finally:
+        for partial, _target in partials:
+            partial.unlink(missing_ok=True)
+        if sftp:
+            with suppress(Exception):
+                sftp.exit()
+        if connection:
+            connection.close()
+            with suppress(Exception):
+                await connection.wait_closed()

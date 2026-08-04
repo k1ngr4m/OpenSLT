@@ -12,6 +12,7 @@ from typing_extensions import Annotated
 from app.services.run_state import RunStatus, StepStatus
 from app.workflow_node_configs import (
     ORDER_ACTIONS,
+    PARSER_ACTIONS,
     DatabaseConfig,
     MarketStartupConfig,
     OrderAction,
@@ -168,6 +169,7 @@ class ResourceWrite(BaseModel):
                     "parser_tool": tool,
                     "parser_binary": binary,
                     "parser_config_filename": config_filename,
+                    "parser_actions": self._parser_actions(),
                 }
                 if not self.remote_path.strip():
                     self.remote_path = f"/home/user0/{binary}"
@@ -186,6 +188,14 @@ class ResourceWrite(BaseModel):
         ):
             raise ValueError("SSH 隧道地址和用户名不能为空")
         return self
+
+    def _parser_actions(self) -> typing.List[str]:
+        configured = self.capabilities.get("parser_actions")
+        if configured is None:
+            return list(PARSER_ACTIONS)
+        if not isinstance(configured, list) or any(action not in PARSER_ACTIONS for action in configured):
+            raise ValueError("解析指令能力配置无效")
+        return list(dict.fromkeys(configured))
 
 
 class ResourceOut(ORMModel):
@@ -218,6 +228,12 @@ class ResourceOut(ORMModel):
     health_status: str
     health_checked_at: typing.Union[datetime, None]
     created_at: datetime
+
+    @model_validator(mode="after")
+    def default_parser_actions(self) -> "ResourceOut":
+        if self.resource_type == "parser" and "parser_actions" not in self.capabilities:
+            self.capabilities = {**self.capabilities, "parser_actions": list(PARSER_ACTIONS)}
+        return self
 
 
 class ResourceConnectionTestRequest(BaseModel):

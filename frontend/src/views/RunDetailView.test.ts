@@ -19,4 +19,9 @@ describe('RunDetailView node details', () => {
     expect(source).toContain('scope.row.sourceFile')
     expect(source).toContain(':content="scope.row.sourcePath"')
   })
+
+  it('does not show the run configuration snapshot summary', () => {
+    expect(source).not.toContain('<h3>运行配置快照</h3>')
+    expect(source).not.toContain('class="detail-section compact-snapshot"')
+  })
 })

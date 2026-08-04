@@ -45,7 +45,7 @@ from app.services.reports import generate_reports
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.statistics_execution import list_statistics_csv_files, select_statistics_inputs
 from app.services.parser_inputs import PARSER_TABLES
-from app.services.workflows import WorkflowError, export_parser_table_snapshot, load_version, resolve_parser_table_database, resource_map
+from app.services.workflows import WorkflowError, collect_parser_outputs, export_parser_table_snapshot, load_version, resolve_parser_table_database, resource_map
 from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
@@ -435,6 +435,9 @@ async def start_run_step(run_id: int, step_id: int, request: Request, actor: Use
     db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
     run = load_run(db, run_id)
     try:
+        current = next((item for item in run.steps if item.id == step_id), None)
+        if current and current.node_type == "parser_parse":
+            raise WorkflowError("PARSER_TERMINAL_REQUIRED", "数据解析节点必须通过 SSH 终端启动", 409)
         step = begin_workflow_step(db, run, step_id)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
@@ -789,6 +792,19 @@ async def complete_run_step(run_id: int, step_id: int, request: Request, actor: 
     run = load_run(db, run_id)
     try:
         step = next((item for item in run.steps if item.id == step_id), None)
+        if step and step.node_type == "parser_parse":
+            current = next((item for item in run.steps if item.status != "succeeded"), None)
+            if run.status != "awaiting_step_completion" or step.status != "waiting" or not current or current.id != step.id:
+                raise WorkflowError("INVALID_WORKFLOW_STEP", "只能完成当前已执行的解析节点", 409)
+            parser_resource = db.scalar(select(Resource).where(
+                Resource.id.in_(run_resource_ids(run)),
+                Resource.resource_type == "parser",
+                Resource.is_deleted.is_(False),
+                Resource.is_enabled.is_(True),
+            ))
+            if not parser_resource:
+                raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
+            step.result_summary = await collect_parser_outputs(db, run, step, parser_resource)
         if step and step.node_type == "order_preparation":
             current = next((item for item in run.steps if item.status != "succeeded"), None)
             if run.status != "awaiting_step_completion" or step.status != "waiting" or not current or current.id != step.id:
@@ -811,6 +827,8 @@ async def retry_run_step(run_id: int, step_id: int, request: Request, actor: Use
     run = load_run(db, run_id)
     try:
         current = next((item for item in run.steps if item.id == step_id), None)
+        if current and current.node_type == "parser_parse":
+            raise WorkflowError("PARSER_TERMINAL_REQUIRED", "数据解析节点必须通过 SSH 终端重试", 409)
         if (
             current
             and current.node_type == "order_preparation"
@@ -870,6 +888,8 @@ async def run_retry(run_id: int, request: Request, actor: User = Depends(operato
         failed = next((step for step in run.steps if step.status == "failed"), None)
         if not failed:
             raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前没有可重试的节点"})
+        if failed.node_type == "parser_parse":
+            raise HTTPException(status_code=409, detail={"code": "PARSER_TERMINAL_REQUIRED", "message": "数据解析节点必须通过 SSH 终端重试"})
         try:
             begin_workflow_step(db, run, failed.id, retry=True)
         except WorkflowError as exc:
