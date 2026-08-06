@@ -1,39 +1,45 @@
 {
-  "unreleased": [
-    {
-      "type": "added",
-      "text": "运行流转到发单节点后可切换或编辑 XML 配置并修改网卡接口。"
-    },
-    {
-      "type": "fixed",
-      "text": "接线确认按 REM 实际采集的 180 段和 51 段网卡名称及 IP 展示，并支持确认前补录。"
-    },
-    {
-      "type": "changed",
-      "text": "运行详情不再展示运行配置快照摘要。"
-    },
-    {
-      "type": "changed",
-      "text": "数据解析节点改为通过运行详情中的 SSH 终端启动解析工具，并支持配置和下发解析指令。"
-    },
-    {
-      "type": "changed",
-      "text": "版本更新说明改为固定尺寸，并默认收起历史版本。"
-    },
-    {
-      "type": "changed",
-      "text": "日志中心不再采集和展示平台数据库及资源数据库 SQL 日志。"
-    },
-    {
-      "type": "changed",
-      "text": "资源新增与编辑抽屉改为紧凑双列表单布局。"
-    },
-    {
-      "type": "changed",
-      "text": "合并 pcapng 节点改为在 SLNIC 生成 pcap 后，由操作员在本机 Windows 使用 editcap 转换并归档产物。"
-    }
-  ],
+  "unreleased": [],
   "releases": [
+    {
+      "version": "0.2.2",
+      "date": "2026-08-06",
+      "title": "运行流转与数据解析体验优化",
+      "changes": [
+        {
+          "type": "added",
+          "text": "运行流转到发单节点后可切换或编辑 XML 配置并修改网卡接口。"
+        },
+        {
+          "type": "fixed",
+          "text": "接线确认按 REM 实际采集的 180 段和 51 段网卡名称及 IP 展示，并支持确认前补录。"
+        },
+        {
+          "type": "changed",
+          "text": "运行详情不再展示运行配置快照摘要。"
+        },
+        {
+          "type": "changed",
+          "text": "数据解析节点改为通过运行详情中的 SSH 终端启动解析工具，并支持配置和下发解析指令。"
+        },
+        {
+          "type": "changed",
+          "text": "版本更新说明改为固定尺寸，并默认收起历史版本。"
+        },
+        {
+          "type": "changed",
+          "text": "日志中心不再采集和展示平台数据库及资源数据库 SQL 日志。"
+        },
+        {
+          "type": "changed",
+          "text": "资源新增与编辑抽屉改为紧凑双列表单布局。"
+        },
+        {
+          "type": "changed",
+          "text": "合并 pcapng 节点改为在 SLNIC 生成 pcap 后，由操作员在本机 Windows 使用 editcap 转换并归档产物。"
+        }
+      ]
+    },
     {
       "version": "0.2.1",
       "date": "2026-07-31",
