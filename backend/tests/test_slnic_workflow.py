@@ -36,19 +36,53 @@ def slnic_nodes() -> list[dict]:
     ]
 
 
+def create_parser_resource(client, headers) -> dict:
+    response = client.post(
+        "/api/v1/resources",
+        headers=headers,
+        json={
+            "name": "Parser-SLNIC",
+            "resource_type": "parser",
+            "business_code": "fut_mm",
+            "host": "127.0.0.1",
+            "ssh_port": 22,
+            "username": "tester",
+            "auth_type": "password",
+            "password": "secret",
+            "remote_path": "/home/user0/parser",
+            "capabilities": {"parser_tool": "soft_dce_speed_analysis_v7"},
+            "version_info": "test",
+            "notes": "",
+            "is_enabled": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def create_slnic_run(client, headers, nodes=None):
     resource = create_resource(client, headers, "SLNIC-01", resource_type="slnic")
+    selected_nodes = nodes or slnic_nodes()
+    resource_ids = [resource["id"]]
+    required_types = ["slnic"]
+    if any(item["node_type"] == "slnic_merge_capture" for item in selected_nodes):
+        parser = create_parser_resource(client, headers)
+        resource_ids.append(parser["id"])
+        required_types.append("parser")
+        with SessionLocal() as db:
+            db.get(Resource, resource["id"]).remote_path = "/home/user0/slnic"
+            db.commit()
     plan, scenario = create_plan_scenario(
-        client, headers, required_types=["slnic"], resource_ids=[resource["id"]]
+        client, headers, required_types=required_types, resource_ids=resource_ids
     )
-    publish_workflow(client, headers, scenario, [resource["id"]], nodes or slnic_nodes())
+    publish_workflow(client, headers, scenario, resource_ids, selected_nodes)
     response = client.post(
         "/api/v1/runs",
         headers=headers,
         json={
             "plan_id": plan["id"],
             "scenario_id": scenario["id"],
-            "resource_ids": [resource["id"]],
+            "resource_ids": resource_ids,
             "timeout_minutes": 30,
         },
     )
@@ -85,8 +119,15 @@ def execute_and_complete_current_step(client, headers, run_id):
 
 def test_slnic_publish_allows_any_node_type_sequence(client, admin_headers):
     resource = create_resource(client, admin_headers, "SLNIC-order", resource_type="slnic")
+    parser = create_parser_resource(client, admin_headers)
+    with SessionLocal() as db:
+        db.get(Resource, resource["id"]).remote_path = "/home/user0/slnic"
+        db.commit()
     _, scenario = create_plan_scenario(
-        client, admin_headers, required_types=["slnic"], resource_ids=[resource["id"]]
+        client,
+        admin_headers,
+        required_types=["slnic", "parser"],
+        resource_ids=[resource["id"], parser["id"]],
     )
     document = client.get(
         f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
@@ -96,7 +137,7 @@ def test_slnic_publish_allows_any_node_type_sequence(client, admin_headers):
         headers=admin_headers,
         json={
             "expected_revision": document["draft"]["revision"],
-            "resource_ids": [resource["id"]],
+            "resource_ids": [resource["id"], parser["id"]],
             "nodes": [
                 slnic_nodes()[1],
                 slnic_nodes()[2],
@@ -117,8 +158,17 @@ def test_empty_slnic_commands_can_be_saved_but_not_published(
     client, admin_headers, node_index
 ):
     resource = create_resource(client, admin_headers, "SLNIC-empty", resource_type="slnic")
+    resource_ids = [resource["id"]]
+    required_types = ["slnic"]
+    if node_index == 2:
+        parser = create_parser_resource(client, admin_headers)
+        resource_ids.append(parser["id"])
+        required_types.append("parser")
+        with SessionLocal() as db:
+            db.get(Resource, resource["id"]).remote_path = "/home/user0/slnic"
+            db.commit()
     _, scenario = create_plan_scenario(
-        client, admin_headers, required_types=["slnic"], resource_ids=[resource["id"]]
+        client, admin_headers, required_types=required_types, resource_ids=resource_ids
     )
     document = client.get(
         f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
@@ -130,7 +180,7 @@ def test_empty_slnic_commands_can_be_saved_but_not_published(
         headers=admin_headers,
         json={
             "expected_revision": document["draft"]["revision"],
-            "resource_ids": [resource["id"]],
+            "resource_ids": resource_ids,
             "nodes": [node],
         },
     )
@@ -195,8 +245,14 @@ def test_remote_slnic_run_executes_configured_commands_and_downloads(
             self.closed = False
 
         async def get(self, remote_path, local_path):
-            assert remote_path == "/tmp/openslt/tcpdump/merge_pcap.pcapng"
+            assert remote_path == "/home/user0/parser/merge_pcap.pcapng"
             Path(local_path).write_bytes(b"remote-pcapng")
+
+        async def makedirs(self, _path, exist_ok=False):
+            assert exist_ok is True
+
+        async def posix_rename(self, _source, _target):
+            raise FileNotFoundError("no previous output")
 
         def exit(self):
             self.closed = True
@@ -249,20 +305,19 @@ def test_remote_slnic_run_executes_configured_commands_and_downloads(
         "slnic_merge_capture",
     ]
     assert all(step["result_summary"]["resource_id"] == resource["id"] for step in completed["steps"])
-    assert len(connections) == 3
+    assert len(connections) == 5
     assert all(connection.closed for connection in connections)
     assert connections[-1].sftp.closed is True
     assert all(options["password"] == "secret" for options in connect_options)
     assert len(commands) == 3
-    assert commands[0].startswith("cd /tmp/openslt/tcpdump && /bin/sh -c ")
+    assert commands[0].startswith("cd /home/user0/slnic/tcpdump && /bin/sh -c ")
     assert "export MODE=shared" in commands[0]
     assert "printf" in commands[0]
     assert "mutated" not in commands[0]
     assert commands[0].index("export MODE=shared") < commands[0].index("printf")
     assert "./stop_slnic_dump.sh" in commands[1]
     assert "./pcap_merge_tool slnic*" in commands[2]
-    assert "merge_pacp.pcap" in commands[2]
-    assert "./editcap merge_pcap.pcap merge_pcap.pcapng" in commands[2]
+    assert "./editcap" not in commands[2]
     merge = completed["steps"][-1]["result_summary"]
     assert merge["size"] == len(b"remote-pcapng")
     assert "mode" not in merge
@@ -381,8 +436,14 @@ def test_remote_slnic_stop_failure_continues_to_merge(client, admin_headers, mon
 
     class FakeSFTP:
         async def get(self, remote_path, local_path):
-            assert remote_path == "/tmp/openslt/tcpdump/merge_pcap.pcapng"
+            assert remote_path == "/home/user0/parser/merge_pcap.pcapng"
             Path(local_path).write_bytes(b"remote-pcapng")
+
+        async def makedirs(self, _path, exist_ok=False):
+            assert exist_ok is True
+
+        async def posix_rename(self, _source, _target):
+            raise FileNotFoundError("no previous output")
 
         def exit(self):
             return None

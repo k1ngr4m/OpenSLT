@@ -763,9 +763,22 @@ class WiringInterfaceNamesWrite(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     client_interface_name: WiringInterfaceName
+    client_interface_ip_address: IPv4Address
     market_interface_name: WiringInterfaceName
+    market_interface_ip_address: IPv4Address
     auxiliary_interface_names: typing.List[WiringInterfaceName] = Field(
         default_factory=list, max_length=2
+    )
+
+
+class OrderRuntimeConfigWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    xml_filename: str = Field(min_length=1, max_length=255)
+    network_interface: str = Field(
+        default="",
+        max_length=15,
+        pattern=r"^[A-Za-z0-9_.-]*$",
     )
 
 

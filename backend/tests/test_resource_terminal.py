@@ -183,14 +183,45 @@ def create_slnic_start_run(
     return resource, client.get(f"/api/v1/runs/{created.json()['id']}", headers=headers).json()
 
 
+def create_parser_resource(client: TestClient, headers: typing.Dict[str, str]) -> dict:
+    response = client.post(
+        "/api/v1/resources",
+        headers=headers,
+        json={
+            "name": "Parser-SLNIC-Terminal",
+            "resource_type": "parser",
+            "business_code": "fut_mm",
+            "host": "127.0.0.2",
+            "ssh_port": 22,
+            "username": "tester",
+            "auth_type": "password",
+            "password": "secret",
+            "remote_path": "/home/user0/parser",
+            "capabilities": {"parser_tool": "soft_dce_speed_analysis_v7"},
+            "version_info": "test",
+            "notes": "",
+            "is_enabled": True,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
 def create_slnic_merge_run(
     client: TestClient,
     headers: typing.Dict[str, str],
     commands: typing.Optional[typing.List[str]] = None,
 ) -> tuple[dict, dict]:
     resource = create_resource(client, headers, "SLNIC-Merge-Terminal", resource_type="slnic")
+    parser = create_parser_resource(client, headers)
+    with SessionLocal() as db:
+        db.get(Resource, resource["id"]).remote_path = "/home/user0/slnic"
+        db.commit()
     plan, scenario = create_plan_scenario(
-        client, headers, required_types=["slnic"], resource_ids=[resource["id"]]
+        client,
+        headers,
+        required_types=["slnic", "parser"],
+        resource_ids=[resource["id"], parser["id"]],
     )
     node = {
         "node_key": "slnic-merge",
@@ -198,14 +229,14 @@ def create_slnic_merge_run(
         "name": "合并 pcapng",
         "config": {} if commands is None else {"commands": commands},
     }
-    publish_workflow(client, headers, scenario, [resource["id"]], [node])
+    publish_workflow(client, headers, scenario, [resource["id"], parser["id"]], [node])
     created = client.post(
         "/api/v1/runs",
         headers=headers,
         json={
             "plan_id": plan["id"],
             "scenario_id": scenario["id"],
-            "resource_ids": [resource["id"]],
+            "resource_ids": [resource["id"], parser["id"]],
             "timeout_minutes": 30,
         },
     )
@@ -308,15 +339,30 @@ def create_slnic_start_stop_run(client: TestClient, headers: typing.Dict[str, st
 
 def create_slnic_start_stop_merge_run(client: TestClient, headers: typing.Dict[str, str]) -> tuple[dict, dict]:
     resource = create_resource(client, headers, "SLNIC-Terminal", resource_type="slnic")
-    plan, scenario = create_plan_scenario(client, headers, required_types=["slnic"], resource_ids=[resource["id"]])
-    publish_workflow(client, headers, scenario, [resource["id"]], slnic_start_stop_merge_nodes())
+    parser = create_parser_resource(client, headers)
+    with SessionLocal() as db:
+        db.get(Resource, resource["id"]).remote_path = "/home/user0/slnic"
+        db.commit()
+    plan, scenario = create_plan_scenario(
+        client,
+        headers,
+        required_types=["slnic", "parser"],
+        resource_ids=[resource["id"], parser["id"]],
+    )
+    publish_workflow(
+        client,
+        headers,
+        scenario,
+        [resource["id"], parser["id"]],
+        slnic_start_stop_merge_nodes(),
+    )
     created = client.post(
         "/api/v1/runs",
         headers=headers,
         json={
             "plan_id": plan["id"],
             "scenario_id": scenario["id"],
-            "resource_ids": [resource["id"]],
+            "resource_ids": [resource["id"], parser["id"]],
             "timeout_minutes": 30,
         },
     )
@@ -471,6 +517,12 @@ class FakeSFTP:
     async def get(self, remote_path: str, local_path: str) -> None:
         self.gets.append((remote_path, local_path))
         Path(local_path).write_bytes(b"merged-pcapng")
+
+    async def makedirs(self, _path: str, exist_ok: bool = False) -> None:
+        assert exist_ok is True
+
+    async def posix_rename(self, _source: str, _target: str) -> None:
+        raise FileNotFoundError("no previous output")
 
     def exit(self) -> None:
         self.exited = True
@@ -1394,7 +1446,8 @@ def test_terminal_workflow_command_dispatches_slnic_merge_and_collects_artifact_
         assert response["type"] == "workflow_command"
         assert response["status"] == "dispatched"
         assert "./pcap_merge_tool slnic*" in response["command"]
-        assert "./editcap merge_pcap.pcap merge_pcap.pcapng" in response["command"]
+        assert "./editcap" not in response["command"]
+        assert "editcap.exe" in response["windows_editcap_command"]
 
     assert "./pcap_merge_tool slnic*" in connections[2].process.stdin.writes[0]
     before_complete = client.get(f"/api/v1/runs/{run['id']}", headers=admin_headers).json()
@@ -1410,7 +1463,7 @@ def test_terminal_workflow_command_dispatches_slnic_merge_and_collects_artifact_
     assert completed["steps"][2]["result_summary"]["filename"] == "merge_pcap.pcapng"
     assert completed["steps"][2]["result_summary"]["size"] == len(b"merged-pcapng")
     assert completed["artifacts"][0]["name"] == "merge_pcap.pcapng"
-    assert connections[3].sftp.gets[0][0] == "/tmp/openslt/tcpdump/merge_pcap.pcapng"
+    assert connections[4].sftp.gets[0][0] == "/home/user0/parser/merge_pcap.pcapng"
 
 
 def test_terminal_slnic_merge_cannot_complete_without_fixed_artifact(

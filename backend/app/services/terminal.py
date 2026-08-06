@@ -26,9 +26,10 @@ from app.services.orchestration import append_log
 from app.services.resource_relations import run_resource_ids
 from app.services.order_sessions import order_session_name
 from app.services.run_state import transition_run, transition_step
+from app.services.slnic_merge import prepare_slnic_merge_execution
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.slnic import SLNIC_TERMINAL_COMMANDS
-from app.workflow_node_configs import PARSER_ACTIONS, MarketStartupConfig, ShellCommandsConfig, parse_node_config
+from app.workflow_node_configs import PARSER_ACTIONS, MarketStartupConfig, ShellCommandsConfig, SlnicMergeConfig, parse_node_config
 
 
 TERMINAL_RESOURCE_TYPES = {"rem", "market", "order", "slnic", "parser"}
@@ -461,6 +462,70 @@ async def _dispatch_market_terminal_command(
     )
 
 
+async def _dispatch_slnic_merge_terminal_command(
+    *,
+    db,
+    actor_id: int,
+    resource: TerminalResource,
+    run: TestRun,
+    step: RunStep,
+    retrying: bool,
+) -> typing.Tuple[typing.Union[str, None], dict]:
+    try:
+        config = typing.cast(
+            SlnicMergeConfig,
+            parse_node_config(step.node_type, step.config_snapshot or {}),
+        )
+    except Exception:
+        return None, _workflow_command_error(
+            "INVALID_WORKFLOW_STEP", "合并 pcapng 节点配置无效"
+        )
+    if not config.commands:
+        return None, _workflow_command_error(
+            "SHELL_COMMANDS_REQUIRED", "工作流节点至少需要一条命令"
+        )
+    parser_resource = db.scalar(
+        select(Resource).where(
+            Resource.id.in_(run_resource_ids(run)),
+            Resource.resource_type == "parser",
+            Resource.is_deleted.is_(False),
+            Resource.is_enabled.is_(True),
+        )
+    )
+    slnic_resource = db.get(Resource, resource.id)
+    if not parser_resource or not slnic_resource:
+        return None, _workflow_command_error(
+            "PARSER_RESOURCE_REQUIRED", "合并 pcapng 需要已启用的解析工具资源"
+        )
+    try:
+        merge_details = await prepare_slnic_merge_execution(
+            run,
+            step,
+            slnic_resource,
+            parser_resource,
+            editcap_path=config.editcap_path,
+        )
+    except WorkflowError as exc:
+        return None, _workflow_command_error(exc.code, exc.message)
+    workdir = posixpath.join(resource.remote_path.strip().rstrip("/"), "tcpdump")
+    commands = list(config.commands)
+    command = _build_terminal_command(workdir, commands)
+    return _record_terminal_command_dispatch(
+        db=db,
+        actor_id=actor_id,
+        resource=resource,
+        run=run,
+        step=step,
+        retrying=retrying,
+        action="合并",
+        workdir=workdir,
+        commands=commands,
+        command=command,
+        result_extra=merge_details,
+        response_extra=merge_details,
+    )
+
+
 async def _dispatch_parser_terminal_command(
     *,
     db,
@@ -808,6 +873,15 @@ async def _dispatch_workflow_step_command(
             return None, error or _workflow_command_error("INVALID_WORKFLOW_STEP", "运行步骤无效")
         handler = workflow_handler_registry.find(step.node_type)
         terminal_kind = handler.terminal_kind if handler else None
+        if terminal_kind == "slnic" and step.node_type == "slnic_merge_capture":
+            return await _dispatch_slnic_merge_terminal_command(
+                db=db,
+                actor_id=actor_id,
+                resource=resource,
+                run=run,
+                step=step,
+                retrying=retrying,
+            )
         if terminal_kind in {"rem", "slnic"}:
             return _dispatch_shell_terminal_command(
                 db=db,

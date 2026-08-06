@@ -5,6 +5,7 @@ import type { RunDetail, RunStep } from '@/types/run'
 import type { WiringSnapshot } from '@/utils/wiring'
 
 type InterfaceSlot = 'client' | 'market' | 'auxiliary'
+type AddressableInterfaceSlot = 'client' | 'market'
 
 interface WiringInterfaceNamesOptions {
   canOperate: ComputedRef<boolean>
@@ -31,13 +32,35 @@ function cloneWiringSnapshot(snapshot: WiringSnapshot): WiringSnapshot {
   }
 }
 
-function interfaceNameSignature(snapshot: WiringSnapshot | null) {
+function interfaceSignature(snapshot: WiringSnapshot | null) {
   if (!snapshot) return ''
   return [
     snapshot.client_interface.name,
+    snapshot.client_interface.ip_address,
     snapshot.market_interface.name,
+    snapshot.market_interface.ip_address,
     ...snapshot.auxiliary_interfaces,
   ].join('\n')
+}
+
+function isIpv4Address(value: string) {
+  const parts = value.trim().split('.')
+  return parts.length === 4
+    && parts.every(part => /^(0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)
+}
+
+function wiringValidation(snapshot: WiringSnapshot | null) {
+  if (!snapshot) return '接线图尚未就绪'
+  if (!snapshot.client_interface.name.trim()) return '请输入第 1 个接口名称'
+  if (!isIpv4Address(snapshot.client_interface.ip_address)) return '请输入合法的第 1 个接口 IPv4 地址'
+  if (!snapshot.market_interface.name.trim()) return '请输入第 2 个接口名称'
+  if (!isIpv4Address(snapshot.market_interface.ip_address)) return '请输入合法的第 2 个接口 IPv4 地址'
+  if (snapshot.topology_kind !== 'soft_core') {
+    if (snapshot.auxiliary_interfaces.length !== 2) return '整合版接线图需要配置四个接口名称'
+    if (!snapshot.auxiliary_interfaces[0]?.trim()) return '请输入第 3 个接口名称'
+    if (!snapshot.auxiliary_interfaces[1]?.trim()) return '请输入第 4 个接口名称'
+  }
+  return ''
 }
 
 export function useWiringInterfaceNames(options: WiringInterfaceNamesOptions) {
@@ -61,24 +84,16 @@ export function useWiringInterfaceNames(options: WiringInterfaceNamesOptions) {
   ))
   const canEditWiringNames = computed(() => wiringEditAllowed.value && !savingWiringNames.value)
   const wiringNamesDirty = computed(() => (
-    interfaceNameSignature(wiringDraft.value) !== interfaceNameSignature(savedWiringSnapshot.value)
+    interfaceSignature(wiringDraft.value) !== interfaceSignature(savedWiringSnapshot.value)
   ))
-  const wiringValidationMessage = computed(() => {
-    const snapshot = wiringDraft.value
-    if (!snapshot) return '接线图尚未就绪'
-    if (!snapshot.client_interface.name.trim()) return '请输入第 1 个接口名称'
-    if (!snapshot.market_interface.name.trim()) return '请输入第 2 个接口名称'
-    if (snapshot.topology_kind !== 'soft_core') {
-      if (snapshot.auxiliary_interfaces.length !== 2) return '整合版接线图需要配置四个接口名称'
-      if (!snapshot.auxiliary_interfaces[0]?.trim()) return '请输入第 3 个接口名称'
-      if (!snapshot.auxiliary_interfaces[1]?.trim()) return '请输入第 4 个接口名称'
-    }
-    return ''
+  const wiringValidationMessage = computed(() => wiringValidation(wiringDraft.value))
+  const wiringActionBlocked = computed(() => {
+    const step = currentStep.value
+    if (!step || step.node_type !== 'wiring_confirmation') return false
+    if (editingWiringNames.value && selectedStep.value?.id === step.id) return true
+    if (step.config_snapshot?.diagram !== 'resource') return false
+    return Boolean(wiringValidation(stepWiringSnapshot(step)))
   })
-  const wiringActionBlocked = computed(() => Boolean(
-    editingWiringNames.value
-    && selectedStep.value?.id === currentStep.value?.id
-  ))
 
   function startEditingWiringNames() {
     if (!canEditWiringNames.value || !savedWiringSnapshot.value) return
@@ -99,6 +114,12 @@ export function useWiringInterfaceNames(options: WiringInterfaceNamesOptions) {
     else snapshot.auxiliary_interfaces[index ?? 0] = value
   }
 
+  function updateWiringInterfaceIpAddress(slot: AddressableInterfaceSlot, value: string) {
+    const snapshot = wiringDraft.value
+    if (!editingWiringNames.value || !snapshot) return
+    snapshot[`${slot}_interface`].ip_address = value
+  }
+
   async function saveWiringInterfaceNames() {
     const step = currentStep.value
     const snapshot = wiringDraft.value
@@ -107,11 +128,13 @@ export function useWiringInterfaceNames(options: WiringInterfaceNamesOptions) {
     try {
       await api.put(`/runs/${runId}/steps/${step.id}/wiring-interface-names`, {
         client_interface_name: snapshot.client_interface.name.trim(),
+        client_interface_ip_address: snapshot.client_interface.ip_address.trim(),
         market_interface_name: snapshot.market_interface.name.trim(),
+        market_interface_ip_address: snapshot.market_interface.ip_address.trim(),
         auxiliary_interface_names: snapshot.auxiliary_interfaces.map(name => name.trim()),
       })
       cancelEditingWiringNames()
-      ElMessage.success('网卡名称已保存')
+      ElMessage.success('网卡信息已保存')
       await reload()
     } catch (error) {
       ElMessage.error(errorMessage(error))
@@ -134,6 +157,7 @@ export function useWiringInterfaceNames(options: WiringInterfaceNamesOptions) {
     saveWiringInterfaceNames,
     savingWiringNames,
     startEditingWiringNames,
+    updateWiringInterfaceIpAddress,
     updateWiringInterfaceName,
     wiringActionBlocked,
     wiringNamesDirty,

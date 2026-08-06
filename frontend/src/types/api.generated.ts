@@ -855,6 +855,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/steps/{step_id}/order-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Order Runtime Config */
+        put: operations["update_order_runtime_config_api_v1_runs__run_id__steps__step_id__order_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/steps/{step_id}/parser-exports": {
         parameters: {
             query?: never;
@@ -1944,6 +1961,16 @@ export interface components {
              */
             node_type: "order_preparation";
         };
+        /** OrderRuntimeConfigWrite */
+        OrderRuntimeConfigWrite: {
+            /**
+             * Network Interface
+             * @default
+             */
+            network_interface: string;
+            /** Xml Filename */
+            xml_filename: string;
+        };
         /** ParserConfig */
         ParserConfig: {
             /**
@@ -2597,6 +2624,11 @@ export interface components {
         SlnicMergeConfig: {
             /** Commands */
             commands?: string[];
+            /**
+             * Editcap Path
+             * @default D:\Program Files\Wireshark\editcap.exe
+             */
+            editcap_path: string;
         };
         /** SlnicMergeNodeOut */
         SlnicMergeNodeOut: {
@@ -3009,8 +3041,18 @@ export interface components {
         WiringInterfaceNamesWrite: {
             /** Auxiliary Interface Names */
             auxiliary_interface_names?: string[];
+            /**
+             * Client Interface Ip Address
+             * Format: ipv4
+             */
+            client_interface_ip_address: string;
             /** Client Interface Name */
             client_interface_name: string;
+            /**
+             * Market Interface Ip Address
+             * Format: ipv4
+             */
+            market_interface_ip_address: string;
             /** Market Interface Name */
             market_interface_name: string;
         };
@@ -5211,6 +5253,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_order_runtime_config_api_v1_runs__run_id__steps__step_id__order_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderRuntimeConfigWrite"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

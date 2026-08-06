@@ -21,6 +21,7 @@ function wiringStep(status: RunStep['status'] = 'pending', businessCode = 'fut_m
     workflow_node_id: 17,
     node_type: 'wiring_confirmation',
     config_snapshot: {
+      diagram: 'resource',
       wiring_snapshot: buildWiringSnapshot(
         businessCode,
         { id: 1, name: 'REM-01', host: '10.1.51.8', trade_ip: '180.1.1.101' },
@@ -63,13 +64,15 @@ describe('useWiringInterfaceNames', () => {
     vi.mocked(api.put).mockResolvedValue({ data: {} })
   })
 
-  it('edits and saves interface names before starting the current wiring step', async () => {
+  it('edits and saves interface names and IPs before starting the current wiring step', async () => {
     const { reload, wiring } = setup()
     expect(wiring.canEditWiringNames.value).toBe(true)
 
     wiring.startEditingWiringNames()
     wiring.updateWiringInterfaceName('client', ' client-new ')
+    wiring.updateWiringInterfaceIpAddress('client', ' 180.1.1.107 ')
     wiring.updateWiringInterfaceName('market', 'market-new')
+    wiring.updateWiringInterfaceIpAddress('market', '10.1.51.107')
     expect(wiring.wiringNamesDirty.value).toBe(true)
     expect(wiring.wiringActionBlocked.value).toBe(true)
 
@@ -77,12 +80,33 @@ describe('useWiringInterfaceNames', () => {
 
     expect(api.put).toHaveBeenCalledWith('/runs/9/steps/17/wiring-interface-names', {
       client_interface_name: 'client-new',
+      client_interface_ip_address: '180.1.1.107',
       market_interface_name: 'market-new',
+      market_interface_ip_address: '10.1.51.107',
       auxiliary_interface_names: [],
     })
-    expect(message.success).toHaveBeenCalledWith('网卡名称已保存')
+    expect(message.success).toHaveBeenCalledWith('网卡信息已保存')
     expect(reload).toHaveBeenCalled()
     expect(wiring.editingWiringNames.value).toBe(false)
+  })
+
+  it('rejects an invalid interface IP', async () => {
+    const { wiring } = setup()
+    wiring.startEditingWiringNames()
+    wiring.updateWiringInterfaceIpAddress('market', '010.1.51.107')
+
+    expect(wiring.wiringValidationMessage.value).toBe('请输入合法的第 2 个接口 IPv4 地址')
+    await wiring.saveWiringInterfaceNames()
+    expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('blocks the current wiring action while captured interface data is incomplete', () => {
+    const step = wiringStep()
+    const snapshot = step.config_snapshot.wiring_snapshot as ReturnType<typeof buildWiringSnapshot>
+    snapshot!.client_interface = { name: '', ip_address: '' }
+    const { wiring } = setup(step)
+
+    expect(wiring.wiringActionBlocked.value).toBe(true)
   })
 
   it('requires all four integrated interface names', async () => {

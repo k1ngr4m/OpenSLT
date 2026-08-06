@@ -585,6 +585,9 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
     monkeypatch.setattr(order_configs.asyncssh, "connect", fake_config_connect)
     slnic = create_resource(client, admin_headers, "SLNIC-Remote-Parser", resource_type="slnic")
+    with SessionLocal() as db:
+        db.get(Resource, slnic["id"]).remote_path = "/home/user0/slnic"
+        db.commit()
     database = create_database_resource(client, admin_headers)
     parser = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(
@@ -801,7 +804,7 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     assert ordinary_start.status_code == 409
     assert ordinary_start.json()["code"] == "PARSER_TERMINAL_REQUIRED"
 
-    token = admin_headers["Authorization"].removeprefix("Bearer ")
+    token = admin_headers["Authorization"][len("Bearer ") :]
     terminal_path = f"/api/v1/ws/resources/{parser['id']}/terminal?token={token}"
     with client.websocket_connect(terminal_path) as websocket:
         assert websocket.receive_json()["status"] == "connecting"

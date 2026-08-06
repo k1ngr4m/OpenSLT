@@ -1,6 +1,14 @@
 {
   "unreleased": [
     {
+      "type": "added",
+      "text": "运行流转到发单节点后可切换或编辑 XML 配置并修改网卡接口。"
+    },
+    {
+      "type": "fixed",
+      "text": "接线确认按 REM 实际采集的 180 段和 51 段网卡名称及 IP 展示，并支持确认前补录。"
+    },
+    {
       "type": "changed",
       "text": "运行详情不再展示运行配置快照摘要。"
     },
@@ -19,6 +27,10 @@
     {
       "type": "changed",
       "text": "资源新增与编辑抽屉改为紧凑双列表单布局。"
+    },
+    {
+      "type": "changed",
+      "text": "合并 pcapng 节点改为在 SLNIC 生成 pcap 后，由操作员在本机 Windows 使用 editcap 转换并归档产物。"
     }
   ],
   "releases": [

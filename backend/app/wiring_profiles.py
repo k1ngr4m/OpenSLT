@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv4Interface, IPv4Network
 
 
 BUSINESS_TOPOLOGY = {
@@ -41,6 +41,69 @@ SLNIC_PORT_MAPPING = [
 ]
 
 
+def resolve_rem_wiring_interfaces(value: str) -> tuple[dict, dict]:
+    client_network = IPv4Network("180.0.0.0/8")
+    market_network = IPv4Network("10.1.51.0/24")
+    client_candidates: list[dict[str, str]] = []
+    market_candidates: list[dict[str, str]] = []
+    for line in value.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        name, address_with_prefix = parts
+        try:
+            address = IPv4Interface(address_with_prefix).ip
+        except ValueError:
+            continue
+        candidate = {"name": name, "ip_address": str(address)}
+        if address in client_network:
+            client_candidates.append(candidate)
+        elif address in market_network:
+            market_candidates.append(candidate)
+    empty = {"name": "", "ip_address": ""}
+    return (
+        client_candidates[0] if len(client_candidates) == 1 else dict(empty),
+        market_candidates[0] if len(market_candidates) == 1 else dict(empty),
+    )
+
+
+def refresh_pending_wiring_snapshots(run, source_step, value: str) -> int:
+    client_interface, market_interface = resolve_rem_wiring_interfaces(value)
+    updated = 0
+    for step in run.steps:
+        if (
+            step.position <= source_step.position
+            or step.node_type != "wiring_confirmation"
+            or step.status != "pending"
+        ):
+            continue
+        config = dict(step.config_snapshot or {})
+        snapshot_value = config.get("wiring_snapshot")
+        if not isinstance(snapshot_value, dict):
+            continue
+        snapshot = dict(snapshot_value)
+        snapshot["client_interface"] = dict(client_interface)
+        snapshot["market_interface"] = dict(market_interface)
+        config["wiring_snapshot"] = snapshot
+        step.config_snapshot = config
+        updated += 1
+    return updated
+
+
+def wiring_interfaces_complete(snapshot: object) -> bool:
+    if not isinstance(snapshot, dict):
+        return False
+    for key in ("client_interface", "market_interface"):
+        interface = snapshot.get(key)
+        if not isinstance(interface, dict) or not str(interface.get("name") or "").strip():
+            return False
+        try:
+            IPv4Address(str(interface.get("ip_address") or ""))
+        except ValueError:
+            return False
+    return True
+
+
 def wiring_interface_names(
     business_code: str,
     *,
@@ -73,13 +136,12 @@ def build_wiring_snapshot(
     auxiliary_interface_names: list[str] | None = None,
 ) -> dict:
     preset = BUSINESS_TOPOLOGY[business_code]
-    client_name, market_name, auxiliary_names = wiring_interface_names(
+    _, _, auxiliary_names = wiring_interface_names(
         business_code,
         client_interface_name=client_interface_name,
         market_interface_name=market_interface_name,
         auxiliary_interface_names=auxiliary_interface_names,
     )
-    client_ip = str(IPv4Address(rem.trade_ip))
     market_ip = str(IPv4Address(market.host))
     slnic_ip = str(IPv4Address(slnic.host))
     return {
@@ -89,8 +151,8 @@ def build_wiring_snapshot(
         "model_label": preset["model_label"],
         "client_switch_label": preset["client_switch_label"],
         "market_switch_label": preset["market_switch_label"],
-        "client_interface": {"name": client_name, "ip_address": client_ip},
-        "market_interface": {"name": market_name, "ip_address": market_ip},
+        "client_interface": {"name": "", "ip_address": ""},
+        "market_interface": {"name": "", "ip_address": ""},
         "auxiliary_interfaces": auxiliary_names,
         "rem": {"id": rem.id, "name": rem.name, "host": rem.host},
         "market": {"id": market.id, "name": market.name, "host": market_ip},

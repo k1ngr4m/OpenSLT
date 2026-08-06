@@ -27,6 +27,7 @@ from app.services.run_state import TERMINAL_RUN_STATUSES, transition_run, transi
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.base import WorkflowExecutionContext
 from app.services.workflows import WorkflowError, collect_slnic_merge_artifact
+from app.wiring_profiles import wiring_interfaces_complete
 
 STEPS = [
     ("precheck", "环境预检"),
@@ -392,19 +393,37 @@ async def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_
         and (step.result_summary or {}).get("order_action_status") in {"dispatching", "unknown"}
     ):
         raise WorkflowError("ORDER_ACTION_UNRESOLVED", "发单动作结果尚未确认，不能完成节点", 409)
-    now = beijing_now()
     if (
-        step.node_type == "slnic_merge_capture"
-        and (step.result_summary or {}).get("mode") == "terminal"
-        and not (step.result_summary or {}).get("artifact_id")
+        step.node_type == "wiring_confirmation"
+        and (step.config_snapshot or {}).get("diagram") == "resource"
+        and not wiring_interfaces_complete(
+            (step.config_snapshot or {}).get("wiring_snapshot")
+        )
     ):
-        slnic_resource = db.scalar(select(Resource).where(
+        raise WorkflowError(
+            "WIRING_INTERFACE_INCOMPLETE",
+            "请补全第 1、2 个网卡的名称和 IP 后再确认接线",
+            409,
+        )
+    now = beijing_now()
+    if step.node_type == "slnic_merge_capture" and not (step.result_summary or {}).get("artifact_id"):
+        parser_resource = db.scalar(select(Resource).where(
             Resource.id.in_(run_resource_ids(run)),
-            Resource.resource_type == "slnic",
+            Resource.resource_type == "parser",
         ))
-        if not slnic_resource:
-            raise WorkflowError("SLNIC_RESOURCE_REQUIRED", "运行资源缺少已启用的 SLNIC 节点", 409)
-        artifact_summary = await collect_slnic_merge_artifact(db, run, step, slnic_resource)
+        if not parser_resource:
+            raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具资源", 409)
+        parser_remote_path = str(
+            (step.result_summary or {}).get("parser_remote_path")
+            or parser_resource.remote_path
+        )
+        artifact_summary = await collect_slnic_merge_artifact(
+            db,
+            run,
+            step,
+            parser_resource,
+            remote_path=parser_remote_path,
+        )
         step.result_summary = {
             **(step.result_summary or {}),
             **artifact_summary,

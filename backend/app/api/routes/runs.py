@@ -34,11 +34,12 @@ from app.models import (
     Verdict,
 )
 from app.adapters.database import DatabaseOperationError, validate_database
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
 from app.services.orchestration import append_log, begin_workflow_step, cancel_run, complete_workflow_step, create_workflow_steps, confirm_workflow_step, release_locks
+from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.order_sessions import cleanup_order_session, order_session_name, send_order_action, supported_order_actions
 from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
@@ -46,6 +47,7 @@ from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES,
 from app.services.statistics_execution import list_statistics_csv_files, select_statistics_inputs
 from app.services.parser_inputs import PARSER_TABLES
 from app.services.workflows import WorkflowError, collect_parser_outputs, export_parser_table_snapshot, load_version, resolve_parser_table_database, resource_map
+from app.services.workflow_contracts import parse_read_symbol_csv
 from app.wiring_profiles import build_wiring_snapshot
 
 router = APIRouter()
@@ -91,6 +93,7 @@ def create_run(payload: RunCreate, request: Request, actor: User = Depends(opera
             "type": resource.resource_type,
             "business_code": resource.business_code,
             "host": resource.host,
+            "remote_path": resource.remote_path,
             "version": resource.version_info,
             "trade_ip": resource.trade_ip if is_rem else None,
             "trade_tcp_port": resource.trade_tcp_port if is_rem else None,
@@ -331,7 +334,7 @@ def update_wiring_interface_names(
             or (run.status == "awaiting_step_completion" and step.status == "waiting")
         )
         if not allowed or not current or current.id != step.id:
-            raise WorkflowError("WIRING_EDIT_NOT_ALLOWED", "当前接线确认节点不能修改网卡名称", 409)
+            raise WorkflowError("WIRING_EDIT_NOT_ALLOWED", "当前接线确认节点不能修改网卡信息", 409)
 
         config = dict(step.config_snapshot or {})
         snapshot_value = config.get("wiring_snapshot")
@@ -345,34 +348,44 @@ def update_wiring_interface_names(
         if not is_soft_core and len(auxiliary_names) != 2:
             raise WorkflowError("WIRING_INTERFACE_COUNT_INVALID", "整合版接线图需要配置四个接口名称", 422)
 
-        old_names = {
+        old_interfaces = {
             "client_interface_name": str((snapshot.get("client_interface") or {}).get("name") or ""),
+            "client_interface_ip_address": str((snapshot.get("client_interface") or {}).get("ip_address") or ""),
             "market_interface_name": str((snapshot.get("market_interface") or {}).get("name") or ""),
+            "market_interface_ip_address": str((snapshot.get("market_interface") or {}).get("ip_address") or ""),
             "auxiliary_interface_names": list(snapshot.get("auxiliary_interfaces") or []),
         }
-        new_names = {
+        new_interfaces = {
             "client_interface_name": payload.client_interface_name,
+            "client_interface_ip_address": str(payload.client_interface_ip_address),
             "market_interface_name": payload.market_interface_name,
+            "market_interface_ip_address": str(payload.market_interface_ip_address),
             "auxiliary_interface_names": auxiliary_names,
         }
         snapshot["client_interface"] = {
             **dict(snapshot.get("client_interface") or {}),
             "name": payload.client_interface_name,
+            "ip_address": str(payload.client_interface_ip_address),
         }
         snapshot["market_interface"] = {
             **dict(snapshot.get("market_interface") or {}),
             "name": payload.market_interface_name,
+            "ip_address": str(payload.market_interface_ip_address),
         }
         snapshot["auxiliary_interfaces"] = auxiliary_names
-        config.update(new_names)
+        config.update(new_interfaces)
         config["wiring_snapshot"] = snapshot
         step.config_snapshot = config
-        detail = {"run_id": run.id, "old_names": old_names, "new_names": new_names}
+        detail = {
+            "run_id": run.id,
+            "old_interfaces": old_interfaces,
+            "new_interfaces": new_interfaces,
+        }
         append_log(
             db,
             run,
-            "wiring.interface_names_updated",
-            "接线网卡名称已更新",
+            "wiring.interfaces_updated",
+            "接线网卡信息已更新",
             step=step,
             source="user",
             detail=detail,
@@ -392,6 +405,90 @@ def update_wiring_interface_names(
         write_audit(
             db,
             "run.wiring_interface_names",
+            "run_step",
+            step_id,
+            actor,
+            request,
+            result="failed",
+            detail={"run_id": run.id, "code": exc.code},
+        )
+        db.commit()
+        raise workflow_http_error(exc) from exc
+
+
+@router.put(
+    "/runs/{run_id}/steps/{step_id}/order-config",
+    response_model=RunOut,
+)
+async def update_order_runtime_config(
+    run_id: int,
+    step_id: int,
+    payload: OrderRuntimeConfigWrite,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> TestRun:
+    db.scalar(
+        select(RunStep)
+        .where(RunStep.id == step_id, RunStep.run_id == run_id)
+        .with_for_update()
+    )
+    run = load_run(db, run_id)
+    step = next((item for item in run.steps if item.id == step_id), None)
+    try:
+        if not step or step.node_type != "order_preparation":
+            raise WorkflowError("ORDER_NODE_REQUIRED", "当前节点不是发单节点", 409)
+        current = next((item for item in run.steps if item.status != "succeeded"), None)
+        allowed = (
+            (run.status == "awaiting_step_start" and step.status == "pending")
+            or (run.status == "awaiting_step_retry" and step.status == "failed")
+        )
+        if not allowed or not current or current.id != step.id:
+            raise WorkflowError("ORDER_CONFIG_EDIT_NOT_ALLOWED", "当前发单节点不能修改运行配置", 409)
+        _step, resource = _order_step_resource(db, run, step.id)
+        try:
+            xml_detail = await order_config_service.read(resource, payload.xml_filename)
+        except OrderConfigError as exc:
+            raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+
+        config = dict(step.config_snapshot or {})
+        old_config = {
+            "xml_filename": str(config.get("xml_filename") or ""),
+            "network_interface": str(config.get("network_interface") or ""),
+        }
+        new_config = {
+            "xml_filename": str(xml_detail["name"]),
+            "network_interface": payload.network_interface,
+        }
+        config.update(new_config)
+        config["xml_checksum"] = str(xml_detail["checksum"])
+        config["read_symbol_csv"] = parse_read_symbol_csv(xml_detail["document"])
+        step.config_snapshot = config
+        detail = {"run_id": run.id, "old_config": old_config, "new_config": new_config}
+        append_log(
+            db,
+            run,
+            "order.runtime_config_updated",
+            "发单节点运行配置已更新",
+            step=step,
+            source="user",
+            detail=detail,
+        )
+        write_audit(
+            db,
+            "run.order_runtime_config",
+            "run_step",
+            step.id,
+            actor,
+            request,
+            detail=detail,
+        )
+        db.commit()
+        return load_run(db, run.id)
+    except WorkflowError as exc:
+        write_audit(
+            db,
+            "run.order_runtime_config",
             "run_step",
             step_id,
             actor,

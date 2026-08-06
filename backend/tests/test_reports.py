@@ -305,6 +305,13 @@ def test_order_xml_archive_is_reused_and_detects_changes(
         second = _archive_order_config(db, run, step, "remote.xml", RAW_XML, checksum)
         assert first.id == second.id
         assert Path(first.path).read_text(encoding="utf-8") == RAW_XML
+        replacement_xml = RAW_XML.replace('value="p&amp;&lt;secret&gt;"', 'value="runtime-secret"')
+        replacement_checksum = hashlib.sha256(replacement_xml.encode("utf-8")).hexdigest()
+        replacement = _archive_order_config(
+            db, run, step, "runtime.xml", replacement_xml, replacement_checksum
+        )
+        assert replacement.id != first.id
+        assert Path(replacement.path).read_text(encoding="utf-8") == replacement_xml
         Path(first.path).write_text("changed", encoding="utf-8")
         with pytest.raises(WorkflowError) as exc:
             _archive_order_config(db, run, step, "remote.xml", RAW_XML, checksum)

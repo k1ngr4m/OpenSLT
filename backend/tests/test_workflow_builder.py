@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
 import asyncssh
+import pytest
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
@@ -181,6 +183,143 @@ def create_database_resource(client, headers) -> dict:
     })
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_runtime_order_config_can_switch_xml_and_interface_before_start(
+    client, admin_headers, monkeypatch
+):
+    order = create_order_resource(client, admin_headers)
+    directory = order["remote_path"]
+    sftp = FakeSFTP(directory)
+    alternate_name = "ees_ef_vi_trader_api_test_conf-runtime.xml"
+    alternate_xml = ORDER_XML.replace('value="1495.0000"', 'value="1501.2500"')
+    sftp.files[f"{directory}/{alternate_name}"] = {
+        "content": alternate_xml,
+        "permissions": 0o744,
+        "mtime": 1_700_000_300,
+        "type": asyncssh.FILEXFER_TYPE_REGULAR,
+    }
+
+    async def fake_connect(**_options):
+        return FakeConnection(sftp)
+
+    monkeypatch.setattr(order_configs.asyncssh, "connect", fake_connect)
+    monkeypatch.setattr(workflow_contracts.asyncssh, "connect", fake_connect)
+    plan, scenario = create_plan_scenario(
+        client, admin_headers, resource_ids=[order["id"]]
+    )
+    document = client.get(
+        f"/api/v1/scenarios/{scenario['id']}/workflow", headers=admin_headers
+    ).json()
+    source_name = "ees_ef_vi_trader_api_test_conf.xml"
+    saved = client.put(
+        f"/api/v1/scenarios/{scenario['id']}/workflow",
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [order["id"]],
+            "nodes": [{
+                "node_key": "order",
+                "node_type": "order_preparation",
+                "name": "发单执行",
+                "config": {
+                    "xml_filename": source_name,
+                    "network_interface": "p4p1",
+                    "read_symbol_csv": 0,
+                },
+            }],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    published = client.post(
+        f"/api/v1/scenarios/{scenario['id']}/workflow/publish",
+        headers=admin_headers,
+    )
+    assert published.status_code == 200, published.text
+    created = client.post(
+        "/api/v1/runs",
+        headers=admin_headers,
+        json={
+            "plan_id": plan["id"],
+            "scenario_id": scenario["id"],
+            "resource_ids": [order["id"]],
+        },
+    ).json()
+    assert client.post(
+        f"/api/v1/runs/{created['id']}/start", headers=admin_headers
+    ).status_code == 200
+    step_id = created["steps"][0]["id"]
+
+    updated = client.put(
+        f"/api/v1/runs/{created['id']}/steps/{step_id}/order-config",
+        headers=admin_headers,
+        json={
+            "xml_filename": alternate_name,
+            "network_interface": "enp1s0",
+        },
+    )
+
+    assert updated.status_code == 200, updated.text
+    step = updated.json()["steps"][0]
+    assert step["config_snapshot"]["xml_filename"] == alternate_name
+    assert step["config_snapshot"]["network_interface"] == "enp1s0"
+    assert step["config_snapshot"]["xml_checksum"] == hashlib.sha256(
+        alternate_xml.encode("utf-8")
+    ).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_prepare_order_node_uses_runtime_snapshot_and_latest_xml(
+    monkeypatch,
+):
+    requested = []
+    latest_xml = ORDER_XML.replace('value="1495.0000"', 'value="1508.5000"')
+
+    async def read_latest(_resource, filename):
+        requested.append(filename)
+        return {
+            "name": filename,
+            "content": latest_xml,
+            "checksum": "f" * 64,
+            "document": {"type": "element", "name": "tcp", "attributes": [], "children": []},
+        }
+
+    monkeypatch.setattr(workflow_contracts.order_config_service, "read", read_latest)
+    node_record = SimpleNamespace(
+        node_type="order_preparation",
+        config={
+            "xml_filename": "ees_ef_vi_trader_api_test_conf-published.xml",
+            "xml_checksum": "a" * 64,
+            "network_interface": "p4p1",
+            "read_symbol_csv": 0,
+        },
+        contract_file_links=[],
+    )
+    step = SimpleNamespace(config_snapshot={
+        "xml_filename": "ees_ef_vi_trader_api_test_conf-runtime.xml",
+        "xml_checksum": "b" * 64,
+        "network_interface": "enp1s0",
+        "read_symbol_csv": 0,
+        "contract_file_ids": [],
+        "contract_files": [],
+    })
+    resource = SimpleNamespace(
+        remote_path="/tmp/ees_ef_vi_trader_binary_api_test",
+        capabilities={"order_tool": "ees_ef_vi_trader_binary_api_test"},
+    )
+
+    result = await workflow_contracts.prepare_order_node(
+        None,
+        SimpleNamespace(),
+        node_record,
+        {"order": resource},
+        step=step,
+    )
+
+    assert requested == ["ees_ef_vi_trader_api_test_conf-runtime.xml"]
+    assert result["xml_checksum"] == "f" * 64
+    assert result["network_interface"] == "enp1s0"
+    assert "ZF_ATTR=interface=enp1s0" in result["generated_command"]
 
 
 def test_workflow_draft_revision_preview_and_publish(client, admin_headers, monkeypatch):

@@ -27,6 +27,9 @@ from app.services.order_configs import (
     parser_main_config_filename,
 )
 from app.services.parser_inputs import PARSER_TABLES, parser_config_database_name, parser_table_database_name
+from app.services.slnic_merge import (
+    prepare_slnic_merge_execution,
+)
 from app.services.workflow_capture import _ssh_options, capture_database, capture_server, preview_node
 from app.services.workflow_contracts import _sftp, fetch_contract_files, parse_read_symbol_csv, prepare_order_node
 from app.services.workflow_core import (
@@ -46,7 +49,7 @@ from app.services.workflow_core import (
     workflow_payload,
 )
 from app.services.workflow_publishing import publish, validate_publish
-from app.workflow_node_configs import PARSER_ACTIONS, ParserConfig, ShellCommandsConfig, parse_node_config
+from app.workflow_node_configs import PARSER_ACTIONS, ParserConfig, ShellCommandsConfig, SlnicMergeConfig, parse_node_config
 
 def _slnic_artifact_path(run: TestRun, step: RunStep) -> Path:
     return (
@@ -101,15 +104,16 @@ async def collect_slnic_merge_artifact(
     step: RunStep,
     resource: Resource,
     connection: typing.Any = None,
+    remote_path: typing.Optional[str] = None,
 ) -> dict:
     if not resource or resource.is_deleted or not resource.is_enabled:
         raise WorkflowError("SLNIC_RESOURCE_REQUIRED", "运行资源缺少已启用的 SLNIC 节点", 409)
-    if not resource.remote_path.strip():
-        raise WorkflowError("SLNIC_REMOTE_PATH_REQUIRED", "SLNIC 资源未配置远端路径", 409)
+    root = str(remote_path or resource.remote_path).strip().rstrip("/")
+    if not root:
+        raise WorkflowError("PARSER_REMOTE_PATH_REQUIRED", "解析工具资源未配置远端路径", 409)
 
     target = _slnic_artifact_path(run, step)
-    workdir = posixpath.join(resource.remote_path.rstrip("/"), "tcpdump")
-    remote_file = posixpath.join(workdir, "merge_pcap.pcapng")
+    remote_file = posixpath.join(root, "merge_pcap.pcapng")
     temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
     owns_connection = connection is None
     sftp = None
@@ -119,7 +123,15 @@ async def collect_slnic_merge_artifact(
             connection = await asyncssh.connect(**_ssh_options(resource))
         sftp = await connection.start_sftp_client()
         await sftp.get(remote_file, str(temporary))
+        if temporary.stat().st_size == 0:
+            raise WorkflowError(
+                "SLNIC_ARTIFACT_EMPTY",
+                "解析目录中的 merge_pcap.pcapng 不能为空",
+                409,
+            )
         temporary.replace(target)
+    except WorkflowError:
+        raise
     except Exception as exc:
         raise WorkflowError("SLNIC_ARTIFACT_COLLECT_FAILED", f"拉取合并后的 pcapng 失败：{exc}", 409) from exc
     finally:
@@ -197,18 +209,29 @@ async def execute_slnic_node(
     }
     connection = None
     try:
-        connection = await asyncssh.connect(**_ssh_options(resource))
-        await _run_slnic_commands(connection, workdir, commands)
         if node.node_type == "slnic_merge_capture":
+            parser_resource = run_resources.get("parser")
+            if (
+                not parser_resource
+                or parser_resource.is_deleted
+                or not parser_resource.is_enabled
+            ):
+                raise WorkflowError(
+                    "PARSER_RESOURCE_REQUIRED",
+                    "合并 pcapng 需要已启用的解析工具资源",
+                    409,
+                )
             summary.update(
-                await collect_slnic_merge_artifact(
-                    db,
+                await prepare_slnic_merge_execution(
                     run,
                     step,
                     resource,
-                    connection=connection,
+                    parser_resource,
+                    editcap_path=typing.cast(SlnicMergeConfig, config).editcap_path,
                 )
             )
+        connection = await asyncssh.connect(**_ssh_options(resource))
+        await _run_slnic_commands(connection, workdir, commands)
         return summary
     except WorkflowError:
         raise

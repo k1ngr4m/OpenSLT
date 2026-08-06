@@ -8,11 +8,13 @@ const props = withDefaults(defineProps<{
   compact?: boolean
   emptyMessage?: string
   editable?: boolean
+  editableIp?: boolean
 }>(), {
   snapshot: null,
   compact: false,
   emptyMessage: '请先绑定 REM、模拟市场与 SLNIC，并补全资源 IP 配置',
   editable: false,
+  editableIp: false,
 })
 
 const emit = defineEmits<{
@@ -21,6 +23,7 @@ const emit = defineEmits<{
     value: string,
     index?: number,
   ]
+  'interface-ip-change': [slot: 'client' | 'market', value: string]
 }>()
 
 const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
@@ -32,10 +35,10 @@ const hardCoreInterfaces = computed(() => {
   const value = props.snapshot
   if (!value) return []
   return [
-    { slot: 'client' as const, name: value.client_interface.name, ip: value.client_interface.ip_address },
-    { slot: 'market' as const, name: value.market_interface.name, ip: value.market_interface.ip_address },
-    { slot: 'auxiliary' as const, name: value.auxiliary_interfaces[0] || '', ip: '', auxiliaryIndex: 0 },
-    { slot: 'auxiliary' as const, name: value.auxiliary_interfaces[1] || '', ip: '', auxiliaryIndex: 1 },
+    { slot: 'client' as const, name: value.client_interface.name, ip: value.client_interface.ip_address, showsIp: true },
+    { slot: 'market' as const, name: value.market_interface.name, ip: value.market_interface.ip_address, showsIp: true },
+    { slot: 'auxiliary' as const, name: value.auxiliary_interfaces[0] || '', ip: '', showsIp: false, auxiliaryIndex: 0 },
+    { slot: 'auxiliary' as const, name: value.auxiliary_interfaces[1] || '', ip: '', showsIp: false, auxiliaryIndex: 1 },
   ]
 })
 const marketUplinkMainPath = computed(() => isHardCore.value
@@ -65,6 +68,14 @@ function updateInterfaceName(
   index?: number,
 ) {
   emit('interface-name-change', slot, (event.target as HTMLInputElement).value, index)
+}
+
+function updateInterfaceIp(
+  slot: 'client' | 'market' | 'auxiliary',
+  event: Event,
+) {
+  if (slot === 'auxiliary') return
+  emit('interface-ip-change', slot, (event.target as HTMLInputElement).value)
 }
 </script>
 
@@ -114,10 +125,21 @@ function updateInterfaceName(
                   aria-label="第 1 个接口名称"
                   @input="updateInterfaceName('client', $event)"
                 />
-                <span v-else :title="snapshot.client_interface.name">{{ snapshot.client_interface.name }}</span>
+                <span v-else :title="snapshot.client_interface.name">{{ snapshot.client_interface.name || '待补录' }}</span>
               </div>
             </foreignObject>
-            <text x="280" y="239" class="ip">{{ snapshot.client_interface.ip_address }}</text>
+            <foreignObject v-if="editable && editableIp" x="220" y="226" width="120" height="22">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="interface-ip">
+                <input
+                  :value="snapshot.client_interface.ip_address"
+                  maxlength="15"
+                  placeholder="IPv4"
+                  aria-label="第 1 个接口 IP"
+                  @input="updateInterfaceIp('client', $event)"
+                />
+              </div>
+            </foreignObject>
+            <text v-else x="280" y="239" class="ip">{{ snapshot.client_interface.ip_address || '待补录' }}</text>
           </g>
           <g class="interface market-interface">
             <rect x="210" y="276" width="140" height="58" />
@@ -130,10 +152,21 @@ function updateInterfaceName(
                   aria-label="第 2 个接口名称"
                   @input="updateInterfaceName('market', $event)"
                 />
-                <span v-else :title="snapshot.market_interface.name">{{ snapshot.market_interface.name }}</span>
+                <span v-else :title="snapshot.market_interface.name">{{ snapshot.market_interface.name || '待补录' }}</span>
               </div>
             </foreignObject>
-            <text x="280" y="321" class="ip">{{ snapshot.market_interface.ip_address }}</text>
+            <foreignObject v-if="editable && editableIp" x="220" y="308" width="120" height="22">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="interface-ip">
+                <input
+                  :value="snapshot.market_interface.ip_address"
+                  maxlength="15"
+                  placeholder="IPv4"
+                  aria-label="第 2 个接口 IP"
+                  @input="updateInterfaceIp('market', $event)"
+                />
+              </div>
+            </foreignObject>
+            <text v-else x="280" y="321" class="ip">{{ snapshot.market_interface.ip_address || '待补录' }}</text>
           </g>
         </template>
         <g v-else class="hard-core-interface-list">
@@ -147,7 +180,7 @@ function updateInterfaceName(
             <rect x="210" :y="194 + index * 58" width="140" height="58" />
             <foreignObject
               x="220"
-              :y="199 + index * 58 + (row.ip ? 0 : 12)"
+              :y="199 + index * 58 + (row.showsIp ? 0 : 12)"
               width="120"
               height="25"
             >
@@ -159,10 +192,27 @@ function updateInterfaceName(
                   :aria-label="`第 ${index + 1} 个接口名称`"
                   @input="updateInterfaceName(row.slot, $event, row.auxiliaryIndex)"
                 />
-                <span v-else :title="row.name">{{ row.name }}</span>
+                <span v-else :title="row.name">{{ row.name || '待补录' }}</span>
               </div>
             </foreignObject>
-            <text v-if="row.ip" x="280" :y="239 + index * 58" class="ip">{{ row.ip }}</text>
+            <foreignObject
+              v-if="editable && editableIp && row.showsIp"
+              x="220"
+              :y="226 + index * 58"
+              width="120"
+              height="22"
+            >
+              <div xmlns="http://www.w3.org/1999/xhtml" class="interface-ip">
+                <input
+                  :value="row.ip"
+                  maxlength="15"
+                  placeholder="IPv4"
+                  :aria-label="`第 ${index + 1} 个接口 IP`"
+                  @input="updateInterfaceIp(row.slot, $event)"
+                />
+              </div>
+            </foreignObject>
+            <text v-else-if="row.showsIp" x="280" :y="239 + index * 58" class="ip">{{ row.ip || '待补录' }}</text>
           </g>
         </g>
 
@@ -209,5 +259,5 @@ function updateInterfaceName(
 </template>
 
 <style scoped>
-.wiring-topology{width:100%;min-width:0;max-width:100%;overflow:hidden;border:1px solid var(--ui-border);border-radius:8px;background:#fbfdfd}.wiring-scroll{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-inline:contain}.wiring-scroll:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}.wiring-scroll svg{display:block;width:100%;min-width:760px;height:auto}.wiring-empty{display:flex;min-height:240px;flex-direction:column;align-items:center;justify-content:center;padding:28px;color:var(--ui-text-tertiary);text-align:center}.wiring-empty :deep(svg){width:34px;height:34px}.wiring-empty strong{margin-top:12px;color:var(--ui-text-secondary);font-size:14px}.wiring-empty span{max-width:34ch;margin-top:6px;font-size:12px;line-height:1.6}.device-shell,.switch-shell{fill:#fff;stroke:#9badb1;stroke-width:1.5}.switch-shell{fill:#f8fbfb}.device-copy,.switch-copy{display:flex;width:100%;height:100%;flex-direction:column;align-items:center;justify-content:center;color:#20383e;text-align:center}.device-copy small{color:#718489;font-size:11px}.device-copy strong{margin-top:4px;color:#0e806f;font-size:17px}.device-copy span{display:-webkit-box;max-width:100%;margin-top:7px;overflow:hidden;color:#52676c;font-size:11px;line-height:1.35;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}.switch-copy strong{display:-webkit-box;overflow:hidden;font-size:15px;line-height:1.4;-webkit-box-orient:vertical;-webkit-line-clamp:2}.switch-copy span{margin-top:7px;color:#718489;font-size:11px}.interface rect,.slnic-ports rect{fill:#dcefeb;stroke:#6da99e;stroke-width:1}.interface text{fill:#17353a;font-size:12px;font-weight:600;text-anchor:middle}.interface text.ip{font-family:"Cascadia Code",Consolas,monospace;font-size:11px;font-weight:500}.interface-name{display:flex;width:100%;height:100%;align-items:center;justify-content:center}.interface-name input,.interface-name span{box-sizing:border-box;width:100%;height:22px;color:#17353a;font-family:inherit;font-size:12px;font-weight:600;line-height:20px;text-align:center}.interface-name span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.interface-name input{border:1px solid #4c9588;border-radius:3px;outline:0;background:#fff;padding:0 4px}.interface-name input:focus{border-color:#0e806f;box-shadow:0 0 0 1px #0e806f}.slnic-ports text{fill:#20383e;font-size:11px}.slnic-ports .port-label{fill:#62767b;font-size:9px}.links path,.legend line{fill:none;stroke-width:2}.uplink{stroke:#c43d47}.downlink{stroke:#326eaa}.legend text{fill:#52676c;font-size:12px}.uplink-dot{fill:#c43d47}.downlink-dot{fill:#326eaa}.compact .wiring-scroll svg{min-width:720px}@media(max-width:767px){.wiring-scroll svg{min-width:720px}.wiring-empty{min-height:200px}}
+.wiring-topology{width:100%;min-width:0;max-width:100%;overflow:hidden;border:1px solid var(--ui-border);border-radius:8px;background:#fbfdfd}.wiring-scroll{width:100%;min-width:0;overflow-x:auto;overscroll-behavior-inline:contain}.wiring-scroll:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}.wiring-scroll svg{display:block;width:100%;min-width:760px;height:auto}.wiring-empty{display:flex;min-height:240px;flex-direction:column;align-items:center;justify-content:center;padding:28px;color:var(--ui-text-tertiary);text-align:center}.wiring-empty :deep(svg){width:34px;height:34px}.wiring-empty strong{margin-top:12px;color:var(--ui-text-secondary);font-size:14px}.wiring-empty span{max-width:34ch;margin-top:6px;font-size:12px;line-height:1.6}.device-shell,.switch-shell{fill:#fff;stroke:#9badb1;stroke-width:1.5}.switch-shell{fill:#f8fbfb}.device-copy,.switch-copy{display:flex;width:100%;height:100%;flex-direction:column;align-items:center;justify-content:center;color:#20383e;text-align:center}.device-copy small{color:#718489;font-size:11px}.device-copy strong{margin-top:4px;color:#0e806f;font-size:17px}.device-copy span{display:-webkit-box;max-width:100%;margin-top:7px;overflow:hidden;color:#52676c;font-size:11px;line-height:1.35;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}.switch-copy strong{display:-webkit-box;overflow:hidden;font-size:15px;line-height:1.4;-webkit-box-orient:vertical;-webkit-line-clamp:2}.switch-copy span{margin-top:7px;color:#718489;font-size:11px}.interface rect,.slnic-ports rect{fill:#dcefeb;stroke:#6da99e;stroke-width:1}.interface text{fill:#17353a;font-size:12px;font-weight:600;text-anchor:middle}.interface text.ip{font-family:"Cascadia Code",Consolas,monospace;font-size:11px;font-weight:500}.interface-name,.interface-ip{display:flex;width:100%;height:100%;align-items:center;justify-content:center}.interface-name input,.interface-name span,.interface-ip input{box-sizing:border-box;width:100%;height:22px;color:#17353a;font-family:inherit;font-size:12px;line-height:20px;text-align:center}.interface-name input,.interface-name span{font-weight:600}.interface-name span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.interface-name input,.interface-ip input{border:1px solid #4c9588;border-radius:3px;outline:0;background:#fff;padding:0 4px}.interface-ip input{height:20px;font-family:"Cascadia Code",Consolas,monospace;font-size:10px;line-height:18px}.interface-name input:focus,.interface-ip input:focus{border-color:#0e806f;box-shadow:0 0 0 1px #0e806f}.slnic-ports text{fill:#20383e;font-size:11px}.slnic-ports .port-label{fill:#62767b;font-size:9px}.links path,.legend line{fill:none;stroke-width:2}.uplink{stroke:#c43d47}.downlink{stroke:#326eaa}.legend text{fill:#52676c;font-size:12px}.uplink-dot{fill:#c43d47}.downlink-dot{fill:#326eaa}.compact .wiring-scroll svg{min-width:720px}@media(max-width:767px){.wiring-scroll svg{min-width:720px}.wiring-empty{min-height:200px}}
 </style>

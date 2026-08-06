@@ -53,18 +53,22 @@ def _archive_order_config(
     actual_checksum = hashlib.sha256(data).hexdigest()
     if actual_checksum != checksum:
         raise WorkflowError("ORDER_CONFIG_CHECKSUM_INVALID", "发单 XML 内容校验失败", 409)
-    existing = db.scalar(
+    existing_artifacts = list(db.scalars(
         select(Artifact).where(
             Artifact.run_id == run.id,
             Artifact.step_id == step.id,
             Artifact.artifact_type == "order_config_xml",
         )
+        .order_by(Artifact.id)
+    ).all())
+    existing = next(
+        (artifact for artifact in existing_artifacts if artifact.checksum == checksum),
+        None,
     )
     if existing is not None:
         existing_path = Path(existing.path)
         if (
-            existing.checksum != checksum
-            or not existing_path.is_file()
+            not existing_path.is_file()
             or hashlib.sha256(existing_path.read_bytes()).hexdigest() != checksum
         ):
             raise WorkflowError("ORDER_CONFIG_ARCHIVE_CHANGED", "已归档的发单 XML 已丢失或发生变化", 409)
@@ -80,7 +84,11 @@ def _archive_order_config(
         / str(step.id)
     )
     directory.mkdir(parents=True, exist_ok=True)
-    target = directory / "order-config.xml"
+    target = directory / (
+        "order-config.xml"
+        if not existing_artifacts
+        else f"order-config-{checksum[:12]}.xml"
+    )
     temporary = directory / f".{target.name}.{uuid4().hex}.tmp"
     try:
         temporary.write_bytes(data)
@@ -392,16 +400,21 @@ async def prepare_order_node(
     resource = run_resources.get("order")
     if not resource:
         raise WorkflowError("ORDER_RESOURCE_REQUIRED", "运行资源缺少发单工具", 409)
+    if step is not None:
+        config_source = dict(step.config_snapshot or {})
+        config_source.pop("contract_files", None)
+    else:
+        config_source = node_config_with_relations(node)
     config = typing.cast(
         OrderPreparationConfig,
-        parse_node_config(node.node_type, node_config_with_relations(node)),
+        parse_node_config(node.node_type, config_source),
     )
     try:
         detail = await order_config_service.read(resource, config.xml_filename)
     except OrderConfigError as exc:
         raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
     expected = config.xml_checksum
-    if expected and detail["checksum"] != expected:
+    if step is None and expected and detail["checksum"] != expected:
         raise WorkflowError("ORDER_CONFIG_CHANGED", "XML 配置校验值与发布版本不一致", 409)
     xml_artifact = None
     if run is not None and step is not None:

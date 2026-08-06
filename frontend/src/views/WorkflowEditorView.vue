@@ -13,7 +13,12 @@ import { buildWiringSnapshot, wiringInterfaceNameDefaults } from '@/utils/wiring
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
 import { DEFAULT_REM_STARTUP_COMMANDS, normalizeShellCommands, remStartupCommandText } from '@/utils/remCommands'
-import { defaultSlnicCommands, slnicCommandText } from '@/utils/slnicCommands'
+import {
+  DEFAULT_EDITCAP_PATH,
+  buildWindowsEditcapCommand,
+  defaultSlnicCommands,
+  slnicCommandText,
+} from '@/utils/slnicCommands'
 import {
   applyDatabaseConfigTemplate,
   filterDatabaseConfigItems,
@@ -170,6 +175,15 @@ const selectedMarketScriptRows = computed(() => {
   })
 })
 const shellCommandCount = computed(() => normalizeShellCommands(shellCommandEditorText.value).length)
+const editcapPathOptions = [DEFAULT_EDITCAP_PATH]
+const windowsEditcapPreview = computed(() => {
+  if (selectedNode.value?.node_type !== 'slnic_merge_capture') return ''
+  return buildWindowsEditcapCommand(
+    String(selectedNode.value.config.editcap_path || DEFAULT_EDITCAP_PATH),
+    selectedResourceMap.value.slnic || {},
+    selectedResourceMap.value.parser || {},
+  )
+})
 
 function makeKey() {
   return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -187,6 +201,9 @@ function applyDocument(data: any) {
     plans.value.find(item => item.id === data.scenario?.plan_id)?.business_code || '',
   )
   for (const node of nodes.value) {
+    if (node.node_type === 'slnic_merge_capture') {
+      node.config.editcap_path ??= DEFAULT_EDITCAP_PATH
+    }
     if (node.node_type !== 'wiring_confirmation') continue
     node.config.client_interface_name ??= defaults.client_interface_name
     node.config.market_interface_name ??= defaults.market_interface_name
@@ -448,7 +465,16 @@ function defaultNode(type: string): WorkflowNode {
     }
   }
   if (type === 'rem_startup') return { node_key: key, position: 0, node_type: type, name: '启动rem柜台', config: { commands: [...DEFAULT_REM_STARTUP_COMMANDS] } }
-  if (slnicNodeTypes.has(type)) return { node_key: key, position: 0, node_type: type as WorkflowNodeType, name: nodeMeta(type).label, config: { commands: defaultSlnicCommands(type) } }
+  if (slnicNodeTypes.has(type)) return {
+    node_key: key,
+    position: 0,
+    node_type: type as WorkflowNodeType,
+    name: nodeMeta(type).label,
+    config: {
+      commands: defaultSlnicCommands(type),
+      ...(type === 'slnic_merge_capture' ? { editcap_path: DEFAULT_EDITCAP_PATH } : {}),
+    },
+  }
   if (type === 'market_startup') return { node_key: key, position: 0, node_type: type, name: '启动模拟市场', config: { scripts: [] } }
   if (type === 'order_preparation') return { node_key: key, position: 0, node_type: type, name: '发单执行', config: { xml_filename: '', xml_checksum: '', network_interface: '', read_symbol_csv: 0, trading_database_name: '', contract_file_ids: [] } }
   if (type === 'parser_parse') return {
@@ -1309,6 +1335,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
               <div class="wide"><span>工作目录</span><code>{{ slnicWorkdir() }}</code></div>
             </div>
             <el-alert v-if="!selectedResourceMap.slnic" title="请先在左侧场景资源池绑定 SLNIC 节点" type="warning" :closable="false" show-icon />
+            <el-alert v-if="selectedNode.node_type === 'slnic_merge_capture' && !selectedResourceMap.parser" title="合并 pcapng 还需要绑定解析工具资源作为 Windows 输出目录" type="warning" :closable="false" show-icon />
             <el-alert v-if="!shellCommandCount" title="至少输入一条 SLNIC 命令后才能发布" type="warning" :closable="false" show-icon />
             <div class="section-label">执行命令（按顺序）</div>
             <el-input
@@ -1323,7 +1350,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
               placeholder="一行一条 Shell 命令"
               @input="value => updateShellCommands(String(value))"
             />
-            <p class="slnic-note">空白行会被忽略。全部命令会在同一个交互 Shell 中逐行下发并共享状态；系统不因非零退出自动截断，请在终端确认后手动完成节点。</p>
+            <template v-if="selectedNode.node_type === 'slnic_merge_capture'">
+              <label class="field required">
+                <span>Windows editcap 路径</span>
+                <el-select
+                  v-model="selectedNode.config.editcap_path"
+                  :disabled="!editable"
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="请选择或输入 editcap.exe 的绝对路径"
+                  @change="markDirty"
+                >
+                  <el-option v-for="path in editcapPathOptions" :key="path" :label="path" :value="path" />
+                </el-select>
+                <small>该路径位于打开运行页面的操作员 Windows 电脑。</small>
+              </label>
+              <div class="section-label">Windows 命令预览</div>
+              <code v-if="windowsEditcapPreview" class="windows-command-preview">{{ windowsEditcapPreview }}</code>
+              <el-alert v-else title="SLNIC 与解析工具远端路径必须位于 /home/ 下，绑定资源后才能生成 UNC 命令" type="warning" :closable="false" show-icon />
+              <p class="slnic-note">Linux 命令会在 SLNIC SSH 终端中下发；随后在本机 Windows 执行上述 editcap 命令，再回到运行页面完成节点。</p>
+            </template>
+            <p v-else class="slnic-note">空白行会被忽略。全部命令会在同一个交互 Shell 中逐行下发并共享状态；系统不因非零退出自动截断，请在终端确认后手动完成节点。</p>
           </template>
           <template v-else-if="selectedNode.node_type === 'parser_parse'">
             <label class="field required"><span>运行数据库</span><el-select v-model="selectedNode.config.database_name" :disabled="!editable || !selectedResourceMap.database" filterable @change="markDirty"><el-option v-for="name in selectedResourceMap.database?.database_names || []" :key="name" :label="name" :value="name" /></el-select><small>三张订单表从该 *_trading_data 库导出；t_account_exchange_code 从同前缀 *_config 库导出。</small></label>
@@ -1405,6 +1453,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
 .contract-empty{min-height:96px;margin-top:10px;border:1px dashed #ccd8dd;border-radius:8px;display:grid;place-items:center;color:#829099;font-size:11px}
 .flow-node.violet{border-left-color:#7669b5}.node-icon.violet{background:#eeebf8;color:#6556a5}.node-catalog{display:grid;gap:22px}.node-category h3{margin:0 0 9px;padding-bottom:7px;border-bottom:1px solid #e6ebee;color:#697780;font-size:12px;font-weight:600}.slnic-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0 14px}.slnic-summary>div{padding:11px;border:1px solid #e3e0ef;border-radius:8px;background:#f8f7fc}.slnic-summary .wide{grid-column:1/-1}.slnic-summary span,.slnic-summary strong,.slnic-summary code{display:block}.slnic-summary span{font-size:10px;color:#7f8991}.slnic-summary strong,.slnic-summary code{margin-top:5px;font-size:12px;overflow-wrap:anywhere}.slnic-commands{display:grid;gap:7px}.slnic-commands code{padding:10px;border-radius:7px;background:#242632;color:#d9e6df;font-size:11px;line-height:1.45;overflow-wrap:anywhere}.slnic-note{color:#7c8991;font-size:11px;line-height:1.6}
 .rem-command-editor :deep(.el-textarea__inner){background:#242632;color:#d9e6df;font:12px/1.7 "Cascadia Code","JetBrains Mono",Consolas,monospace;box-shadow:inset 0 0 0 1px #39404f}.rem-command-editor :deep(.el-textarea__inner:focus){box-shadow:inset 0 0 0 1px var(--ui-primary)}.rem-command-editor :deep(.el-textarea__inner[readonly]){cursor:default}
+.windows-command-preview{display:block;padding:11px;border-radius:7px;background:#242632;color:#d9e6df;font:11px/1.6 "Cascadia Code","JetBrains Mono",Consolas,monospace;overflow-wrap:anywhere}
 .market-script-options{display:grid;max-height:190px;margin-top:10px;overflow:auto;border:1px solid #e0e7ea;border-radius:8px}.market-script-options :deep(.el-checkbox){height:auto;margin:0;padding:9px 11px;border-bottom:1px solid #edf1f3}.market-script-options :deep(.el-checkbox:last-of-type){border-bottom:0}.market-script-options strong,.market-script-options small{display:block}.market-script-options small{margin-top:3px;color:#85929a;font-size:10px}.market-script-order{display:grid;gap:7px}.market-script-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:center;padding:9px;border:1px solid #dfe6ea;border-radius:7px}.market-script-row.invalid{border-color:#e3b268;background:#fffaf1}.market-script-row strong,.market-script-row small{display:block;overflow-wrap:anywhere}.market-script-row small{margin-top:3px;color:#85929a;font-size:10px}.market-script-row.invalid small{color:#a66e20}.market-script-index{display:grid;width:22px;height:22px;place-items:center;border-radius:5px;background:#edf3f4;color:#627078;font-size:10px;font-weight:700}.market-script-actions{display:flex;align-items:center}.market-script-actions :deep(.el-button){margin:0}
 
 .template-toolbar{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,32px);gap:6px;align-items:center}.template-toolbar :deep(.el-button){width:32px;height:32px;margin:0}.catalog-alert{margin-bottom:8px}.catalog-alert :deep(.el-alert__content){min-width:0}.stale-key-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:8px 10px;border:1px solid #efd39a;border-radius:6px;background:#fff9ec;color:#8a641f;font-size:11px}.stale-key-row :deep(.el-button){flex:0 0 auto}.key-grid{min-height:94px}.key-options :deep(.el-checkbox){height:auto;min-height:36px;padding:5px 0;align-items:flex-start}.key-options :deep(.el-checkbox__input){margin-top:2px}.key-options :deep(.el-checkbox__label){min-width:0;white-space:normal;font-family:inherit}.key-option-copy,.key-option-copy strong,.key-option-copy small{display:block}.key-option-copy strong{font:11px/1.4 Cascadia Code,Consolas,monospace;overflow-wrap:anywhere}.key-option-copy small{margin-top:2px;color:#839099;font-size:10px;line-height:1.45}

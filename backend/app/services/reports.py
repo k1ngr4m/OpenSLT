@@ -216,7 +216,7 @@ def _order_sections(
             Artifact.run_id == run.id,
             Artifact.step_id.in_([step.id for step in order_steps]),
             Artifact.artifact_type == "order_config_xml",
-        )
+        ).order_by(Artifact.id)
     ).all())
     by_step = {artifact.step_id: artifact for artifact in artifacts}
     sections: list[dict[str, typing.Any]] = []

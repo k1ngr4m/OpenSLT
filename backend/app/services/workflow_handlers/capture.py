@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.services import workflows
 from app.services.workflow_handlers.base import WorkflowExecutionContext
+from app.wiring_profiles import refresh_pending_wiring_snapshots
 from app.workflow_node_configs import WiringConfirmationConfig, parse_node_config
 
 
@@ -34,7 +35,33 @@ class ServerCaptureHandler:
             run_step_id=context.step.id,
             run_resources=context.resources,
         )
-        return _capture_summary(context, snapshots, "服务器配置采集不完整")
+        summary = _capture_summary(context, snapshots, "服务器配置采集不完整")
+        rem_resource = context.resources.get("rem")
+        if rem_resource:
+            rem_snapshot = next(
+                (
+                    snapshot
+                    for snapshot in snapshots
+                    if snapshot.resource_id == rem_resource.id
+                    and snapshot.status == "succeeded"
+                ),
+                None,
+            )
+            ip_item = next(
+                (
+                    item
+                    for item in (rem_snapshot.items if rem_snapshot else [])
+                    if item.item_key == "ip" and item.status == "succeeded"
+                ),
+                None,
+            )
+            if ip_item and ip_item.value_text:
+                refresh_pending_wiring_snapshots(
+                    context.run,
+                    context.step,
+                    ip_item.value_text,
+                )
+        return summary
 
 
 class DatabaseCaptureHandler:

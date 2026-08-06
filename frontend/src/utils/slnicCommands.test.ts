@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { defaultSlnicCommands, slnicCommandText } from '@/utils/slnicCommands'
+import {
+  DEFAULT_EDITCAP_PATH,
+  buildWindowsEditcapCommand,
+  defaultSlnicCommands,
+  slnicCommandText,
+} from '@/utils/slnicCommands'
 
 describe('slnicCommands', () => {
   it('provides independent defaults for every SLNIC node', () => {
@@ -7,8 +12,6 @@ describe('slnicCommands', () => {
     expect(defaultSlnicCommands('slnic_stop_capture')).toEqual(['./stop_slnic_dump.sh'])
     expect(defaultSlnicCommands('slnic_merge_capture')).toEqual([
       './pcap_merge_tool slnic*',
-      'if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; test -f merge_pcap.pcap',
-      './editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng',
     ])
   })
 
@@ -18,5 +21,25 @@ describe('slnicCommands', () => {
     expect(slnicCommandText('slnic_stop_capture', [' export MODE=test ', 7, './run.sh'])).toBe(
       ' export MODE=test \n./run.sh',
     )
+  })
+
+  it('builds the quoted Windows editcap preview from bound resources', () => {
+    expect(buildWindowsEditcapCommand(
+      DEFAULT_EDITCAP_PATH,
+      { host: '10.1.51.210', remote_path: '/home/user0/slnic/SLNIC NF11' },
+      { host: '10.1.51.210', remote_path: '/home/user0/ckd/speed analysis' },
+    )).toBe(
+      '"D:\\Program Files\\Wireshark\\editcap.exe" -F pcapng '
+      + '"\\\\10.1.51.210\\user0\\slnic\\SLNIC NF11\\tcpdump\\merge_pcap.pcap" '
+      + '"\\\\10.1.51.210\\user0\\ckd\\speed analysis\\merge_pcap.pcapng"',
+    )
+  })
+
+  it('does not preview UNC paths for resources outside /home', () => {
+    expect(buildWindowsEditcapCommand(
+      DEFAULT_EDITCAP_PATH,
+      { host: '10.1.51.210', remote_path: '/tmp/openslt' },
+      { host: '10.1.51.210', remote_path: '/home/user0/parser' },
+    )).toBe('')
   })
 })

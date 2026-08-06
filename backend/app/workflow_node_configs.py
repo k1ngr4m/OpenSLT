@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import typing
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -38,11 +39,13 @@ REM_STARTUP_DEFAULT_COMMANDS = (
 )
 SLNIC_START_DEFAULT_COMMANDS = ("./start_slnic_dump.sh",)
 SLNIC_STOP_DEFAULT_COMMANDS = ("./stop_slnic_dump.sh",)
-SLNIC_MERGE_DEFAULT_COMMANDS = (
+SLNIC_LEGACY_MERGE_DEFAULT_COMMANDS = (
     "./pcap_merge_tool slnic*",
     "if [ ! -f merge_pcap.pcap ] && [ -f merge_pacp.pcap ]; then mv -- merge_pacp.pcap merge_pcap.pcap; fi; test -f merge_pcap.pcap",
     "./editcap merge_pcap.pcap merge_pcap.pcapng && test -f merge_pcap.pcapng",
 )
+SLNIC_MERGE_DEFAULT_COMMANDS = ("./pcap_merge_tool slnic*",)
+DEFAULT_EDITCAP_PATH = r"D:\Program Files\Wireshark\editcap.exe"
 SHELL_COMMAND_MAX_COMMANDS = 100
 SHELL_COMMAND_MAX_LENGTH = 4096
 SHELL_COMMAND_MAX_TOTAL_BYTES = 32 * 1024
@@ -211,6 +214,29 @@ class SlnicMergeConfig(ShellCommandsConfig):
         default_factory=lambda: list(SLNIC_MERGE_DEFAULT_COMMANDS),
         max_length=SHELL_COMMAND_MAX_COMMANDS,
     )
+    editcap_path: str = Field(default=DEFAULT_EDITCAP_PATH, max_length=1024)
+
+    @field_validator("commands", mode="before")
+    @classmethod
+    def normalize_legacy_commands(cls, value: typing.Any) -> typing.Any:
+        if value == list(SLNIC_LEGACY_MERGE_DEFAULT_COMMANDS) or value == tuple(
+            SLNIC_LEGACY_MERGE_DEFAULT_COMMANDS
+        ):
+            return list(SLNIC_MERGE_DEFAULT_COMMANDS)
+        return value
+
+    @field_validator("editcap_path", mode="before")
+    @classmethod
+    def validate_editcap_path(cls, value: typing.Any) -> typing.Any:
+        if not isinstance(value, str):
+            return value
+        path = value.strip()
+        if (
+            not re.fullmatch(r"[A-Za-z]:\\[^\r\n\"]+", path)
+            or path.rsplit("\\", 1)[-1].casefold() != "editcap.exe"
+        ):
+            raise ValueError("editcap 路径必须是指向 editcap.exe 的 Windows 盘符绝对路径")
+        return path
 
 
 class ParserConfig(WorkflowNodeConfig):

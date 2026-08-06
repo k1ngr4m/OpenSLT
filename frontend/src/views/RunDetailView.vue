@@ -8,12 +8,15 @@ import RunContractFiles from '@/components/run-detail/RunContractFiles.vue'
 import RunContractPreviewDialog from '@/components/run-detail/RunContractPreviewDialog.vue'
 import RunLogPanel from '@/components/run-detail/RunLogPanel.vue'
 import RunWorkflowStrip from '@/components/run-detail/RunWorkflowStrip.vue'
+import WindowsEditcapCommand from '@/components/run-detail/WindowsEditcapCommand.vue'
+import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { useRunActions } from '@/composables/useRunActions'
 import { useRunLifecycle } from '@/composables/useRunLifecycle'
 import { useOrderActions } from '@/composables/useOrderActions'
+import { useOrderRuntimeConfig } from '@/composables/useOrderRuntimeConfig'
 import { useParserExports } from '@/composables/useParserExports'
 import { useStatisticsInputs } from '@/composables/useStatisticsInputs'
 import { useRunStepPresentation } from '@/composables/useRunStepPresentation'
@@ -45,6 +48,7 @@ const contractPreviewFile = ref<ContractFilePreview | null>(null)
 const contractPreviewLoading = ref(false)
 const contractPreviewError = ref('')
 const contractPreviewCache = reactive<Record<number, ContractFilePreview>>({})
+const orderConfigEditorVisible = ref(false)
 
 const canStart = computed(() => ['draft', 'resource_queue'].includes(run.value?.status || ''))
 const isWorkflowRun = computed(() => Boolean(run.value?.config_snapshot?.workflow))
@@ -70,6 +74,7 @@ const {
   saveWiringInterfaceNames,
   savingWiringNames,
   startEditingWiringNames,
+  updateWiringInterfaceIpAddress,
   updateWiringInterfaceName,
   wiringActionBlocked,
   wiringNamesDirty,
@@ -123,6 +128,29 @@ const {
   runId,
   selectedStep,
   selectedStepId,
+})
+const {
+  canEditOrderConfig,
+  cancelEditingOrderConfig,
+  editingOrderConfig,
+  loadingOrderConfigs,
+  orderConfigActionBlocked,
+  orderConfigDirty,
+  orderConfigDraft,
+  orderConfigFiles,
+  orderConfigValidationMessage,
+  refreshOrderConfigs,
+  saveOrderRuntimeConfig,
+  savingOrderConfig,
+  startEditingOrderConfig,
+} = useOrderRuntimeConfig({
+  canOperate: computed(() => auth.canOperate),
+  currentStep,
+  selectedStep,
+  run,
+  runId,
+  orderResourceId: computed(() => orderResource.value?.id || null),
+  reload: load,
 })
 const {
   actingStepId,
@@ -388,7 +416,7 @@ watch(
           type="primary"
           :icon="VideoPlay"
           :loading="actingStepId === currentStep.id || terminalCommandPendingStepId === currentStep.id"
-          :disabled="Boolean(exportingTable) || statisticsActionBlocked || wiringActionBlocked"
+          :disabled="Boolean(exportingTable) || statisticsActionBlocked || wiringActionBlocked || orderConfigActionBlocked || orderConfigEditorVisible"
           @click="currentStep && stepAction(currentStep, 'start')"
         >开始</el-button>
         <el-button
@@ -557,6 +585,10 @@ watch(
                   @error="message => handleWorkflowTerminalError('slnic', message)"
                   @workflow-command="message => handleWorkflowTerminalCommand('slnic', message)"
                 />
+                <WindowsEditcapCommand
+                  v-if="workflowTerminalKind === 'slnic' && selectedStep?.node_type === 'slnic_merge_capture'"
+                  :command="String(selectedStep?.result_summary?.windows_editcap_command || '')"
+                />
                 <SshTerminalPanel
                   v-if="orderResource"
                   v-show="workflowTerminalKind === 'order'"
@@ -669,7 +701,7 @@ watch(
                     v-else-if="canEditWiringNames"
                     :icon="EditPen"
                     @click="startEditingWiringNames"
-                  >编辑网卡名称</el-button>
+                  >编辑网卡信息</el-button>
                 </div>
                 <el-alert
                   v-if="editingWiringNames && wiringValidationMessage"
@@ -681,9 +713,65 @@ watch(
                 <WiringTopologyDiagram
                   :snapshot="wiringSnapshot"
                   :editable="editingWiringNames"
+                  :editable-ip="editingWiringNames"
                   empty-message="该历史节点使用旧版占位图，确认流程仍可正常执行"
+                  @interface-ip-change="updateWiringInterfaceIpAddress"
                   @interface-name-change="updateWiringInterfaceName"
                 />
+              </section>
+
+              <section v-if="selectedStep.node_type === 'order_preparation'" class="detail-section order-runtime-config-section">
+                <div class="section-heading">
+                  <div>
+                    <h3>本次发单配置</h3>
+                    <p class="muted">节点开始时读取所选 XML 的最新内容，不校验是否与发布版本一致。</p>
+                  </div>
+                  <div v-if="editingOrderConfig" class="order-runtime-config-actions">
+                    <el-button :icon="Close" :disabled="savingOrderConfig" @click="cancelEditingOrderConfig">取消</el-button>
+                    <el-button
+                      type="primary"
+                      :icon="Check"
+                      :loading="savingOrderConfig"
+                      :disabled="!orderConfigDirty || Boolean(orderConfigValidationMessage)"
+                      @click="saveOrderRuntimeConfig"
+                    >保存</el-button>
+                  </div>
+                  <el-button
+                    v-else-if="canEditOrderConfig"
+                    :icon="EditPen"
+                    @click="startEditingOrderConfig"
+                  >更改发单配置</el-button>
+                </div>
+                <template v-if="editingOrderConfig">
+                  <div class="order-runtime-config-form">
+                    <label class="order-runtime-config-field">
+                      <span>XML 配置</span>
+                      <el-select
+                        v-model="orderConfigDraft.xml_filename"
+                        :loading="loadingOrderConfigs"
+                        filterable
+                        placeholder="请选择 XML 配置"
+                      >
+                        <el-option v-for="file in orderConfigFiles" :key="file.name" :label="file.name" :value="file.name" />
+                      </el-select>
+                    </label>
+                    <label class="order-runtime-config-field">
+                      <span>网卡接口</span>
+                      <el-input v-model="orderConfigDraft.network_interface" maxlength="15" placeholder="例如 p4p1" />
+                    </label>
+                  </div>
+                  <div class="order-runtime-config-tools">
+                    <span class="muted">需要修改 XML 节点值时，可打开完整的结构化/原文编辑器。</span>
+                    <el-button :icon="EditPen" :disabled="!orderResource" @click="orderConfigEditorVisible = true">编辑 XML 内容</el-button>
+                  </div>
+                  <el-alert
+                    v-if="orderConfigValidationMessage"
+                    :title="orderConfigValidationMessage"
+                    type="warning"
+                    :closable="false"
+                    show-icon
+                  />
+                </template>
               </section>
 
               <section class="detail-section">
@@ -855,6 +943,22 @@ watch(
         <el-form-item label="备注"><el-input v-model="verdict.notes" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="verdictDialog = false">取消</el-button><el-button type="primary" @click="submitVerdict">提交并生成报告</el-button></template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="orderConfigEditorVisible"
+      title="编辑发单 XML"
+      width="94vw"
+      top="3vh"
+      destroy-on-close
+      @closed="refreshOrderConfigs"
+    >
+      <OrderConfigPanel
+        v-if="orderResource"
+        :resource-id="orderResource.id"
+        :active="orderConfigEditorVisible"
+        resource-type="order"
+      />
     </el-dialog>
 
     <RunContractPreviewDialog

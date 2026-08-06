@@ -447,6 +447,30 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
             commands = config.get("commands")
             if commands is not None and not commands:
                 errors.append({**prefix, "field": "commands", "message": "SLNIC 节点至少需要一条命令"})
+            if node.node_type == "slnic_merge_capture":
+                parser_resource = resources.get("parser")
+                if (
+                    not parser_resource
+                    or parser_resource.is_deleted
+                    or not parser_resource.is_enabled
+                ):
+                    errors.append({
+                        **prefix,
+                        "field": "parser_resource",
+                        "message": "合并 pcapng 需要绑定已启用的解析工具资源",
+                    })
+                elif not parser_resource.remote_path.strip().startswith("/home/"):
+                    errors.append({
+                        **prefix,
+                        "field": "parser_resource",
+                        "message": "解析工具远端路径必须位于 /home/ 下",
+                    })
+                if resource and not resource.remote_path.strip().startswith("/home/"):
+                    errors.append({
+                        **prefix,
+                        "field": "resource",
+                        "message": "SLNIC 远端路径必须位于 /home/ 下",
+                    })
     return errors
 
 

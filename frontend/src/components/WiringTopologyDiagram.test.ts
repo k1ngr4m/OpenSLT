@@ -64,7 +64,7 @@ describe('WiringTopologyDiagram', () => {
     }
   })
 
-  it('edits all four integrated names in place and keeps read-only diagrams static', async () => {
+  it('edits the first two names and IPs plus the integrated auxiliary names', async () => {
     const snapshot = buildWiringSnapshot(
       'rem_two',
       { id: 1, name: 'REM-01', host: '10.1.51.8', trade_ip: '180.1.1.101' },
@@ -72,16 +72,22 @@ describe('WiringTopologyDiagram', () => {
       { id: 2, name: 'SLNIC-01', host: '10.1.51.210' },
     )
     const editable = mount(WiringTopologyDiagram, {
-      props: { snapshot, editable: true },
+      props: { snapshot, editable: true, editableIp: true },
       global: { stubs: { ElIcon: true } },
     })
     const inputs = editable.findAll('.interface-name input')
     expect(inputs).toHaveLength(4)
+    const ipInputs = editable.findAll('.interface-ip input')
+    expect(ipInputs).toHaveLength(2)
     await inputs[0].setValue('client-custom')
+    await ipInputs[0].setValue('180.1.1.107')
     await inputs[2].setValue('aux-custom')
     expect(editable.emitted('interface-name-change')).toEqual([
       ['client', 'client-custom', undefined],
       ['auxiliary', 'aux-custom', 0],
+    ])
+    expect(editable.emitted('interface-ip-change')).toEqual([
+      ['client', '180.1.1.107'],
     ])
 
     const readonly = mount(WiringTopologyDiagram, {
@@ -91,6 +97,41 @@ describe('WiringTopologyDiagram', () => {
     expect(readonly.findAll('.interface-name input')).toHaveLength(0)
     expect(readonly.text()).toContain('1(mac0)')
     expect(readonly.text()).toContain('4(mac3)')
+  })
+
+  it('keeps IPs read-only when a workflow preview only edits interface names', () => {
+    const snapshot = buildWiringSnapshot(
+      'fut_mm',
+      { id: 1, name: 'REM-01', host: '10.1.51.8', trade_ip: '180.1.1.101' },
+      { id: 3, name: 'Market-01', host: '10.1.51.101' },
+      { id: 2, name: 'SLNIC-01', host: '10.1.51.210' },
+    )
+    const wrapper = mount(WiringTopologyDiagram, {
+      props: { snapshot, editable: true },
+      global: { stubs: { ElIcon: true } },
+    })
+
+    expect(wrapper.findAll('.interface-name input')).toHaveLength(2)
+    expect(wrapper.findAll('.interface-ip input')).toHaveLength(0)
+    expect(wrapper.text()).toContain('180.1.1.101')
+  })
+
+  it('shows a manual-entry prompt for unresolved interface values', () => {
+    const snapshot = buildWiringSnapshot(
+      'fut_mm',
+      { id: 1, name: 'REM-01', host: '10.1.51.8', trade_ip: '180.1.1.101' },
+      { id: 3, name: 'Market-01', host: '10.1.51.101' },
+      { id: 2, name: 'SLNIC-01', host: '10.1.51.210' },
+    )!
+    snapshot.client_interface = { name: '', ip_address: '' }
+    snapshot.market_interface = { name: '', ip_address: '' }
+
+    const wrapper = mount(WiringTopologyDiagram, {
+      props: { snapshot },
+      global: { stubs: { ElIcon: true } },
+    })
+
+    expect(wrapper.text()).toContain('待补录')
   })
 
   it('renders an actionable empty state', () => {

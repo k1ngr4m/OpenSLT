@@ -69,7 +69,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
       return '点击顶部“开始”后，关闭抓包脚本会在这个终端中下发。'
     }
     if (selectedStep.value?.node_type === 'slnic_merge_capture') {
-      return '点击顶部“开始”后，合并与转换 pcapng 的命令会在这个终端中下发；确认完成后再点击顶部“完成”。'
+      return '点击顶部“开始”后，Linux 合并命令会在这个终端中下发；随后复制页面生成的 Windows editcap 命令到本机执行，确认完成后再点击顶部“完成”。'
     }
     if (selectedStep.value?.node_type === 'parser_parse') {
       return '点击顶部“开始”后，解析工具会在这个 SSH Shell 中启动；可直接输入或点击下方快捷指令，生成 CSV 后再点击顶部“完成”。'

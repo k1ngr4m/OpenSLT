@@ -1829,6 +1829,29 @@
         "title": "OrderPreparationNodeWrite",
         "type": "object"
       },
+      "OrderRuntimeConfigWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "network_interface": {
+            "default": "",
+            "maxLength": 15,
+            "pattern": "^[A-Za-z0-9_.-]*$",
+            "title": "Network Interface",
+            "type": "string"
+          },
+          "xml_filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Xml Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "xml_filename"
+        ],
+        "title": "OrderRuntimeConfigWrite",
+        "type": "object"
+      },
       "ParserConfig": {
         "additionalProperties": false,
         "properties": {
@@ -3636,6 +3659,12 @@
             "maxItems": 100,
             "title": "Commands",
             "type": "array"
+          },
+          "editcap_path": {
+            "default": "D:\\Program Files\\Wireshark\\editcap.exe",
+            "maxLength": 1024,
+            "title": "Editcap Path",
+            "type": "string"
           }
         },
         "title": "SlnicMergeConfig",
@@ -4723,10 +4752,20 @@
             "title": "Auxiliary Interface Names",
             "type": "array"
           },
+          "client_interface_ip_address": {
+            "format": "ipv4",
+            "title": "Client Interface Ip Address",
+            "type": "string"
+          },
           "client_interface_name": {
             "maxLength": 32,
             "minLength": 1,
             "title": "Client Interface Name",
+            "type": "string"
+          },
+          "market_interface_ip_address": {
+            "format": "ipv4",
+            "title": "Market Interface Ip Address",
             "type": "string"
           },
           "market_interface_name": {
@@ -4738,7 +4777,9 @@
         },
         "required": [
           "client_interface_name",
-          "market_interface_name"
+          "client_interface_ip_address",
+          "market_interface_name",
+          "market_interface_ip_address"
         ],
         "title": "WiringInterfaceNamesWrite",
         "type": "object"
@@ -8636,6 +8677,69 @@
           }
         ],
         "summary": "Confirm Order Action"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/order-config": {
+      "put": {
+        "operationId": "update_order_runtime_config_api_v1_runs__run_id__steps__step_id__order_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderRuntimeConfigWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Order Runtime Config"
       }
     },
     "/api/v1/runs/{run_id}/steps/{step_id}/parser-exports": {

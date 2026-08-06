@@ -652,3 +652,4 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.order-runtime-config-actions,.order-runtime-config-tools{display:flex;align-items:center;gap:8px}.order-runtime-config-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.45fr);gap:14px}.order-runtime-config-field{display:grid;gap:6px}.order-runtime-config-field>span{color:var(--ui-text-secondary);font-size:12px;font-weight:650}.order-runtime-config-tools{justify-content:space-between;margin-top:12px;padding:10px 12px;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-surface-subtle)}.order-runtime-config-tools .muted{font-size:11px}.order-runtime-config-section>.el-alert{margin-top:10px}@media(max-width:767px){.order-runtime-config-form{grid-template-columns:1fr}.order-runtime-config-tools{align-items:flex-start;flex-direction:column}}
