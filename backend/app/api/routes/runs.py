@@ -1037,9 +1037,18 @@ def regenerate_reports(run_id: int, request: Request, actor: User = Depends(oper
 
 
 @router.get("/runs/{run_id}/logs", response_model=typing.List[LogOut])
-def list_run_logs(run_id: int, level: typing.Union[str, None] = None, source: typing.Union[str, None] = None, keyword: typing.Union[str, None] = None, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> typing.List[LogRecord]:
+def list_run_logs(
+    run_id: int,
+    level: typing.Union[str, None] = None,
+    source: typing.Union[str, None] = None,
+    keyword: typing.Union[str, None] = None,
+    after_id: typing.Union[int, None] = Query(default=None, ge=0),
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> typing.List[LogRecord]:
     query = select(LogRecord).where(LogRecord.run_id == run_id)
     if level: query = query.where(LogRecord.level == level.upper())
     if source: query = query.where(LogRecord.source == source)
     if keyword: query = query.where(LogRecord.message.contains(keyword))
-    return list(db.scalars(query.order_by(LogRecord.created_at).limit(5000)).all())
+    if after_id is not None: query = query.where(LogRecord.id > after_id)
+    return list(db.scalars(query.order_by(LogRecord.id).limit(5000)).all())
