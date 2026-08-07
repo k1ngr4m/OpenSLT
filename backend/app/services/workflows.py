@@ -946,7 +946,7 @@ async def collect_parser_outputs(
         snapshot = await _parser_csv_snapshot(sftp, remote_workdir)
         if is_direct_workdir:
             changed = _changed_parser_csv_files(
-                typing.cast(dict[str, tuple[int, int]], before),
+                typing.cast(typing.Dict[str, typing.Tuple[int, int]], before),
                 snapshot,
                 set(input_checksums),
             )

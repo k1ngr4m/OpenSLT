@@ -1,5 +1,10 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "fixed",
+      "text": "修复 Python 3.8 环境下交互式解析节点完成时误报 CSV 下载失败的问题。"
+    }
+  ],
   "releases": [
     {
       "version": "0.2.2",
