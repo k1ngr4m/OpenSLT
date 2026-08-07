@@ -1519,6 +1519,7 @@
               "new_arbi_order",
               "new_arbi_order_simple",
               "cxl_order",
+              "cxl_quote",
               "stop_order"
             ],
             "title": "Action",
@@ -1722,6 +1723,7 @@
               "new_arbi_order",
               "new_arbi_order_simple",
               "cxl_order",
+              "cxl_quote",
               "stop_order"
             ],
             "title": "Order Action",
@@ -6721,6 +6723,50 @@
         "summary": "Update Resource"
       }
     },
+    "/api/v1/resources/{resource_id}/copy": {
+      "post": {
+        "operationId": "copy_resource_api_v1_resources__resource_id__copy_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Copy Resource"
+      }
+    },
     "/api/v1/resources/{resource_id}/database/config-items": {
       "get": {
         "operationId": "database_config_items_api_v1_resources__resource_id__database_config_items_get",
@@ -8132,6 +8178,23 @@
                 }
               ],
               "title": "Keyword"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Id"
             }
           }
         ],

@@ -57,7 +57,7 @@ const orderTools = [
 ]
 const orderActionOptions = [
   'new_order', 'new_order_simple', 'new_quote', 'new_quote_simple',
-  'new_arbi_order', 'new_arbi_order_simple', 'cxl_order', 'stop_order',
+  'new_arbi_order', 'new_arbi_order_simple', 'cxl_order', 'cxl_quote', 'stop_order',
 ]
 
 const slnicModels = [
@@ -417,6 +417,16 @@ async function health(row: any) {
   }
 }
 
+async function copyResource(row: any) {
+  try {
+    await api.post(`/resources/${row.id}/copy`)
+    ElMessage.success('资源已复制')
+    await load()
+  } catch (error) {
+    ElMessage.error(errorMessage(error))
+  }
+}
+
 async function remove(row: any) {
   await ElMessageBox.confirm(`确定删除资源“${row.name}”？`, '删除确认', { type: 'warning' })
   try {
@@ -493,9 +503,10 @@ onMounted(load)
         <el-table-column label="启用" width="90">
           <template #default="scope"><el-tag :type="scope.row.is_enabled ? 'success' : 'info'" effect="plain">{{ scope.row.is_enabled ? '已启用' : '已停用' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="320" fixed="right">
+        <el-table-column label="操作" width="380" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="health(scope.row)">连通测试</el-button>
+            <el-button v-if="auth.canOperate" link type="primary" @click="health(scope.row)">连通测试</el-button>
+            <el-button link type="primary" @click="copyResource(scope.row)">复制</el-button>
             <el-button v-if="scope.row.resource_type === 'database' && auth.canOperate" link type="primary" @click="router.push(`/resources/${scope.row.id}/database`)">操作台</el-button>
             <el-button v-if="['rem', 'market', 'order', 'slnic', 'parser'].includes(scope.row.resource_type) && auth.canOperate" link type="primary" :disabled="!scope.row.is_enabled" @click="router.push(`/resources/${scope.row.id}/terminal`)">操作台</el-button>
             <template v-if="auth.isAdmin">

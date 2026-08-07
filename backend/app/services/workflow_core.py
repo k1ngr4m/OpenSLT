@@ -541,7 +541,7 @@ def workflow_payload(scenario: TestScenario, version: ScenarioWorkflowVersion, e
             "updated_at": version.updated_at,
             "nodes": [
                 {"id": node.id, "node_key": node.node_key, "position": node.position, "node_type": node.node_type, "name": node.name, "config": node_config_with_relations(node)}
-                for node in version.nodes
+                for node in sorted(version.nodes, key=lambda item: (item.position, item.id or 0))
             ],
         },
         "published_version_id": scenario.published_workflow_version_id,

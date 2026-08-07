@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import posixpath
 import shlex
 import typing
@@ -21,6 +22,14 @@ from app.schemas import ResourceConnectionTestRequest, ResourceOut, ResourceWrit
 from app.services.audit import write_audit
 
 router = APIRouter()
+RESOURCE_COPY_SUFFIX = " - 副本"
+
+
+def _copied_resource_name(source_name: str) -> str:
+    max_length = Resource.__table__.c.name.type.length
+    if not max_length:
+        return f"{source_name}{RESOURCE_COPY_SUFFIX}"
+    return f"{source_name[:max_length - len(RESOURCE_COPY_SUFFIX)]}{RESOURCE_COPY_SUFFIX}"
 
 
 async def _check_ssh_resource(
@@ -118,6 +127,55 @@ def create_resource(payload: ResourceWrite, request: Request, actor: User = Depe
         encrypted_database_password=encrypt_secret(payload.database_password),
     )
     db.add(resource); db.flush(); write_audit(db, "resource.create", "resource", resource.id, actor, request, detail={"name": resource.name}); db.commit(); return resource
+
+
+@router.post("/resources/{resource_id}/copy", response_model=ResourceOut, status_code=201)
+def copy_resource(
+    resource_id: int,
+    request: Request,
+    actor: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Resource:
+    source = db.get(Resource, resource_id)
+    if not source or source.is_deleted:
+        raise not_found("资源")
+
+    copied = Resource(
+        name=_copied_resource_name(source.name),
+        resource_type=source.resource_type,
+        business_code=source.business_code,
+        host=source.host,
+        ssh_port=source.ssh_port,
+        username=source.username,
+        auth_type=source.auth_type,
+        encrypted_password=source.encrypted_password,
+        encrypted_private_key=source.encrypted_private_key,
+        database_engine=source.database_engine,
+        database_connection_mode=source.database_connection_mode,
+        database_host=source.database_host,
+        database_port=source.database_port,
+        database_names=deepcopy(source.database_names),
+        database_username=source.database_username,
+        encrypted_database_password=source.encrypted_database_password,
+        database_tls_enabled=source.database_tls_enabled,
+        remote_path=source.remote_path,
+        capabilities=deepcopy(source.capabilities or {}),
+        trade_ip=source.trade_ip,
+        trade_tcp_port=source.trade_tcp_port,
+        trade_udp_port=source.trade_udp_port,
+        query_ip=source.query_ip,
+        query_port=source.query_port,
+        version_info=source.version_info,
+        notes=source.notes,
+        is_enabled=source.is_enabled,
+        health_status="unknown",
+        health_checked_at=None,
+    )
+    db.add(copied)
+    db.flush()
+    write_audit(db, "resource.copy", "resource", copied.id, actor, request, detail={"source_id": resource_id})
+    db.commit()
+    return copied
 
 
 @router.put("/resources/{resource_id}", response_model=ResourceOut)

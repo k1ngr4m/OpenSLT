@@ -599,7 +599,6 @@ watch(
                   :active="workflowTerminalKind === 'order'"
                   :auto-connect="Boolean(selectedStep?.result_summary?.process_started && selectedStep?.result_summary?.session_status === 'running')"
                   :socket-path="orderTerminalSocketPath"
-                  read-only
                   :min-height="320"
                   @status="message => handleWorkflowTerminalStatus('order', message)"
                   @error="message => handleWorkflowTerminalError('order', message)"

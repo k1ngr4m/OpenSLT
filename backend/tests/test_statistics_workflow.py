@@ -234,7 +234,7 @@ async def test_statistics_csv_listing_filters_scope_and_file_types(
         )
         run.steps.extend([failed_parser, latest_parser, later_parser])
         db.flush()
-        latest_directory = f"/tmp/parser/.openslt-runs/r{run.id}-s{latest_parser.id}-a2-final"
+        latest_directory = "/tmp/parser"
         latest_parser.result_summary = {
             "remote_workdir": latest_directory,
             "output_files": ["result.csv", "UPPER.CSV", "missing.csv", "nested.csv"],
@@ -432,13 +432,15 @@ async def test_statistics_execution_creates_metrics_and_json_artifact(
 ):
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
+    commands = []
 
     def handler(command):
+        commands.append(command)
         parts = shlex.split(command)
         payload = statistics_payload(Path(parts[1]).name, 1234.5)
         return SimpleNamespace(exit_status=0, stdout=json.dumps(payload), stderr="")
 
-    install_statistics_fakes(monkeypatch, handler)
+    connections = install_statistics_fakes(monkeypatch, handler)
 
     with SessionLocal() as db:
         run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
@@ -457,6 +459,14 @@ async def test_statistics_execution_creates_metrics_and_json_artifact(
         result_artifact = db.get(Artifact, result["statistics_artifact_id"])
         assert result_artifact.artifact_type == "statistics_result_json"
         assert Path(result_artifact.path).is_file()
+        assert shlex.split(commands[0])[1] == "/tmp/parser/rem_client_new_to_market_speed.csv"
+        assert result["remote_workdir"] == "/tmp/parser"
+        assert len(connections[-1].sftp.put_calls) == 1
+        uploaded_path = connections[-1].sftp.put_calls[0][1]
+        assert uploaded_path.startswith(
+            "/tmp/parser/rem_client_new_to_market_speed.csv.openslt-"
+        )
+        assert ".openslt-runs" not in uploaded_path
 
 
 @pytest.mark.asyncio

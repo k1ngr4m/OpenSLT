@@ -32,6 +32,7 @@ ORDER_ACTIONS = (
     "new_arbi_order",
     "new_arbi_order_simple",
     "cxl_order",
+    "cxl_quote",
     "stop_order",
 )
 
@@ -46,6 +47,7 @@ ACTION_ALIASES: Dict[str, str] = {
     "new_arbiordersimple": "new_arbi_order_simple",
     "newarbiordersimple": "new_arbi_order_simple",
     "cxlorder": "cxl_order",
+    "cxlquote": "cxl_quote",
     "stoporder": "stop_order",
 }
 

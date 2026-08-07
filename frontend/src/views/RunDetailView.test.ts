@@ -24,4 +24,10 @@ describe('RunDetailView node details', () => {
     expect(source).not.toContain('<h3>运行配置快照</h3>')
     expect(source).not.toContain('class="detail-section compact-snapshot"')
   })
+
+  it('keeps the order SSH terminal interactive', () => {
+    const orderTerminal = source.match(/<SshTerminalPanel[\s\S]*?ref="orderWorkflowTerminalPanel"[\s\S]*?\/>/)
+    expect(orderTerminal?.[0]).toBeTruthy()
+    expect(orderTerminal?.[0]).not.toContain('read-only')
+  })
 })

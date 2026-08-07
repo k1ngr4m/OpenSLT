@@ -182,3 +182,20 @@ async def test_send_order_action_is_literal_and_rejects_unsupported(monkeypatch)
     with pytest.raises(Exception) as exc_info:
         await order_sessions.send_order_action(resource, "openslt-order-r1-s2", "new_quote")
     assert getattr(exc_info.value, "code", "") == "ORDER_ACTION_UNSUPPORTED"
+
+
+@pytest.mark.asyncio
+async def test_send_order_action_supports_cxl_quote(monkeypatch):
+    connection = FakeConnection()
+    connection.sessions.add("openslt-order-r1-s2")
+
+    async def connect(**_):
+        return connection
+
+    monkeypatch.setattr(order_sessions.asyncssh, "connect", connect)
+    monkeypatch.setattr(order_sessions, "ssh_options", lambda _resource: {})
+    resource = types.SimpleNamespace(capabilities={"order_actions": ["cxl_quote"]})
+
+    await order_sessions.send_order_action(resource, "openslt-order-r1-s2", "cxl_quote")
+
+    assert any("-l cxl_quote" in command for command in connection.commands)

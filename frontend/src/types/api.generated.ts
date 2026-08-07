@@ -386,6 +386,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/resources/{resource_id}/copy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy Resource */
+        post: operations["copy_resource_api_v1_resources__resource_id__copy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/resources/{resource_id}/database/config-items": {
         parameters: {
             query?: never;
@@ -1824,7 +1841,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "new_order" | "new_order_simple" | "new_quote" | "new_quote_simple" | "new_arbi_order" | "new_arbi_order_simple" | "cxl_order" | "stop_order";
+            action: "new_order" | "new_order_simple" | "new_quote" | "new_quote_simple" | "new_arbi_order" | "new_arbi_order_simple" | "cxl_order" | "cxl_quote" | "stop_order";
         };
         /** OrderConfigCreate */
         OrderConfigCreate: {
@@ -1908,7 +1925,7 @@ export interface components {
              * @default new_order
              * @enum {string}
              */
-            order_action: "new_order" | "new_order_simple" | "new_quote" | "new_quote_simple" | "new_arbi_order" | "new_arbi_order_simple" | "cxl_order" | "stop_order";
+            order_action: "new_order" | "new_order_simple" | "new_quote" | "new_quote_simple" | "new_arbi_order" | "new_arbi_order_simple" | "cxl_order" | "cxl_quote" | "stop_order";
             /**
              * Read Symbol Csv
              * @default 0
@@ -4062,6 +4079,37 @@ export interface operations {
             };
         };
     };
+    copy_resource_api_v1_resources__resource_id__copy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                resource_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     database_config_items_api_v1_resources__resource_id__database_config_items_get: {
         parameters: {
             query: {
@@ -4926,6 +4974,7 @@ export interface operations {
                 level?: string | null;
                 source?: string | null;
                 keyword?: string | null;
+                after_id?: number | null;
             };
             header?: never;
             path: {

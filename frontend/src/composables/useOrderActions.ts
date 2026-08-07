@@ -23,7 +23,7 @@ interface OrderActionOptions {
   runId: number
 }
 
-const DANGEROUS_ACTIONS = new Set(['cxl_order', 'stop_order'])
+const DANGEROUS_ACTIONS = new Set(['cxl_order', 'cxl_quote', 'stop_order'])
 const UNRESOLVED_STATUSES = new Set(['dispatching', 'unknown'])
 
 function historyEntry(value: unknown): OrderActionHistoryEntry | null {

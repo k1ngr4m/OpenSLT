@@ -38,13 +38,13 @@ def test_parser_terminal_actions_default_and_resource_override():
     ) == (PARSER_ACTIONS[1], PARSER_ACTIONS[0])
 
 
-def test_parser_start_command_uses_isolated_workdir_and_xml_filename():
+def test_parser_start_command_uses_resource_workdir_and_xml_filename():
     assert terminal_service.build_parser_start_command(
-        "/home/user0/soft_dce_speed_analysis_v7/.openslt-runs/r1-s2-a0-abcd1234",
+        "/home/user0/soft_dce_speed_analysis_v7",
         "/home/user0/soft_dce_speed_analysis_v7/soft_dce_speed_analysis_v7",
         "soft_dce_speed_analysis.xml",
     ) == (
-        "cd /home/user0/soft_dce_speed_analysis_v7/.openslt-runs/r1-s2-a0-abcd1234 && "
+        "cd /home/user0/soft_dce_speed_analysis_v7 && "
         "/home/user0/soft_dce_speed_analysis_v7/soft_dce_speed_analysis_v7 "
         "soft_dce_speed_analysis.xml"
     )
@@ -849,6 +849,38 @@ async def test_parser_output_download_failure_removes_incomplete_temp_file(
     assert failed.value.code == "PARSER_OUTPUT_DOWNLOAD_FAILED"
     assert list(artifact_directory.glob("*.csv")) == []
     assert list(artifact_directory.glob("*.part")) == []
+
+
+@pytest.mark.asyncio
+async def test_parser_output_collection_rejects_direct_workdir_without_snapshot(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    resource, run = prepare_waiting_parser_lease_run(client, admin_headers)
+
+    async def unexpected_connect(**_options):
+        raise AssertionError("invalid snapshot must be rejected before SSH")
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", unexpected_connect)
+
+    with SessionLocal() as db:
+        stored_run = db.get(RunModel, run["id"])
+        stored_step = stored_run.steps[0]
+        stored_resource = db.get(Resource, resource["id"])
+        stored_step.result_summary = {
+            **stored_step.result_summary,
+            "remote_workdir": stored_resource.remote_path,
+        }
+        with pytest.raises(WorkflowError) as invalid:
+            await workflows.collect_parser_outputs(
+                db,
+                stored_run,
+                stored_step,
+                stored_resource,
+            )
+
+    assert invalid.value.code == "PARSER_REMOTE_SNAPSHOT_INVALID"
 
 
 def test_remote_terminal_uses_pty_and_forwards_io(

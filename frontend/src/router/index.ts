@@ -29,7 +29,7 @@ export const routes: RouteRecordRaw[] = [
       {
         path: 'resources',
         component: () => import('@/views/ResourcesView.vue'),
-        meta: { section: 'management', operator: true },
+        meta: { section: 'management' },
       },
       {
         path: 'resources/:id/database',

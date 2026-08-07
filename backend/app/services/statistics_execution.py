@@ -126,9 +126,10 @@ async def list_statistics_csv_files(
 ) -> dict[str, typing.Any]:
     if resource.is_deleted or not resource.is_enabled or resource.resource_type != "parser":
         raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少已启用的解析工具", 409)
-    directory = resource.remote_path.strip().rstrip("/")
-    if not directory:
+    configured_directory = resource.remote_path.strip()
+    if not configured_directory:
         raise WorkflowError("STATISTICS_SOURCE_PATH_REQUIRED", "解析工具远端路径不能为空", 409)
+    directory = posixpath.normpath(configured_directory)
 
     parser_step = next(
         (
@@ -157,8 +158,9 @@ async def list_statistics_csv_files(
         )
     remote_workdir = posixpath.normpath(raw_workdir.strip())
     resource_directory = posixpath.normpath(directory)
-    if remote_workdir == resource_directory or not remote_workdir.startswith(
-        f"{resource_directory}/"
+    if (
+        remote_workdir != resource_directory
+        and not remote_workdir.startswith(f"{resource_directory}/.openslt-runs/")
     ):
         raise WorkflowError(
             "STATISTICS_PARSER_RESULT_INVALID",
@@ -446,10 +448,11 @@ async def execute_statistics_node(
         raise WorkflowError("STATISTICS_SCRIPT_CHANGED", "统计脚本已发生变化，请重新发布工作流", 409)
 
     legacy_inputs = any("artifact" in item for item in inputs)
-    remote_workdir = posixpath.join(
-        resource.remote_path.rstrip("/"), ".openslt-runs",
-        f"r{run.id}-s{step.id}-statistics-a{step.retry_count}-{uuid4().hex[:8]}",
-    ) if legacy_inputs else ""
+    remote_workdir = (
+        posixpath.normpath(resource.remote_path.strip())
+        if legacy_inputs
+        else ""
+    )
     attempts: list[dict[str, typing.Any]] = []
     parsed_results: list[tuple[dict[str, typing.Any], StatisticsScriptOutput]] = []
     connection = None

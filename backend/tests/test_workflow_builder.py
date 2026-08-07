@@ -358,6 +358,63 @@ def test_workflow_draft_revision_preview_and_publish(client, admin_headers, monk
     assert listed[0]["workflow_status"] == "published"
 
 
+def test_workflow_save_response_orders_inserted_node_by_position(client, admin_headers):
+    rem = create_resource(client, admin_headers, "REM-node-order")
+    _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
+    endpoint = f"/api/v1/scenarios/{scenario['id']}/workflow"
+    document = client.get(endpoint, headers=admin_headers).json()
+    server_node = node("server", "server_config", "获取服务器配置", {"targets": []})
+    database_node = node(
+        "database",
+        "database_config",
+        "获取数据库配置",
+        {"database_name": "", "keys": []},
+    )
+
+    initial_save = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [rem["id"]],
+            "nodes": [server_node, database_node],
+        },
+    )
+    assert initial_save.status_code == 200, initial_save.text
+
+    inserted_save = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "expected_revision": initial_save.json()["draft"]["revision"],
+            "resource_ids": [rem["id"]],
+            "nodes": [
+                server_node,
+                node(
+                    "wiring",
+                    "wiring_confirmation",
+                    "接线确认",
+                    {"diagram": "resource"},
+                ),
+                database_node,
+            ],
+        },
+    )
+    assert inserted_save.status_code == 200, inserted_save.text
+    expected_order = [("server", 1), ("wiring", 2), ("database", 3)]
+    assert [
+        (item["node_key"], item["position"])
+        for item in inserted_save.json()["draft"]["nodes"]
+    ] == expected_order
+
+    reloaded = client.get(endpoint, headers=admin_headers)
+    assert reloaded.status_code == 200, reloaded.text
+    assert [
+        (item["node_key"], item["position"])
+        for item in reloaded.json()["draft"]["nodes"]
+    ] == expected_order
+
+
 def test_database_preview_releases_platform_write_lock_during_remote_read(
     client,
     admin_headers,

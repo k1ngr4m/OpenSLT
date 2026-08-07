@@ -123,7 +123,7 @@ describe('ShellLayout navigation', () => {
     const management = await mountLayout('/plans', 'visitor')
     const navigation = management.wrapper.get('.el-menu-stub')
     expect(navigation.text()).toContain('方案与场景')
-    expect(navigation.text()).not.toContain('资源管理')
+    expect(navigation.text()).toContain('资源管理')
     expect(navigation.text()).not.toContain('日志中心')
     management.wrapper.unmount()
   })

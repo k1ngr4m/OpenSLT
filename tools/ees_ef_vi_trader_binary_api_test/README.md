@@ -22,11 +22,12 @@ new_quote_simple
 new_arbi_order
 new_arbi_order_simple
 cxl_order
+cxl_quote
 stop_order
 ```
 
 程序也接受旧工具文档中的紧凑写法，例如 `new_ordersimple`、`newquote`、
-`newarbiorder` 和 `cxlorder`。输入 `help` 查看命令，输入 `exit` 或按 `Ctrl+C`
+`newarbiorder`、`cxlorder` 和 `cxlquote`。输入 `help` 查看命令，输入 `exit` 或按 `Ctrl+C`
 退出。
 
 独立运行仿真工具测试：
@@ -68,7 +69,7 @@ sha256sum -c SHA256SUMS
 
 - 远端路径：上述解压目录的绝对路径；
 - `order_tool`：`ees_ef_vi_trader_binary_api_test`；
-- 动作能力：选择需要联调的八个标准动作；
+- 动作能力：选择需要联调的九个标准动作；
 - 服务器需安装 `tmux`，供 OpenSLT 创建和清理发单会话。
 
 样例 XML 使用 RFC 5737 文档专用地址和虚构账号。它可以复制后修改，但仿真程序

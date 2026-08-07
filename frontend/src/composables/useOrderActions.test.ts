@@ -90,6 +90,19 @@ describe('useOrderActions', () => {
     expect(api.post).toHaveBeenCalledWith('/runs/11/steps/7/order-action', { action: 'stop_order' })
   })
 
+  it('treats cxl_quote as a dangerous action', async () => {
+    const { actions } = setup(orderStep({ supported_order_actions: ['new_quote', 'cxl_quote'] }))
+
+    await actions.sendOrderAction('cxl_quote')
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('cxl_quote'),
+      '确认高风险指令',
+      expect.objectContaining({ confirmButtonText: '确认发送' }),
+    )
+    expect(api.post).toHaveBeenCalledWith('/runs/11/steps/7/order-action', { action: 'cxl_quote' })
+  })
+
   it('locks sending and exposes the latest ten history entries while unresolved', () => {
     const history = Array.from({ length: 12 }, (_, index) => ({
       request_id: `request-${index}`,

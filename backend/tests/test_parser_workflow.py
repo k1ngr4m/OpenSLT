@@ -626,7 +626,10 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
 
     class FakeSFTP:
         def __init__(self):
-            self.files = {"/home/user0/soft_cffex_speed_analysis_v2/existing.csv": b"old"}
+            self.files = {
+                "/home/user0/soft_cffex_speed_analysis_v2/existing.csv": b"old",
+                "/home/user0/soft_cffex_speed_analysis_v2/analysis-result.csv": b"old-result",
+            }
             self.mtimes = {name: 1 for name in self.files}
             self.closed = False
 
@@ -850,11 +853,10 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     parsed = [item for item in run["artifacts"] if item["artifact_type"] == "parsed_csv"]
     assert [item["name"] for item in parsed] == ["analysis-result.csv"]
     parser_command = next(item.rstrip("\r") for item in connection.writes if "soft_cffex_speed_analysis.xml" in item)
-    assert parser_command.startswith(
-        "cd /home/user0/soft_cffex_speed_analysis_v2/.openslt-runs/"
-    )
-    assert parser_command.endswith(
-        " && /home/user0/soft_cffex_speed_analysis_v2/soft_cffex_speed_analysis_v2 soft_cffex_speed_analysis.xml"
+    assert parser_command == (
+        "cd /home/user0/soft_cffex_speed_analysis_v2 && "
+        "/home/user0/soft_cffex_speed_analysis_v2/soft_cffex_speed_analysis_v2 "
+        "soft_cffex_speed_analysis.xml"
     )
     assert f"{PARSER_ACTIONS[0]}\r" in connection.writes
     assert connection.writes[-1] == "\x03"
@@ -883,7 +885,11 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     parse_step = next(item for item in run["steps"] if item["node_type"] == "parser_parse")
     assert parse_step["result_summary"]["config_database_name"] == "fut_mm_config"
     assert parse_step["result_summary"]["mode"] == "terminal"
-    assert parse_step["result_summary"]["remote_workdir"] == remote_workdir
+    assert parse_step["result_summary"]["remote_workdir"] == "/home/user0/soft_cffex_speed_analysis_v2"
+    assert set(parse_step["result_summary"]["remote_csv_snapshot"]) == {
+        "analysis-result.csv",
+        "existing.csv",
+    }
     assert parse_step["result_summary"]["parser_action_history"][-1]["action"] == PARSER_ACTIONS[0]
     exports = parse_step["result_summary"]["parser_input_exports"]
     assert exports["t_fut_orders"]["source"] == "manual"
@@ -897,3 +903,39 @@ def test_remote_parser_uploads_inputs_executes_and_downloads_changed_csv(
     )
     assert late_export.status_code == 409
     assert late_export.json()["code"] == "PARSER_EXPORT_NOT_ALLOWED"
+
+
+def test_parser_csv_changes_include_added_and_modified_files_but_exclude_inputs():
+    before = {
+        "unchanged.csv": (10, 1),
+        "modified.csv": (20, 2),
+        "t_fut_orders.csv": (30, 3),
+    }
+    after = {
+        "unchanged.csv": (10, 1),
+        "modified.csv": (21, 4),
+        "new.csv": (40, 5),
+        "t_fut_orders.csv": (31, 6),
+    }
+
+    assert workflows._changed_parser_csv_files(
+        before,
+        after,
+        {"t_fut_orders.csv"},
+    ) == ["modified.csv", "new.csv"]
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        None,
+        {"nested/result.csv": [10, 1]},
+        {"result.csv": [10]},
+        {"result.csv": [10, True]},
+    ],
+)
+def test_parser_csv_snapshot_rejects_missing_or_malformed_state(snapshot):
+    with pytest.raises(workflows.WorkflowError) as invalid:
+        workflows._parse_parser_csv_snapshot(snapshot)
+
+    assert invalid.value.code == "PARSER_REMOTE_SNAPSHOT_INVALID"

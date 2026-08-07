@@ -15,6 +15,7 @@ ORDER_ACTIONS = (
     "new_arbi_order",
     "new_arbi_order_simple",
     "cxl_order",
+    "cxl_quote",
     "stop_order",
 )
 PARSER_ACTIONS = (
@@ -60,6 +61,7 @@ OrderAction = Literal[
     "new_arbi_order",
     "new_arbi_order_simple",
     "cxl_order",
+    "cxl_quote",
     "stop_order",
 ]
 ParserAction = Literal[

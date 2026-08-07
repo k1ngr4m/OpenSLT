@@ -117,7 +117,7 @@ onBeforeUnmount(() => {
               <el-icon><Document /></el-icon>
               <template #title>方案与场景</template>
             </el-menu-item>
-            <el-menu-item v-if="auth.canOperate" index="/resources">
+            <el-menu-item index="/resources">
               <el-icon><SetUp /></el-icon>
               <template #title>资源管理</template>
             </el-menu-item>

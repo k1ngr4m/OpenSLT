@@ -458,7 +458,62 @@ async def _parser_csv_snapshot(sftp: typing.Any, directory: str) -> dict[str, tu
             continue
         if entry.attrs.type != asyncssh.FILEXFER_TYPE_REGULAR:
             continue
-        snapshot[entry.filename] = (entry.attrs.size or 0, entry.attrs.mtime or 0)
+        snapshot[entry.filename] = (
+            int(entry.attrs.size or 0),
+            int(entry.attrs.mtime or 0),
+        )
+    return snapshot
+
+
+def _changed_parser_csv_files(
+    before: typing.Mapping[str, typing.Sequence[int]],
+    after: typing.Mapping[str, typing.Sequence[int]],
+    input_filenames: typing.AbstractSet[str],
+) -> list[str]:
+    return sorted(
+        filename
+        for filename, state in after.items()
+        if filename not in input_filenames and before.get(filename) != state
+    )
+
+
+def _serialize_parser_csv_snapshot(
+    snapshot: typing.Mapping[str, typing.Sequence[int]],
+) -> dict[str, list[int]]:
+    return {
+        filename: [int(state[0]), int(state[1])]
+        for filename, state in snapshot.items()
+    }
+
+
+def _parse_parser_csv_snapshot(raw: typing.Any) -> dict[str, tuple[int, int]]:
+    if not isinstance(raw, dict):
+        raise WorkflowError(
+            "PARSER_REMOTE_SNAPSHOT_INVALID",
+            "解析远端目录快照无效，请重试解析节点",
+            409,
+        )
+    snapshot: dict[str, tuple[int, int]] = {}
+    for filename, state in raw.items():
+        if (
+            not isinstance(filename, str)
+            or filename != posixpath.basename(filename)
+            or not filename.lower().endswith(".csv")
+            or not isinstance(state, (list, tuple))
+            or len(state) != 2
+            or any(
+                not isinstance(value, int)
+                or isinstance(value, bool)
+                or value < 0
+                for value in state
+            )
+        ):
+            raise WorkflowError(
+                "PARSER_REMOTE_SNAPSHOT_INVALID",
+                "解析远端目录快照无效，请重试解析节点",
+                409,
+            )
+        snapshot[filename] = (state[0], state[1])
     return snapshot
 
 
@@ -562,18 +617,16 @@ async def prepare_parser_terminal_node(
         for table in PARSER_TABLES
     }
     binary = str((parser_resource.capabilities or {}).get("parser_binary") or (parser_resource.capabilities or {}).get("parser_tool") or "").strip()
-    directory = parser_resource.remote_path.strip().rstrip("/")
-    if not binary or not directory:
+    configured_directory = parser_resource.remote_path.strip()
+    if not binary or not configured_directory:
         raise WorkflowError("PARSER_RESOURCE_INVALID", "解析工具资源配置不完整", 409)
+    directory = posixpath.normpath(configured_directory)
     xml_files = await _load_parser_xml_files(parser_resource, raw_config)
     pcap_artifact = _parser_pcap_artifact(db, run, step)
-    remote_workdir = posixpath.join(
-        directory,
-        ".openslt-runs",
-        f"r{run.id}-s{step.id}-a{step.retry_count}-{uuid4().hex[:8]}",
-    )
+    remote_workdir = directory
     table_rows: dict[str, int] = {}
     input_checksums: dict[str, str] = {}
+    remote_csv_snapshot: dict[str, tuple[int, int]] = {}
     with tempfile.TemporaryDirectory(prefix="openslt-parser-") as temporary_name:
         staging = Path(temporary_name)
         input_files: dict[str, Path] = {}
@@ -619,6 +672,7 @@ async def prepare_parser_terminal_node(
         try:
             sftp = await connection.start_sftp_client()
             await sftp.makedirs(remote_workdir, exist_ok=True)
+            remote_csv_snapshot = await _parser_csv_snapshot(sftp, remote_workdir)
             for filename, source in input_files.items():
                 await _upload_parser_input(sftp, remote_workdir, filename, source)
         except WorkflowError:
@@ -643,6 +697,7 @@ async def prepare_parser_terminal_node(
             for role, detail in xml_files.items()
         },
         "remote_workdir": remote_workdir,
+        "remote_csv_snapshot": _serialize_parser_csv_snapshot(remote_csv_snapshot),
         "table_rows": table_rows,
         "input_filenames": sorted(input_checksums),
         "input_checksums": input_checksums,
@@ -703,19 +758,16 @@ async def execute_parser_node(
     }
     capabilities = parser_resource.capabilities or {}
     binary = str(capabilities.get("parser_binary") or capabilities.get("parser_tool") or "").strip()
-    directory = parser_resource.remote_path.strip().rstrip("/")
-    if not binary or not directory:
+    configured_directory = parser_resource.remote_path.strip()
+    if not binary or not configured_directory:
         raise WorkflowError("PARSER_RESOURCE_INVALID", "解析工具资源配置不完整", 409)
+    directory = posixpath.normpath(configured_directory)
     xml_files = await _load_parser_xml_files(parser_resource, raw_config)
     analysis_filename = str(xml_files["analysis"]["name"])
     pcap_artifact = _parser_pcap_artifact(db, run, step)
     artifact_directory = _parser_artifact_directory(run, step)
     artifact_directory.mkdir(parents=True, exist_ok=True)
-    remote_workdir = posixpath.join(
-        directory,
-        ".openslt-runs",
-        f"r{run.id}-s{step.id}-a{step.retry_count}-{uuid4().hex[:8]}",
-    )
+    remote_workdir = directory
     binary_path = posixpath.join(directory, binary)
     command = (
         f"cd {shlex.quote(remote_workdir)} && "
@@ -727,6 +779,7 @@ async def execute_parser_node(
     stdout = ""
     stderr = ""
     started_at = beijing_now()
+    remote_csv_snapshot: dict[str, tuple[int, int]] = {}
 
     with tempfile.TemporaryDirectory(prefix="openslt-parser-") as temporary_name:
         staging = Path(temporary_name)
@@ -781,6 +834,7 @@ async def execute_parser_node(
             connection = await asyncssh.connect(**_ssh_options(parser_resource))
             sftp = await connection.start_sftp_client()
             await sftp.makedirs(remote_workdir, exist_ok=True)
+            remote_csv_snapshot = await _parser_csv_snapshot(sftp, remote_workdir)
             for filename, source in input_files.items():
                 await _upload_parser_input(sftp, remote_workdir, filename, source)
             result = await connection.run(command, check=False)
@@ -794,9 +848,10 @@ async def execute_parser_node(
                     409,
                 )
             after = await _parser_csv_snapshot(sftp, remote_workdir)
-            changed = sorted(
-                name for name in after
-                if name not in input_files
+            changed = _changed_parser_csv_files(
+                remote_csv_snapshot,
+                after,
+                set(input_files),
             )
             if not changed:
                 raise WorkflowError("PARSER_OUTPUT_MISSING", "解析成功但没有生成或更新 CSV 文件", 409)
@@ -839,6 +894,7 @@ async def execute_parser_node(
             for role, detail in xml_files.items()
         },
         "remote_workdir": remote_workdir,
+        "remote_csv_snapshot": _serialize_parser_csv_snapshot(remote_csv_snapshot),
         "table_rows": table_rows,
         "input_checksums": input_checksums,
         "pcap_artifact_id": pcap_artifact.id,
@@ -860,13 +916,24 @@ async def collect_parser_outputs(
 ) -> dict:
     """Download CSV files created by an interactive parser session."""
     summary = step.result_summary or {}
-    remote_workdir = str(summary.get("remote_workdir") or "").strip()
-    root = parser_resource.remote_path.strip().rstrip("/")
-    if not remote_workdir or not root or not remote_workdir.startswith(f"{root}/.openslt-runs/"):
+    raw_remote_workdir = str(summary.get("remote_workdir") or "").strip()
+    raw_root = parser_resource.remote_path.strip()
+    remote_workdir = posixpath.normpath(raw_remote_workdir) if raw_remote_workdir else ""
+    root = posixpath.normpath(raw_root) if raw_root else ""
+    is_direct_workdir = bool(root and remote_workdir == root)
+    is_legacy_workdir = bool(
+        root and remote_workdir.startswith(f"{root}/.openslt-runs/")
+    )
+    if not remote_workdir or not root or not (is_direct_workdir or is_legacy_workdir):
         raise WorkflowError("PARSER_REMOTE_WORKDIR_INVALID", "解析远端工作目录无效", 409)
     input_checksums = summary.get("input_checksums")
     if not isinstance(input_checksums, dict):
         input_checksums = {}
+    before = (
+        _parse_parser_csv_snapshot(summary.get("remote_csv_snapshot"))
+        if is_direct_workdir
+        else None
+    )
     artifact_directory = _parser_artifact_directory(run, step)
     artifact_directory.mkdir(parents=True, exist_ok=True)
     connection = None
@@ -877,7 +944,14 @@ async def collect_parser_outputs(
         connection = await asyncssh.connect(**_ssh_options(parser_resource))
         sftp = await connection.start_sftp_client()
         snapshot = await _parser_csv_snapshot(sftp, remote_workdir)
-        changed = sorted(name for name in snapshot if name not in input_checksums)
+        if is_direct_workdir:
+            changed = _changed_parser_csv_files(
+                typing.cast(dict[str, tuple[int, int]], before),
+                snapshot,
+                set(input_checksums),
+            )
+        else:
+            changed = sorted(name for name in snapshot if name not in input_checksums)
         if not changed:
             raise WorkflowError("PARSER_OUTPUT_MISSING", "解析目录没有生成新的 CSV 文件", 409)
         for filename in changed:

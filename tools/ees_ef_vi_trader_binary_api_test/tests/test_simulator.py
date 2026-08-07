@@ -109,6 +109,7 @@ def test_all_actions_and_legacy_aliases_are_simulated() -> None:
         "newquote_simple",
         "newarbiorder",
         "cxlorder",
+        "cxlquote",
         "exit",
     ]
     result = run_cli(str(SAMPLE_CONFIG), input_text="\n".join(commands) + "\n")
@@ -119,6 +120,10 @@ def test_all_actions_and_legacy_aliases_are_simulated() -> None:
     assert "SIM-000001" in result.stdout
     assert "SIM-000013" in result.stdout
     assert "status\": \"simulated" in result.stdout
+
+
+def test_cxl_quote_legacy_alias_is_simulated() -> None:
+    assert simulator.canonical_action("cxlquote") == "cxl_quote"
 
 
 def test_unknown_command_does_not_end_session_or_leak_xml_values() -> None:

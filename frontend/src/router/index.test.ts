@@ -29,12 +29,15 @@ afterEach(() => {
 describe('management route permissions', () => {
   it.each([
     '/plans/scenarios/1/workflow',
-    '/resources',
     '/resources/1/database',
     '/resources/1/terminal',
     '/logs',
   ])('blocks visitors from %s', async path => {
     expect(await navigateAs('visitor', path)).toBe('/forbidden')
+  })
+
+  it('allows visitors to view the resource list', async () => {
+    expect(await navigateAs('visitor', '/resources')).toBe('/resources')
   })
 
   it('allows visitors to view plans and scenarios', async () => {
