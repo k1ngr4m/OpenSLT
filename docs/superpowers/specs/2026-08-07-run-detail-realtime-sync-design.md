@@ -35,9 +35,11 @@ GET /api/v1/runs/{run_id}/logs?after_id=1234
 
 - `loadRun()`：只请求运行详情；作为原有公开 `load` 的实现，供运行操作、节点操作和配置保存后的刷新继续使用。
 - `loadLogs()`：首次加载当前日志集合。
-- `syncLogsAfter(lastId)`：WebSocket 重连或断线轮询时增量补齐日志。
+- `syncLogsAfter(cursor)`：WebSocket 重连或断线轮询时，从最后一次 HTTP 成功同步的日志 ID 之后增量补齐日志。
 
 日志合并以 `id` 为唯一键，保持 ID 升序，避免初始 HTTP、增量 HTTP 和 WebSocket 事件交错时出现重复记录。
+
+前端单独维护“最后一次 HTTP 成功同步的日志 ID”作为增量游标。WebSocket 日志只参与界面合并，不推进该游标；否则先到达的较大 WebSocket 日志 ID 可能让后续 HTTP 补偿跳过尚未同步的较小 ID。
 
 ### WebSocket 主同步
 
