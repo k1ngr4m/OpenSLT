@@ -13,15 +13,30 @@ export function useRunLifecycle(runId: number) {
   const run = ref<RunDetail | null>(null)
   const logs = ref<RunLog[]>([])
   let socket: WebSocket | null = null
-  let timer: number | undefined
+  let refreshTimer: number | undefined
+
+  function mergeLogs(items: RunLog[]) {
+    const merged = new Map(logs.value.map(item => [item.id, item]))
+    for (const item of items) merged.set(item.id, item)
+    logs.value = [...merged.values()].sort((left, right) => left.id - right.id)
+  }
 
   async function load() {
-    const [runResponse, logsResponse] = await Promise.all([
-      api.get<RunDetail>(`/runs/${runId}`),
-      api.get<RunLog[]>(`/runs/${runId}/logs`),
-    ])
-    run.value = runResponse.data
-    logs.value = logsResponse.data
+    const response = await api.get<RunDetail>(`/runs/${runId}`)
+    run.value = response.data
+  }
+
+  async function loadInitialLogs() {
+    const response = await api.get<RunLog[]>(`/runs/${runId}/logs`)
+    mergeLogs(response.data)
+  }
+
+  function scheduleRunRefresh() {
+    if (refreshTimer !== undefined) window.clearTimeout(refreshTimer)
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = undefined
+      void load()
+    }, 200)
   }
 
   function connect() {
@@ -30,26 +45,24 @@ export function useRunLifecycle(runId: number) {
     socket = new WebSocket(`${protocol}://${location.host}/api/v1/ws/runs/${runId}?token=${token}`)
     socket.onmessage = event => {
       const payload = JSON.parse(event.data) as RunSocketPayload
-      if (payload.type === 'log' && payload.data) logs.value.push(payload.data)
-      if (payload.type === 'status' || payload.type === 'snapshot') {
-        if (run.value) {
-          if (payload.status) run.value.status = payload.status
-          if (typeof payload.progress === 'number') run.value.progress = payload.progress
-        }
-        window.setTimeout(load, 200)
+      if (payload.type === 'log' && payload.data) mergeLogs([payload.data])
+      if ((payload.type === 'status' || payload.type === 'snapshot') && run.value) {
+        if (payload.status) run.value.status = payload.status
+        if (typeof payload.progress === 'number') run.value.progress = payload.progress
       }
+      if (payload.type === 'status') scheduleRunRefresh()
     }
   }
 
   onMounted(() => {
-    load()
+    void load()
+    void loadInitialLogs()
     connect()
-    timer = window.setInterval(load, 5000)
   })
 
   onBeforeUnmount(() => {
     socket?.close()
-    if (timer) window.clearInterval(timer)
+    if (refreshTimer !== undefined) window.clearTimeout(refreshTimer)
   })
 
   return { load, logs, run }
