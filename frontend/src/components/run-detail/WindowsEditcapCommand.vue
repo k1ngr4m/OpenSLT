@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { CopyDocument } from '@element-plus/icons-vue'
+import { copyText } from '@/utils/clipboard'
 import { ElMessage } from '@/ui/elementPlusServices'
 
 const props = defineProps<{ command: string }>()
 
 async function copyCommand() {
   try {
-    await navigator.clipboard.writeText(props.command)
+    await copyText(props.command)
     ElMessage.success('Windows editcap 命令已复制')
   } catch {
     ElMessage.error('复制失败，请手动选择命令')
