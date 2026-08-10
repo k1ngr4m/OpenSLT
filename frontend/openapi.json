@@ -3924,6 +3924,160 @@
         "title": "SlnicStopNodeWrite",
         "type": "object"
       },
+      "StatisticsAnalysisDetailOut": {
+        "properties": {
+          "analysis": {
+            "$ref": "#/components/schemas/StatisticsAnalysisMetadataOut"
+          },
+          "artifact": {
+            "title": "Artifact",
+            "type": "object"
+          }
+        },
+        "required": [
+          "analysis",
+          "artifact"
+        ],
+        "title": "StatisticsAnalysisDetailOut",
+        "type": "object"
+      },
+      "StatisticsAnalysisMetadataOut": {
+        "properties": {
+          "analysis_no": {
+            "minimum": 1.0,
+            "title": "Analysis No",
+            "type": "integer"
+          },
+          "artifact_checksum": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Checksum"
+          },
+          "artifact_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Id"
+          },
+          "artifact_size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Size"
+          },
+          "config_revision": {
+            "minimum": 0.0,
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "inputs": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "max_latency_ns": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Latency Ns"
+          },
+          "reserved_at": {
+            "title": "Reserved At",
+            "type": "string"
+          },
+          "script": {
+            "title": "Script",
+            "type": "object"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "analysis_no",
+          "status",
+          "config_revision",
+          "reserved_at"
+        ],
+        "title": "StatisticsAnalysisMetadataOut",
+        "type": "object"
+      },
       "StatisticsConfig": {
         "additionalProperties": false,
         "properties": {
@@ -4127,6 +4281,73 @@
           "node_type"
         ],
         "title": "StatisticsNodeWrite",
+        "type": "object"
+      },
+      "StatisticsRuntimeConfigOut": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "inputs": {
+            "items": {
+              "$ref": "#/components/schemas/StatisticsInputOut"
+            },
+            "title": "Inputs",
+            "type": "array"
+          },
+          "max_latency_ns": {
+            "minimum": 1.0,
+            "title": "Max Latency Ns",
+            "type": "integer"
+          },
+          "selected_at": {
+            "format": "date-time",
+            "title": "Selected At",
+            "type": "string"
+          },
+          "selected_by": {
+            "title": "Selected By",
+            "type": "integer"
+          },
+          "statistics_config_revision": {
+            "minimum": 0.0,
+            "title": "Statistics Config Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "inputs",
+          "selected_by",
+          "selected_at",
+          "max_latency_ns",
+          "statistics_config_revision",
+          "changed"
+        ],
+        "title": "StatisticsRuntimeConfigOut",
+        "type": "object"
+      },
+      "StatisticsRuntimeConfigRequest": {
+        "properties": {
+          "max_latency_ns": {
+            "minimum": 1.0,
+            "title": "Max Latency Ns",
+            "type": "integer"
+          },
+          "relative_paths": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Relative Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "relative_paths",
+          "max_latency_ns"
+        ],
+        "title": "StatisticsRuntimeConfigRequest",
         "type": "object"
       },
       "StatisticsScriptFileOut": {
@@ -8456,6 +8677,59 @@
         "summary": "Run Start"
       }
     },
+    "/api/v1/runs/{run_id}/steps/{step_id}/analyze": {
+      "post": {
+        "operationId": "analyze_statistics_step_api_v1_runs__run_id__steps__step_id__analyze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Analyze Statistics Step"
+      }
+    },
     "/api/v1/runs/{run_id}/steps/{step_id}/capture-snapshots": {
       "get": {
         "operationId": "list_run_step_capture_snapshots_api_v1_runs__run_id__steps__step_id__capture_snapshots_get",
@@ -8972,6 +9246,188 @@
           }
         ],
         "summary": "Start Run Step"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-analyses": {
+      "get": {
+        "operationId": "list_statistics_analyses_api_v1_runs__run_id__steps__step_id__statistics_analyses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StatisticsAnalysisMetadataOut"
+                  },
+                  "title": "Response List Statistics Analyses Api V1 Runs  Run Id  Steps  Step Id  Statistics Analyses Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Statistics Analyses"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-analyses/{analysis_no}": {
+      "get": {
+        "operationId": "get_statistics_analysis_api_v1_runs__run_id__steps__step_id__statistics_analyses__analysis_no__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "analysis_no",
+            "required": true,
+            "schema": {
+              "title": "Analysis No",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsAnalysisDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Statistics Analysis"
+      }
+    },
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-config": {
+      "put": {
+        "operationId": "update_statistics_runtime_configuration_api_v1_runs__run_id__steps__step_id__statistics_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "step_id",
+            "required": true,
+            "schema": {
+              "title": "Step Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatisticsRuntimeConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsRuntimeConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Statistics Runtime Configuration"
       }
     },
     "/api/v1/runs/{run_id}/steps/{step_id}/statistics-csv-files": {
