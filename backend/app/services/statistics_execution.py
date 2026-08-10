@@ -228,10 +228,42 @@ async def select_statistics_inputs(
     relative_paths: list[str],
     actor_id: int,
 ) -> dict[str, typing.Any]:
+    return await update_statistics_runtime_config(
+        db,
+        run,
+        step,
+        resource,
+        relative_paths,
+        int((step.config_snapshot or {}).get("max_latency_ns") or 999999999),
+        actor_id,
+    )
+
+
+def _statistics_input_snapshot(item: typing.Mapping[str, typing.Any]) -> dict[str, typing.Any]:
+    return {
+        key: item[key]
+        for key in (
+            "artifact_id", "relative_path", "source_path", "filename", "source", "size", "modified_at", "checksum",
+        )
+        if key in item
+    }
+
+
+async def update_statistics_runtime_config(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    resource: Resource,
+    relative_paths: list[str],
+    max_latency_ns: int,
+    actor_id: int,
+) -> dict[str, typing.Any]:
     if not relative_paths:
         raise WorkflowError("STATISTICS_INPUTS_REQUIRED", "请至少选择一个统计 CSV", 409)
     if len(relative_paths) != len(set(relative_paths)):
         raise WorkflowError("STATISTICS_INPUTS_DUPLICATE", "统计输入不能重复", 400)
+    if max_latency_ns < 1:
+        raise WorkflowError("STATISTICS_MAX_LATENCY_INVALID", "异常大值上限必须为正整数", 400)
     listing = await list_statistics_csv_files(resource, run, step)
     available = {item["relative_path"]: item for item in listing["files"]}
     try:
@@ -240,18 +272,126 @@ async def select_statistics_inputs(
         raise WorkflowError(
             "STATISTICS_INPUT_INVALID", "只能选择当前列表中的远端 CSV", 409
         ) from exc
-    selected_at = beijing_now()
-    selection = {
-        "inputs": inputs,
-        "selected_by": actor_id,
-        "selected_at": selected_at.isoformat(),
+    summary = dict(step.result_summary or {})
+    existing_selection = summary.get("statistics_selection") or {}
+    existing_inputs = existing_selection.get("inputs") if isinstance(existing_selection, dict) else None
+    existing_max_latency_ns = (step.config_snapshot or {}).get("max_latency_ns")
+    changed = existing_inputs != inputs or existing_max_latency_ns != max_latency_ns
+    if changed:
+        selected_at = beijing_now()
+        selection = {
+            "inputs": inputs,
+            "selected_by": actor_id,
+            "selected_at": selected_at.isoformat(),
+        }
+        summary["statistics_selection"] = selection
+        summary["statistics_config_revision"] = int(
+            summary.get("statistics_config_revision") or 0
+        ) + 1
+        step.config_snapshot = {
+            **(step.config_snapshot or {}),
+            "max_latency_ns": max_latency_ns,
+        }
+        step.result_summary = summary
+    else:
+        selection = typing.cast(typing.Dict[str, typing.Any], existing_selection)
+    db.flush()
+    return {
+        **selection,
+        "max_latency_ns": int((step.config_snapshot or {}).get("max_latency_ns") or max_latency_ns),
+        "statistics_config_revision": int(summary.get("statistics_config_revision") or 0),
+        "changed": changed,
     }
+
+
+def reserve_statistics_analysis(db: Session, run: TestRun, step: RunStep) -> int:
+    """为一次统计执行预留单调分析号；Task 2 以此轻量索引定位不可变产物。"""
+    selected = require_statistics_selection(db, run, step)
+    summary = dict(step.result_summary or {})
+    history = [dict(item) for item in summary.get("statistics_analyses") or [] if isinstance(item, dict)]
+    analysis_no = max(
+        (int(item.get("analysis_no") or 0) for item in history), default=0
+    ) + 1
+    now = beijing_now().isoformat()
+    config = step.config_snapshot or {}
+    history.append(
+        {
+            "analysis_no": analysis_no,
+            "status": "running",
+            "config_revision": int(summary.get("statistics_config_revision") or 0),
+            "inputs": [_statistics_input_snapshot(item) for item in selected],
+            "max_latency_ns": int(config.get("max_latency_ns") or 999999999),
+            "script": {
+                "filename": str(config.get("script_filename") or ""),
+                "checksum": str(config.get("script_checksum") or ""),
+            },
+            "reserved_at": now,
+            "started_at": now,
+        }
+    )
     step.result_summary = {
-        **(step.result_summary or {}),
-        "statistics_selection": selection,
+        **summary,
+        "statistics_analyses": history,
+        "statistics_active_analysis_no": analysis_no,
+        "statistics_next_analysis_no": analysis_no + 1,
     }
     db.flush()
-    return selection
+    return analysis_no
+
+
+def finish_statistics_analysis(
+    db: Session,
+    step: RunStep,
+    *,
+    status: str,
+    error_code: typing.Optional[str] = None,
+) -> None:
+    summary = dict(step.result_summary or {})
+    active = summary.get("statistics_active_analysis_no")
+    if not isinstance(active, int):
+        return
+    history = [dict(item) for item in summary.get("statistics_analyses") or [] if isinstance(item, dict)]
+    record = next((item for item in reversed(history) if item.get("analysis_no") == active), None)
+    if record is None:
+        return
+    record["status"] = status
+    record["finished_at"] = beijing_now().isoformat()
+    if error_code:
+        record["error_code"] = error_code
+    if status == "succeeded":
+        summary["statistics_latest_success_analysis_no"] = active
+        summary["statistics_latest_success_revision"] = record["config_revision"]
+    summary["statistics_analyses"] = history
+    step.result_summary = summary
+    db.flush()
+
+
+def validate_statistics_completion_freshness(step: RunStep) -> None:
+    summary = step.result_summary or {}
+    # 没有新索引的历史运行维持原有完成行为。
+    if "statistics_analyses" not in summary:
+        return
+    revision = int(summary.get("statistics_config_revision") or 0)
+    latest_no = summary.get("statistics_latest_success_analysis_no")
+    history = summary.get("statistics_analyses") or []
+    latest = next(
+        (
+            item for item in reversed(history)
+            if isinstance(item, dict) and item.get("analysis_no") == latest_no
+        ),
+        None,
+    )
+    if (
+        summary.get("statistics_latest_success_revision") != revision
+        or not isinstance(latest, dict)
+        or latest.get("status") != "succeeded"
+        or latest.get("config_revision") != revision
+    ):
+        raise WorkflowError(
+            "STATISTICS_ANALYSIS_STALE",
+            "当前统计配置尚未完成对应的分析，不能完成节点",
+            409,
+        )
 
 
 def require_statistics_selection(
@@ -576,7 +716,7 @@ async def execute_statistics_node(
     }
     result_artifact = _register_result_artifact(db, run, step, consolidated)
     _replace_metrics(db, run, step, parsed_results, script_detail, config.max_latency_ns)
-    return {
+    result_summary = {
         **(step.result_summary or {}),
         "statistics_script": consolidated["script"],
         "max_latency_ns": config.max_latency_ns,
@@ -586,3 +726,6 @@ async def execute_statistics_node(
         "remote_workdir": remote_workdir or None,
         "duration_ms": duration_ms,
     }
+    step.result_summary = result_summary
+    finish_statistics_analysis(db, step, status="succeeded")
+    return step.result_summary

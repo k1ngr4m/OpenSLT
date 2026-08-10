@@ -34,7 +34,7 @@ from app.models import (
     Verdict,
 )
 from app.adapters.database import DatabaseOperationError, validate_database
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, StatisticsRuntimeConfigOut, StatisticsRuntimeConfigRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -44,7 +44,11 @@ from app.services.order_sessions import cleanup_order_session, order_session_nam
 from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
-from app.services.statistics_execution import list_statistics_csv_files, select_statistics_inputs
+from app.services.statistics_execution import (
+    list_statistics_csv_files,
+    select_statistics_inputs,
+    update_statistics_runtime_config,
+)
 from app.services.parser_inputs import PARSER_TABLES
 from app.services.workflows import WorkflowError, collect_parser_outputs, export_parser_table_snapshot, load_version, resolve_parser_table_database, resource_map
 from app.services.workflow_contracts import parse_read_symbol_csv
@@ -63,6 +67,29 @@ DELETABLE_RUN_STATUSES = TERMINAL_RUN_STATUSES | frozenset(
         "paused",
     }
 )
+
+
+def _statistics_config_editable(run: TestRun, step: typing.Optional[RunStep]) -> bool:
+    if not step or step.node_type != "data_statistics":
+        return False
+    current = next((item for item in run.steps if item.status != "succeeded"), None)
+    return bool(
+        current
+        and current.id == step.id
+        and (
+            (run.status == "awaiting_step_start" and step.status == "pending")
+            or (run.status == "awaiting_step_retry" and step.status == "failed")
+            or (run.status == "awaiting_step_completion" and step.status == "waiting")
+        )
+    )
+
+
+def _workflow_step_task_key(run: TestRun, step: RunStep) -> str:
+    if step.node_type == "data_statistics":
+        analysis_no = (step.result_summary or {}).get("statistics_active_analysis_no")
+        if isinstance(analysis_no, int):
+            return f"workflow-step:{run.id}:{step.id}:analysis:{analysis_no}"
+    return f"workflow-step:{run.id}:{step.id}:retry:{step.retry_count}"
 
 @router.post("/runs", response_model=RunOut, status_code=201)
 def create_run(payload: RunCreate, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
@@ -538,8 +565,39 @@ async def start_run_step(run_id: int, step_id: int, request: Request, actor: Use
         step = begin_workflow_step(db, run, step_id)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
-    task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": step.id}, f"workflow-step:{run.id}:{step.id}:retry:{step.retry_count}")
+    task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": step.id}, _workflow_step_task_key(run, step))
     write_audit(db, "run.step_start", "run_step", step.id, actor, request, detail={"run_id": run.id}); db.commit(); schedule_task(task.id); return load_run(db, run.id)
+
+
+@router.post("/runs/{run_id}/steps/{step_id}/analyze", response_model=RunOut)
+async def analyze_statistics_step(
+    run_id: int,
+    step_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> TestRun:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
+    run = load_run(db, run_id)
+    try:
+        step = next((item for item in run.steps if item.id == step_id), None)
+        if not step or step.node_type != "data_statistics":
+            raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
+        step = begin_workflow_step(db, run, step_id, reanalysis=True)
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
+    analysis_no = (step.result_summary or {}).get("statistics_active_analysis_no")
+    task = enqueue_task(
+        db,
+        "start_workflow_step",
+        {"run_id": run.id, "step_id": step.id},
+        _workflow_step_task_key(run, step),
+    )
+    detail = {"run_id": run.id, "analysis_no": analysis_no, "retry_count": step.retry_count}
+    write_audit(db, "run.statistics_analyze", "run_step", step.id, actor, request, detail=detail)
+    db.commit()
+    schedule_task(task.id)
+    return load_run(db, run.id)
 
 
 @router.post("/runs/{run_id}/steps/{step_id}/parser-exports", response_model=ParserTableExportOut)
@@ -639,12 +697,7 @@ async def update_statistics_inputs(
     try:
         if not step or step.node_type != "data_statistics":
             raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
-        current = next((item for item in run.steps if item.status != "succeeded"), None)
-        allowed = (
-            (run.status == "awaiting_step_start" and step.status == "pending")
-            or (run.status == "awaiting_step_retry" and step.status == "failed")
-        )
-        if not allowed or not current or current.id != step.id:
+        if not _statistics_config_editable(run, step):
             raise WorkflowError("STATISTICS_SELECTION_NOT_ALLOWED", "当前数据统计节点不能选择输入", 409)
         parser_resource = db.scalar(select(Resource).where(
             Resource.id.in_(run_resource_ids(run)),
@@ -688,6 +741,75 @@ async def update_statistics_inputs(
         raise workflow_http_error(exc) from exc
 
 
+@router.put(
+    "/runs/{run_id}/steps/{step_id}/statistics-config",
+    response_model=StatisticsRuntimeConfigOut,
+)
+async def update_statistics_runtime_configuration(
+    run_id: int,
+    step_id: int,
+    payload: StatisticsRuntimeConfigRequest,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    db.scalar(select(RunStep).where(RunStep.id == step_id).with_for_update())
+    run = load_run(db, run_id)
+    step = next((item for item in run.steps if item.id == step_id), None)
+    try:
+        if not step or step.node_type != "data_statistics":
+            raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
+        if not _statistics_config_editable(run, step):
+            raise WorkflowError("STATISTICS_CONFIG_NOT_ALLOWED", "当前数据统计节点不能修改分析配置", 409)
+        parser_resource = db.scalar(select(Resource).where(
+            Resource.id.in_(run_resource_ids(run)),
+            Resource.resource_type == "parser",
+        ))
+        if not parser_resource:
+            raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
+        result = await update_statistics_runtime_config(
+            db,
+            run,
+            step,
+            parser_resource,
+            payload.relative_paths,
+            payload.max_latency_ns,
+            actor.id,
+        )
+        detail = {
+            "run_id": run.id,
+            "relative_paths": [item["relative_path"] for item in result["inputs"]],
+            "max_latency_ns": result["max_latency_ns"],
+            "statistics_config_revision": result["statistics_config_revision"],
+            "changed": result["changed"],
+        }
+        append_log(
+            db,
+            run,
+            "statistics.config_updated",
+            "数据统计运行时配置已保存",
+            step=step,
+            source="user",
+            detail=detail,
+        )
+        write_audit(db, "run.statistics_config", "run_step", step.id, actor, request, detail=detail)
+        db.commit()
+        return result
+    except WorkflowError as exc:
+        write_audit(
+            db,
+            "run.statistics_config",
+            "run_step",
+            step_id,
+            actor,
+            request,
+            result="failed",
+            detail={"run_id": run.id, "code": exc.code},
+        )
+        db.commit()
+        raise workflow_http_error(exc) from exc
+
+
 @router.get(
     "/runs/{run_id}/steps/{step_id}/statistics-csv-files",
     response_model=StatisticsCsvFilesOut,
@@ -704,12 +826,7 @@ async def get_statistics_csv_files(
     try:
         if not step or step.node_type != "data_statistics":
             raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
-        current = next((item for item in run.steps if item.status != "succeeded"), None)
-        allowed = (
-            (run.status == "awaiting_step_start" and step.status == "pending")
-            or (run.status == "awaiting_step_retry" and step.status == "failed")
-        )
-        if not allowed or not current or current.id != step.id:
+        if not _statistics_config_editable(run, step):
             raise WorkflowError("STATISTICS_SELECTION_NOT_ALLOWED", "当前数据统计节点不能选择输入", 409)
         parser_resource = db.scalar(select(Resource).where(
             Resource.id.in_(run_resource_ids(run)),
@@ -943,7 +1060,7 @@ async def retry_run_step(run_id: int, step_id: int, request: Request, actor: Use
         step = begin_workflow_step(db, run, step_id, retry=True)
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
-    task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": step.id}, f"workflow-step:{run.id}:{step.id}:retry:{step.retry_count}")
+    task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": step.id}, _workflow_step_task_key(run, step))
     write_audit(db, "run.step_retry", "run_step", step.id, actor, request, detail={"run_id": run.id, "retry_count": step.retry_count}); db.commit(); schedule_task(task.id); return load_run(db, run.id)
 
 
@@ -991,7 +1108,7 @@ async def run_retry(run_id: int, request: Request, actor: User = Depends(operato
             begin_workflow_step(db, run, failed.id, retry=True)
         except WorkflowError as exc:
             raise workflow_http_error(exc) from exc
-        task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": failed.id}, f"workflow-step:{run.id}:{failed.id}:retry:{failed.retry_count}")
+        task = enqueue_task(db, "start_workflow_step", {"run_id": run.id, "step_id": failed.id}, _workflow_step_task_key(run, failed))
         write_audit(db, "run.retry", "test_run", run.id, actor, request, detail={"step": failed.code}); db.commit(); schedule_task(task.id); return load_run(db, run.id)
     if run.status not in {"precheck_failed", "execution_failed", "parse_failed"}:
         raise HTTPException(status_code=409, detail={"code": "INVALID_TRANSITION", "message": "当前状态不能重试"})

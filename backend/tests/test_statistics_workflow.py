@@ -9,9 +9,10 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
 
 from app.core.database import SessionLocal
-from app.models import Artifact, Metric, Resource, RunResource, RunStep, TestRun as RunModel
+from app.models import Artifact, DurableTask, Metric, Resource, RunResource, RunStep, TestRun as RunModel
 from app.services import statistics_execution
 from app.services.statistics_execution import (
     StatisticsScriptOutput,
@@ -424,6 +425,161 @@ def test_statistics_inputs_endpoint_rejects_invalid_path_and_wrong_state(
     )
     assert response.status_code == 409
     assert response_error_code(response) == "STATISTICS_SELECTION_NOT_ALLOWED"
+
+
+def test_statistics_runtime_config_and_reanalysis_state_machine(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """配置变更必须原子化，且复算只能在统计节点等待人工完成时发起。"""
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+
+    async def fake_list(_resource, _run, _step):
+        return {
+            "directory": "/tmp/parser/.openslt-runs/final",
+            "files": [{
+                "relative_path": "latency.csv", "filename": "latency.csv",
+                "source": "current_run", "size": 12,
+                "modified_at": "2026-07-28T10:00:00+08:00",
+            }],
+        }
+
+    monkeypatch.setattr(statistics_execution, "list_statistics_csv_files", fake_list)
+    from app.api.routes import runs as run_routes
+    monkeypatch.setattr(run_routes, "list_statistics_csv_files", fake_list)
+    monkeypatch.setattr(run_routes, "schedule_task", lambda _task_id: None)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(
+            db, plan["id"], scenario["id"], tmp_path, run_number="R-STATISTICS-REANALYZE"
+        )
+        run.workflow_version_id = 1
+        db.add(RunResource(run_id=run.id, resource_id=parser_data["id"], position=1))
+        db.commit()
+        run_id = run.id
+        step_id = step.id
+
+    config_url = f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-config"
+    first = client.put(
+        config_url,
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"], "max_latency_ns": 321},
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["statistics_config_revision"] == 1
+    assert first.json()["max_latency_ns"] == 321
+    with SessionLocal() as db:
+        stored_step = db.get(RunStep, step_id)
+        assert stored_step.config_snapshot["max_latency_ns"] == 321
+        assert stored_step.result_summary["statistics_config_revision"] == 1
+        assert stored_step.result_summary["statistics_selection"]["inputs"] == [{
+            "relative_path": "latency.csv",
+            "filename": "latency.csv",
+            "source": "current_run",
+            "size": 12,
+            "modified_at": "2026-07-28T10:00:00+08:00",
+        }]
+
+    # 相同配置不会生成虚假的修订或改变已持久化的输入快照。
+    unchanged = client.put(
+        config_url,
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"], "max_latency_ns": 321},
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["statistics_config_revision"] == 1
+
+    with SessionLocal() as db:
+        stored = db.get(RunModel, run_id)
+        stored.status = "awaiting_step_completion"
+        statistics_step = db.get(RunStep, step_id)
+        statistics_step.status = "waiting"
+        db.commit()
+
+    changed_while_waiting = client.put(
+        config_url,
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"], "max_latency_ns": 654},
+    )
+    assert changed_while_waiting.status_code == 200, changed_while_waiting.text
+    assert changed_while_waiting.json()["statistics_config_revision"] == 2
+
+    # 旧输入端点仍可用，并复用同一份运行时配置/修订逻辑。
+    legacy = client.put(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-inputs",
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"]},
+    )
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["inputs"][0]["relative_path"] == "latency.csv"
+
+    analysis_url = f"/api/v1/runs/{run_id}/steps/{step_id}/analyze"
+    first_analysis = client.post(analysis_url, headers=admin_headers)
+    assert first_analysis.status_code == 200, first_analysis.text
+    first_step = next(item for item in first_analysis.json()["steps"] if item["id"] == step_id)
+    assert first_analysis.json()["status"] == "running"
+    assert first_step["status"] == "running"
+    assert first_step["retry_count"] == 0
+    assert first_step["result_summary"]["statistics_analyses"][0]["analysis_no"] == 1
+    assert first_step["result_summary"]["statistics_analyses"][0]["config_revision"] == 2
+    assert first_step["result_summary"]["statistics_analyses"][0]["max_latency_ns"] == 654
+
+    duplicate = client.post(analysis_url, headers=admin_headers)
+    assert duplicate.status_code == 409
+
+    with SessionLocal() as db:
+        stored = db.get(RunModel, run_id)
+        statistics_step = db.get(RunStep, step_id)
+        history = statistics_step.result_summary["statistics_analyses"]
+        history[0].update({"status": "succeeded", "finished_at": "2026-08-10T10:00:00+08:00"})
+        statistics_step.result_summary = {
+            **statistics_step.result_summary,
+            "statistics_analyses": history,
+            "statistics_latest_success_analysis_no": 1,
+            "statistics_latest_success_revision": 2,
+        }
+        statistics_step.status = "waiting"
+        stored.status = "awaiting_step_completion"
+        db.commit()
+
+    second_analysis = client.post(analysis_url, headers=admin_headers)
+    assert second_analysis.status_code == 200, second_analysis.text
+    second_step = next(item for item in second_analysis.json()["steps"] if item["id"] == step_id)
+    assert second_step["retry_count"] == 0
+    assert [item["analysis_no"] for item in second_step["result_summary"]["statistics_analyses"]] == [1, 2]
+
+    with SessionLocal() as db:
+        task = db.scalar(
+            select(DurableTask)
+            .where(DurableTask.run_id == run_id)
+            .order_by(DurableTask.id.desc())
+        )
+        assert task is not None
+        assert "analysis:2" in task.idempotency_key
+        stored = db.get(RunModel, run_id)
+        statistics_step = db.get(RunStep, step_id)
+        history = statistics_step.result_summary["statistics_analyses"]
+        history[-1].update({"status": "succeeded", "finished_at": "2026-08-10T10:01:00+08:00"})
+        statistics_step.result_summary = {
+            **statistics_step.result_summary,
+            "statistics_analyses": history,
+            "statistics_latest_success_analysis_no": 2,
+            "statistics_latest_success_revision": 2,
+        }
+        statistics_step.status = "waiting"
+        stored.status = "awaiting_step_completion"
+        db.commit()
+
+    stale = client.put(
+        config_url,
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"], "max_latency_ns": 987},
+    )
+    assert stale.status_code == 200, stale.text
+    blocked_completion = client.post(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/complete", headers=admin_headers
+    )
+    assert blocked_completion.status_code == 409
+    assert response_error_code(blocked_completion) == "STATISTICS_ANALYSIS_STALE"
 
 
 @pytest.mark.asyncio

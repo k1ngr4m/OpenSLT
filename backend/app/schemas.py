@@ -799,6 +799,10 @@ class StatisticsInputSelectionRequest(BaseModel):
     relative_paths: typing.List[str] = Field(min_length=1)
 
 
+class StatisticsRuntimeConfigRequest(StatisticsInputSelectionRequest):
+    max_latency_ns: int = Field(ge=1)
+
+
 class StatisticsInputOut(BaseModel):
     relative_path: str
     filename: str
@@ -816,6 +820,12 @@ class StatisticsInputSelectionOut(BaseModel):
     inputs: typing.List[StatisticsInputOut]
     selected_by: int
     selected_at: datetime
+
+
+class StatisticsRuntimeConfigOut(StatisticsInputSelectionOut):
+    max_latency_ns: int = Field(ge=1)
+    statistics_config_revision: int = Field(ge=0)
+    changed: bool
 
 
 class StepOut(ORMModel):
