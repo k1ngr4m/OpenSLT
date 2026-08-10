@@ -9,6 +9,7 @@ import type { ApiPlan, ApiResource, ApiScenario } from '@/types/api'
 import type { RunDetail } from '@/types/run'
 import { businessText, resourceText } from '@/utils/status'
 import { formatBeijingDateTime } from '@/utils/time'
+import { copyText } from '@/utils/clipboard'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const auth = useAuthStore()
@@ -123,8 +124,12 @@ function resourceOptionLabel(resource: ApiResource) {
 }
 
 async function copyRunNumber(value: string) {
-  await navigator.clipboard.writeText(value)
-  ElMessage.success(`已复制运行编号 ${value}`)
+  try {
+    await copyText(value)
+    ElMessage.success(`已复制运行编号 ${value}`)
+  } catch {
+    ElMessage.error('复制运行编号失败，请手动复制')
+  }
 }
 
 async function removeRun(run: RunDetail) {

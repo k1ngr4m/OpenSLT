@@ -6,6 +6,7 @@ import { CopyDocument, Download, RefreshRight, Search, View } from '@element-plu
 import { useAuthStore } from '@/stores/auth'
 import type { ApiAuditLog, ApiLogDetail, ApiLogSearchPage, ApiLogSummary } from '@/types/api'
 import { formatBeijingDateTime } from '@/utils/time'
+import { copyText } from '@/utils/clipboard'
 
 const auth = useAuthStore()
 const tab = ref('application')
@@ -101,8 +102,12 @@ function resetFilters() {
 
 async function copy(value?: string | null) {
   if (!value) return
-  await navigator.clipboard.writeText(value)
-  ElMessage.success('已复制')
+  try {
+    await copyText(value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.error('复制 Trace ID 失败，请手动复制')
+  }
 }
 
 async function showDetail(row: ApiLogSummary) {
