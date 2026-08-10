@@ -519,6 +519,21 @@ describe('RunDetailView statistics behavior', () => {
     wrapper.unmount()
   })
 
+  it('disables legacy completion and explains an unsaved draft', async () => {
+    const { wrapper } = await mountRunDetail({
+      historyStructure: false,
+      statisticsResults: [{ source_file: 'legacy.csv', metrics: [] }],
+      configDirty: true,
+      configSaved: false,
+      completionBlocked: true,
+    })
+
+    expect(button(wrapper, '完成').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('完成已禁用')
+    expect(wrapper.text()).toContain('保存分析配置')
+    wrapper.unmount()
+  })
+
   it('associates the CSV group and maximum-latency input without nested labels', async () => {
     const { wrapper } = await mountRunDetail()
     expect(wrapper.find('.statistics-config-form label label').exists()).toBe(false)

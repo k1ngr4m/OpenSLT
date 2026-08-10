@@ -204,7 +204,9 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     )
     const hasLegacyResults = Array.isArray(summary?.statistics_results)
       && summary.statistics_results.length > 0
-    if (!hasRevision && !hasHistory && hasLegacyResults) return false
+    if (!hasRevision && !hasHistory && hasLegacyResults) {
+      return statisticsConfigDirty.value || savingStatisticsInputs.value
+    }
     return !statisticsConfigSaved.value || statisticsCompletionStale.value
   })
   const displayedStatisticsCsvFiles = computed(() => (

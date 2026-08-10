@@ -305,6 +305,19 @@ describe('useStatisticsInputs', () => {
     expect(legacy.statisticsCompletionBlocked.value).toBe(false)
   })
 
+  it('blocks legacy completion when the operator changes an unsaved draft', () => {
+    const legacy = setup(statisticsStep('waiting', {
+      statistics_results: [{ source_file: 'legacy.csv', metrics: [] }],
+    }), 'awaiting_step_completion').statistics
+
+    expect(legacy.statisticsCompletionBlocked.value).toBe(false)
+
+    legacy.statisticsMaxLatencyNsDraft.value = 2_000
+
+    expect(legacy.statisticsConfigDirty.value).toBe(true)
+    expect(legacy.statisticsCompletionBlocked.value).toBe(true)
+  })
+
   it('does not block an artifact-id legacy selection that has no relative path', () => {
     const legacy = setup(statisticsStep('waiting', {
       statistics_selection: {
