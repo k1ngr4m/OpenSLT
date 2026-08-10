@@ -3,6 +3,10 @@
     {
       "type": "fixed",
       "text": "修复 Python 3.8 环境下交互式解析节点完成时误报 CSV 下载失败的问题。"
+    },
+    {
+      "type": "fixed",
+      "text": "修复内网 HTTP 环境下 Windows editcap 命令、运行编号和 Trace ID 无法通过按钮复制的问题。"
     }
   ],
   "releases": [
