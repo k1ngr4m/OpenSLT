@@ -288,6 +288,7 @@ async def update_statistics_runtime_config(
         summary["statistics_config_revision"] = int(
             summary.get("statistics_config_revision") or 0
         ) + 1
+        summary.setdefault("statistics_analyses", [])
         step.config_snapshot = {
             **(step.config_snapshot or {}),
             "max_latency_ns": max_latency_ns,
@@ -368,8 +369,11 @@ def finish_statistics_analysis(
 
 def validate_statistics_completion_freshness(step: RunStep) -> None:
     summary = step.result_summary or {}
-    # 没有新索引的历史运行维持原有完成行为。
-    if "statistics_analyses" not in summary:
+    # 只有从未使用运行时配置修订的历史运行保持原有完成行为。
+    if (
+        "statistics_analyses" not in summary
+        and "statistics_config_revision" not in summary
+    ):
         return
     revision = int(summary.get("statistics_config_revision") or 0)
     latest_no = summary.get("statistics_latest_success_analysis_no")

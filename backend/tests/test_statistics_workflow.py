@@ -582,6 +582,53 @@ def test_statistics_runtime_config_and_reanalysis_state_machine(
     assert response_error_code(blocked_completion) == "STATISTICS_ANALYSIS_STALE"
 
 
+def test_statistics_completion_rejects_legacy_step_after_runtime_config_change(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """旧运行一旦保存新运行时配置，就不能绕过对应分析直接完成。"""
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+
+    async def fake_list(_resource, _run, _step):
+        return {
+            "directory": "/tmp/parser/.openslt-runs/final",
+            "files": [{
+                "relative_path": "latency.csv", "filename": "latency.csv",
+                "source": "current_run", "size": 12,
+                "modified_at": "2026-07-28T10:00:00+08:00",
+            }],
+        }
+
+    monkeypatch.setattr(statistics_execution, "list_statistics_csv_files", fake_list)
+    from app.api.routes import runs as run_routes
+    monkeypatch.setattr(run_routes, "list_statistics_csv_files", fake_list)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(
+            db, plan["id"], scenario["id"], tmp_path, run_number="R-STATISTICS-LEGACY-CONFIG"
+        )
+        run.workflow_version_id = 1
+        run.status = "awaiting_step_completion"
+        step.status = "waiting"
+        db.add(RunResource(run_id=run.id, resource_id=parser_data["id"], position=1))
+        db.commit()
+        run_id = run.id
+        step_id = step.id
+
+    configured = client.put(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-config",
+        headers=admin_headers,
+        json={"relative_paths": ["latency.csv"], "max_latency_ns": 321},
+    )
+    assert configured.status_code == 200, configured.text
+    assert configured.json()["statistics_config_revision"] == 1
+
+    completion = client.post(
+        f"/api/v1/runs/{run_id}/steps/{step_id}/complete", headers=admin_headers
+    )
+    assert completion.status_code == 409
+    assert response_error_code(completion) == "STATISTICS_ANALYSIS_STALE"
+
+
 @pytest.mark.asyncio
 async def test_statistics_execution_creates_metrics_and_json_artifact(
     client, admin_headers, tmp_path, monkeypatch
