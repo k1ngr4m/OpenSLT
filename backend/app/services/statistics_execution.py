@@ -313,7 +313,7 @@ def reserve_statistics_analysis(db: Session, run: TestRun, step: RunStep) -> int
         (int(item.get("analysis_no") or 0) for item in history), default=0
     ) + 1
     now = beijing_now().isoformat()
-    config = step.config_snapshot or {}
+    config = step.config_snapshot if isinstance(step.config_snapshot, dict) else {}
     selection = summary.get("statistics_selection") or {}
     raw_inputs = selection.get("inputs") if isinstance(selection, dict) else []
     raw_inputs = raw_inputs if isinstance(raw_inputs, list) else []
@@ -735,7 +735,8 @@ async def execute_statistics_node(
         active_record = _analysis_record(step)
     if not active_record or active_record.get("status") != "running":
         reserve_statistics_analysis(db, run, step)
-    raw_config = step.config_snapshot or node.config or {}
+    raw_config_value = step.config_snapshot or node.config or {}
+    raw_config = raw_config_value if isinstance(raw_config_value, dict) else {}
     script = {
         "filename": str(raw_config.get("script_filename") or ""),
         "checksum": str(raw_config.get("script_checksum") or ""),
@@ -747,6 +748,8 @@ async def execute_statistics_node(
     sftp = None
     started_at = beijing_now()
     try:
+        if not isinstance(raw_config_value, dict):
+            raise WorkflowError("STATISTICS_CONFIG_INVALID", "统计运行配置必须是对象", 409)
         try:
             config = typing.cast(StatisticsConfig, parse_node_config(node.node_type, raw_config))
         except WorkflowError:

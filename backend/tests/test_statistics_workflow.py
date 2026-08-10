@@ -877,6 +877,36 @@ async def test_statistics_invalid_runtime_config_is_archived_as_failed_analysis(
 
 
 @pytest.mark.asyncio
+async def test_statistics_list_runtime_config_is_archived_as_failed_analysis(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若真值非映射配置在预留前访问 .get()，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        resource = db.get(Resource, parser_data["id"])
+        select_legacy_inputs(step, artifact)
+        step.config_snapshot = ["invalid-config"]
+
+        with pytest.raises(WorkflowError) as exc:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert exc.value.code == "STATISTICS_CONFIG_INVALID"
+        record = step.result_summary["statistics_analyses"][-1]
+        assert record["status"] == "failed"
+        assert record["inputs"][0]["artifact_id"] == artifact.id
+        payload = json.loads(Path(db.get(Artifact, record["artifact_id"]).path).read_text(encoding="utf-8"))
+        assert payload["error"]["code"] == "STATISTICS_CONFIG_INVALID"
+        assert payload["script"] == {"filename": "", "checksum": ""}
+        assert payload["max_latency_ns"] is None
+
+
+@pytest.mark.asyncio
 async def test_statistics_invalid_threshold_keeps_raw_failure_history_readable(
     client, admin_headers, tmp_path, monkeypatch
 ):
