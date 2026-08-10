@@ -170,6 +170,31 @@ describe('useRunActions', () => {
     expect(runTerminalStep).not.toHaveBeenCalled()
   })
 
+  it('submits statistics reanalysis and exposes the in-flight step state', async () => {
+    let finishRequest: (() => void) | undefined
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => {
+      finishRequest = () => resolve({ data: {} })
+    }))
+    const reload = vi.fn().mockResolvedValue(undefined)
+    const actions = useRunActions({
+      runId: 11,
+      reload,
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+    })
+    const statisticsStep = { ...step('data_statistics'), status: 'waiting' as const }
+
+    const reanalysis = actions.reanalyzeStatistics(statisticsStep)
+    expect(actions.reanalyzingStatisticsStepId.value).toBe(7)
+
+    finishRequest?.()
+    await reanalysis
+
+    expect(api.post).toHaveBeenCalledWith('/runs/11/steps/7/analyze')
+    expect(message.success).toHaveBeenCalledWith('统计分析已重新执行')
+    expect(reload).toHaveBeenCalled()
+    expect(actions.reanalyzingStatisticsStepId.value).toBeNull()
+  })
+
   it('uses the audited confirmation endpoint for wiring nodes', async () => {
     const actions = useRunActions({
       runId: 11,

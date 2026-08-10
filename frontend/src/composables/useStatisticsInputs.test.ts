@@ -59,6 +59,25 @@ function statisticsStep(status: RunStep['status'] = 'pending', resultSummary = {
   }
 }
 
+function analysis(analysisNo: number, status: 'running' | 'succeeded' | 'failed' = 'succeeded') {
+  return {
+    analysis_no: analysisNo,
+    status,
+    config_revision: 3,
+    inputs: [{ relative_path: 'latency.csv', filename: 'latency.csv', source: 'root', size: 100, modified_at: '2026-08-10T10:00:00+08:00' }],
+    max_latency_ns: 900,
+    script: { filename: 'statistics_cffex.py', checksum: 'a'.repeat(64) },
+    reserved_at: '2026-08-10T10:00:00+08:00',
+    started_at: '2026-08-10T10:00:01+08:00',
+    finished_at: status === 'running' ? null : '2026-08-10T10:00:02+08:00',
+    duration_ms: status === 'running' ? null : 1000,
+    error_code: status === 'failed' ? 'SCRIPT_FAILED' : null,
+    artifact_id: status === 'running' ? null : analysisNo + 200,
+    artifact_checksum: status === 'running' ? null : 'b'.repeat(64),
+    artifact_size: status === 'running' ? null : 2048,
+  }
+}
+
 function artifact(id: number, stepId: number, artifactType = 'parsed_csv'): RunArtifact {
   return {
     id,
@@ -136,21 +155,37 @@ describe('useStatisticsInputs', () => {
   })
 
   it('saves the current selection before start', async () => {
+    vi.mocked(api.put).mockResolvedValue({ data: {
+      inputs: [
+        { relative_path: 'latency.csv', filename: 'latency.csv', source: 'root', size: 100, modified_at: '2026-08-10T10:00:00+08:00' },
+        { relative_path: '.openslt-runs/r9-s31-a1/result.csv', filename: 'result.csv', source: 'current_run', size: 101, modified_at: '2026-08-10T10:00:00+08:00' },
+      ],
+      max_latency_ns: 900,
+      statistics_config_revision: 1,
+      changed: true,
+    } })
     const { reload, statistics } = setup()
     statistics.selectedRelativePaths.value = ['latency.csv', '.openslt-runs/r9-s31-a1/result.csv']
+    statistics.statisticsMaxLatencyNsDraft.value = 900
 
-    await statistics.saveStatisticsInputs()
+    await statistics.saveStatisticsConfig()
 
-    expect(api.put).toHaveBeenCalledWith('/runs/9/steps/32/statistics-inputs', {
+    expect(api.put).toHaveBeenCalledWith('/runs/9/steps/32/statistics-config', {
       relative_paths: ['latency.csv', '.openslt-runs/r9-s31-a1/result.csv'],
+      max_latency_ns: 900,
     })
-    expect(message.success).toHaveBeenCalledWith('已选择 2 个统计输入')
+    expect(message.success).toHaveBeenCalledWith('统计配置已保存')
     expect(reload).toHaveBeenCalled()
+    expect(statistics.statisticsConfigDirty.value).toBe(false)
+    expect(statistics.statisticsConfigSaved.value).toBe(true)
   })
 
   it('allows reselection while waiting for retry and disables it while running', () => {
     const retry = setup(statisticsStep('failed'), 'awaiting_step_retry')
     expect(retry.statistics.canSelectStatisticsInputs.value).toBe(true)
+
+    const reanalysis = setup(statisticsStep('waiting'), 'awaiting_step_completion')
+    expect(reanalysis.statistics.canEditStatisticsConfig.value).toBe(true)
 
     retry.run.value.status = 'running'
     retry.current.value!.status = 'running'
@@ -169,5 +204,74 @@ describe('useStatisticsInputs', () => {
     expect(statistics.displayStatisticsValue(1523.4)).toBe('1523.400')
     statistics.statisticsUnit.value = 'us'
     expect(statistics.displayStatisticsValue(1523.4)).toBe('1.523')
+  })
+
+  it('initializes saved threshold state and blocks completion for unsaved invalid values', () => {
+    const { statistics } = setup(statisticsStep('waiting', {
+      statistics_config_revision: 3,
+      statistics_latest_success_revision: 3,
+      statistics_latest_success_analysis_no: 12,
+      statistics_selection: {
+        inputs: [{ relative_path: 'latency.csv', filename: 'latency.csv', source: 'root', size: 100, modified_at: '2026-08-10T10:00:00+08:00' }],
+      },
+      statistics_analyses: [analysis(12)],
+    }), 'awaiting_step_completion')
+
+    expect(statistics.statisticsMaxLatencyNsDraft.value).toBe(999999999)
+    expect(statistics.statisticsConfigSaved.value).toBe(true)
+    expect(statistics.statisticsCompletionBlocked.value).toBe(false)
+
+    statistics.statisticsMaxLatencyNsDraft.value = 0
+    expect(statistics.statisticsThresholdValid.value).toBe(false)
+    expect(statistics.statisticsConfigDirty.value).toBe(true)
+    expect(statistics.statisticsCompletionBlocked.value).toBe(true)
+
+    statistics.statisticsMaxLatencyNsDraft.value = 1.5
+    expect(statistics.statisticsThresholdValid.value).toBe(false)
+  })
+
+  it('marks a changed revision without a matching successful analysis as stale', () => {
+    const stale = setup(statisticsStep('waiting', {
+      statistics_config_revision: 4,
+      statistics_latest_success_revision: 3,
+      statistics_latest_success_analysis_no: 12,
+      statistics_selection: {
+        inputs: [{ relative_path: 'latency.csv', filename: 'latency.csv', source: 'root', size: 100, modified_at: '2026-08-10T10:00:00+08:00' }],
+      },
+      statistics_analyses: [analysis(12)],
+    }), 'awaiting_step_completion').statistics
+    const legacy = setup(statisticsStep('waiting', {
+      statistics_results: [{ source_file: 'legacy.csv', metrics: [] }],
+    }), 'awaiting_step_completion').statistics
+
+    expect(stale.statisticsCompletionStale.value).toBe(true)
+    expect(stale.statisticsCompletionBlocked.value).toBe(true)
+    expect(legacy.statisticsCompletionStale.value).toBe(false)
+    expect(legacy.statisticsResults.value).toEqual([{ source_file: 'legacy.csv', metrics: [] }])
+  })
+
+  it('loads newest-first history metadata and lazily caches immutable analysis details', async () => {
+    const { statistics } = setup(statisticsStep('waiting'), 'awaiting_step_completion')
+    vi.clearAllMocks()
+    vi.mocked(api.get).mockResolvedValueOnce({ data: [analysis(1), analysis(3, 'failed')] })
+
+    await statistics.refreshStatisticsAnalyses()
+
+    expect(statistics.statisticsAnalyses.value.map(item => item.analysis_no)).toEqual([3, 1])
+    expect(statistics.statisticsAnalyses.value[0]?.error_code).toBe('SCRIPT_FAILED')
+    expect(statistics.statisticsAnalysisDetails.value).toEqual({})
+
+    vi.mocked(api.get).mockResolvedValueOnce({ data: {
+      analysis: analysis(3, 'failed'),
+      artifact: { analysis_no: 3, status: 'failed', inputs: [], max_latency_ns: 900, script: {}, attempts: [], error: { code: 'SCRIPT_FAILED' } },
+    } })
+    const detail = await statistics.loadStatisticsAnalysisDetail(3)
+
+    expect(detail?.artifact.error).toEqual({ code: 'SCRIPT_FAILED' })
+    expect(statistics.statisticsAnalysisDetails.value[3]?.analysis.status).toBe('failed')
+    expect(api.get).toHaveBeenLastCalledWith('/runs/9/steps/32/statistics-analyses/3')
+
+    await statistics.loadStatisticsAnalysisDetail(3)
+    expect(api.get).toHaveBeenCalledTimes(2)
   })
 })
