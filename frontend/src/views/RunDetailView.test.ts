@@ -30,4 +30,29 @@ describe('RunDetailView node details', () => {
     expect(orderTerminal?.[0]).toBeTruthy()
     expect(orderTerminal?.[0]).not.toContain('read-only')
   })
+
+  it('uses one saved analysis configuration for CSV inputs and the latency limit', () => {
+    expect(source).toContain('<h3>分析配置</h3>')
+    expect(source).toContain('v-model="statisticsMaxLatencyNsDraft"')
+    expect(source).toContain('最大延迟上限（ns）')
+    expect(source).toContain('@click="saveStatisticsConfig"')
+    expect(source).not.toContain('保存输入选择')
+  })
+
+  it('guides statistics operators from start through reanalysis before completion', () => {
+    expect(source).toContain("currentStep.node_type === 'data_statistics' ? '开始分析' : '开始'")
+    expect(source).toContain('@click="currentStep && reanalyzeStatistics(currentStep)"')
+    expect(source).toContain("statisticsCompletionStale ? '开始分析' : '再次分析'")
+    expect(source).toContain('statisticsCompletionBlockedReason')
+    expect(source).toContain('role="status"')
+  })
+
+  it('loads and exposes statistics analysis history on demand', () => {
+    expect(source).toContain('refreshStatisticsAnalyses')
+    expect(source).toContain('loadStatisticsAnalysisDetail')
+    expect(source).toContain('expandedStatisticsAnalysisNo')
+    expect(source).toContain('id="statistics-history-heading">分析历史</h3>')
+    expect(source).toContain('@change="handleStatisticsHistoryChange"')
+    expect(source).toContain('analysis.analysis_no')
+  })
 })
