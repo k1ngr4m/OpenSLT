@@ -24,3 +24,4 @@ build/
 /.playwright/
 /.playwright-cli/
 /output/
+/.worktrees/
