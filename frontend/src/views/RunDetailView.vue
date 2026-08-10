@@ -231,12 +231,20 @@ const {
   statisticsCompletionStale,
   statisticsConfigDirty,
   statisticsConfigReady,
+  statisticsConfigReadonlyReason,
   statisticsConfigSaved,
   statisticsMaxLatencyNsDraft,
   statisticsResults,
   statisticsThresholdValid,
   statisticsUnit,
-} = useStatisticsInputs({ currentStep, selectedStep, run, runId, reload: load })
+} = useStatisticsInputs({
+  canOperate: computed(() => auth.canOperate),
+  currentStep,
+  selectedStep,
+  run,
+  runId,
+  reload: load,
+})
 const statisticsReanalysisPending = computed(() => Boolean(
   currentStep.value?.node_type === 'data_statistics'
   && reanalyzingStatisticsStepId.value === currentStep.value.id,
@@ -287,13 +295,26 @@ const statisticsCompletionBlockedReason = computed(() => {
   if (statisticsReanalysisPending.value) {
     return '完成已禁用：统计分析正在执行，请等待本次分析结束。'
   }
-  if (!statisticsConfigReady.value || !statisticsConfigSaved.value) {
+  if (!statisticsCompletionBlocked.value) return ''
+  if (!statisticsConfigSaved.value) {
     return '完成已禁用：请先选择 CSV、填写正整数的最大延迟上限并保存分析配置。'
   }
   if (statisticsCompletionStale.value) {
     return '完成已禁用：当前分析配置尚无成功结果，请先开始或再次执行分析。'
   }
   return ''
+})
+const statisticsConfigReadonlyMessage = computed(() => {
+  if (statisticsConfigReadonlyReason.value === 'unauthorized') {
+    return '无操作权限；仅可查看已保存的 CSV、最大延迟上限和分析历史。'
+  }
+  if (statisticsConfigReadonlyReason.value === 'temporarily_unavailable') {
+    return '当前阶段暂不可编辑；仅可查看已保存的分析配置。'
+  }
+  if (statisticsConfigReadonlyReason.value === 'frozen') {
+    return '节点已完成冻结；只读展示执行时保存的 CSV 与最大延迟上限。'
+  }
+  return '选择 CSV 并设置最大延迟上限后统一保存；修改已保存配置后需要重新分析。'
 })
 const canSendParserActions = computed(() => Boolean(
   currentStep.value?.node_type === 'parser_parse'
@@ -366,9 +387,14 @@ function statisticsAnalysisFailureDescription(analysisNo: number) {
   const message = error && typeof error === 'object' && !Array.isArray(error)
     ? String((error as JsonMap).message || '')
     : ''
-  const guidance = canEditStatisticsConfig.value
-    ? '该次失败记录已保留；可修改配置后重新分析。'
-    : '该节点已冻结；失败记录保留供审计。'
+  let guidance = '该次失败记录已保留；可修改配置后重新分析。'
+  if (statisticsConfigReadonlyReason.value === 'unauthorized') {
+    guidance = '无操作权限，仅可查看失败记录。'
+  } else if (statisticsConfigReadonlyReason.value === 'temporarily_unavailable') {
+    guidance = '当前阶段暂不可编辑；失败记录保留供审计。'
+  } else if (statisticsConfigReadonlyReason.value === 'frozen') {
+    guidance = '节点已完成冻结；失败记录保留供审计。'
+  }
   return message ? `${message}；${guidance}` : guidance
 }
 
@@ -655,7 +681,7 @@ watch(
                 <div class="section-heading">
                   <div>
                     <h3>分析配置</h3>
-                    <p class="muted">{{ canEditStatisticsConfig ? '选择 CSV 并设置最大延迟上限后统一保存；修改已保存配置后需要重新分析。' : '该节点配置已冻结，只读展示执行时保存的 CSV 与最大延迟上限。' }}</p>
+                    <p class="muted">{{ statisticsConfigReadonlyMessage }}</p>
                   </div>
                   <div class="parser-export-actions">
                     <el-tag v-if="statisticsConfigSaved" type="success" effect="plain">已保存</el-tag>

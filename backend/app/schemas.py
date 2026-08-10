@@ -800,7 +800,7 @@ class StatisticsInputSelectionRequest(BaseModel):
 
 
 class StatisticsRuntimeConfigRequest(StatisticsInputSelectionRequest):
-    max_latency_ns: int = Field(ge=1)
+    max_latency_ns: Annotated[int, Field(strict=True, ge=1)]
 
 
 class StatisticsInputOut(BaseModel):

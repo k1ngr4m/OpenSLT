@@ -195,6 +195,30 @@ describe('useRunActions', () => {
     expect(actions.reanalyzingStatisticsStepId.value).toBeNull()
   })
 
+  it('coalesces duplicate statistics reanalysis calls until the first request finishes', async () => {
+    let finishRequest: (() => void) | undefined
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => {
+      finishRequest = () => resolve({ data: {} })
+    }))
+    const actions = useRunActions({
+      runId: 11,
+      reload: vi.fn().mockResolvedValue(undefined),
+      runTerminalStep: vi.fn().mockResolvedValue(undefined),
+    })
+    const statisticsStep = { ...step('data_statistics'), status: 'waiting' as const }
+
+    const first = actions.reanalyzeStatistics(statisticsStep)
+    const duplicate = actions.reanalyzeStatistics(statisticsStep)
+    await duplicate
+
+    expect(api.post).toHaveBeenCalledTimes(1)
+    expect(actions.reanalyzingStatisticsStepId.value).toBe(7)
+
+    finishRequest?.()
+    await first
+    expect(actions.reanalyzingStatisticsStepId.value).toBeNull()
+  })
+
   it('uses the audited confirmation endpoint for wiring nodes', async () => {
     const actions = useRunActions({
       runId: 11,

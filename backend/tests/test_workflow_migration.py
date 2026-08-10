@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import sqlalchemy as sa
+import pytest
 
 import app.models  # noqa: F401
 from app.core.database import Base
@@ -110,7 +111,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0007"
+        ).scalar_one() == "0008"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -218,6 +219,48 @@ def test_durable_task_run_id_migration_backfills_and_indexes(tmp_path: Path) -> 
     assert "ix_t_audit_logs_action_created" in audit_indexes
 
 
+def test_artifact_idempotency_key_migration_is_nullable_and_unique(tmp_path: Path) -> None:
+    database_path = tmp_path / "artifact-idempotency.sqlite3"
+    _alembic(database_path, "upgrade", "head")
+
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    columns = {column["name"]: column for column in inspector.get_columns("t_artifacts")}
+    uniques = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("t_artifacts")
+    }
+    assert columns["idempotency_key"]["nullable"] is True
+    assert ("idempotency_key",) in uniques
+    engine.dispose()
+
+    with sqlite3.connect(database_path) as connection:
+        values = (
+            1, None, "statistics_analysis_json", "statistics-analysis-v001.json",
+            "/tmp/statistics-analysis-v001.json", "application/json", 2, "aa", 1,
+            "2026-08-10 00:00:00",
+        )
+        connection.execute(
+            "INSERT INTO t_artifacts "
+            "(run_id, step_id, artifact_type, name, path, content_type, size, checksum, "
+            "is_immutable, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            values,
+        )
+        connection.execute(
+            "INSERT INTO t_artifacts "
+            "(run_id, step_id, artifact_type, name, path, content_type, size, checksum, "
+            "is_immutable, created_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            (1, None, "web_report", "same-name.html", "/tmp/a.html", "text/html", 2, "bb", 1, "2026-08-10 00:00:00"),
+        )
+        connection.execute(
+            "UPDATE t_artifacts SET idempotency_key = 'statistics-analysis:1:2:1' WHERE id = 1"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "UPDATE t_artifacts SET idempotency_key = 'statistics-analysis:1:2:1' WHERE id = 2"
+            )
+
+
 def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     environment = dict(os.environ)
     environment["DATABASE_URL"] = (
@@ -264,6 +307,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0005_plan_directories.py",
         "0006_capture_item_descriptions.py",
         "0007_database_operation_indexes.py",
+        "0008_artifact_idempotency_key.py",
     }
 
     completed = subprocess.run(
@@ -273,4 +317,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0007 (head)"
+    assert completed.stdout.strip() == "0008 (head)"

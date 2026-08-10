@@ -5,9 +5,10 @@ import { defineComponent, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 let currentHarness: ReturnType<typeof createHarness>
+const auth = vi.hoisted(() => ({ canOperate: true }))
 
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '9' } }) }))
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ canOperate: true }) }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('@/composables/useRunLifecycle', () => ({ useRunLifecycle: () => currentHarness.lifecycle }))
 vi.mock('@/composables/useRunActions', () => ({ useRunActions: () => currentHarness.runActions }))
 vi.mock('@/composables/useRunStepPresentation', () => ({ useRunStepPresentation: () => currentHarness.presentation }))
@@ -64,6 +65,7 @@ describe('RunDetailView node details', () => {
     expect(source).toContain("statisticsCompletionStale ? '开始分析' : '再次分析'")
     expect(source).toContain('statisticsCompletionBlockedReason')
     expect(source).toContain('role="status"')
+    expect(source).toContain('canOperate: computed(() => auth.canOperate)')
   })
 
   it('loads and exposes statistics analysis history on demand', () => {
@@ -105,6 +107,7 @@ interface HarnessOptions {
   completionBlocked?: boolean
   completionStale?: boolean
   historyStructure?: boolean
+  readonlyReason?: 'unauthorized' | 'temporarily_unavailable' | 'frozen' | null
   reanalyzing?: boolean
   statisticsResults?: Record<string, unknown>[]
 }
@@ -176,6 +179,7 @@ function createHarness(options: HarnessOptions = {}) {
     statisticsCompletionStale: ref(options.completionStale ?? false),
     statisticsConfigDirty: ref(options.configDirty ?? false),
     statisticsConfigReady: ref(options.configReady ?? true),
+    statisticsConfigReadonlyReason: ref(options.readonlyReason ?? null),
     statisticsConfigSaved: ref(options.configSaved ?? true),
     statisticsMaxLatencyNsDraft: ref(2000),
     statisticsResults: ref(options.statisticsResults ?? []),
@@ -335,7 +339,10 @@ function button(wrapper: VueWrapper, text: string) {
 }
 
 describe('RunDetailView statistics behavior', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    auth.canOperate = true
+  })
 
   it('blocks completion for an unsaved draft and for a saved stale analysis with visible reasons', async () => {
     const { wrapper, harness } = await mountRunDetail({ configDirty: true, configSaved: false, completionBlocked: true })
@@ -428,13 +435,87 @@ describe('RunDetailView statistics behavior', () => {
     const { wrapper } = await mountRunDetail({
       analyses: [failed],
       canEditStatisticsConfig: false,
+      readonlyReason: 'frozen',
       analysisDetails: {
         1: { analysis: failed, artifact: { error: { code: failed.error_code, message: '远端脚本退出状态 2' } } },
       },
     })
     expect(wrapper.text()).toContain('远端脚本退出状态 2')
-    expect(wrapper.text()).toContain('节点已冻结')
+    expect(wrapper.text()).toContain('节点已完成冻结')
     expect(wrapper.text()).not.toContain('可修改配置后重新分析')
+    wrapper.unmount()
+  })
+
+  it('shows permission, temporary-state, and frozen read-only reasons distinctly', async () => {
+    auth.canOperate = false
+    const unauthorized = await mountRunDetail({
+      canEditStatisticsConfig: false,
+      readonlyReason: 'unauthorized',
+    })
+    expect(unauthorized.wrapper.text()).toContain('无操作权限')
+    expect(unauthorized.wrapper.find('button[aria-label="刷新统计 CSV"]').exists()).toBe(false)
+    expect(unauthorized.wrapper.findAll('button').some(item => item.text() === '保存分析配置')).toBe(false)
+    unauthorized.wrapper.unmount()
+
+    auth.canOperate = true
+    const temporary = await mountRunDetail({
+      canEditStatisticsConfig: false,
+      readonlyReason: 'temporarily_unavailable',
+    })
+    expect(temporary.wrapper.text()).toContain('当前阶段暂不可编辑')
+    expect(temporary.wrapper.text()).not.toContain('节点已完成冻结')
+    temporary.wrapper.unmount()
+
+    const frozen = await mountRunDetail({
+      canEditStatisticsConfig: false,
+      readonlyReason: 'frozen',
+    })
+    expect(frozen.wrapper.text()).toContain('节点已完成冻结')
+    frozen.wrapper.unmount()
+  })
+
+  it('uses the same read-only reason in archived failure guidance', async () => {
+    const failed = analysis(1, 'failed')
+    auth.canOperate = false
+    const unauthorized = await mountRunDetail({
+      analyses: [failed],
+      canEditStatisticsConfig: false,
+      readonlyReason: 'unauthorized',
+      analysisDetails: {
+        1: { analysis: failed, artifact: { error: { message: '脚本失败' } } },
+      },
+    })
+    expect(unauthorized.wrapper.text()).toContain('无操作权限，仅可查看失败记录')
+    unauthorized.wrapper.unmount()
+
+    auth.canOperate = true
+    const temporary = await mountRunDetail({
+      analyses: [failed],
+      canEditStatisticsConfig: false,
+      readonlyReason: 'temporarily_unavailable',
+      analysisDetails: {
+        1: { analysis: failed, artifact: { error: { message: '脚本失败' } } },
+      },
+    })
+    expect(temporary.wrapper.text()).toContain('当前阶段暂不可编辑')
+    expect(temporary.wrapper.text()).not.toContain('节点已冻结')
+    temporary.wrapper.unmount()
+  })
+
+  it.each([
+    ['stored legacy results', [{ source_file: 'legacy.csv', metrics: [] }]],
+    ['artifact-id legacy selection', []],
+  ])('keeps legacy completion enabled without contradictory text for %s', async (_case, results) => {
+    const { wrapper } = await mountRunDetail({
+      historyStructure: false,
+      statisticsResults: results,
+      configReady: false,
+      configSaved: false,
+      completionBlocked: false,
+    })
+
+    expect(button(wrapper, '完成').attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).not.toContain('完成已禁用')
     wrapper.unmount()
   })
 

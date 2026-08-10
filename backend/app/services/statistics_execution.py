@@ -3,16 +3,20 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import posixpath
 import shlex
 import typing
+from copy import deepcopy
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
 import asyncssh
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing_extensions import Literal
 
@@ -350,10 +354,12 @@ def reserve_statistics_analysis(db: Session, run: TestRun, step: RunStep) -> int
 
 def finish_statistics_analysis(
     db: Session,
+    run: TestRun,
     step: RunStep,
     *,
     status: str,
     error_code: typing.Optional[str] = None,
+    error_message: typing.Optional[str] = None,
 ) -> None:
     summary = dict(step.result_summary or {})
     active = summary.get("statistics_active_analysis_no")
@@ -365,6 +371,33 @@ def finish_statistics_analysis(
         return
     # 执行服务已经将完整成功/失败结果封存后，任务恢复路径不应覆盖该不可变结论。
     if record.get("artifact_id"):
+        return
+    if status == "failed":
+        raw_started_at = record.get("started_at")
+        try:
+            started_at = (
+                datetime.fromisoformat(raw_started_at)
+                if isinstance(raw_started_at, str)
+                else step.started_at or beijing_now()
+            )
+        except ValueError:
+            started_at = step.started_at or beijing_now()
+        code = error_code or "WORKFLOW_EXECUTION_FAILED"
+        _finalize_statistics_analysis(
+            db,
+            run,
+            step,
+            status="failed",
+            script=dict(record.get("script") or {}),
+            inputs=[
+                dict(item)
+                for item in record.get("inputs") or []
+                if isinstance(item, dict)
+            ],
+            attempts=[],
+            started_at=started_at,
+            error=WorkflowError(code, error_message or code, 409),
+        )
         return
     record["status"] = status
     record["finished_at"] = beijing_now().isoformat()
@@ -501,6 +534,164 @@ def _analysis_record(step: RunStep) -> dict[str, typing.Any]:
     return record
 
 
+_ANALYSIS_PAYLOAD_REQUIRED_FIELDS = frozenset({
+    "schema_version",
+    "analysis_no",
+    "status",
+    "config_revision",
+    "inputs",
+    "max_latency_ns",
+    "script",
+    "reserved_at",
+    "started_at",
+    "finished_at",
+    "duration_ms",
+    "attempts",
+})
+_ANALYSIS_PAYLOAD_STABLE_FIELDS = (
+    "status",
+    "config_revision",
+    "inputs",
+    "max_latency_ns",
+    "script",
+    "reserved_at",
+    "started_at",
+    "attempts",
+    "results",
+    "error",
+)
+
+
+def _analysis_artifact_corrupt(name: str, message: str) -> WorkflowError:
+    return WorkflowError(
+        "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
+        f"分析历史产物 {name}{message}",
+        409,
+    )
+
+
+def _validate_terminal_analysis_payload(
+    value: typing.Any,
+    *,
+    analysis_no: int,
+    artifact_name: str,
+    expected: typing.Optional[dict[str, typing.Any]] = None,
+) -> dict[str, typing.Any]:
+    if not isinstance(value, dict) or not _ANALYSIS_PAYLOAD_REQUIRED_FIELDS.issubset(value):
+        raise _analysis_artifact_corrupt(artifact_name, " 内容不完整")
+    status = value.get("status")
+    duration_ms = value.get("duration_ms")
+    max_latency_ns = value.get("max_latency_ns")
+    if (
+        value.get("schema_version") != 1
+        or value.get("analysis_no") != analysis_no
+        or status not in {"succeeded", "failed"}
+        or not isinstance(value.get("config_revision"), int)
+        or isinstance(value.get("config_revision"), bool)
+        or int(value["config_revision"]) < 0
+        or not isinstance(value.get("inputs"), list)
+        or (
+            max_latency_ns is not None
+            and (
+                not isinstance(max_latency_ns, int)
+                or isinstance(max_latency_ns, bool)
+                or max_latency_ns < 1
+            )
+        )
+        or not isinstance(value.get("script"), dict)
+        or not isinstance(value.get("reserved_at"), str)
+        or not value["reserved_at"]
+        or not isinstance(value.get("started_at"), str)
+        or not value["started_at"]
+        or not isinstance(value.get("finished_at"), str)
+        or not value["finished_at"]
+        or not isinstance(duration_ms, int)
+        or isinstance(duration_ms, bool)
+        or duration_ms < 0
+        or not isinstance(value.get("attempts"), list)
+        or (status == "succeeded" and not isinstance(value.get("results"), list))
+        or (
+            status == "failed"
+            and (
+                not isinstance(value.get("error"), dict)
+                or not isinstance(value["error"].get("code"), str)
+                or not value["error"]["code"]
+                or not isinstance(value["error"].get("message"), str)
+            )
+        )
+    ):
+        raise _analysis_artifact_corrupt(artifact_name, " 内容不完整或字段非法")
+    try:
+        for field in ("reserved_at", "started_at", "finished_at"):
+            datetime.fromisoformat(value[field])
+    except ValueError as exc:
+        raise _analysis_artifact_corrupt(artifact_name, " 时间字段非法") from exc
+    if expected is not None and any(
+        value.get(key) != expected.get(key)
+        for key in _ANALYSIS_PAYLOAD_STABLE_FIELDS
+    ):
+        raise _analysis_artifact_corrupt(artifact_name, " 与当前分析终态冲突")
+    return dict(value)
+
+
+def _read_analysis_artifact_payload(
+    artifact: Artifact,
+    *,
+    target: Path,
+    analysis_no: int,
+    expected: dict[str, typing.Any],
+) -> dict[str, typing.Any]:
+    path = Path(artifact.path)
+    if (
+        artifact.run_id != expected["_run_id"]
+        or artifact.step_id != expected["_step_id"]
+        or artifact.artifact_type != "statistics_analysis_json"
+        or artifact.name != target.name
+        or not artifact.is_immutable
+        or path.is_symlink()
+        or not path.is_file()
+        or path.resolve() != target.resolve()
+    ):
+        raise _analysis_artifact_corrupt(target.name, " 元数据已损坏")
+    data = path.read_bytes()
+    if (
+        len(data) != artifact.size
+        or hashlib.sha256(data).hexdigest() != artifact.checksum
+    ):
+        raise _analysis_artifact_corrupt(target.name, " 校验失败")
+    try:
+        payload = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _analysis_artifact_corrupt(target.name, " 不是合法 JSON") from exc
+    return _validate_terminal_analysis_payload(
+        payload,
+        analysis_no=analysis_no,
+        artifact_name=target.name,
+        expected={key: value for key, value in expected.items() if not key.startswith("_")},
+    )
+
+
+def _read_orphaned_analysis_payload(
+    target: Path,
+    *,
+    analysis_no: int,
+    expected: dict[str, typing.Any],
+) -> tuple[bytes, dict[str, typing.Any]]:
+    if target.is_symlink() or not target.is_file():
+        raise _analysis_artifact_corrupt(target.name, " 不是普通文件")
+    data = target.read_bytes()
+    try:
+        payload = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _analysis_artifact_corrupt(target.name, " 不是合法 JSON") from exc
+    return data, _validate_terminal_analysis_payload(
+        payload,
+        analysis_no=analysis_no,
+        artifact_name=target.name,
+        expected=expected,
+    )
+
+
 def _register_analysis_artifact(
     db: Session,
     run: TestRun,
@@ -512,79 +703,73 @@ def _register_analysis_artifact(
     directory = _artifact_directory(run, step)
     directory.mkdir(parents=True, exist_ok=True)
     target = directory / f"statistics-analysis-v{analysis_no:03d}.json"
-    artifact = db.scalar(select(Artifact).where(
-        Artifact.run_id == run.id,
-        Artifact.step_id == step.id,
-        Artifact.name == target.name,
-    ))
+    idempotency_key = f"statistics-analysis:{run.id}:{step.id}:{analysis_no}"
+    expected_payload = _validate_terminal_analysis_payload(
+        payload,
+        analysis_no=analysis_no,
+        artifact_name=target.name,
+    )
+    expected_with_identity = {
+        **expected_payload,
+        "_run_id": run.id,
+        "_step_id": step.id,
+    }
+    artifact = db.scalar(
+        select(Artifact).where(Artifact.idempotency_key == idempotency_key)
+    )
+    if artifact is None:
+        artifact = db.scalar(select(Artifact).where(
+            Artifact.run_id == run.id,
+            Artifact.step_id == step.id,
+            Artifact.artifact_type == "statistics_analysis_json",
+            Artifact.name == target.name,
+        ))
     if artifact is not None:
-        path = Path(artifact.path)
-        if (
-            artifact.artifact_type != "statistics_analysis_json"
-            or not artifact.is_immutable
-            or not path.is_file()
-            or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.checksum
-        ):
-            raise WorkflowError(
-                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
-                f"分析历史产物 {target.name} 已损坏",
-                409,
-            )
-        return artifact
-    if target.exists():
-        if not target.is_file():
-            raise WorkflowError(
-                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
-                f"分析历史产物 {target.name} 不是普通文件",
-                409,
-            )
-        data = target.read_bytes()
-        try:
-            existing_payload = json.loads(data)
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise WorkflowError(
-                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
-                f"分析历史产物 {target.name} 不是合法 JSON",
-                409,
-            ) from exc
-        if (
-            not isinstance(existing_payload, dict)
-            or existing_payload.get("schema_version") != 1
-            or existing_payload.get("analysis_no") != analysis_no
-            or existing_payload.get("status") not in {"succeeded", "failed"}
-            or existing_payload.get("status") != payload.get("status")
-            or any(
-                existing_payload.get(key) != payload.get(key)
-                for key in (
-                    "config_revision", "inputs", "max_latency_ns", "script",
-                    "results", "attempts", "error",
-                )
-            )
-        ):
-            raise WorkflowError(
-                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
-                f"分析历史产物 {target.name} 内容不完整或与分析编号不一致",
-                409,
-            )
-        artifact = Artifact(
-            run_id=run.id,
-            step_id=step.id,
-            artifact_type="statistics_analysis_json",
-            name=target.name,
-            path=str(target),
-            content_type="application/json",
-            size=len(data),
-            checksum=hashlib.sha256(data).hexdigest(),
-            is_immutable=True,
+        _read_analysis_artifact_payload(
+            artifact,
+            target=target,
+            analysis_no=analysis_no,
+            expected=expected_with_identity,
         )
-        db.add(artifact)
-        db.flush()
+        if artifact.idempotency_key not in {None, idempotency_key}:
+            raise _analysis_artifact_corrupt(target.name, " 幂等键冲突")
+        if artifact.idempotency_key is None:
+            try:
+                with db.begin_nested():
+                    artifact.idempotency_key = idempotency_key
+                    db.flush()
+            except IntegrityError as exc:
+                winner = db.scalar(
+                    select(Artifact)
+                    .where(Artifact.idempotency_key == idempotency_key)
+                    .with_for_update()
+                )
+                if winner is None:
+                    raise _analysis_artifact_corrupt(target.name, " 幂等登记冲突") from exc
+                _read_analysis_artifact_payload(
+                    winner,
+                    target=target,
+                    analysis_no=analysis_no,
+                    expected=expected_with_identity,
+                )
+                return winner
         return artifact
-    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+
+    data = json.dumps(expected_payload, ensure_ascii=False, indent=2).encode("utf-8")
     temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
     try:
-        temporary.write_bytes(data)
-        temporary.replace(target)
+        with temporary.open("xb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temporary, target)
+        except FileExistsError:
+            data, _sealed_payload = _read_orphaned_analysis_payload(
+                target,
+                analysis_no=analysis_no,
+                expected=expected_payload,
+            )
     finally:
         temporary.unlink(missing_ok=True)
     artifact = Artifact(
@@ -597,9 +782,27 @@ def _register_analysis_artifact(
         size=len(data),
         checksum=hashlib.sha256(data).hexdigest(),
         is_immutable=True,
+        idempotency_key=idempotency_key,
     )
-    db.add(artifact)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(artifact)
+            db.flush()
+    except IntegrityError as exc:
+        winner = db.scalar(
+            select(Artifact)
+            .where(Artifact.idempotency_key == idempotency_key)
+            .with_for_update()
+        )
+        if winner is None:
+            raise _analysis_artifact_corrupt(target.name, " 幂等登记冲突") from exc
+        _read_analysis_artifact_payload(
+            winner,
+            target=target,
+            analysis_no=analysis_no,
+            expected=expected_with_identity,
+        )
+        return winner
     return artifact
 
 
@@ -616,8 +819,22 @@ def _finalize_statistics_analysis(
     results: typing.Optional[list[dict[str, typing.Any]]] = None,
     error: typing.Optional[WorkflowError] = None,
 ) -> tuple[dict[str, typing.Any], Artifact]:
-    summary = dict(step.result_summary or {})
-    record = _analysis_record(step)
+    summary = deepcopy(step.result_summary or {})
+    active = summary.get("statistics_active_analysis_no")
+    record = next(
+        (
+            item
+            for item in reversed(summary.get("statistics_analyses") or [])
+            if isinstance(item, dict) and item.get("analysis_no") == active
+        ),
+        None,
+    )
+    if not isinstance(record, dict):
+        raise WorkflowError(
+            "STATISTICS_ANALYSIS_MISSING",
+            "当前统计执行缺少历史预留记录",
+            409,
+        )
     finished_at = beijing_now()
     duration_ms = int((finished_at - started_at).total_seconds() * 1000)
     artifact_payload: dict[str, typing.Any] = {
@@ -639,22 +856,43 @@ def _finalize_statistics_analysis(
     if error is not None:
         artifact_payload["error"] = {"code": error.code, "message": error.message}
     artifact = _register_analysis_artifact(db, run, step, int(record["analysis_no"]), artifact_payload)
+    sealed_payload = _read_analysis_artifact_payload(
+        artifact,
+        target=_artifact_directory(run, step) / f"statistics-analysis-v{int(record['analysis_no']):03d}.json",
+        analysis_no=int(record["analysis_no"]),
+        expected={
+            **artifact_payload,
+            "_run_id": run.id,
+            "_step_id": step.id,
+        },
+    )
     record.update({
-        "status": status,
-        "script": {"filename": script.get("filename", ""), "checksum": script.get("checksum", "")},
+        "status": sealed_payload["status"],
+        "config_revision": sealed_payload["config_revision"],
+        "inputs": sealed_payload["inputs"],
+        "max_latency_ns": sealed_payload["max_latency_ns"],
+        "script": {
+            "filename": sealed_payload["script"].get("filename", ""),
+            "checksum": sealed_payload["script"].get("checksum", ""),
+        },
+        "reserved_at": sealed_payload["reserved_at"],
+        "started_at": sealed_payload["started_at"],
         "artifact_id": artifact.id,
         "artifact_checksum": artifact.checksum,
         "artifact_size": artifact.size,
-        "finished_at": finished_at.isoformat(),
-        "duration_ms": duration_ms,
+        "finished_at": sealed_payload["finished_at"],
+        "duration_ms": sealed_payload["duration_ms"],
     })
-    if error is not None:
-        record["error_code"] = error.code
+    sealed_error = sealed_payload.get("error")
+    if isinstance(sealed_error, dict):
+        record["error_code"] = sealed_error.get("code")
+    else:
+        record.pop("error_code", None)
     summary["statistics_analyses"] = [
         record if isinstance(item, dict) and item.get("analysis_no") == record["analysis_no"] else item
         for item in (summary.get("statistics_analyses") or [])
     ]
-    if status == "succeeded":
+    if sealed_payload["status"] == "succeeded":
         summary["statistics_latest_success_analysis_no"] = record["analysis_no"]
         summary["statistics_latest_success_revision"] = record.get("config_revision")
     step.result_summary = summary

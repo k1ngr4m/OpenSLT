@@ -557,6 +557,9 @@ class LogRecord(Base):
 
 class Artifact(Base):
     __tablename__ = "t_artifacts"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_t_artifacts_idempotency_key"),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     run_id: Mapped[int] = mapped_column(ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True)
     step_id: Mapped[typing.Union[int, None]] = mapped_column(ForeignKey("t_run_steps.id", ondelete="SET NULL"))
@@ -567,6 +570,7 @@ class Artifact(Base):
     size: Mapped[int] = mapped_column(Integer, default=0)
     checksum: Mapped[str] = mapped_column(String(64), default="")
     is_immutable: Mapped[bool] = mapped_column(Boolean, default=True)
+    idempotency_key: Mapped[typing.Union[str, None]] = mapped_column(String(191))
     created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
     run: Mapped[TestRun] = relationship(back_populates="artifacts")
 

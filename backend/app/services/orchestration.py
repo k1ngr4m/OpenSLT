@@ -317,9 +317,11 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
                 if failed.node_type == "data_statistics":
                     finish_statistics_analysis(
                         db,
+                        run,
                         failed,
                         status="failed",
                         error_code=getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED"),
+                        error_message=redact(str(exc)),
                     )
                 failed.error_message = redact(str(exc))
                 failed.finished_at = beijing_now()

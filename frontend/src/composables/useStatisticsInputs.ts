@@ -4,6 +4,7 @@ import { api, errorMessage } from '@/api/client'
 import type { JsonMap, RunDetail, RunStep } from '@/types/run'
 
 interface StatisticsOptions {
+  canOperate: ComputedRef<boolean>
   currentStep: ComputedRef<RunStep | null>
   selectedStep: ComputedRef<RunStep | null>
   run: Ref<RunDetail | null>
@@ -106,7 +107,7 @@ function analysisMetadata(value: unknown): StatisticsAnalysisMetadata | null {
 }
 
 export function useStatisticsInputs(options: StatisticsOptions) {
-  const { currentStep, selectedStep, run, runId, reload } = options
+  const { canOperate, currentStep, selectedStep, run, runId, reload } = options
   const selectedRelativePaths = ref<string[]>([])
   const savingStatisticsInputs = ref(false)
   const loadingStatisticsCsvFiles = ref(false)
@@ -136,15 +137,28 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     selectedStep.value?.node_type === 'data_statistics'
     && selectedStep.value.id === currentStep.value?.id,
   ))
-  const canEditStatisticsConfig = computed(() => Boolean(
+  const statisticsConfigPhaseEditable = computed(() => Boolean(
     isCurrentStatisticsStep.value
     && (
       (run.value?.status === 'awaiting_step_start' && currentStep.value?.status === 'pending')
       || (run.value?.status === 'awaiting_step_retry' && currentStep.value?.status === 'failed')
       || (run.value?.status === 'awaiting_step_completion' && currentStep.value?.status === 'waiting')
-    )
+    ),
+  ))
+  const canEditStatisticsConfig = computed(() => Boolean(
+    canOperate.value
+    && statisticsConfigPhaseEditable.value
     && !savingStatisticsInputs.value,
   ))
+  const statisticsConfigReadonlyReason = computed<
+    'unauthorized' | 'temporarily_unavailable' | 'frozen' | null
+  >(() => {
+    if (selectedStep.value?.node_type !== 'data_statistics') return null
+    if (!canOperate.value) return 'unauthorized'
+    if (selectedStep.value.status === 'succeeded') return 'frozen'
+    if (!statisticsConfigPhaseEditable.value) return 'temporarily_unavailable'
+    return null
+  })
   const canSelectStatisticsInputs = canEditStatisticsConfig
   const statisticsSelectionDirty = computed(
     () => sortedPaths(selectedRelativePaths.value) !== sortedPaths(savedRelativePaths.value),
@@ -180,9 +194,19 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     const latest = history.find(item => isJsonMap(item) && item.analysis_no === latestAnalysisNo)
     return !isJsonMap(latest) || latest.status !== 'succeeded' || latest.config_revision !== revision
   })
-  const statisticsCompletionBlocked = computed(() => (
-    !statisticsConfigSaved.value || statisticsCompletionStale.value
-  ))
+  const statisticsCompletionBlocked = computed(() => {
+    const summary = selectedStep.value?.result_summary
+    const hasRevision = Boolean(
+      summary && Object.prototype.hasOwnProperty.call(summary, 'statistics_config_revision'),
+    )
+    const hasHistory = Boolean(
+      summary && Object.prototype.hasOwnProperty.call(summary, 'statistics_analyses'),
+    )
+    const hasLegacyResults = Array.isArray(summary?.statistics_results)
+      && summary.statistics_results.length > 0
+    if (!hasRevision && !hasHistory && hasLegacyResults) return false
+    return !statisticsConfigSaved.value || statisticsCompletionStale.value
+  })
   const displayedStatisticsCsvFiles = computed(() => (
     canSelectStatisticsInputs.value ? statisticsCsvFiles.value : savedRemoteInputs.value
   ))
@@ -350,7 +374,7 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     { immediate: true },
   )
   watch(
-    () => `${selectedStep.value?.id || ''}:${currentStep.value?.id || ''}:${run.value?.status || ''}:${currentStep.value?.status || ''}`,
+    () => `${selectedStep.value?.id || ''}:${currentStep.value?.id || ''}:${run.value?.status || ''}:${currentStep.value?.status || ''}:${canOperate.value}`,
     () => { void refreshStatisticsCsvFiles() },
     { immediate: true },
   )
@@ -379,6 +403,7 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     statisticsCompletionStale,
     statisticsConfigDirty,
     statisticsConfigReady,
+    statisticsConfigReadonlyReason,
     statisticsConfigSaved,
     statisticsMaxLatencyNsDraft,
     statisticsResults,

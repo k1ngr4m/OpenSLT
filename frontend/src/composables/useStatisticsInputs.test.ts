@@ -102,6 +102,7 @@ function setup(
   step = statisticsStep(),
   runStatus: RunDetail['status'] = 'awaiting_step_start',
   artifacts: RunArtifact[] = [artifact(101, 31), artifact(102, 31), artifact(201, 32)],
+  canOperate = true,
 ) {
   const current = ref<RunStep | null>(step)
   const selected = ref<RunStep | null>(step)
@@ -113,6 +114,7 @@ function setup(
   } as unknown as RunDetail)
   const reload = vi.fn().mockResolvedValue(undefined)
   const statistics = useStatisticsInputs({
+    canOperate: computed(() => canOperate),
     currentStep: computed(() => current.value),
     selectedStep: computed(() => selected.value),
     run,
@@ -198,6 +200,44 @@ describe('useStatisticsInputs', () => {
     expect(retry.statistics.canSelectStatisticsInputs.value).toBe(false)
   })
 
+  it('keeps history readable but never loads or mutates operator configuration for visitors', async () => {
+    const { statistics } = setup(
+      statisticsStep('pending', {
+        statistics_selection: {
+          inputs: [{ relative_path: 'latency.csv', filename: 'latency.csv', source: 'root', size: 100, modified_at: '2026-08-10T10:00:00+08:00' }],
+        },
+      }),
+      'awaiting_step_start',
+      [],
+      false,
+    )
+    await nextTick()
+
+    expect(statistics.canEditStatisticsConfig.value).toBe(false)
+    expect(statistics.statisticsConfigReadonlyReason.value).toBe('unauthorized')
+    expect(api.get).not.toHaveBeenCalledWith('/runs/9/steps/32/statistics-csv-files')
+
+    statistics.selectedRelativePaths.value = ['forbidden.csv']
+    statistics.statisticsMaxLatencyNsDraft.value = 123
+    await statistics.refreshStatisticsCsvFiles()
+    await statistics.saveStatisticsConfig()
+    expect(api.put).not.toHaveBeenCalled()
+    expect(statistics.statisticsCsvFiles.value).toEqual([])
+
+    vi.mocked(api.get).mockResolvedValueOnce({ data: [analysis(1)] })
+    await statistics.refreshStatisticsAnalyses()
+    expect(api.get).toHaveBeenCalledWith('/runs/9/steps/32/statistics-analyses')
+    expect(statistics.statisticsAnalyses.value).toHaveLength(1)
+  })
+
+  it('distinguishes temporarily unavailable and completed configuration states', () => {
+    const temporary = setup(statisticsStep('running'), 'running').statistics
+    const frozen = setup(statisticsStep('succeeded'), 'awaiting_step_start').statistics
+
+    expect(temporary.statisticsConfigReadonlyReason.value).toBe('temporarily_unavailable')
+    expect(frozen.statisticsConfigReadonlyReason.value).toBe('frozen')
+  })
+
   it('converts metric values between ns and us for display', () => {
     const { statistics } = setup(statisticsStep('waiting', {
       statistics_results: [{
@@ -254,6 +294,27 @@ describe('useStatisticsInputs', () => {
     expect(stale.statisticsCompletionBlocked.value).toBe(true)
     expect(legacy.statisticsCompletionStale.value).toBe(false)
     expect(legacy.statisticsResults.value).toEqual([{ source_file: 'legacy.csv', metrics: [] }])
+  })
+
+  it('preserves legacy completion bypass for stored results without revision or history', () => {
+    const legacy = setup(statisticsStep('waiting', {
+      statistics_results: [{ source_file: 'legacy.csv', metrics: [] }],
+    }), 'awaiting_step_completion').statistics
+
+    expect(legacy.statisticsConfigSaved.value).toBe(false)
+    expect(legacy.statisticsCompletionBlocked.value).toBe(false)
+  })
+
+  it('does not block an artifact-id legacy selection that has no relative path', () => {
+    const legacy = setup(statisticsStep('waiting', {
+      statistics_selection: {
+        inputs: [{ artifact_id: 101, filename: 'legacy.csv', size: 100, checksum: 'a'.repeat(64) }],
+      },
+    }), 'awaiting_step_completion').statistics
+
+    expect(legacy.statisticsConfigReady.value).toBe(false)
+    expect(legacy.statisticsConfigSaved.value).toBe(true)
+    expect(legacy.statisticsCompletionBlocked.value).toBe(false)
   })
 
   it('loads newest-first history metadata and lazily caches immutable analysis details', async () => {

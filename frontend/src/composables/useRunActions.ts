@@ -82,7 +82,11 @@ export function useRunActions(options: RunActionsOptions) {
   }
 
   async function reanalyzeStatistics(step: RunStep) {
-    if (step.node_type !== 'data_statistics' || step.status !== 'waiting') return
+    if (
+      step.node_type !== 'data_statistics'
+      || step.status !== 'waiting'
+      || reanalyzingStatisticsStepId.value !== null
+    ) return
     reanalyzingStatisticsStepId.value = step.id
     try {
       await api.post(`/runs/${runId}/steps/${step.id}/analyze`)
