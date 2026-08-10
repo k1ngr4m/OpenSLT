@@ -24,7 +24,6 @@ from app.services.events import broker
 from app.services.resource_relations import run_resource_ids
 from app.services.statistics_execution import (
     finish_statistics_analysis,
-    require_statistics_selection,
     reserve_statistics_analysis,
     validate_statistics_completion_freshness,
 )
@@ -374,7 +373,6 @@ def begin_workflow_step(
     if current.status != expected_step_status:
         raise WorkflowError("INVALID_TRANSITION", "当前节点状态不能执行此操作", 409)
     if current.node_type == "data_statistics":
-        require_statistics_selection(db, run, current)
         analysis_no = reserve_statistics_analysis(db, run, current)
     else:
         analysis_no = None

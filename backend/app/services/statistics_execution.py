@@ -307,7 +307,6 @@ async def update_statistics_runtime_config(
 
 def reserve_statistics_analysis(db: Session, run: TestRun, step: RunStep) -> int:
     """为一次统计执行预留单调分析号；Task 2 以此轻量索引定位不可变产物。"""
-    selected = require_statistics_selection(db, run, step)
     summary = dict(step.result_summary or {})
     history = [dict(item) for item in summary.get("statistics_analyses") or [] if isinstance(item, dict)]
     analysis_no = max(
@@ -315,13 +314,22 @@ def reserve_statistics_analysis(db: Session, run: TestRun, step: RunStep) -> int
     ) + 1
     now = beijing_now().isoformat()
     config = step.config_snapshot or {}
+    selection = summary.get("statistics_selection") or {}
+    raw_inputs = selection.get("inputs") if isinstance(selection, dict) else []
+    raw_inputs = raw_inputs if isinstance(raw_inputs, list) else []
+    raw_max_latency = config.get("max_latency_ns")
     history.append(
         {
             "analysis_no": analysis_no,
             "status": "running",
             "config_revision": int(summary.get("statistics_config_revision") or 0),
-            "inputs": [_statistics_input_snapshot(item) for item in selected],
-            "max_latency_ns": int(config.get("max_latency_ns") or 999999999),
+            # 预留必须早于校验：失败分析仍需保留当时可序列化的原始输入/配置快照。
+            "inputs": [
+                _statistics_input_snapshot(item)
+                for item in raw_inputs
+                if isinstance(item, dict)
+            ],
+            "max_latency_ns": raw_max_latency if isinstance(raw_max_latency, int) else None,
             "script": {
                 "filename": str(config.get("script_filename") or ""),
                 "checksum": str(config.get("script_checksum") or ""),
@@ -478,39 +486,6 @@ def _artifact_directory(run: TestRun, step: RunStep) -> Path:
     )
 
 
-def _register_result_artifact(
-    db: Session, run: TestRun, step: RunStep, result: dict[str, typing.Any]
-) -> Artifact:
-    directory = _artifact_directory(run, step)
-    directory.mkdir(parents=True, exist_ok=True)
-    target = directory / "statistics-result.json"
-    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
-    data = json.dumps(result, ensure_ascii=False, indent=2).encode("utf-8")
-    try:
-        temporary.write_bytes(data)
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
-    artifact = db.scalar(
-        select(Artifact).where(
-            Artifact.run_id == run.id,
-            Artifact.step_id == step.id,
-            Artifact.name == target.name,
-        )
-    )
-    if artifact is None:
-        artifact = Artifact(run_id=run.id, step_id=step.id, name=target.name, path=str(target))
-        db.add(artifact)
-    artifact.artifact_type = "statistics_result_json"
-    artifact.path = str(target)
-    artifact.content_type = "application/json"
-    artifact.size = len(data)
-    artifact.checksum = hashlib.sha256(data).hexdigest()
-    artifact.is_immutable = True
-    db.flush()
-    return artifact
-
-
 def _analysis_record(step: RunStep) -> dict[str, typing.Any]:
     summary = step.result_summary or {}
     active = summary.get("statistics_active_analysis_no")
@@ -555,6 +530,55 @@ def _register_analysis_artifact(
                 f"分析历史产物 {target.name} 已损坏",
                 409,
             )
+        return artifact
+    if target.exists():
+        if not target.is_file():
+            raise WorkflowError(
+                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
+                f"分析历史产物 {target.name} 不是普通文件",
+                409,
+            )
+        data = target.read_bytes()
+        try:
+            existing_payload = json.loads(data)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise WorkflowError(
+                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
+                f"分析历史产物 {target.name} 不是合法 JSON",
+                409,
+            ) from exc
+        if (
+            not isinstance(existing_payload, dict)
+            or existing_payload.get("schema_version") != 1
+            or existing_payload.get("analysis_no") != analysis_no
+            or existing_payload.get("status") not in {"succeeded", "failed"}
+            or existing_payload.get("status") != payload.get("status")
+            or any(
+                existing_payload.get(key) != payload.get(key)
+                for key in (
+                    "config_revision", "inputs", "max_latency_ns", "script",
+                    "results", "attempts", "error",
+                )
+            )
+        ):
+            raise WorkflowError(
+                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
+                f"分析历史产物 {target.name} 内容不完整或与分析编号不一致",
+                409,
+            )
+        artifact = Artifact(
+            run_id=run.id,
+            step_id=step.id,
+            artifact_type="statistics_analysis_json",
+            name=target.name,
+            path=str(target),
+            content_type="application/json",
+            size=len(data),
+            checksum=hashlib.sha256(data).hexdigest(),
+            is_immutable=True,
+        )
+        db.add(artifact)
+        db.flush()
         return artifact
     data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
@@ -711,10 +735,11 @@ async def execute_statistics_node(
         active_record = _analysis_record(step)
     if not active_record or active_record.get("status") != "running":
         reserve_statistics_analysis(db, run, step)
-    config = typing.cast(
-        StatisticsConfig, parse_node_config(node.node_type, step.config_snapshot or node.config or {})
-    )
-    script = {"filename": config.script_filename, "checksum": config.script_checksum}
+    raw_config = step.config_snapshot or node.config or {}
+    script = {
+        "filename": str(raw_config.get("script_filename") or ""),
+        "checksum": str(raw_config.get("script_checksum") or ""),
+    }
     inputs: list[dict[str, typing.Any]] = []
     attempts: list[dict[str, typing.Any]] = []
     parsed_results: list[tuple[dict[str, typing.Any], StatisticsScriptOutput]] = []
@@ -722,6 +747,13 @@ async def execute_statistics_node(
     sftp = None
     started_at = beijing_now()
     try:
+        try:
+            config = typing.cast(StatisticsConfig, parse_node_config(node.node_type, raw_config))
+        except WorkflowError:
+            raise
+        except (TypeError, ValueError, ValidationError) as exc:
+            raise WorkflowError("STATISTICS_CONFIG_INVALID", f"统计运行配置无效：{exc}", 409) from exc
+        script = {"filename": config.script_filename, "checksum": config.script_checksum}
         resource = run_resources.get("parser")
         if not resource:
             raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
@@ -820,11 +852,12 @@ async def execute_statistics_node(
         {**result.model_dump(), "source_path": source["source_path"]}
         for source, result in parsed_results
     ]
-    _replace_metrics(db, run, step, parsed_results, script_detail, config.max_latency_ns)
+    # 必须先封存并校验成功产物；封存失败时不允许改变当前最新指标或兼容结果。
     history_summary, result_artifact = _finalize_statistics_analysis(
         db, run, step, status="succeeded", script=script, inputs=inputs,
         attempts=attempts, started_at=started_at, results=results,
     )
+    _replace_metrics(db, run, step, parsed_results, script_detail, config.max_latency_ns)
     result_summary = {
         **history_summary,
         "statistics_script": script,

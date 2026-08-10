@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models import Artifact, DurableTask, Metric, Resource, RunResource, RunStep, TestRun as RunModel
 from app.services import statistics_execution
@@ -634,6 +635,7 @@ def test_statistics_completion_rejects_legacy_step_after_runtime_config_change(
 async def test_statistics_execution_creates_metrics_and_json_artifact(
     client, admin_headers, tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     commands = []
@@ -678,6 +680,7 @@ async def test_statistics_execution_finalizes_reserved_analysis_as_immutable_his
     client, admin_headers, tmp_path, monkeypatch
 ):
     """若移除历史最终化或改回单一可覆写 JSON，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     install_statistics_fakes(monkeypatch, lambda command: SimpleNamespace(
@@ -714,11 +717,242 @@ async def test_statistics_execution_finalizes_reserved_analysis_as_immutable_his
         assert payload["results"][0]["metrics"][0]["value"] == 321.0
 
 
+def test_statistics_analysis_artifact_reuses_orphaned_finalized_file(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若恢复覆盖“已落盘、未入库”的同号文件，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        target = statistics_execution._artifact_directory(run, step) / "statistics-analysis-v001.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        original = {
+            "schema_version": 1,
+            "analysis_no": 1,
+            "status": "failed",
+            "error": {"code": "PREVIOUS_FAILURE"},
+        }
+        target.write_text(json.dumps(original), encoding="utf-8")
+
+        artifact = statistics_execution._register_analysis_artifact(
+            db,
+            run,
+            step,
+            1,
+            {
+                "analysis_no": 1,
+                "status": "failed",
+                "error": {"code": "PREVIOUS_FAILURE"},
+            },
+        )
+
+        assert json.loads(target.read_text(encoding="utf-8")) == original
+        assert artifact.checksum == hashlib.sha256(target.read_bytes()).hexdigest()
+        assert artifact.is_immutable is True
+
+
+def test_statistics_analysis_artifact_rejects_invalid_orphaned_file(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若恢复接受损坏的同号文件并覆盖它，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        target = statistics_execution._artifact_directory(run, step) / "statistics-analysis-v001.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('{"analysis_no": 2}', encoding="utf-8")
+
+        with pytest.raises(WorkflowError) as exc:
+            statistics_execution._register_analysis_artifact(
+                db, run, step, 1, {"analysis_no": 1, "status": "failed"}
+            )
+        assert exc.value.code == "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT"
+        assert json.loads(target.read_text(encoding="utf-8"))["analysis_no"] == 2
+
+
+def test_statistics_analysis_artifact_rejects_conflicting_orphaned_terminal_result(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若恢复将 orphan 的失败内容登记为新的成功，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        target = statistics_execution._artifact_directory(run, step) / "statistics-analysis-v001.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({
+            "schema_version": 1, "analysis_no": 1, "status": "failed",
+        }), encoding="utf-8")
+
+        with pytest.raises(WorkflowError) as exc:
+            statistics_execution._register_analysis_artifact(
+                db, run, step, 1, {"analysis_no": 1, "status": "succeeded"}
+            )
+        assert exc.value.code == "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT"
+        assert db.query(Artifact).filter(Artifact.run_id == run.id).count() == 1
+
+
+def test_statistics_analysis_artifact_rejects_conflicting_orphaned_results(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若恢复把不同的成功结果绑定到同一不可变文件，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        target = statistics_execution._artifact_directory(run, step) / "statistics-analysis-v001.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps({
+            "schema_version": 1, "analysis_no": 1, "status": "succeeded",
+            "config_revision": 1, "inputs": [], "max_latency_ns": 100,
+            "script": {"filename": "a.py", "checksum": "a"},
+            "results": [{"source_file": "old.csv"}],
+        }), encoding="utf-8")
+
+        with pytest.raises(WorkflowError) as exc:
+            statistics_execution._register_analysis_artifact(db, run, step, 1, {
+                "schema_version": 1, "analysis_no": 1, "status": "succeeded",
+                "config_revision": 1, "inputs": [], "max_latency_ns": 100,
+                "script": {"filename": "a.py", "checksum": "a"},
+                "results": [{"source_file": "new.csv"}],
+            })
+        assert exc.value.code == "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT"
+
+
+@pytest.mark.asyncio
+async def test_statistics_missing_selection_is_archived_as_failed_analysis(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若执行前输入校验失败未预留并封存历史，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        resource = db.get(Resource, parser_data["id"])
+
+        with pytest.raises(WorkflowError) as exc:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert exc.value.code == "STATISTICS_INPUTS_REQUIRED"
+        record = step.result_summary["statistics_analyses"][-1]
+        assert record["analysis_no"] == 1
+        assert record["status"] == "failed"
+        payload = json.loads(Path(db.get(Artifact, record["artifact_id"]).path).read_text(encoding="utf-8"))
+        assert payload["error"]["code"] == "STATISTICS_INPUTS_REQUIRED"
+        assert payload["inputs"] == []
+
+
+@pytest.mark.asyncio
+async def test_statistics_invalid_runtime_config_is_archived_as_failed_analysis(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若配置解析在最终化范围外抛出异常，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        resource = db.get(Resource, parser_data["id"])
+        select_legacy_inputs(step, artifact)
+        step.config_snapshot = {"max_latency_ns": 999999999}
+
+        with pytest.raises(WorkflowError) as exc:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert exc.value.code == "STATISTICS_SCRIPT_NAME_INVALID"
+        record = step.result_summary["statistics_analyses"][-1]
+        assert record["status"] == "failed"
+        payload = json.loads(Path(db.get(Artifact, record["artifact_id"]).path).read_text(encoding="utf-8"))
+        assert payload["error"]["code"] == "STATISTICS_SCRIPT_NAME_INVALID"
+        assert payload["script"] == {"filename": "", "checksum": ""}
+
+
+@pytest.mark.asyncio
+async def test_statistics_invalid_threshold_keeps_raw_failure_history_readable(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若坏阈值被伪装为默认值或令历史响应不可序列化，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        resource = db.get(Resource, parser_data["id"])
+        select_legacy_inputs(step, artifact)
+        step.config_snapshot = {**step.config_snapshot, "max_latency_ns": "not-an-integer"}
+
+        with pytest.raises(WorkflowError) as exc:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert exc.value.code == "STATISTICS_CONFIG_INVALID"
+        record = step.result_summary["statistics_analyses"][-1]
+        assert record["max_latency_ns"] is None
+        payload = json.loads(Path(db.get(Artifact, record["artifact_id"]).path).read_text(encoding="utf-8"))
+        assert payload["max_latency_ns"] is None
+
+
+@pytest.mark.asyncio
+async def test_statistics_finalization_failure_preserves_existing_metrics_and_summary(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若产物最终化失败后仍替换指标或顶层结果，此用例应失败。"""
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    install_statistics_fakes(monkeypatch, lambda command: SimpleNamespace(
+        exit_status=0,
+        stdout=json.dumps(statistics_payload(Path(shlex.split(command)[1]).name, 321.0)),
+        stderr="",
+    ))
+
+    def fail_finalization(*_args, **_kwargs):
+        raise WorkflowError("STATISTICS_ANALYSIS_ARTIFACT_CORRUPT", "无法封存分析结果", 409)
+
+    monkeypatch.setattr(statistics_execution, "_finalize_statistics_analysis", fail_finalization)
+    with SessionLocal() as db:
+        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        resource = db.get(Resource, parser_data["id"])
+        select_legacy_inputs(step, artifact)
+        step.result_summary = {
+            **step.result_summary,
+            "statistics_results": [{"source_file": "previous.csv", "metrics": []}],
+            "statistics_artifact_id": 987,
+        }
+        db.add(Metric(
+            run_id=run.id, name="Statistics/previous/平均值", value=88.0, unit="ns",
+            detail={"statistics_step_id": step.id},
+        ))
+
+        with pytest.raises(WorkflowError) as exc:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert exc.value.code == "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT"
+        metrics = list(db.query(Metric).filter(Metric.run_id == run.id).all())
+        assert [(metric.name, metric.value) for metric in metrics] == [("Statistics/previous/平均值", 88.0)]
+        assert step.result_summary["statistics_results"] == [{"source_file": "previous.csv", "metrics": []}]
+        assert step.result_summary["statistics_artifact_id"] == 987
+
+
 @pytest.mark.asyncio
 async def test_statistics_failure_archives_partial_attempt_without_replacing_latest_metrics(
     client, admin_headers, tmp_path, monkeypatch
 ):
     """若失败覆盖成功指标或未保存部分多文件执行详情，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
 
@@ -849,6 +1083,7 @@ def test_statistics_analysis_history_api_is_newest_first_and_integrity_checked(
 async def test_statistics_execution_rejects_failed_or_invalid_script_output(
     client, admin_headers, tmp_path, monkeypatch, result, expected_code
 ):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     install_statistics_fakes(monkeypatch, lambda _command: result)
@@ -881,6 +1116,7 @@ async def test_statistics_execution_rejects_failed_or_invalid_script_output(
 async def test_statistics_multifile_failure_does_not_keep_partial_metrics(
     client, admin_headers, tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
 
@@ -922,6 +1158,7 @@ async def test_statistics_multifile_failure_does_not_keep_partial_metrics(
 async def test_statistics_retry_replaces_previous_metrics(
     client, admin_headers, tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     values = iter([100.0, 250.0])
@@ -962,6 +1199,7 @@ async def test_statistics_retry_replaces_previous_metrics(
 async def test_statistics_executes_selected_remote_csv_without_upload(
     client, admin_headers, tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     listing = {
@@ -1013,6 +1251,7 @@ async def test_statistics_executes_selected_remote_csv_without_upload(
 async def test_statistics_rejects_remote_csv_changed_after_selection(
     client, admin_headers, tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
     parser_data = create_parser_resource(client, admin_headers)
     plan, scenario = create_plan_scenario(client, admin_headers)
     current_size = 12

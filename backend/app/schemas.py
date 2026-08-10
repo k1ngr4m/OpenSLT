@@ -833,7 +833,7 @@ class StatisticsAnalysisMetadataOut(BaseModel):
     status: Literal["running", "succeeded", "failed"]
     config_revision: int = Field(ge=0)
     inputs: typing.List[typing.Dict[str, Any]] = Field(default_factory=list)
-    max_latency_ns: int = Field(ge=1)
+    max_latency_ns: typing.Union[int, None] = Field(default=None, ge=1)
     script: typing.Dict[str, Any] = Field(default_factory=dict)
     reserved_at: str
     started_at: typing.Union[str, None] = None
