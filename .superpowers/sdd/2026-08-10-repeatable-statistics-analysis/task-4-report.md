@@ -30,3 +30,32 @@
 ## 顾虑
 
 - 未处理 Task 3 的两个非阻塞 Minor；其中不同详情并发加载的问题通过本界面的单项 accordion 避免成为用户可见问题。
+
+## Fix round 1/5：审查结论
+
+Task 4 首轮审查未通过，需在追加提交中处理以下 Important：
+
+- 历史加载只监听 `selectedStep.id`，默认展开初始化也只按步骤 ID；同一步复算后不会刷新历史或默认展开新的最新成功分析。
+- 新运行的顶层 `statistics_results` 与历史详情重复展示；兼容回退必须严格限定为缺少 `statistics_analyses` 历史结构的旧运行。
+- 新增测试仅检查源码字符串，未通过真实挂载和交互覆盖配置草稿、完成门禁、保存/复算、历史刷新与懒加载、旧运行兼容行为。
+- CSV 选择区存在 `label` 嵌套 checkbox 自带 label 的无效语义；数值输入也需显式标签关联。
+- 失败详情缺少 `artifact.error.message`，且冻结节点仍提示可修改/复算。
+- 复算请求期间未同步禁用完成与冲突操作，存在 `analyze` 与 `complete` 并发风险。
+
+### 修复
+
+- 历史 watcher 改为监听步骤 ID、最新分析号/状态和最新成功分析号组成的轻量签名；默认展开状态改用 `(stepId, latestSuccessAnalysisNo)`，同一步出现新成功分析时会刷新历史、展开并加载其详情。
+- 兼容结果区直接按 `result_summary` 是否拥有 `statistics_analyses` 属性分流；新运行不会重复展示顶层 `statistics_results`，旧运行仍保留回退。
+- 使用 `@vue/test-utils` 真实挂载视图，以响应式 composable mock 和 Element Plus 交互 stub 覆盖配置门禁、点击、复算并发、历史刷新/展开/懒加载、新旧运行分流、失败详情和标签语义。
+- 生产模板继续使用 Element Plus `el-collapse` 的单项 `accordion`，键盘操作语义由该组件负责；挂载测试只验证 `accordion` 属性与父级 `change` 事件到懒加载动作的接线，不把自定义 stub 视为键盘行为覆盖。
+- CSV 组改为内层 `fieldset/legend` 并添加 `aria-labelledby`/`aria-describedby`；最大延迟输入通过显式 `label[for]` 与 ID 关联。
+- 失败记录展示不可变产物中的 `artifact.error.message`；冻结节点使用只读/审计提示，并隐藏复算入口。
+- 复算请求期间统一禁用完成、复算、CSV 刷新/选择、阈值编辑与配置保存，并显示“统计分析正在执行”的完成门禁原因。
+
+### TDD 与验证
+
+- RED：`npm test -- src/views/RunDetailView.test.ts` 得到 `5 failed, 10 passed`；失败分别对应复算并发门禁、同步骤历史签名、现代运行重复兼容结果、失败详情/冻结提示和无效标签结构。
+- GREEN：同一聚焦命令得到 `15 passed`。
+- 全量前端测试：`30 passed files, 148 passed tests`。
+- 生产构建：`npm run build` 成功；仅保留既有第三方 `@vueuse/core` Rollup 注释提示。
+- `git diff --check`：成功。

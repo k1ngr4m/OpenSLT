@@ -366,7 +366,7 @@
   border: 0;
 }
 
-.statistics-config-form legend {
+.statistics-config-form > legend {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -383,10 +383,18 @@
   min-width: 0;
 }
 
-.statistics-config-field > span:first-child {
+.statistics-config-field > span:first-child,
+.statistics-config-field > legend,
+.statistics-config-field > label {
   color: var(--ui-text-primary);
   font-size: 12px;
   font-weight: 650;
+}
+
+.statistics-csv-field {
+  padding: 0;
+  margin: 0;
+  border: 0;
 }
 
 .statistics-config-field > small {

@@ -237,9 +237,13 @@ const {
   statisticsThresholdValid,
   statisticsUnit,
 } = useStatisticsInputs({ currentStep, selectedStep, run, runId, reload: load })
+const statisticsReanalysisPending = computed(() => Boolean(
+  currentStep.value?.node_type === 'data_statistics'
+  && reanalyzingStatisticsStepId.value === currentStep.value.id,
+))
 const statisticsActionBlocked = computed(() => Boolean(
   currentStep.value?.node_type === 'data_statistics'
-  && (!statisticsConfigSaved.value || savingStatisticsInputs.value),
+  && (!statisticsConfigSaved.value || savingStatisticsInputs.value || statisticsReanalysisPending.value),
 ))
 const canCompleteCurrent = computed(() => Boolean(
   currentStep.value?.status === 'waiting'
@@ -247,9 +251,42 @@ const canCompleteCurrent = computed(() => Boolean(
   && (currentStep.value.node_type !== 'order_preparation' || !orderActionUnresolved.value),
 ))
 const expandedStatisticsAnalysisNo = ref<string | number>('')
-const initializedStatisticsHistoryStepId = ref<number | null>(null)
+const initializedStatisticsHistorySuccessKey = ref('')
+const selectedStatisticsHasHistoryStructure = computed(() => {
+  const summary = selectedStep.value?.result_summary
+  return Boolean(
+    selectedStep.value?.node_type === 'data_statistics'
+    && summary
+    && Object.prototype.hasOwnProperty.call(summary, 'statistics_analyses'),
+  )
+})
+const selectedStatisticsHistorySignature = computed(() => {
+  const step = selectedStep.value
+  if (!step || step.node_type !== 'data_statistics') return ''
+  const summary = step.result_summary || {}
+  const history = Array.isArray(summary.statistics_analyses) ? summary.statistics_analyses : []
+  let latestAnalysisNo = 0
+  let latestAnalysisStatus = ''
+  for (const item of history) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const analysisNo = Number((item as JsonMap).analysis_no)
+    if (!Number.isInteger(analysisNo) || analysisNo <= latestAnalysisNo) continue
+    latestAnalysisNo = analysisNo
+    latestAnalysisStatus = String((item as JsonMap).status || '')
+  }
+  return [
+    step.id,
+    selectedStatisticsHasHistoryStructure.value ? 'history' : 'legacy',
+    latestAnalysisNo,
+    latestAnalysisStatus,
+    Number(summary.statistics_latest_success_analysis_no) || 0,
+  ].join(':')
+})
 const statisticsCompletionBlockedReason = computed(() => {
   if (currentStep.value?.node_type !== 'data_statistics' || !canCompleteCurrent.value) return ''
+  if (statisticsReanalysisPending.value) {
+    return '完成已禁用：统计分析正在执行，请等待本次分析结束。'
+  }
   if (!statisticsConfigReady.value || !statisticsConfigSaved.value) {
     return '完成已禁用：请先选择 CSV、填写正整数的最大延迟上限并保存分析配置。'
   }
@@ -324,18 +361,31 @@ function statisticsAnalysisDetailResults(analysisNo: number) {
     : []
 }
 
+function statisticsAnalysisFailureDescription(analysisNo: number) {
+  const error = statisticsAnalysisDetails.value[analysisNo]?.artifact.error
+  const message = error && typeof error === 'object' && !Array.isArray(error)
+    ? String((error as JsonMap).message || '')
+    : ''
+  const guidance = canEditStatisticsConfig.value
+    ? '该次失败记录已保留；可修改配置后重新分析。'
+    : '该节点已冻结；失败记录保留供审计。'
+  return message ? `${message}；${guidance}` : guidance
+}
+
 async function loadStatisticsHistory() {
   const step = selectedStep.value
   if (!step || step.node_type !== 'data_statistics') {
     expandedStatisticsAnalysisNo.value = ''
-    initializedStatisticsHistoryStepId.value = null
+    initializedStatisticsHistorySuccessKey.value = ''
     return
   }
   const stepId = step.id
   await refreshStatisticsAnalyses()
-  if (selectedStep.value?.id !== stepId || initializedStatisticsHistoryStepId.value === stepId) return
-  initializedStatisticsHistoryStepId.value = stepId
+  if (selectedStep.value?.id !== stepId) return
   const latestSuccess = statisticsAnalyses.value.find(analysis => analysis.status === 'succeeded')
+  const successKey = `${stepId}:${latestSuccess?.analysis_no || 0}`
+  if (initializedStatisticsHistorySuccessKey.value === successKey) return
+  initializedStatisticsHistorySuccessKey.value = successKey
   if (!latestSuccess) return
   expandedStatisticsAnalysisNo.value = String(latestSuccess.analysis_no)
   void loadStatisticsAnalysisDetail(latestSuccess.analysis_no)
@@ -461,7 +511,7 @@ watch(
   () => ensureCaptureDetails(selectedStep.value),
 )
 watch(
-  () => selectedStep.value?.id,
+  selectedStatisticsHistorySignature,
   () => { void loadStatisticsHistory() },
   { immediate: true },
 )
@@ -495,11 +545,11 @@ watch(
           @click="currentStep && stepAction(currentStep, 'start')"
         >{{ currentStep.node_type === 'data_statistics' ? '开始分析' : '开始' }}</el-button>
         <el-button
-          v-if="currentStep?.node_type === 'data_statistics' && currentStep.status === 'waiting' && run.status === 'awaiting_step_completion'"
+          v-if="currentStep?.node_type === 'data_statistics' && currentStep.status === 'waiting' && run.status === 'awaiting_step_completion' && canEditStatisticsConfig"
           type="warning"
           :icon="Refresh"
           :loading="reanalyzingStatisticsStepId === currentStep.id"
-          :disabled="!statisticsConfigSaved || savingStatisticsInputs"
+          :disabled="!statisticsConfigSaved || savingStatisticsInputs || statisticsReanalysisPending"
           @click="currentStep && reanalyzeStatistics(currentStep)"
         >{{ statisticsCompletionStale ? '开始分析' : '再次分析' }}</el-button>
         <el-button
@@ -507,7 +557,7 @@ watch(
           type="success"
           :icon="CircleCheck"
           :loading="actingStepId === currentStep.id"
-          :disabled="wiringActionBlocked || (currentStep?.node_type === 'data_statistics' && statisticsCompletionBlocked)"
+          :disabled="wiringActionBlocked || (currentStep?.node_type === 'data_statistics' && (statisticsCompletionBlocked || statisticsReanalysisPending))"
           :aria-describedby="currentStep?.node_type === 'data_statistics' && statisticsCompletionBlockedReason ? 'statistics-completion-blocked-reason' : undefined"
           @click="currentStep && stepAction(currentStep, currentStep.node_type === 'wiring_confirmation' ? 'confirm' : 'complete')"
         >{{ currentStep.node_type === 'wiring_confirmation' ? '确认接线' : '完成' }}</el-button>
@@ -605,21 +655,28 @@ watch(
                 <div class="section-heading">
                   <div>
                     <h3>分析配置</h3>
-                    <p class="muted">选择 CSV 并设置最大延迟上限后统一保存；修改已保存配置后需要重新分析。</p>
+                    <p class="muted">{{ canEditStatisticsConfig ? '选择 CSV 并设置最大延迟上限后统一保存；修改已保存配置后需要重新分析。' : '该节点配置已冻结，只读展示执行时保存的 CSV 与最大延迟上限。' }}</p>
                   </div>
                   <div class="parser-export-actions">
                     <el-tag v-if="statisticsConfigSaved" type="success" effect="plain">已保存</el-tag>
                     <el-tag v-else-if="statisticsConfigDirty" type="warning" effect="plain">未保存</el-tag>
-                    <el-button v-if="canEditStatisticsConfig" :icon="Refresh" :loading="loadingStatisticsCsvFiles" circle plain aria-label="刷新统计 CSV" @click="refreshStatisticsCsvFiles" />
+                    <el-button v-if="canEditStatisticsConfig" :icon="Refresh" :loading="loadingStatisticsCsvFiles" :disabled="statisticsReanalysisPending" circle plain aria-label="刷新统计 CSV" @click="refreshStatisticsCsvFiles" />
                   </div>
                 </div>
                 <p v-if="statisticsCsvDirectory" class="muted mono">{{ statisticsCsvDirectory }}</p>
                 <fieldset class="statistics-config-form">
                   <legend>分析配置</legend>
-                  <label class="statistics-config-field">
-                    <span>CSV 输入</span>
-                    <small>仅可选择当前节点前最近一次成功解析生成的 CSV；统计脚本将直接读取远端文件。</small>
-                    <el-checkbox-group v-model="selectedRelativePaths" class="statistics-input-list" :disabled="!canEditStatisticsConfig" v-loading="loadingStatisticsCsvFiles">
+                  <fieldset class="statistics-config-field statistics-csv-field">
+                    <legend id="statistics-csv-input-label">CSV 输入</legend>
+                    <small id="statistics-csv-input-description">仅可选择当前节点前最近一次成功解析生成的 CSV；统计脚本将直接读取远端文件。</small>
+                    <el-checkbox-group
+                      v-model="selectedRelativePaths"
+                      class="statistics-input-list"
+                      :disabled="!canEditStatisticsConfig || statisticsReanalysisPending"
+                      aria-labelledby="statistics-csv-input-label"
+                      aria-describedby="statistics-csv-input-description"
+                      v-loading="loadingStatisticsCsvFiles"
+                    >
                       <el-checkbox v-for="file in displayedStatisticsCsvFiles" :key="file.relative_path" :value="file.relative_path">
                         <span class="statistics-input-copy">
                           <strong>{{ file.relative_path }}</strong>
@@ -628,24 +685,27 @@ watch(
                       </el-checkbox>
                     </el-checkbox-group>
                     <span v-if="!loadingStatisticsCsvFiles && !displayedStatisticsCsvFiles.length" class="empty-line">最近一次解析结果中暂无可统计的 CSV</span>
-                  </label>
-                  <label class="statistics-config-field statistics-threshold-field">
-                    <span>最大延迟上限（ns）</span>
-                    <small>仅纳入不超过该正整数上限的有效延迟样本。</small>
+                  </fieldset>
+                  <div class="statistics-config-field statistics-threshold-field">
+                    <label for="statistics-max-latency-ns">最大延迟上限（ns）</label>
+                    <small id="statistics-max-latency-description">仅纳入不超过该正整数上限的有效延迟样本。</small>
                     <el-input-number
+                      id="statistics-max-latency-ns"
                       v-model="statisticsMaxLatencyNsDraft"
                       :min="1"
                       :precision="0"
                       :step="1"
-                      :disabled="!canEditStatisticsConfig"
+                      :disabled="!canEditStatisticsConfig || statisticsReanalysisPending"
+                      aria-describedby="statistics-max-latency-description"
+                      :aria-invalid="!statisticsThresholdValid"
                       aria-label="最大延迟上限（纳秒）"
                     />
                     <span v-if="!statisticsThresholdValid" class="statistics-field-error" role="alert">最大延迟上限必须是正整数。</span>
-                  </label>
+                  </div>
                 </fieldset>
                 <div v-if="auth.canOperate && canEditStatisticsConfig" class="statistics-selection-actions">
                   <span class="muted">已勾选 {{ selectedRelativePaths.length }} 个 CSV<span v-if="statisticsConfigDirty"> · 尚未保存</span></span>
-                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!statisticsConfigDirty || !statisticsConfigReady" @click="saveStatisticsConfig">保存分析配置</el-button>
+                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!statisticsConfigDirty || !statisticsConfigReady || statisticsReanalysisPending" @click="saveStatisticsConfig">保存分析配置</el-button>
                 </div>
               </section>
 
@@ -658,7 +718,7 @@ watch(
                   <el-button :icon="Refresh" :loading="loadingStatisticsAnalyses" plain @click="loadStatisticsHistory">刷新历史</el-button>
                 </div>
                 <p class="statistics-history-status muted" role="status">{{ loadingStatisticsAnalyses ? '正在加载分析历史…' : `已加载 ${statisticsAnalyses.length} 条分析记录` }}</p>
-                <div v-if="!loadingStatisticsAnalyses && !statisticsAnalyses.length" class="empty-line">暂无可读取的分析历史；旧运行仍会在下方展示现有统计结果。</div>
+                <div v-if="!loadingStatisticsAnalyses && !statisticsAnalyses.length" class="empty-line">{{ selectedStatisticsHasHistoryStructure ? '暂无分析历史。' : '该旧运行没有分析历史索引，仍会在下方展示现有统计结果。' }}</div>
                 <el-collapse v-else v-model="expandedStatisticsAnalysisNo" accordion class="statistics-history-list" @change="handleStatisticsHistoryChange">
                   <el-collapse-item
                     v-for="analysis in statisticsAnalyses"
@@ -675,7 +735,7 @@ watch(
                     <el-alert
                       v-if="analysis.status === 'failed'"
                       :title="`分析失败${analysis.error_code ? `：${analysis.error_code}` : ''}`"
-                      description="该次失败记录已保留；可修改配置后重新分析。"
+                      :description="statisticsAnalysisFailureDescription(analysis.analysis_no)"
                       type="error"
                       show-icon
                       :closable="false"
@@ -1002,7 +1062,7 @@ watch(
                   <span v-for="file in parserOutputFiles" :key="file">{{ file }}</span>
                 </div>
 
-                <div v-if="statisticsResults.length" class="statistics-results">
+                <div v-if="!selectedStatisticsHasHistoryStructure && statisticsResults.length" class="statistics-results statistics-legacy-results">
                   <div class="statistics-result-toolbar">
                     <strong>统计结果</strong>
                     <el-radio-group v-model="statisticsUnit" size="small">
