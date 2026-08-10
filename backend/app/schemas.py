@@ -799,6 +799,10 @@ class StatisticsInputSelectionRequest(BaseModel):
     relative_paths: typing.List[str] = Field(min_length=1)
 
 
+class StatisticsRuntimeConfigRequest(StatisticsInputSelectionRequest):
+    max_latency_ns: Annotated[int, Field(strict=True, ge=1)]
+
+
 class StatisticsInputOut(BaseModel):
     relative_path: str
     filename: str
@@ -816,6 +820,34 @@ class StatisticsInputSelectionOut(BaseModel):
     inputs: typing.List[StatisticsInputOut]
     selected_by: int
     selected_at: datetime
+
+
+class StatisticsRuntimeConfigOut(StatisticsInputSelectionOut):
+    max_latency_ns: int = Field(ge=1)
+    statistics_config_revision: int = Field(ge=0)
+    changed: bool
+
+
+class StatisticsAnalysisMetadataOut(BaseModel):
+    analysis_no: int = Field(ge=1)
+    status: Literal["running", "succeeded", "failed"]
+    config_revision: int = Field(ge=0)
+    inputs: typing.List[typing.Dict[str, Any]] = Field(default_factory=list)
+    max_latency_ns: typing.Union[int, None] = Field(default=None, ge=1)
+    script: typing.Dict[str, Any] = Field(default_factory=dict)
+    reserved_at: str
+    started_at: typing.Union[str, None] = None
+    finished_at: typing.Union[str, None] = None
+    duration_ms: typing.Union[int, None] = Field(default=None, ge=0)
+    error_code: typing.Union[str, None] = None
+    artifact_id: typing.Union[int, None] = None
+    artifact_checksum: typing.Union[str, None] = None
+    artifact_size: typing.Union[int, None] = Field(default=None, ge=0)
+
+
+class StatisticsAnalysisDetailOut(BaseModel):
+    analysis: StatisticsAnalysisMetadataOut
+    artifact: typing.Dict[str, Any]
 
 
 class StepOut(ORMModel):

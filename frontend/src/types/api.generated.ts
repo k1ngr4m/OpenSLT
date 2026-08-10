@@ -787,6 +787,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/steps/{step_id}/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Statistics Step */
+        post: operations["analyze_statistics_step_api_v1_runs__run_id__steps__step_id__analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/steps/{step_id}/capture-snapshots": {
         parameters: {
             query?: never;
@@ -934,6 +951,57 @@ export interface paths {
         put?: never;
         /** Start Run Step */
         post: operations["start_run_step_api_v1_runs__run_id__steps__step_id__start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-analyses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Statistics Analyses */
+        get: operations["list_statistics_analyses_api_v1_runs__run_id__steps__step_id__statistics_analyses_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-analyses/{analysis_no}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Statistics Analysis */
+        get: operations["get_statistics_analysis_api_v1_runs__run_id__steps__step_id__statistics_analyses__analysis_no__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/steps/{step_id}/statistics-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Statistics Runtime Configuration */
+        put: operations["update_statistics_runtime_configuration_api_v1_runs__run_id__steps__step_id__statistics_config_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2747,6 +2815,46 @@ export interface components {
              */
             node_type: "slnic_stop_capture";
         };
+        /** StatisticsAnalysisDetailOut */
+        StatisticsAnalysisDetailOut: {
+            analysis: components["schemas"]["StatisticsAnalysisMetadataOut"];
+            /** Artifact */
+            artifact: Record<string, unknown>;
+        };
+        /** StatisticsAnalysisMetadataOut */
+        StatisticsAnalysisMetadataOut: {
+            /** Analysis No */
+            analysis_no: number;
+            /** Artifact Checksum */
+            artifact_checksum?: string | null;
+            /** Artifact Id */
+            artifact_id?: number | null;
+            /** Artifact Size */
+            artifact_size?: number | null;
+            /** Config Revision */
+            config_revision: number;
+            /** Duration Ms */
+            duration_ms?: number | null;
+            /** Error Code */
+            error_code?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Inputs */
+            inputs?: Record<string, unknown>[];
+            /** Max Latency Ns */
+            max_latency_ns?: number | null;
+            /** Reserved At */
+            reserved_at: string;
+            /** Script */
+            script?: Record<string, unknown>;
+            /** Started At */
+            started_at?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "succeeded" | "failed";
+        };
         /** StatisticsConfig */
         StatisticsConfig: {
             /**
@@ -2842,6 +2950,31 @@ export interface components {
              * @enum {string}
              */
             node_type: "data_statistics";
+        };
+        /** StatisticsRuntimeConfigOut */
+        StatisticsRuntimeConfigOut: {
+            /** Changed */
+            changed: boolean;
+            /** Inputs */
+            inputs: components["schemas"]["StatisticsInputOut"][];
+            /** Max Latency Ns */
+            max_latency_ns: number;
+            /**
+             * Selected At
+             * Format: date-time
+             */
+            selected_at: string;
+            /** Selected By */
+            selected_by: number;
+            /** Statistics Config Revision */
+            statistics_config_revision: number;
+        };
+        /** StatisticsRuntimeConfigRequest */
+        StatisticsRuntimeConfigRequest: {
+            /** Max Latency Ns */
+            max_latency_ns: number;
+            /** Relative Paths */
+            relative_paths: string[];
         };
         /** StatisticsScriptFileOut */
         StatisticsScriptFileOut: {
@@ -5159,6 +5292,38 @@ export interface operations {
             };
         };
     };
+    analyze_statistics_step_api_v1_runs__run_id__steps__step_id__analyze_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_run_step_capture_snapshots_api_v1_runs__run_id__steps__step_id__capture_snapshots_get: {
         parameters: {
             query?: never;
@@ -5446,6 +5611,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_statistics_analyses_api_v1_runs__run_id__steps__step_id__statistics_analyses_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatisticsAnalysisMetadataOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_statistics_analysis_api_v1_runs__run_id__steps__step_id__statistics_analyses__analysis_no__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+                analysis_no: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatisticsAnalysisDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_statistics_runtime_configuration_api_v1_runs__run_id__steps__step_id__statistics_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+                step_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StatisticsRuntimeConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatisticsRuntimeConfigOut"];
                 };
             };
             /** @description Validation Error */

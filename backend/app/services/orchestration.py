@@ -22,7 +22,11 @@ from app.core.time import as_beijing, beijing_now
 from app.models import Artifact, AuditLog, LogRecord, Metric, Resource, ResourceLock, RunStep, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestRun, TestScenario
 from app.services.events import broker
 from app.services.resource_relations import run_resource_ids
-from app.services.statistics_execution import require_statistics_selection
+from app.services.statistics_execution import (
+    finish_statistics_analysis,
+    reserve_statistics_analysis,
+    validate_statistics_completion_freshness,
+)
 from app.services.run_state import TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.workflow_handlers import registry as workflow_handler_registry
 from app.services.workflow_handlers.base import WorkflowExecutionContext
@@ -310,6 +314,15 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             failed = next((step for step in run.steps if step.status == "running"), None)
             if failed:
                 transition_step(failed, "failed")
+                if failed.node_type == "data_statistics":
+                    finish_statistics_analysis(
+                        db,
+                        run,
+                        failed,
+                        status="failed",
+                        error_code=getattr(exc, "code", "WORKFLOW_EXECUTION_FAILED"),
+                        error_message=redact(str(exc)),
+                    )
                 failed.error_message = redact(str(exc))
                 failed.finished_at = beijing_now()
                 started_at = failed.started_at or failed.finished_at
@@ -346,18 +359,25 @@ def begin_workflow_step(
     step_id: int,
     *,
     retry: bool = False,
+    reanalysis: bool = False,
 ) -> RunStep:
-    expected_status = "awaiting_step_retry" if retry else "awaiting_step_start"
+    expected_status = (
+        "awaiting_step_completion"
+        if reanalysis
+        else "awaiting_step_retry" if retry else "awaiting_step_start"
+    )
     if not run.workflow_version_id or run.status != expected_status:
         raise WorkflowError("INVALID_TRANSITION", "当前运行不能执行该节点", 409)
     current = next((item for item in run.steps if item.status != "succeeded"), None)
     if not current or current.id != step_id:
         raise WorkflowError("INVALID_WORKFLOW_STEP", "只能操作当前节点", 409)
-    expected_step_status = "failed" if retry else "pending"
+    expected_step_status = "waiting" if reanalysis else "failed" if retry else "pending"
     if current.status != expected_step_status:
         raise WorkflowError("INVALID_TRANSITION", "当前节点状态不能执行此操作", 409)
     if current.node_type == "data_statistics":
-        require_statistics_selection(db, run, current)
+        analysis_no = reserve_statistics_analysis(db, run, current)
+    else:
+        analysis_no = None
     if retry:
         current.retry_count += 1
     transition_step(current, "running")
@@ -371,10 +391,10 @@ def begin_workflow_step(
     append_log(
         db,
         run,
-        "workflow.step_retried" if retry else "workflow.step_started",
-        f"{current.name}{'重试' if retry else '开始'}",
+        "statistics.reanalysis_started" if reanalysis else "workflow.step_retried" if retry else "workflow.step_started",
+        f"{current.name}{'重新分析' if reanalysis else '重试' if retry else '开始'}",
         step=current,
-        detail={"retry_count": current.retry_count},
+        detail={"retry_count": current.retry_count, "analysis_no": analysis_no},
     )
     db.flush()
     broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
@@ -393,6 +413,8 @@ async def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_
         and (step.result_summary or {}).get("order_action_status") in {"dispatching", "unknown"}
     ):
         raise WorkflowError("ORDER_ACTION_UNRESOLVED", "发单动作结果尚未确认，不能完成节点", 409)
+    if step.node_type == "data_statistics":
+        validate_statistics_completion_freshness(step)
     if (
         step.node_type == "wiring_confirmation"
         and (step.config_snapshot or {}).get("diagram") == "resource"

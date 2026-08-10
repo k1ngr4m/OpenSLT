@@ -15,6 +15,7 @@ interface RunActionsOptions {
 export function useRunActions(options: RunActionsOptions) {
   const { reload, runId, runTerminalStep, stopWorkflowTerminal } = options
   const actingStepId = ref<number | null>(null)
+  const reanalyzingStatisticsStepId = ref<number | null>(null)
   const regeneratingReports = ref(false)
   const verdictDialog = ref(false)
   const verdict = reactive<RunVerdictWrite>({
@@ -80,6 +81,24 @@ export function useRunActions(options: RunActionsOptions) {
     }
   }
 
+  async function reanalyzeStatistics(step: RunStep) {
+    if (
+      step.node_type !== 'data_statistics'
+      || step.status !== 'waiting'
+      || reanalyzingStatisticsStepId.value !== null
+    ) return
+    reanalyzingStatisticsStepId.value = step.id
+    try {
+      await api.post(`/runs/${runId}/steps/${step.id}/analyze`)
+      ElMessage.success('统计分析已重新执行')
+      await reload()
+    } catch (error) {
+      ElMessage.error(errorMessage(error))
+    } finally {
+      reanalyzingStatisticsStepId.value = null
+    }
+  }
+
   async function submitVerdict() {
     try {
       await api.post(`/runs/${runId}/verdict`, verdict)
@@ -133,6 +152,8 @@ export function useRunActions(options: RunActionsOptions) {
     cancel,
     download,
     openVerdict,
+    reanalyzeStatistics,
+    reanalyzingStatisticsStepId,
     regenerateReports,
     regeneratingReports,
     stepAction,

@@ -87,7 +87,7 @@ REPORT_TEMPLATE = """<!doctype html>
 {% endfor %}{% else %}<div class="empty">无发单 XML 配置数据</div>{% endif %}
 
 <div class="metrics"><h2>测速指标</h2>
-{% for table in report.statistics %}<h3>{{ table.step_name }}</h3><p class="section-note">统计脚本：{{ table.script_filename or '-' }}　单位：ns</p>
+{% for table in report.statistics %}<h3>{{ table.step_name }}</h3><p class="section-note">统计脚本：{{ table.script_filename or '-' }}　单位：ns　异常上限：{{ table.max_latency_ns if table.max_latency_ns is not none else '-' }} ns</p>
 <div class="table-wrap"><table><thead><tr><th>指标</th>{% for column in table["columns"] %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in table["rows"] %}<tr><td>{{ row.label }}</td>{% for value in row["values"] %}<td class="number">{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
 {% else %}<div class="empty">无测速统计数据</div>{% endfor %}</div>
 
@@ -299,6 +299,7 @@ def _statistics_table(step: RunStep) -> typing.Optional[dict[str, typing.Any]]:
         "step_id": step.id,
         "step_name": step.name,
         "script_filename": script.get("filename") if isinstance(script, dict) else "",
+        "max_latency_ns": summary.get("max_latency_ns"),
         "columns": columns,
         "rows": rows,
     }
@@ -447,6 +448,7 @@ def _render_xlsx(report: dict[str, typing.Any], path: Path) -> None:
 
     for table_index, table in enumerate(report["statistics"], 1):
         sheet = workbook.create_sheet(_safe_sheet_title(workbook, f"指标-{table_index}-{table['step_name']}"))
+        sheet.append(["异常上限(ns)", table["max_latency_ns"] if table["max_latency_ns"] is not None else "-"])
         sheet.append(["指标", *table["columns"]])
         for row in table["rows"]:
             sheet.append([row["label"], *row["values"]])
@@ -605,7 +607,11 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
             if start == 0:
                 block.extend([
                     Paragraph(html.escape(table_data["step_name"]), subheading),
-                    Paragraph(f"统计脚本：{html.escape(table_data['script_filename'] or '-')}　单位：ns", small),
+                    Paragraph(
+                        f"统计脚本：{html.escape(table_data['script_filename'] or '-')}　单位：ns　"
+                        f"异常上限：{html.escape(str(table_data['max_latency_ns'] if table_data['max_latency_ns'] is not None else '-'))} ns",
+                        small,
+                    ),
                 ])
             block.extend([
                 table(rows, [metric_width, *([value_width] * len(columns))]),

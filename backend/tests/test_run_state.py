@@ -45,6 +45,16 @@ def test_step_state_accepts_retry_and_terminal_dispatch_paths() -> None:
     assert step.status == "succeeded"
 
 
+def test_step_state_allows_waiting_to_running_for_repeated_analysis() -> None:
+    """统计节点在人工确认前可以从等待状态再次进入执行状态。"""
+    step = RunStep(status="waiting")
+
+    transition_step(step, "running")
+    transition_step(step, "waiting")
+
+    assert step.status == "waiting"
+
+
 def test_paused_run_can_resume_or_cancel() -> None:
     run = RunModel(status="awaiting_step_start")
     transition_run(run, "paused")
