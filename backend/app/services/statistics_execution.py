@@ -355,6 +355,9 @@ def finish_statistics_analysis(
     record = next((item for item in reversed(history) if item.get("analysis_no") == active), None)
     if record is None:
         return
+    # 执行服务已经将完整成功/失败结果封存后，任务恢复路径不应覆盖该不可变结论。
+    if record.get("artifact_id"):
+        return
     record["status"] = status
     record["finished_at"] = beijing_now().isoformat()
     if error_code:
@@ -508,6 +511,133 @@ def _register_result_artifact(
     return artifact
 
 
+def _analysis_record(step: RunStep) -> dict[str, typing.Any]:
+    summary = step.result_summary or {}
+    active = summary.get("statistics_active_analysis_no")
+    history = summary.get("statistics_analyses") or []
+    if not isinstance(active, int):
+        raise WorkflowError("STATISTICS_ANALYSIS_MISSING", "当前统计执行缺少分析编号", 409)
+    record = next(
+        (item for item in reversed(history) if isinstance(item, dict) and item.get("analysis_no") == active),
+        None,
+    )
+    if not isinstance(record, dict):
+        raise WorkflowError("STATISTICS_ANALYSIS_MISSING", "当前统计执行缺少历史预留记录", 409)
+    return record
+
+
+def _register_analysis_artifact(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    analysis_no: int,
+    payload: dict[str, typing.Any],
+) -> Artifact:
+    """按分析号一次性封存；恢复时只复用既有不可变产物，绝不覆写。"""
+    directory = _artifact_directory(run, step)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"statistics-analysis-v{analysis_no:03d}.json"
+    artifact = db.scalar(select(Artifact).where(
+        Artifact.run_id == run.id,
+        Artifact.step_id == step.id,
+        Artifact.name == target.name,
+    ))
+    if artifact is not None:
+        path = Path(artifact.path)
+        if (
+            artifact.artifact_type != "statistics_analysis_json"
+            or not artifact.is_immutable
+            or not path.is_file()
+            or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.checksum
+        ):
+            raise WorkflowError(
+                "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT",
+                f"分析历史产物 {target.name} 已损坏",
+                409,
+            )
+        return artifact
+    data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.part")
+    try:
+        temporary.write_bytes(data)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    artifact = Artifact(
+        run_id=run.id,
+        step_id=step.id,
+        artifact_type="statistics_analysis_json",
+        name=target.name,
+        path=str(target),
+        content_type="application/json",
+        size=len(data),
+        checksum=hashlib.sha256(data).hexdigest(),
+        is_immutable=True,
+    )
+    db.add(artifact)
+    db.flush()
+    return artifact
+
+
+def _finalize_statistics_analysis(
+    db: Session,
+    run: TestRun,
+    step: RunStep,
+    *,
+    status: str,
+    script: dict[str, typing.Any],
+    inputs: list[dict[str, typing.Any]],
+    attempts: list[dict[str, typing.Any]],
+    started_at: typing.Any,
+    results: typing.Optional[list[dict[str, typing.Any]]] = None,
+    error: typing.Optional[WorkflowError] = None,
+) -> tuple[dict[str, typing.Any], Artifact]:
+    summary = dict(step.result_summary or {})
+    record = _analysis_record(step)
+    finished_at = beijing_now()
+    duration_ms = int((finished_at - started_at).total_seconds() * 1000)
+    artifact_payload: dict[str, typing.Any] = {
+        "schema_version": 1,
+        "analysis_no": record["analysis_no"],
+        "status": status,
+        "config_revision": record.get("config_revision"),
+        "inputs": record.get("inputs") or [_statistics_input_snapshot(item) for item in inputs],
+        "max_latency_ns": record.get("max_latency_ns"),
+        "script": script,
+        "reserved_at": record.get("reserved_at"),
+        "started_at": record.get("started_at") or started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "duration_ms": duration_ms,
+        "attempts": attempts,
+    }
+    if results is not None:
+        artifact_payload["results"] = results
+    if error is not None:
+        artifact_payload["error"] = {"code": error.code, "message": error.message}
+    artifact = _register_analysis_artifact(db, run, step, int(record["analysis_no"]), artifact_payload)
+    record.update({
+        "status": status,
+        "script": {"filename": script.get("filename", ""), "checksum": script.get("checksum", "")},
+        "artifact_id": artifact.id,
+        "artifact_checksum": artifact.checksum,
+        "artifact_size": artifact.size,
+        "finished_at": finished_at.isoformat(),
+        "duration_ms": duration_ms,
+    })
+    if error is not None:
+        record["error_code"] = error.code
+    summary["statistics_analyses"] = [
+        record if isinstance(item, dict) and item.get("analysis_no") == record["analysis_no"] else item
+        for item in (summary.get("statistics_analyses") or [])
+    ]
+    if status == "succeeded":
+        summary["statistics_latest_success_analysis_no"] = record["analysis_no"]
+        summary["statistics_latest_success_revision"] = record.get("config_revision")
+    step.result_summary = summary
+    db.flush()
+    return summary, artifact
+
+
 def _metric_name(step: RunStep, filename: str, metric: StatisticsMetricResult) -> str:
     value = f"{step.name}/{filename}/{metric.label}"
     if len(value) <= 128:
@@ -575,34 +705,38 @@ async def execute_statistics_node(
     node: ScenarioWorkflowNode,
     run_resources: dict[str, Resource],
 ) -> dict[str, typing.Any]:
-    resource = run_resources.get("parser")
-    if not resource:
-        raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
+    # 直接服务调用也属于一次真实执行；工作流路径已预留时则复用同一记录。
+    active_record = None
+    with suppress(WorkflowError):
+        active_record = _analysis_record(step)
+    if not active_record or active_record.get("status") != "running":
+        reserve_statistics_analysis(db, run, step)
     config = typing.cast(
         StatisticsConfig, parse_node_config(node.node_type, step.config_snapshot or node.config or {})
     )
-    inputs = await _execution_inputs(db, run, step, resource)
-    try:
-        script_detail = await statistics_script_service.read(resource, config.script_filename)
-    except StatisticsScriptError as exc:
-        raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
-    if not script_detail["executable"]:
-        raise WorkflowError("STATISTICS_SCRIPT_NOT_EXECUTABLE", "统计脚本没有可执行权限", 409)
-    if script_detail["checksum"] != config.script_checksum:
-        raise WorkflowError("STATISTICS_SCRIPT_CHANGED", "统计脚本已发生变化，请重新发布工作流", 409)
-
-    legacy_inputs = any("artifact" in item for item in inputs)
-    remote_workdir = (
-        posixpath.normpath(resource.remote_path.strip())
-        if legacy_inputs
-        else ""
-    )
+    script = {"filename": config.script_filename, "checksum": config.script_checksum}
+    inputs: list[dict[str, typing.Any]] = []
     attempts: list[dict[str, typing.Any]] = []
     parsed_results: list[tuple[dict[str, typing.Any], StatisticsScriptOutput]] = []
     connection = None
     sftp = None
     started_at = beijing_now()
     try:
+        resource = run_resources.get("parser")
+        if not resource:
+            raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
+        inputs = await _execution_inputs(db, run, step, resource)
+        try:
+            script_detail = await statistics_script_service.read(resource, config.script_filename)
+        except StatisticsScriptError as exc:
+            raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
+        script = {"filename": script_detail["name"], "checksum": script_detail["checksum"]}
+        if not script_detail["executable"]:
+            raise WorkflowError("STATISTICS_SCRIPT_NOT_EXECUTABLE", "统计脚本没有可执行权限", 409)
+        if script_detail["checksum"] != config.script_checksum:
+            raise WorkflowError("STATISTICS_SCRIPT_CHANGED", "统计脚本已发生变化，请重新发布工作流", 409)
+        legacy_inputs = any("artifact" in item for item in inputs)
+        remote_workdir = posixpath.normpath(resource.remote_path.strip()) if legacy_inputs else ""
         connection = await asyncssh.connect(**_ssh_options(resource))
         sftp = await connection.start_sftp_client()
         if legacy_inputs:
@@ -660,30 +794,19 @@ async def execute_statistics_node(
             attempt["status"] = "succeeded"
             attempt["result"] = {**parsed.model_dump(), "source_path": source_path}
             parsed_results.append((source, parsed))
-    except WorkflowError:
-        step.result_summary = {
-            **(step.result_summary or {}),
-            "statistics_script": {
-                "filename": script_detail["name"],
-                "checksum": script_detail["checksum"],
-            },
-            "statistics_attempts": attempts,
-            "remote_workdir": remote_workdir or None,
-        }
-        db.flush()
+    except WorkflowError as exc:
+        _finalize_statistics_analysis(
+            db, run, step, status="failed", script=script, inputs=inputs,
+            attempts=attempts, started_at=started_at, error=exc,
+        )
         raise
     except Exception as exc:
-        step.result_summary = {
-            **(step.result_summary or {}),
-            "statistics_script": {
-                "filename": script_detail["name"],
-                "checksum": script_detail["checksum"],
-            },
-            "statistics_attempts": attempts,
-            "remote_workdir": remote_workdir or None,
-        }
-        db.flush()
-        raise WorkflowError("STATISTICS_EXECUTION_FAILED", f"数据统计执行失败：{exc}", 409) from exc
+        error = WorkflowError("STATISTICS_EXECUTION_FAILED", f"数据统计执行失败：{exc}", 409)
+        _finalize_statistics_analysis(
+            db, run, step, status="failed", script=script, inputs=inputs,
+            attempts=attempts, started_at=started_at, error=error,
+        )
+        raise error from exc
     finally:
         if sftp:
             with suppress(Exception):
@@ -693,43 +816,24 @@ async def execute_statistics_node(
             with suppress(Exception):
                 await connection.wait_closed()
 
-    duration_ms = int((beijing_now() - started_at).total_seconds() * 1000)
-    consolidated = {
-        "schema_version": 1,
-        "script": {
-            "filename": script_detail["name"],
-            "checksum": script_detail["checksum"],
-        },
-        "max_latency_ns": config.max_latency_ns,
-        "inputs": [
-            {
-                key: item[key]
-                for key in (
-                    "artifact_id", "relative_path", "filename", "source", "size",
-                    "modified_at", "checksum",
-                )
-                if key in item
-            }
-            for item in inputs
-        ],
-        "results": [
-            {**result.model_dump(), "source_path": source["source_path"]}
-            for source, result in parsed_results
-        ],
-        "duration_ms": duration_ms,
-    }
-    result_artifact = _register_result_artifact(db, run, step, consolidated)
+    results = [
+        {**result.model_dump(), "source_path": source["source_path"]}
+        for source, result in parsed_results
+    ]
     _replace_metrics(db, run, step, parsed_results, script_detail, config.max_latency_ns)
+    history_summary, result_artifact = _finalize_statistics_analysis(
+        db, run, step, status="succeeded", script=script, inputs=inputs,
+        attempts=attempts, started_at=started_at, results=results,
+    )
     result_summary = {
-        **(step.result_summary or {}),
-        "statistics_script": consolidated["script"],
+        **history_summary,
+        "statistics_script": script,
         "max_latency_ns": config.max_latency_ns,
-        "statistics_attempts": attempts,
-        "statistics_results": consolidated["results"],
+        "statistics_results": results,
         "statistics_artifact_id": result_artifact.id,
         "remote_workdir": remote_workdir or None,
-        "duration_ms": duration_ms,
+        "duration_ms": history_summary["statistics_analyses"][-1]["duration_ms"],
     }
     step.result_summary = result_summary
-    finish_statistics_analysis(db, step, status="succeeded")
+    db.flush()
     return step.result_summary

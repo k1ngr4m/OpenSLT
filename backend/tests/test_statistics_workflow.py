@@ -18,6 +18,7 @@ from app.services.statistics_execution import (
     StatisticsScriptOutput,
     execute_statistics_node,
     list_statistics_csv_files,
+    reserve_statistics_analysis,
     require_statistics_selection,
     select_statistics_inputs,
 )
@@ -660,7 +661,7 @@ async def test_statistics_execution_creates_metrics_and_json_artifact(
         metrics = list(db.query(Metric).filter(Metric.run_id == run.id).all())
         assert {item.detail["metric_key"] for item in metrics} == {"average", "p99"}
         result_artifact = db.get(Artifact, result["statistics_artifact_id"])
-        assert result_artifact.artifact_type == "statistics_result_json"
+        assert result_artifact.artifact_type == "statistics_analysis_json"
         assert Path(result_artifact.path).is_file()
         assert shlex.split(commands[0])[1] == "/tmp/parser/rem_client_new_to_market_speed.csv"
         assert result["remote_workdir"] == "/tmp/parser"
@@ -670,6 +671,163 @@ async def test_statistics_execution_creates_metrics_and_json_artifact(
             "/tmp/parser/rem_client_new_to_market_speed.csv.openslt-"
         )
         assert ".openslt-runs" not in uploaded_path
+
+
+@pytest.mark.asyncio
+async def test_statistics_execution_finalizes_reserved_analysis_as_immutable_history_artifact(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若移除历史最终化或改回单一可覆写 JSON，此用例应失败。"""
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    install_statistics_fakes(monkeypatch, lambda command: SimpleNamespace(
+        exit_status=0,
+        stdout=json.dumps(statistics_payload(Path(shlex.split(command)[1]).name, 321.0)),
+        stderr="",
+    ))
+
+    with SessionLocal() as db:
+        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        resource = db.get(Resource, parser_data["id"])
+        select_legacy_inputs(step, artifact)
+        assert reserve_statistics_analysis(db, run, step) == 1
+
+        result = await execute_statistics_node(
+            db, run, step,
+            SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+            {"parser": resource},
+        )
+
+        history = result["statistics_analyses"]
+        assert len(history) == 1
+        record = history[0]
+        assert record["status"] == "succeeded"
+        assert record["artifact_id"] == result["statistics_artifact_id"]
+        assert record["duration_ms"] >= 0
+        assert record["artifact_checksum"]
+        archived = db.get(Artifact, record["artifact_id"])
+        assert archived.name == "statistics-analysis-v001.json"
+        assert archived.artifact_type == "statistics_analysis_json"
+        payload = json.loads(Path(archived.path).read_text(encoding="utf-8"))
+        assert payload["analysis_no"] == 1
+        assert payload["status"] == "succeeded"
+        assert payload["results"][0]["metrics"][0]["value"] == 321.0
+
+
+@pytest.mark.asyncio
+async def test_statistics_failure_archives_partial_attempt_without_replacing_latest_metrics(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若失败覆盖成功指标或未保存部分多文件执行详情，此用例应失败。"""
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+
+    def handler(command):
+        filename = Path(shlex.split(command)[1]).name
+        if filename == "second.csv":
+            return SimpleNamespace(exit_status=1, stdout="", stderr="second failed")
+        return SimpleNamespace(
+            exit_status=0,
+            stdout=json.dumps(statistics_payload(filename, 111.0)),
+            stderr="",
+        )
+
+    install_statistics_fakes(monkeypatch, handler)
+    with SessionLocal() as db:
+        run, parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        second = add_parsed_csv_artifact(db, run, parser, tmp_path, "second.csv")
+        resource = db.get(Resource, parser_data["id"])
+        select_legacy_inputs(step, artifact, second)
+        step.result_summary = {
+            **step.result_summary,
+            "statistics_results": [{"source_file": "previous.csv", "metrics": []}],
+            "statistics_artifact_id": 987,
+            "statistics_latest_success_analysis_no": 7,
+            "statistics_latest_success_revision": 3,
+        }
+        db.add(Metric(
+            run_id=run.id, name="Statistics/previous/平均值", value=88.0, unit="ns",
+            detail={"statistics_step_id": step.id},
+        ))
+        reserve_statistics_analysis(db, run, step)
+
+        with pytest.raises(WorkflowError) as exc:
+            await execute_statistics_node(
+                db, run, step,
+                SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+                {"parser": resource},
+            )
+        assert exc.value.code == "STATISTICS_SCRIPT_FAILED"
+
+        record = step.result_summary["statistics_analyses"][0]
+        assert record["status"] == "failed"
+        archived = db.get(Artifact, record["artifact_id"])
+        payload = json.loads(Path(archived.path).read_text(encoding="utf-8"))
+        assert [item["status"] for item in payload["attempts"]] == ["succeeded", "failed"]
+        assert step.result_summary["statistics_results"] == [{"source_file": "previous.csv", "metrics": []}]
+        assert step.result_summary["statistics_artifact_id"] == 987
+        assert step.result_summary["statistics_latest_success_analysis_no"] == 7
+        assert step.result_summary["statistics_latest_success_revision"] == 3
+        assert db.query(Metric).filter(Metric.run_id == run.id).count() == 1
+
+
+def test_statistics_analysis_history_api_is_newest_first_and_integrity_checked(
+    client, admin_headers, tmp_path
+):
+    """若历史 API 泄漏完整结果、未校验校验和或限制访客读取，此用例应失败。"""
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        first_path = tmp_path / "statistics-analysis-v001.json"
+        second_path = tmp_path / "statistics-analysis-v002.json"
+        first_data = json.dumps({"analysis_no": 1, "status": "succeeded", "results": [{"source_file": "old.csv"}]}).encode()
+        second_data = json.dumps({"analysis_no": 2, "status": "failed", "attempts": [{"source_file": "new.csv", "status": "failed"}]}).encode()
+        first_path.write_bytes(first_data)
+        second_path.write_bytes(second_data)
+        first = Artifact(run_id=run.id, step_id=step.id, artifact_type="statistics_analysis_json", name=first_path.name, path=str(first_path), content_type="application/json", size=len(first_data), checksum=hashlib.sha256(first_data).hexdigest(), is_immutable=True)
+        second = Artifact(run_id=run.id, step_id=step.id, artifact_type="statistics_analysis_json", name=second_path.name, path=str(second_path), content_type="application/json", size=len(second_data), checksum=hashlib.sha256(second_data).hexdigest(), is_immutable=True)
+        db.add_all([first, second])
+        db.flush()
+        step.result_summary = {
+            "statistics_analyses": [
+                {"analysis_no": 1, "status": "succeeded", "config_revision": 1, "artifact_id": first.id, "artifact_checksum": first.checksum, "artifact_size": first.size, "inputs": [], "max_latency_ns": 100, "script": {}, "reserved_at": "2026-08-10T10:00:00+08:00", "finished_at": "2026-08-10T10:00:01+08:00", "duration_ms": 1},
+                {"analysis_no": 2, "status": "failed", "config_revision": 2, "artifact_id": second.id, "artifact_checksum": second.checksum, "artifact_size": second.size, "inputs": [], "max_latency_ns": 200, "script": {}, "reserved_at": "2026-08-10T10:01:00+08:00", "finished_at": "2026-08-10T10:01:01+08:00", "duration_ms": 1, "error_code": "STATISTICS_SCRIPT_FAILED"},
+            ]
+        }
+        db.commit()
+        run_id, step_id, first_artifact_id = run.id, step.id, first.id
+
+    visitor = client.post("/api/v1/users", headers=admin_headers, json={
+        "username": "statistics-history-viewer", "display_name": "历史访客",
+        "password": "viewer-password", "role": "visitor",
+    })
+    assert visitor.status_code == 201, visitor.text
+    token = client.post("/api/v1/auth/login", json={
+        "username": "statistics-history-viewer", "password": "viewer-password",
+    }).json()["access_token"]
+    visitor_headers = {"Authorization": f"Bearer {token}"}
+    base = f"/api/v1/runs/{run_id}/steps/{step_id}/statistics-analyses"
+
+    listed = client.get(base, headers=visitor_headers)
+    assert listed.status_code == 200, listed.text
+    assert [item["analysis_no"] for item in listed.json()] == [2, 1]
+    assert "attempts" not in listed.json()[0]
+    detail = client.get(f"{base}/2", headers=visitor_headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["artifact"]["attempts"][0]["source_file"] == "new.csv"
+    assert client.get(f"{base}/99", headers=visitor_headers).status_code == 404
+
+    second_path.write_text("corrupt", encoding="utf-8")
+    corrupt = client.get(f"{base}/2", headers=visitor_headers)
+    assert corrupt.status_code == 409
+    assert response_error_code(corrupt) == "STATISTICS_ANALYSIS_ARTIFACT_CORRUPT"
+
+    with SessionLocal() as db:
+        db.delete(db.get(Artifact, first_artifact_id))
+        db.commit()
+    missing_artifact = client.get(f"{base}/1", headers=visitor_headers)
+    assert missing_artifact.status_code == 404
+    assert response_error_code(missing_artifact) == "STATISTICS_ANALYSIS_ARTIFACT_MISSING"
 
 
 @pytest.mark.asyncio
@@ -714,7 +872,9 @@ async def test_statistics_execution_rejects_failed_or_invalid_script_output(
             Artifact.step_id == step.id,
             Artifact.artifact_type == "statistics_result_json",
         ).count() == 0
-        assert step.result_summary["statistics_attempts"][0]["status"] == "failed"
+        record = step.result_summary["statistics_analyses"][-1]
+        assert record["status"] == "failed"
+        assert db.get(Artifact, record["artifact_id"]).artifact_type == "statistics_analysis_json"
 
 
 @pytest.mark.asyncio
@@ -751,7 +911,9 @@ async def test_statistics_multifile_failure_does_not_keep_partial_metrics(
             )
         assert exc.value.code == "STATISTICS_SCRIPT_FAILED"
         assert db.query(Metric).filter(Metric.run_id == run.id).count() == 0
-        assert [item["status"] for item in step.result_summary["statistics_attempts"]] == [
+        record = step.result_summary["statistics_analyses"][-1]
+        archived = db.get(Artifact, record["artifact_id"])
+        assert [item["status"] for item in json.loads(Path(archived.path).read_text())["attempts"]] == [
             "succeeded", "failed",
         ]
 
@@ -792,6 +954,8 @@ async def test_statistics_retry_replaces_previous_metrics(
             "average": 250.0,
             "p99": 350.0,
         }
+        assert [item["analysis_no"] for item in step.result_summary["statistics_analyses"]] == [1, 2]
+        assert step.result_summary["statistics_latest_success_analysis_no"] == 2
 
 
 @pytest.mark.asyncio

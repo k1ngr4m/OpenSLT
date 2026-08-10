@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 import typing
+from pathlib import Path
 from datetime import timedelta
 from uuid import uuid4
 
@@ -34,7 +37,7 @@ from app.models import (
     Verdict,
 )
 from app.adapters.database import DatabaseOperationError, validate_database
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, StatisticsRuntimeConfigOut, StatisticsRuntimeConfigRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsAnalysisDetailOut, StatisticsAnalysisMetadataOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, StatisticsRuntimeConfigOut, StatisticsRuntimeConfigRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -90,6 +93,60 @@ def _workflow_step_task_key(run: TestRun, step: RunStep) -> str:
         if isinstance(analysis_no, int):
             return f"workflow-step:{run.id}:{step.id}:analysis:{analysis_no}"
     return f"workflow-step:{run.id}:{step.id}:retry:{step.retry_count}"
+
+
+_STATISTICS_HISTORY_METADATA_FIELDS = frozenset({
+    "analysis_no", "status", "config_revision", "inputs", "max_latency_ns", "script",
+    "reserved_at", "started_at", "finished_at", "duration_ms", "error_code",
+    "artifact_id", "artifact_checksum", "artifact_size",
+})
+
+
+def _statistics_history_step(run: TestRun, step_id: int) -> RunStep:
+    step = next((item for item in run.steps if item.id == step_id), None)
+    if not step or step.node_type != "data_statistics":
+        raise not_found("数据统计节点")
+    return step
+
+
+def _statistics_history_records(step: RunStep) -> list[dict[str, typing.Any]]:
+    return [
+        {key: value for key, value in item.items() if key in _STATISTICS_HISTORY_METADATA_FIELDS}
+        for item in ((step.result_summary or {}).get("statistics_analyses") or [])
+        if isinstance(item, dict) and isinstance(item.get("analysis_no"), int)
+    ]
+
+
+def _statistics_history_artifact(
+    db: Session, run: TestRun, step: RunStep, record: dict[str, typing.Any]
+) -> dict[str, typing.Any]:
+    artifact_id = record.get("artifact_id")
+    artifact = db.get(Artifact, artifact_id) if isinstance(artifact_id, int) else None
+    if not artifact or artifact.run_id != run.id or artifact.step_id != step.id:
+        raise WorkflowError("STATISTICS_ANALYSIS_ARTIFACT_MISSING", "分析历史产物不存在", 404)
+    path = Path(artifact.path)
+    expected = record.get("artifact_checksum")
+    expected_size = record.get("artifact_size")
+    if (
+        artifact.artifact_type != "statistics_analysis_json"
+        or not artifact.is_immutable
+        or not isinstance(expected, str)
+        or expected != artifact.checksum
+        or not isinstance(expected_size, int)
+        or expected_size != artifact.size
+        or not path.is_file()
+    ):
+        raise WorkflowError("STATISTICS_ANALYSIS_ARTIFACT_CORRUPT", "分析历史产物校验失败", 409)
+    data = path.read_bytes()
+    if len(data) != artifact.size or hashlib.sha256(data).hexdigest() != artifact.checksum:
+        raise WorkflowError("STATISTICS_ANALYSIS_ARTIFACT_CORRUPT", "分析历史产物校验失败", 409)
+    try:
+        payload = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise WorkflowError("STATISTICS_ANALYSIS_ARTIFACT_CORRUPT", "分析历史产物不是合法 JSON", 409) from exc
+    if not isinstance(payload, dict) or payload.get("analysis_no") != record.get("analysis_no"):
+        raise WorkflowError("STATISTICS_ANALYSIS_ARTIFACT_CORRUPT", "分析历史产物与索引不一致", 409)
+    return payload
 
 @router.post("/runs", response_model=RunOut, status_code=201)
 def create_run(payload: RunCreate, request: Request, actor: User = Depends(operators), db: Session = Depends(get_db)) -> TestRun:
@@ -194,6 +251,45 @@ def list_runs(business_code: typing.Union[str, None] = None, run_status: typing.
 @router.get("/runs/{run_id}", response_model=RunOut)
 def get_run(run_id: int, _: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TestRun:
     return load_run(db, run_id)
+
+
+@router.get(
+    "/runs/{run_id}/steps/{step_id}/statistics-analyses",
+    response_model=typing.List[StatisticsAnalysisMetadataOut],
+)
+def list_statistics_analyses(
+    run_id: int,
+    step_id: int,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict[str, typing.Any]]:
+    step = _statistics_history_step(load_run(db, run_id), step_id)
+    return sorted(_statistics_history_records(step), key=lambda item: item["analysis_no"], reverse=True)
+
+
+@router.get(
+    "/runs/{run_id}/steps/{step_id}/statistics-analyses/{analysis_no}",
+    response_model=StatisticsAnalysisDetailOut,
+)
+def get_statistics_analysis(
+    run_id: int,
+    step_id: int,
+    analysis_no: int,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    run = load_run(db, run_id)
+    step = _statistics_history_step(run, step_id)
+    record = next(
+        (item for item in _statistics_history_records(step) if item["analysis_no"] == analysis_no),
+        None,
+    )
+    if record is None:
+        raise not_found("统计分析历史")
+    try:
+        return {"analysis": record, "artifact": _statistics_history_artifact(db, run, step, record)}
+    except WorkflowError as exc:
+        raise workflow_http_error(exc) from exc
 
 
 async def _cleanup_run_order_sessions(db: Session, run: TestRun) -> typing.List[str]:

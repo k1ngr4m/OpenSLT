@@ -214,6 +214,35 @@ def test_report_document_metric_matrix_and_missing_sections(client, admin_header
         assert empty["missing_sections"] == ["servers", "databases", "orders", "statistics"]
 
 
+def test_report_uses_latest_successful_statistics_and_includes_its_upper_limit(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    """若报告读取历史结果或漏掉最新成功分析的阈值，此用例应失败。"""
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    run_id, report_step_id = _create_report_run(client, admin_headers, tmp_path)
+    with SessionLocal() as db:
+        run = db.get(RunModel, run_id)
+        statistics_step = next(item for item in run.steps if item.node_type == "data_statistics")
+        statistics_step.result_summary = {
+            "statistics_script": {"filename": "latest.py"},
+            "max_latency_ns": 222,
+            "statistics_results": [_statistics_result("latest.csv", 2)],
+            "statistics_analyses": [
+                {"analysis_no": 1, "status": "succeeded", "max_latency_ns": 111,
+                 "artifact_id": 1, "inputs": [], "script": {}},
+            ],
+        }
+        report_step = db.get(RunStep, report_step_id)
+        document = build_report_document(db, run, 1, beijing_now(), report_step)
+        assert document["statistics"][0]["max_latency_ns"] == 222
+        assert document["statistics"][0]["columns"] == ["latest.csv"]
+        generated = generate_reports(db, run, step=report_step)
+        db.commit()
+        html_artifact = db.get(Artifact, generated["artifact_ids"][0])
+        html_text = Path(html_artifact.path).read_text(encoding="utf-8")
+        assert "异常上限：222 ns" in html_text
+
+
 def test_report_versions_are_immutable_and_render_all_formats(
     client, admin_headers, tmp_path, monkeypatch
 ):
