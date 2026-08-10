@@ -118,6 +118,8 @@ export function useStatisticsInputs(options: StatisticsOptions) {
   const loadingStatisticsAnalysisNo = ref<number | null>(null)
   const statisticsAnalyses = ref<StatisticsAnalysisMetadata[]>([])
   const statisticsAnalysisDetails = ref<Record<number, StatisticsAnalysisDetail>>({})
+  let latestStatisticsAnalysesRequest = 0
+  let latestStatisticsAnalysisDetailRequest = 0
   const savedArtifactIds = computed(() => selectionIds(selectedStep.value))
   const savedRelativePaths = computed(() => selectionPaths(selectedStep.value))
   const savedRemoteInputs = computed<StatisticsCsvFile[]>(() => {
@@ -278,18 +280,24 @@ export function useStatisticsInputs(options: StatisticsOptions) {
       statisticsAnalyses.value = []
       return
     }
+    const requestedStepId = step.id
+    const requestId = ++latestStatisticsAnalysesRequest
     loadingStatisticsAnalyses.value = true
     try {
-      const response = await api.get(`/runs/${runId}/steps/${step.id}/statistics-analyses`)
+      const response = await api.get(`/runs/${runId}/steps/${requestedStepId}/statistics-analyses`)
+      if (requestId !== latestStatisticsAnalysesRequest || selectedStep.value?.id !== requestedStepId) return
       statisticsAnalyses.value = (Array.isArray(response.data) ? response.data : [])
         .map(analysisMetadata)
         .filter((item): item is StatisticsAnalysisMetadata => item !== null)
         .sort((left, right) => right.analysis_no - left.analysis_no)
     } catch (error) {
+      if (requestId !== latestStatisticsAnalysesRequest || selectedStep.value?.id !== requestedStepId) return
       statisticsAnalyses.value = []
       ElMessage.error(errorMessage(error))
     } finally {
-      loadingStatisticsAnalyses.value = false
+      if (requestId === latestStatisticsAnalysesRequest && selectedStep.value?.id === requestedStepId) {
+        loadingStatisticsAnalyses.value = false
+      }
     }
   }
 
@@ -298,9 +306,12 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     if (cached) return cached
     const step = selectedStep.value
     if (!step || step.node_type !== 'data_statistics' || !positiveInteger(analysisNo)) return null
+    const requestedStepId = step.id
+    const requestId = ++latestStatisticsAnalysisDetailRequest
     loadingStatisticsAnalysisNo.value = analysisNo
     try {
-      const response = await api.get(`/runs/${runId}/steps/${step.id}/statistics-analyses/${analysisNo}`)
+      const response = await api.get(`/runs/${runId}/steps/${requestedStepId}/statistics-analyses/${analysisNo}`)
+      if (requestId !== latestStatisticsAnalysisDetailRequest || selectedStep.value?.id !== requestedStepId) return null
       if (!isJsonMap(response.data) || !isJsonMap(response.data.artifact)) return null
       const analysis = analysisMetadata(response.data.analysis)
       if (!analysis || analysis.analysis_no !== analysisNo) return null
@@ -308,10 +319,13 @@ export function useStatisticsInputs(options: StatisticsOptions) {
       statisticsAnalysisDetails.value = { ...statisticsAnalysisDetails.value, [analysisNo]: detail }
       return detail
     } catch (error) {
+      if (requestId !== latestStatisticsAnalysisDetailRequest || selectedStep.value?.id !== requestedStepId) return null
       ElMessage.error(errorMessage(error))
       return null
     } finally {
-      loadingStatisticsAnalysisNo.value = null
+      if (requestId === latestStatisticsAnalysisDetailRequest && selectedStep.value?.id === requestedStepId) {
+        loadingStatisticsAnalysisNo.value = null
+      }
     }
   }
 
@@ -326,8 +340,11 @@ export function useStatisticsInputs(options: StatisticsOptions) {
   watch(
     () => selectedStep.value?.id,
     () => {
+      latestStatisticsAnalysesRequest += 1
+      latestStatisticsAnalysisDetailRequest += 1
       statisticsAnalyses.value = []
       statisticsAnalysisDetails.value = {}
+      loadingStatisticsAnalyses.value = false
       loadingStatisticsAnalysisNo.value = null
     },
     { immediate: true },

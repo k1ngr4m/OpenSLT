@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/api/client'
 import { useStatisticsInputs } from '@/composables/useStatisticsInputs'
@@ -76,6 +76,12 @@ function analysis(analysisNo: number, status: 'running' | 'succeeded' | 'failed'
     artifact_checksum: status === 'running' ? null : 'b'.repeat(64),
     artifact_size: status === 'running' ? null : 2048,
   }
+}
+
+function deferred<T>() {
+  let resolve: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve: (value: T) => resolve(value) }
 }
 
 function artifact(id: number, stepId: number, artifactType = 'parsed_csv'): RunArtifact {
@@ -273,5 +279,55 @@ describe('useStatisticsInputs', () => {
 
     await statistics.loadStatisticsAnalysisDetail(3)
     expect(api.get).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the newly selected history when an older node response arrives late', async () => {
+    const { selected, statistics } = setup(statisticsStep('waiting'), 'awaiting_step_completion')
+    const olderResponse = deferred<{ data: unknown }>()
+    const newerResponse = deferred<{ data: unknown }>()
+    vi.clearAllMocks()
+    vi.mocked(api.get)
+      .mockImplementationOnce(() => olderResponse.promise)
+      .mockImplementationOnce(() => newerResponse.promise)
+
+    const olderLoad = statistics.refreshStatisticsAnalyses()
+    selected.value = { ...statisticsStep('waiting'), id: 33, code: 'statistics-2' }
+    await nextTick()
+    const newerLoad = statistics.refreshStatisticsAnalyses()
+
+    newerResponse.resolve({ data: [analysis(1, 'failed')] })
+    await newerLoad
+    olderResponse.resolve({ data: [analysis(1, 'succeeded')] })
+    await olderLoad
+
+    expect(statistics.statisticsAnalyses.value).toMatchObject([{ analysis_no: 1, status: 'failed' }])
+  })
+
+  it('keeps the newly selected detail cache when an older node detail arrives late', async () => {
+    const { selected, statistics } = setup(statisticsStep('waiting'), 'awaiting_step_completion')
+    const olderResponse = deferred<{ data: unknown }>()
+    const newerResponse = deferred<{ data: unknown }>()
+    vi.clearAllMocks()
+    vi.mocked(api.get)
+      .mockImplementationOnce(() => olderResponse.promise)
+      .mockImplementationOnce(() => newerResponse.promise)
+
+    const olderLoad = statistics.loadStatisticsAnalysisDetail(1)
+    selected.value = { ...statisticsStep('waiting'), id: 33, code: 'statistics-2' }
+    await nextTick()
+    const newerLoad = statistics.loadStatisticsAnalysisDetail(1)
+
+    newerResponse.resolve({ data: {
+      analysis: analysis(1, 'failed'),
+      artifact: { analysis_no: 1, status: 'failed', inputs: [], max_latency_ns: 900, script: {}, attempts: [], error: { code: 'SCRIPT_FAILED' } },
+    } })
+    await newerLoad
+    olderResponse.resolve({ data: {
+      analysis: analysis(1),
+      artifact: { analysis_no: 1, status: 'succeeded', inputs: [], max_latency_ns: 900, script: {}, attempts: [], results: [] },
+    } })
+    await olderLoad
+
+    expect(statistics.statisticsAnalysisDetails.value[1]).toMatchObject({ analysis: { analysis_no: 1, status: 'failed' } })
   })
 })
