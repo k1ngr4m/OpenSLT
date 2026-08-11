@@ -57,7 +57,7 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   )
   const workflowTerminalDescription = computed(() => {
     if (selectedStep.value?.node_type === 'order_preparation') {
-      return '点击顶部“开始”后，系统会在远端 tmux 中启动发单程序；确认程序就绪后使用下方动作按钮。终端支持刷新和重连。'
+      return '点击顶部“开始”后，系统会在远端 tmux 中启动发单程序；确认程序就绪后可直接输入命令或使用下方动作按钮。终端支持刷新和重连。'
     }
     if (selectedStep.value?.node_type === 'rem_startup') {
       return '点击顶部“开始”后，配置的 REM 命令会在这个终端中逐行下发；查看输出并确认完成后再点击顶部“完成”。'

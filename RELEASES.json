@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "type": "fixed",
+      "text": "修复发单节点 SSH 终端仍以只读模式连接、无法直接输入命令的问题。"
+    },
+    {
+      "type": "fixed",
       "text": "修复 Python 3.8 环境下交互式解析节点完成时误报 CSV 下载失败的问题。"
     },
     {

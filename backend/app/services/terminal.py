@@ -1302,18 +1302,25 @@ def _load_order_terminal_context(
         db.close()
 
 
-async def _receive_read_only(websocket: WebSocket, process: asyncssh.SSHClientProcess) -> str:
+async def _receive_order_terminal(websocket: WebSocket, process: asyncssh.SSHClientProcess) -> str:
     while True:
         try:
             message = await websocket.receive_json()
         except (WebSocketDisconnect, RuntimeError):
             return "client_disconnected"
-        if message.get("type") == "resize":
+        message_type = message.get("type")
+        if message_type == "input":
+            data = message.get("data")
+            if not isinstance(data, str) or len(data.encode("utf-8")) > MAX_INPUT_SIZE:
+                await _send(websocket, {"type": "error", "code": "INPUT_TOO_LARGE", "message": "单次输入不能超过 64 KiB"})
+                continue
+            process.stdin.write(data)
+        elif message_type == "resize":
             columns = _clamp(message.get("cols"), MIN_COLUMNS, MAX_COLUMNS, 120)
             rows = _clamp(message.get("rows"), MIN_ROWS, MAX_ROWS, 32)
             process.change_terminal_size(columns, rows)
         else:
-            await _send(websocket, {"type": "error", "code": "TERMINAL_READ_ONLY", "message": "工作流发单终端为只读，请使用发单动作按钮"})
+            await _send(websocket, {"type": "error", "code": "INVALID_MESSAGE", "message": "不支持的终端消息"})
 
 
 async def handle_order_workflow_terminal(
@@ -1357,18 +1364,18 @@ async def handle_order_workflow_terminal(
             "tmux capture-pane -p -S -5000 -t %s" % shlex.quote(session),
             check=False,
         )
-        await _send(websocket, {"type": "status", "status": "connected", "message": "已连接发单 tmux 会话（只读）"})
+        await _send(websocket, {"type": "status", "status": "connected", "message": "已连接发单 tmux 会话"})
         if captured.stdout:
             await _send(websocket, {"type": "output", "data": captured.stdout})
         _audit(websocket, actor_id, resource.id, "resource.order_terminal.open", detail={"run_id": run_id, "step_id": step_id})
         process = await connection.create_process(
-            "tmux attach-session -r -t %s" % shlex.quote(session),
+            "tmux attach-session -t %s" % shlex.quote(session),
             term_type="xterm-256color",
             term_size=(120, 32),
             encoding="utf-8",
             errors="replace",
         )
-        receiver = asyncio.create_task(_receive_read_only(websocket, process))
+        receiver = asyncio.create_task(_receive_order_terminal(websocket, process))
         sender = asyncio.create_task(_send_remote_output(websocket, process))
         done, pending = await asyncio.wait({receiver, sender}, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:

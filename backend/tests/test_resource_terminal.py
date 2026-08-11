@@ -31,6 +31,10 @@ def terminal_url(resource_id: int, token: str) -> str:
     return f"/api/v1/ws/resources/{resource_id}/terminal?token={token}"
 
 
+def order_terminal_url(run_id: int, step_id: int, token: str) -> str:
+    return f"/api/v1/ws/runs/{run_id}/steps/{step_id}/order-terminal?token={token}"
+
+
 def test_parser_terminal_actions_default_and_resource_override():
     assert terminal_service.parser_actions_for_resource(SimpleNamespace(capabilities={})) == PARSER_ACTIONS
     assert terminal_service.parser_actions_for_resource(
@@ -549,6 +553,230 @@ class FakeConnection:
 
     async def wait_closed(self) -> None:
         return None
+
+
+class FakeOrderConnection(FakeConnection):
+    def __init__(self, *, session_exists: bool = True) -> None:
+        super().__init__()
+        self.session_exists = session_exists
+        self.commands: typing.List[str] = []
+
+    async def run(self, command: str, check: bool = False):
+        assert check is False
+        self.commands.append(command)
+        if command.startswith("tmux has-session"):
+            return SimpleNamespace(exit_status=0 if self.session_exists else 1, stdout="", stderr="")
+        if command.startswith("tmux capture-pane"):
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+        raise AssertionError(f"unexpected SSH command: {command}")
+
+
+@pytest.mark.parametrize(
+    "step_status",
+    ["pending", "running", "waiting", "failed", "succeeded", "cancelled"],
+)
+def test_order_workflow_terminal_forwards_input_for_every_step_status(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    step_status: str,
+):
+    resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    with SessionLocal() as db:
+        db.get(RunModel, run["id"]).steps[0].status = step_status
+        db.commit()
+    connection = FakeOrderConnection()
+
+    async def fake_connect(**_options):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    with client.websocket_connect(
+        order_terminal_url(run["id"], step["id"], access_token(admin_headers))
+    ) as websocket:
+        assert websocket.receive_json()["status"] == "connecting"
+        connected = websocket.receive_json()
+        assert connected["type"] == "status"
+        assert connected["status"] == "connected"
+        assert "只读" not in connected["message"]
+        websocket.send_json({"type": "resize", "cols": 180, "rows": 52})
+        websocket.send_json({"type": "input", "data": "new_order\r"})
+
+    assert connection.command == (
+        f"tmux attach-session -t openslt-order-r{run['id']}-s{step['id']}"
+    )
+    assert connection.process.sizes == [(180, 52)]
+    assert connection.process.stdin.writes == ["new_order\r"]
+    with SessionLocal() as db:
+        terminal_audits = list(
+            db.query(AuditLog).filter(
+                AuditLog.object_id == str(resource["id"]),
+                AuditLog.action.like("resource.order_terminal.%"),
+            )
+        )
+    assert len(terminal_audits) == 1
+    assert "new_order" not in str(terminal_audits[0].detail)
+
+
+@pytest.mark.asyncio
+async def test_order_workflow_terminal_rejects_unsupported_message_type():
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = [{"type": "workflow_step_command"}]
+            self.sent: typing.List[dict] = []
+
+        async def receive_json(self):
+            if self.messages:
+                return self.messages.pop(0)
+            raise WebSocketDisconnect()
+
+        async def send_json(self, payload: dict):
+            self.sent.append(payload)
+
+    websocket = FakeWebSocket()
+    process = FakeProcess()
+
+    reason = await terminal_service._receive_order_terminal(
+        typing.cast(typing.Any, websocket),
+        typing.cast(typing.Any, process),
+    )
+
+    assert reason == "client_disconnected"
+    assert websocket.sent == [{
+        "type": "error",
+        "code": "INVALID_MESSAGE",
+        "message": "不支持的终端消息",
+    }]
+    assert process.stdin.writes == []
+
+
+def test_order_workflow_terminal_allows_tester_input(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    created = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "username": "order-terminal-tester",
+            "display_name": "发单终端测试员",
+            "password": "tester-password",
+            "role": "tester",
+        },
+    )
+    assert created.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "order-terminal-tester", "password": "tester-password"},
+    )
+    connection = FakeOrderConnection()
+
+    async def fake_connect(**_options):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    with client.websocket_connect(
+        order_terminal_url(run["id"], step["id"], login.json()["access_token"])
+    ) as websocket:
+        websocket.receive_json()
+        websocket.receive_json()
+        websocket.send_json({"type": "input", "data": "cxl_quote\r"})
+
+    assert connection.process.stdin.writes == ["cxl_quote\r"]
+
+
+def test_order_workflow_terminal_rejects_oversized_input(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    connection = FakeOrderConnection()
+
+    async def fake_connect(**_options):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    with client.websocket_connect(
+        order_terminal_url(run["id"], step["id"], access_token(admin_headers))
+    ) as websocket:
+        websocket.receive_json()
+        websocket.receive_json()
+        websocket.send_json({"type": "input", "data": "x" * (64 * 1024 + 1)})
+        error = websocket.receive_json()
+
+    assert error == {
+        "type": "error",
+        "code": "INPUT_TOO_LARGE",
+        "message": "单次输入不能超过 64 KiB",
+    }
+    assert connection.process.stdin.writes == []
+
+
+def test_order_workflow_terminal_rejects_visitor(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    created = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={
+            "username": "order-terminal-viewer",
+            "display_name": "发单终端访客",
+            "password": "viewer-password",
+            "role": "visitor",
+        },
+    )
+    assert created.status_code == 201
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "order-terminal-viewer", "password": "viewer-password"},
+    )
+
+    with pytest.raises(WebSocketDisconnect) as forbidden:
+        with client.websocket_connect(
+            order_terminal_url(run["id"], step["id"], login.json()["access_token"])
+        ):
+            pass
+
+    assert forbidden.value.code == 4403
+
+
+def test_order_workflow_terminal_reports_missing_session(
+    client: TestClient,
+    admin_headers: typing.Dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _resource, run = create_order_start_run(client, admin_headers, monkeypatch)
+    step = run["steps"][0]
+    connection = FakeOrderConnection(session_exists=False)
+
+    async def fake_connect(**_options):
+        return connection
+
+    monkeypatch.setattr(terminal_service.asyncssh, "connect", fake_connect)
+
+    with client.websocket_connect(
+        order_terminal_url(run["id"], step["id"], access_token(admin_headers))
+    ) as websocket:
+        websocket.receive_json()
+        error = websocket.receive_json()
+        assert error["code"] == "ORDER_SESSION_NOT_STARTED"
+        with pytest.raises(WebSocketDisconnect) as closed:
+            websocket.receive_json()
+
+    assert closed.value.code == 4513
 
 
 def prepare_waiting_parser_lease_run(

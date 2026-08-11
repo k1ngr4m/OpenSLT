@@ -63,6 +63,14 @@ const parserStep = {
   },
 } as RunStep
 
+const orderStep = {
+  ...terminalStep,
+  id: 11,
+  code: 'order-start',
+  name: '发单准备',
+  node_type: 'order_preparation',
+} as RunStep
+
 function marketRunDetail(): RunDetail {
   return {
     ...runDetail(),
@@ -85,6 +93,27 @@ function parserRunDetail(): RunDetail {
 }
 
 describe('useWorkflowTerminal', () => {
+  it('tells operators that the order terminal accepts direct input', () => {
+    const terminal = useWorkflowTerminal({
+      active: ref('detail'),
+      manualStepSelection: ref(false),
+      reload: vi.fn().mockResolvedValue(undefined),
+      run: ref({
+        ...runDetail(),
+        steps: [orderStep],
+        config_snapshot: {
+          resources: [{ id: 7, name: 'Order', type: 'order', host: '10.0.0.7' }],
+        },
+      } as RunDetail),
+      runId: 11,
+      selectedStep: computed(() => orderStep),
+      selectedStepId: ref(orderStep.id),
+    })
+
+    expect(terminal.workflowTerminalDescription.value).toContain('可直接输入')
+    expect(terminal.workflowTerminalDescription.value).toContain('动作按钮')
+  })
+
   it('queues a command while disconnected and dispatches it after connection', async () => {
     const selectedStepId = ref<number | null>(null)
     const terminal = useWorkflowTerminal({
