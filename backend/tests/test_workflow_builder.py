@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,7 +11,7 @@ import pytest
 from sqlalchemy import text
 
 from app.core.database import SessionLocal
-from app.models import AuditLog, ConfigurationCaptureSnapshot, ContractDataFile
+from app.models import AuditLog, ConfigurationCaptureSnapshot, ContractDataFile, TestScenario as ScenarioModel
 from app.services import order_configs
 from app.services import workflow_capture, workflow_contracts, workflow_publishing, workflows
 from conftest import create_plan_scenario, create_resource
@@ -356,6 +357,37 @@ def test_workflow_draft_revision_preview_and_publish(client, admin_headers, monk
     listed = client.get("/api/v1/scenarios", headers=admin_headers).json()
     assert listed[0]["is_enabled"] is True
     assert listed[0]["workflow_status"] == "published"
+
+
+def test_workflow_save_advances_scenario_update_time(client, admin_headers):
+    rem = create_resource(client, admin_headers, "REM-scenario-update-time")
+    _, scenario = create_plan_scenario(client, admin_headers, resource_ids=[rem["id"]])
+    sentinel = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        stored = db.get(ScenarioModel, scenario["id"])
+        assert stored is not None
+        stored.updated_at = sentinel
+        db.commit()
+
+    endpoint = f"/api/v1/scenarios/{scenario['id']}/workflow"
+    document = client.get(endpoint, headers=admin_headers).json()
+    assert datetime.fromisoformat(document["scenario"]["updated_at"]) == sentinel
+    saved = client.put(
+        endpoint,
+        headers=admin_headers,
+        json={
+            "expected_revision": document["draft"]["revision"],
+            "resource_ids": [rem["id"]],
+            "nodes": [node("server", "server_config", "服务器配置", {"targets": []})],
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    updated_at = datetime.fromisoformat(saved.json()["scenario"]["updated_at"])
+    assert updated_at > sentinel
+    listed = client.get("/api/v1/scenarios", headers=admin_headers).json()
+    listed_scenario = next(item for item in listed if item["id"] == scenario["id"])
+    assert listed_scenario["updated_at"] == saved.json()["scenario"]["updated_at"]
 
 
 def test_workflow_save_response_orders_inserted_node_by_position(client, admin_headers):

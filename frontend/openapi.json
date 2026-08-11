@@ -3444,6 +3444,11 @@
             "title": "Scenario Type",
             "type": "string"
           },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
           "workflow_status": {
             "title": "Workflow Status",
             "type": "string"
@@ -3463,7 +3468,8 @@
           "draft_workflow_version_id",
           "published_workflow_version_id",
           "is_archived",
-          "created_at"
+          "created_at",
+          "updated_at"
         ],
         "title": "ScenarioOut",
         "type": "object"

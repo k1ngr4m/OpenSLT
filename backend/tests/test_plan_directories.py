@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import typing
+from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
 
-from conftest import create_plan_scenario
+from app.core.database import SessionLocal
+from app.models import TestScenario as ScenarioModel
+from conftest import create_plan_scenario, create_resource
 
 
 def plan_payload(*, directory_id: typing.Optional[int] = None, name: str = "目录方案") -> dict:
@@ -19,6 +22,54 @@ def plan_payload(*, directory_id: typing.Optional[int] = None, name: str = "目�
     if directory_id is not None:
         payload["directory_id"] = directory_id
     return payload
+
+
+def test_scenario_responses_expose_creation_and_update_times(
+    client: TestClient, admin_headers: typing.Dict[str, str]
+) -> None:
+    _, scenario = create_plan_scenario(client, admin_headers)
+
+    assert scenario["created_at"]
+    assert scenario["updated_at"]
+
+    listed = client.get("/api/v1/scenarios", headers=admin_headers)
+    assert listed.status_code == 200
+    listed_scenario = next(item for item in listed.json() if item["id"] == scenario["id"])
+    assert listed_scenario["created_at"] == scenario["created_at"]
+    assert listed_scenario["updated_at"] == scenario["updated_at"]
+
+
+def test_scenario_base_information_update_advances_update_time(
+    client: TestClient, admin_headers: typing.Dict[str, str]
+) -> None:
+    resource = create_resource(client, admin_headers, "REM-base-info-update")
+    plan, scenario = create_plan_scenario(
+        client, admin_headers, resource_ids=[resource["id"]]
+    )
+    sentinel = datetime(2000, 1, 1, tzinfo=timezone.utc)
+    with SessionLocal() as db:
+        stored = db.get(ScenarioModel, scenario["id"])
+        assert stored is not None
+        stored.updated_at = sentinel
+        db.commit()
+
+    updated = client.put(
+        f"/api/v1/scenarios/{scenario['id']}",
+        headers=admin_headers,
+        json={
+            "plan_id": plan["id"],
+            "name": "更新后的场景名称",
+            "scenario_type": scenario["scenario_type"],
+            "config_version": scenario["config_version"],
+            "expected_artifacts": scenario["expected_artifacts"],
+            "default_resource_ids": scenario["default_resource_ids"],
+            "required_resource_types": scenario["required_resource_types"],
+            "is_enabled": scenario["is_enabled"],
+        },
+    )
+
+    assert updated.status_code == 200, updated.text
+    assert datetime.fromisoformat(updated.json()["updated_at"]) > sentinel
 
 
 def test_default_directory_and_duplicate_names(

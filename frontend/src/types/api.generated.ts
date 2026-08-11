@@ -2632,6 +2632,11 @@ export interface components {
             required_resource_types: string[];
             /** Scenario Type */
             scenario_type: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Workflow Status */
             workflow_status: string;
         };

@@ -6,6 +6,7 @@ import { CaretRight, Delete, Edit, Folder, FolderOpened, Plus } from '@element-p
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
+import { formatBeijingDateTime } from '@/utils/time'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -160,16 +161,6 @@ function resourceOptionLabel(resource: any) {
     ? `${resource.database_host || ''}:${resource.database_port || ''}`
     : resource.host
   return `${resource.name}${location ? ` · ${location}` : ''}${resource.is_enabled ? '' : ' · 已停用'}`
-}
-
-function scenarioResourceLabels(row: any) {
-  if (row.default_resource_ids?.length) {
-    return row.default_resource_ids.map((id: number) => {
-      const resource = resources.value.find(item => item.id === id)
-      return resource ? `${resourceText[resource.resource_type] || resource.resource_type} · ${resource.name}` : `资源 #${id}`
-    })
-  }
-  return (row.required_resource_types || []).map((type: string) => `${resourceText[type] || type} · 待绑定`)
 }
 
 async function savePlan() {
@@ -338,11 +329,10 @@ onMounted(load)
             <p class="muted">{{ p.description || '暂无描述' }}</p>
             <el-table :data="scenarios.filter(item => item.plan_id === p.id)" size="small">
               <el-table-column prop="name" label="场景名称" />
-              <el-table-column label="场景资源" min-width="260">
-                <template #default="scope"><el-tag v-for="label in scenarioResourceLabels(scope.row)" :key="label" size="small" class="tag">{{ label }}</el-tag></template>
-              </el-table-column>
+              <el-table-column label="创建时间" width="180"><template #default="scope"><time class="table-time">{{ formatBeijingDateTime(scope.row.created_at) }}</time></template></el-table-column>
+              <el-table-column label="更新时间" width="180"><template #default="scope"><time class="table-time">{{ formatBeijingDateTime(scope.row.updated_at) }}</time></template></el-table-column>
               <el-table-column label="工作流状态" width="120"><template #default="scope"><el-tag size="small" :type="scope.row.is_enabled ? 'success' : (scope.row.published_workflow_version_id ? 'info' : 'warning')">{{ scope.row.is_enabled ? '已启用' : (scope.row.published_workflow_version_id ? '已暂停' : '未启用') }}</el-tag></template></el-table-column>
-              <el-table-column v-if="auth.canOperate" width="220"><template #default="scope"><el-button link type="primary" @click="openWorkflow(scope.row.id)">工作流</el-button><el-button link @click="openScenario(scope.row)">基础信息</el-button><el-button link @click="copyScenario(scope.row)">复制</el-button><el-tooltip content="删除场景" placement="top"><el-button link type="danger" :icon="Delete" aria-label="删除场景" @click="removeScenario(scope.row)" /></el-tooltip></template></el-table-column>
+              <el-table-column v-if="auth.canOperate" label="操作" width="220"><template #default="scope"><el-button link type="primary" @click="openWorkflow(scope.row.id)">工作流</el-button><el-button link @click="openScenario(scope.row)">基础信息</el-button><el-button link @click="copyScenario(scope.row)">复制</el-button><el-tooltip content="删除场景" placement="top"><el-button link type="danger" :icon="Delete" aria-label="删除场景" @click="removeScenario(scope.row)" /></el-tooltip></template></el-table-column>
             </el-table>
           </el-collapse-item>
         </el-collapse>

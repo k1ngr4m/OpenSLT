@@ -498,6 +498,7 @@ class ScenarioOut(ORMModel):
     published_workflow_version_id: typing.Union[int, None]
     is_archived: bool
     created_at: datetime
+    updated_at: datetime
 
 
 class WorkflowNodeBase(BaseModel):

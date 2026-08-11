@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.time import beijing_now
 from app.models import Resource, ScenarioWorkflowNode, ScenarioWorkflowVersion, TestScenario
 from app.services.order_configs import parser_config_role, parser_main_config_filename
 from app.services.parser_inputs import parser_config_database_name
@@ -521,6 +522,7 @@ def replace_draft(
     version.revision += 1
     sync_scenario_resources(scenario, resource_ids, db)
     scenario.required_resource_types = sorted(resource_map(db, version))
+    scenario.updated_at = beijing_now()
     db.flush()
     return version
 
