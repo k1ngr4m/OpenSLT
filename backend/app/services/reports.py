@@ -21,6 +21,7 @@ from app.models import (
     Artifact,
     ConfigurationCaptureSnapshot,
     Resource,
+    RunComparison,
     RunStep,
     TestRun,
 )
@@ -90,6 +91,12 @@ REPORT_TEMPLATE = """<!doctype html>
 {% for table in report.statistics %}<h3>{{ table.step_name }}</h3><p class="section-note">统计脚本：{{ table.script_filename or '-' }}　单位：ns　异常上限：{{ table.max_latency_ns if table.max_latency_ns is not none else '-' }} ns</p>
 <div class="table-wrap"><table><thead><tr><th>指标</th>{% for column in table["columns"] %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in table["rows"] %}<tr><td>{{ row.label }}</td>{% for value in row["values"] %}<td class="number">{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
 {% else %}<div class="empty">无测速统计数据</div>{% endfor %}</div>
+
+{% if report.comparison %}<div class="metrics"><h2>运行对比</h2>
+<p class="section-note">当前运行：{{ report.comparison.target_run_number }}　基线运行：{{ report.comparison.baseline_run_number }}　快照保存时间：{{ report.comparison.saved_at }}　可比性：{{ report.comparison.compatibility }}</p>
+{% if report.comparison.warnings %}<p class="section-note">可比性说明：{{ report.comparison.warnings|join('；') }}</p>{% endif %}
+<div class="table-wrap"><table><thead><tr><th>指标</th><th>节点 / 数据源</th><th>基线值</th><th>当前值</th><th>绝对变化</th><th>变化率</th><th>判断</th></tr></thead><tbody>{% for row in report.comparison.rows %}<tr><td>{{ row.metric_label }}</td><td>{{ row.step_name }} / {{ row.source_file }}</td><td class="number">{{ row.baseline_display }}</td><td class="number">{{ row.target_display }}</td><td class="number">{{ row.delta_display }}</td><td class="number">{{ row.percentage_display }}</td><td>{{ row.assessment_text }}</td></tr>{% endfor %}</tbody></table></div>
+</div>{% endif %}
 
 <h2>步骤时间线</h2><table><thead><tr><th>顺序</th><th>步骤</th><th>类型</th><th>状态</th><th>耗时(ms)</th><th>错误</th></tr></thead><tbody>{% for step in report.steps %}<tr><td>{{ step.position }}</td><td>{{ step.name }}</td><td>{{ step.node_type }}</td><td>{{ step.status }}</td><td class="number">{{ step.duration_ms }}</td><td>{{ step.error }}</td></tr>{% endfor %}</tbody></table>
 <h2>最终结论</h2><table><tbody><tr><th class="key">结论</th><td>{{ report.verdict.final_result }}</td></tr><tr><th>问题说明</th><td>{{ report.verdict.issue_description }}</td></tr><tr><th>备注</th><td>{{ report.verdict.notes }}</td></tr></tbody></table>
@@ -305,6 +312,61 @@ def _statistics_table(step: RunStep) -> typing.Optional[dict[str, typing.Any]]:
     }
 
 
+def _comparison_number(value: typing.Any, unit: str = "", *, signed: bool = False) -> str:
+    if value is None:
+        return "-"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    sign = "+" if signed and number > 0 else ""
+    rendered = f"{number:.3f}".rstrip("0").rstrip(".")
+    return f"{sign}{rendered}{f' {unit}' if unit else ''}"
+
+
+def _comparison_section(db: Session, run: TestRun) -> typing.Optional[dict[str, typing.Any]]:
+    comparison = db.scalar(
+        select(RunComparison).where(RunComparison.run_id == run.id)
+    )
+    if comparison is None:
+        return None
+    assessment_text = {
+        "improved": "下降",
+        "stable": "持平",
+        "regressed": "上升",
+        "added": "新增",
+        "missing": "缺失",
+        "incompatible": "不可比",
+    }
+    rows = []
+    for raw in comparison.comparison_rows or []:
+        if not isinstance(raw, dict):
+            continue
+        unit = str(raw.get("unit") or "")
+        percentage = raw.get("percentage_delta")
+        rows.append({
+            **raw,
+            "baseline_display": _comparison_number(raw.get("baseline_value"), unit),
+            "target_display": _comparison_number(raw.get("target_value"), unit),
+            "delta_display": _comparison_number(raw.get("absolute_delta"), unit, signed=True),
+            "percentage_display": (
+                _comparison_number(percentage, "%", signed=True)
+                if percentage is not None else "基线为 0"
+            ),
+            "assessment_text": assessment_text.get(str(raw.get("assessment")), "未知"),
+        })
+    return {
+        "target_run_number": comparison.target_run_number,
+        "baseline_run_number": comparison.baseline_run_number,
+        "compatibility": "统计配置一致" if comparison.is_compatible else "存在差异",
+        "warnings": comparison.warnings or [],
+        "saved_at": format_beijing(comparison.updated_at),
+        "target_analysis_refs": comparison.target_analysis_refs or [],
+        "baseline_analysis_refs": comparison.baseline_analysis_refs or [],
+        "rows": rows,
+    }
+
+
 def build_report_document(
     db: Session, run: TestRun, report_version: int, generated_at: typing.Any,
     step: typing.Optional[RunStep] = None,
@@ -317,6 +379,7 @@ def build_report_document(
         table for table in (_statistics_table(item) for item in steps if item.node_type == "data_statistics")
         if table is not None
     ]
+    comparison = _comparison_section(db, run)
     snapshot = run.config_snapshot or {}
     plan = snapshot.get("plan") if isinstance(snapshot.get("plan"), dict) else {}
     scenario = snapshot.get("scenario") if isinstance(snapshot.get("scenario"), dict) else {}
@@ -340,6 +403,7 @@ def build_report_document(
         "databases": databases,
         "orders": orders,
         "statistics": statistics,
+        "comparison": comparison,
         "steps": [
             {
                 "position": item.position,
@@ -453,6 +517,23 @@ def _render_xlsx(report: dict[str, typing.Any], path: Path) -> None:
         for row in table["rows"]:
             sheet.append([row["label"], *row["values"]])
         _style_sheet(sheet, [18, *([32] * len(table["columns"]))])
+
+    if report["comparison"]:
+        comparison = workbook.create_sheet("运行对比")
+        comparison.append(["当前运行", report["comparison"]["target_run_number"]])
+        comparison.append(["基线运行", report["comparison"]["baseline_run_number"]])
+        comparison.append(["快照保存时间", report["comparison"]["saved_at"]])
+        comparison.append(["可比性", report["comparison"]["compatibility"]])
+        comparison.append(["可比性说明", "；".join(report["comparison"]["warnings"]) or "-"])
+        comparison.append([])
+        comparison.append(["指标", "节点", "数据源", "基线值", "当前值", "绝对变化", "变化率", "判断"])
+        for row in report["comparison"]["rows"]:
+            comparison.append([
+                row["metric_label"], row["step_name"], row["source_file"],
+                row["baseline_display"], row["target_display"], row["delta_display"],
+                row["percentage_display"], row["assessment_text"],
+            ])
+        _style_sheet(comparison, [22, 22, 34, 16, 16, 16, 14, 12])
 
     steps = workbook.create_sheet("步骤时间线")
     steps.append(["顺序", "步骤", "类型", "状态", "耗时(ms)", "错误"])
@@ -618,6 +699,40 @@ def _render_pdf(report: dict[str, typing.Any], path: Path) -> None:
                 Spacer(1, 4 * mm),
             ])
             story.append(KeepTogether(block))
+
+    if report["comparison"]:
+        comparison = report["comparison"]
+        story.extend([
+            Paragraph("运行对比", heading),
+            Paragraph(
+                f"当前运行：{html.escape(comparison['target_run_number'])}　"
+                f"基线运行：{html.escape(comparison['baseline_run_number'])}　"
+                f"快照保存时间：{html.escape(comparison['saved_at'])}　"
+                f"可比性：{html.escape(comparison['compatibility'])}",
+                small,
+            ),
+        ])
+        if comparison["warnings"]:
+            story.append(Paragraph(
+                f"可比性说明：{html.escape('；'.join(comparison['warnings']))}", small
+            ))
+        comparison_rows = [[
+            cell("指标"), cell("节点 / 数据源"), cell("基线值"), cell("当前值"),
+            cell("绝对变化"), cell("变化率"), cell("判断"),
+        ]]
+        comparison_rows.extend([
+            cell(row["metric_label"]),
+            cell(f"{row['step_name']} / {row['source_file']}", small),
+            cell(row["baseline_display"], right),
+            cell(row["target_display"], right),
+            cell(row["delta_display"], right),
+            cell(row["percentage_display"], right),
+            cell(row["assessment_text"]),
+        ] for row in comparison["rows"])
+        story.append(table(
+            comparison_rows,
+            [33 * mm, 62 * mm, 28 * mm, 28 * mm, 28 * mm, 24 * mm, 22 * mm],
+        ))
 
     story.extend([NextPageTemplate("portrait"), PageBreak(), Paragraph("步骤时间线", heading)])
     story.append(table(

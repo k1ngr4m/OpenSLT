@@ -668,6 +668,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{run_id}/comparison": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Comparison */
+        get: operations["get_run_comparison_api_v1_runs__run_id__comparison_get"];
+        /** Put Run Comparison */
+        put: operations["put_run_comparison_api_v1_runs__run_id__comparison_put"];
+        post?: never;
+        /** Delete Run Comparison */
+        delete: operations["delete_run_comparison_api_v1_runs__run_id__comparison_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{run_id}/comparison-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Comparison Candidates */
+        get: operations["list_run_comparison_candidates_api_v1_runs__run_id__comparison_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{run_id}/confirm-wiring": {
         parameters: {
             query?: never;
@@ -2506,6 +2542,106 @@ export interface components {
              * @default
              */
             version_info: string;
+        };
+        /** RunComparisonCandidateOut */
+        RunComparisonCandidateOut: {
+            /** Compatible */
+            compatible: boolean;
+            /** Finished At */
+            finished_at: string | null;
+            /** Matched Metric Count */
+            matched_metric_count: number;
+            /** Metric Count */
+            metric_count: number;
+            /**
+             * Recommended
+             * @default false
+             */
+            recommended: boolean;
+            /** Run Id */
+            run_id: number;
+            /** Run Number */
+            run_number: string;
+            /** Verdict */
+            verdict: string | null;
+            /** Warnings */
+            warnings: string[];
+            /** Workflow Version Id */
+            workflow_version_id: number | null;
+        };
+        /** RunComparisonMetricOut */
+        RunComparisonMetricOut: {
+            /** Absolute Delta */
+            absolute_delta: number | null;
+            /**
+             * Assessment
+             * @enum {string}
+             */
+            assessment: "improved" | "stable" | "regressed" | "added" | "missing" | "incompatible";
+            /** Baseline Value */
+            baseline_value: number | null;
+            /** Key */
+            key: string;
+            /** Metric Key */
+            metric_key: string;
+            /** Metric Label */
+            metric_label: string;
+            /** Percentage Delta */
+            percentage_delta: number | null;
+            /** Source File */
+            source_file: string;
+            /** Step Code */
+            step_code: string;
+            /** Step Name */
+            step_name: string;
+            /** Target Value */
+            target_value: number | null;
+            /** Unit */
+            unit: string;
+        };
+        /** RunComparisonOut */
+        RunComparisonOut: {
+            /** Baseline Analysis Refs */
+            baseline_analysis_refs: Record<string, unknown>[];
+            /** Baseline Metrics Changed */
+            baseline_metrics_changed: boolean;
+            /** Baseline Run Id */
+            baseline_run_id: number | null;
+            /** Baseline Run Number */
+            baseline_run_number: string;
+            /** Compatible */
+            compatible: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: number | null;
+            /** Id */
+            id: number;
+            /** Rows */
+            rows: components["schemas"]["RunComparisonMetricOut"][];
+            /** Run Id */
+            run_id: number;
+            /** Target Analysis Refs */
+            target_analysis_refs: Record<string, unknown>[];
+            /** Target Metrics Stale */
+            target_metrics_stale: boolean;
+            /** Target Run Number */
+            target_run_number: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Warnings */
+            warnings: string[];
+        };
+        /** RunComparisonWrite */
+        RunComparisonWrite: {
+            /** Baseline Run Id */
+            baseline_run_id: number;
         };
         /** RunCreate */
         RunCreate: {
@@ -5062,6 +5198,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_comparison_api_v1_runs__run_id__comparison_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunComparisonOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_run_comparison_api_v1_runs__run_id__comparison_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunComparisonWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunComparisonOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_run_comparison_api_v1_runs__run_id__comparison_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_comparison_candidates_api_v1_runs__run_id__comparison_candidates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunComparisonCandidateOut"][];
                 };
             };
             /** @description Validation Error */

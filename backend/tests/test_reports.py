@@ -14,6 +14,7 @@ from app.models import (
     Artifact,
     ConfigurationCaptureItem,
     ConfigurationCaptureSnapshot,
+    RunComparison,
     RunStep,
     ScenarioWorkflowNode,
     ScenarioWorkflowVersion,
@@ -251,6 +252,36 @@ def test_report_versions_are_immutable_and_render_all_formats(
     with SessionLocal() as db:
         run = db.get(RunModel, run_id)
         report_step = db.get(RunStep, report_step_id)
+        db.add(RunComparison(
+            run_id=run.id,
+            baseline_run_id=None,
+            target_run_number=run.run_number,
+            baseline_run_number="R-REPORT-BASELINE",
+            target_metrics_checksum="a" * 64,
+            baseline_metrics_checksum="b" * 64,
+            target_metrics_snapshot=[],
+            baseline_metrics_snapshot=[],
+            target_analysis_refs=[{"analysis_no": 2, "artifact_checksum": "c" * 64}],
+            baseline_analysis_refs=[{"analysis_no": 1, "artifact_checksum": "d" * 64}],
+            comparison_rows=[{
+                "key": "node-4\u001fsource.csv\u001faverage",
+                "step_code": "node-4",
+                "step_name": "data_statistics-4",
+                "source_file": "source.csv",
+                "metric_key": "average",
+                "metric_label": "平均值",
+                "unit": "ns",
+                "baseline_value": 100.0,
+                "target_value": 125.0,
+                "absolute_delta": 25.0,
+                "percentage_delta": 25.0,
+                "assessment": "regressed",
+            }],
+            warnings=["运行使用的资源集合不一致"],
+            is_compatible=True,
+            created_by=1,
+        ))
+        db.flush()
         first = generate_reports(db, run, step=report_step, reason="workflow_node")
         db.commit()
         first_artifacts = [db.get(Artifact, artifact_id) for artifact_id in first["artifact_ids"]]
@@ -275,8 +306,13 @@ def test_report_versions_are_immutable_and_render_all_formats(
         html_text = first_paths["web_report"].read_text(encoding="utf-8")
         assert "&lt;password" in html_text
         assert "p&amp;amp;&amp;lt;secret&amp;gt;" in html_text
+        assert "R-REPORT-BASELINE" in html_text
+        assert "+25 ns" in html_text
         workbook = load_workbook(first_paths["excel_report"], read_only=True)
-        assert {"运行摘要", "服务器配置", "数据库配置", "发单配置", "步骤时间线", "XML原文-1"}.issubset(workbook.sheetnames)
+        assert {"运行摘要", "服务器配置", "数据库配置", "发单配置", "运行对比", "步骤时间线", "XML原文-1"}.issubset(workbook.sheetnames)
+        assert "R-REPORT-BASELINE" in {
+            str(row[1]) for row in workbook["运行对比"].iter_rows(values_only=True) if len(row) > 1
+        }
         assert len([name for name in workbook.sheetnames if name.startswith("指标-")]) == 2
         assert "<password" in "\n".join(
             str(row[0]) for row in workbook["XML原文-1"].iter_rows(values_only=True) if row[0]
@@ -289,6 +325,7 @@ def test_report_versions_are_immutable_and_render_all_formats(
         extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
         assert "OpenSLT" in extracted
         assert "兆芯" in extracted
+        assert "R-REPORT-BASELINE" in extracted
         assert extracted.count("指标") >= 4
 
     visitor = client.post("/api/v1/users", headers=admin_headers, json={

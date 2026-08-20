@@ -7,6 +7,7 @@ import RunCaptureDetails from '@/components/run-detail/RunCaptureDetails.vue'
 import RunContractFiles from '@/components/run-detail/RunContractFiles.vue'
 import RunContractPreviewDialog from '@/components/run-detail/RunContractPreviewDialog.vue'
 import RunLogPanel from '@/components/run-detail/RunLogPanel.vue'
+import RunComparisonPanel from '@/components/run-detail/RunComparisonPanel.vue'
 import RunWorkflowStrip from '@/components/run-detail/RunWorkflowStrip.vue'
 import WindowsEditcapCommand from '@/components/run-detail/WindowsEditcapCommand.vue'
 import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
@@ -1159,6 +1160,14 @@ watch(
               </el-table>
             </div>
             <div v-if="run.verdict" class="verdict"><h3>结论</h3><p>最终结论：{{ run.verdict.final_result || '待复核' }}</p><p>{{ run.verdict.issue_description }}</p><p class="muted">{{ run.verdict.notes }}</p></div>
+          </el-tab-pane>
+
+          <el-tab-pane label="运行对比" name="comparison">
+            <RunComparisonPanel
+              :run-id="runId"
+              :can-operate="auth.canOperate"
+              :has-metrics="Boolean(run.metrics.length)"
+            />
           </el-tab-pane>
 
           <el-tab-pane label="产物与报告" name="artifacts">

@@ -36,6 +36,9 @@ export type RunMetric = Omit<ApiSchemas['MetricOut'], 'detail'> & {
 
 export type RunVerdict = ApiSchemas['VerdictOut']
 export type RunVerdictWrite = ApiSchemas['VerdictWrite']
+export type RunComparison = ApiSchemas['RunComparisonOut']
+export type RunComparisonCandidate = ApiSchemas['RunComparisonCandidateOut']
+export type RunComparisonMetric = ApiSchemas['RunComparisonMetricOut']
 
 export interface RunConfigSnapshot {
   plan?: {

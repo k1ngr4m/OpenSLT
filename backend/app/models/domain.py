@@ -292,6 +292,46 @@ class TestRun(TimestampMixin, Base):
     }
 
 
+class RunComparison(TimestampMixin, Base):
+    __tablename__ = "t_run_comparisons"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_run_comparison_run"),
+        Index("ix_run_comparison_baseline", "baseline_run_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("t_test_runs.id", ondelete="CASCADE"), index=True
+    )
+    baseline_run_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("t_test_runs.id", ondelete="SET NULL")
+    )
+    target_run_number: Mapped[str] = mapped_column(String(40))
+    baseline_run_number: Mapped[str] = mapped_column(String(40))
+    target_metrics_checksum: Mapped[str] = mapped_column(String(64))
+    baseline_metrics_checksum: Mapped[str] = mapped_column(String(64))
+    target_metrics_snapshot: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(
+        JSONText, default=list
+    )
+    baseline_metrics_snapshot: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(
+        JSONText, default=list
+    )
+    target_analysis_refs: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(
+        JSONText, default=list
+    )
+    baseline_analysis_refs: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(
+        JSONText, default=list
+    )
+    comparison_rows: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(
+        JSONText, default=list
+    )
+    warnings: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
+    is_compatible: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("t_users.id", ondelete="SET NULL"), index=True
+    )
+
+
 class RunStatusTransition(Base):
     __tablename__ = "t_run_status_transitions"
     __table_args__ = (

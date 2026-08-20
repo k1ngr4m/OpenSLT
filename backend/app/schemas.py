@@ -879,6 +879,56 @@ class MetricOut(ORMModel):
     detail: typing.Dict[str, Any]
 
 
+class RunComparisonWrite(BaseModel):
+    baseline_run_id: int = Field(gt=0)
+
+
+class RunComparisonMetricOut(BaseModel):
+    key: str
+    step_code: str
+    step_name: str
+    source_file: str
+    metric_key: str
+    metric_label: str
+    unit: str
+    baseline_value: typing.Union[float, None]
+    target_value: typing.Union[float, None]
+    absolute_delta: typing.Union[float, None]
+    percentage_delta: typing.Union[float, None]
+    assessment: Literal["improved", "stable", "regressed", "added", "missing", "incompatible"]
+
+
+class RunComparisonCandidateOut(BaseModel):
+    run_id: int
+    run_number: str
+    finished_at: typing.Union[datetime, None]
+    verdict: typing.Union[str, None]
+    workflow_version_id: typing.Union[int, None]
+    compatible: bool
+    warnings: typing.List[str]
+    matched_metric_count: int
+    metric_count: int
+    recommended: bool = False
+
+
+class RunComparisonOut(BaseModel):
+    id: int
+    run_id: int
+    baseline_run_id: typing.Union[int, None]
+    target_run_number: str
+    baseline_run_number: str
+    target_analysis_refs: typing.List[typing.Dict[str, Any]]
+    baseline_analysis_refs: typing.List[typing.Dict[str, Any]]
+    rows: typing.List[RunComparisonMetricOut]
+    warnings: typing.List[str]
+    compatible: bool
+    target_metrics_stale: bool
+    baseline_metrics_changed: bool
+    created_by: typing.Union[int, None]
+    created_at: datetime
+    updated_at: datetime
+
+
 class VerdictOut(ORMModel):
     id: int
     final_result: typing.Union[str, None]

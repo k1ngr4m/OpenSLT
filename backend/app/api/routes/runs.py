@@ -9,7 +9,7 @@ from datetime import timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_current_user, operators
@@ -27,6 +27,7 @@ from app.models import (
     Metric,
     Resource,
     ResourceLock,
+    RunComparison,
     RunResource,
     RunStatusTransition,
     RunStep,
@@ -37,7 +38,7 @@ from app.models import (
     Verdict,
 )
 from app.adapters.database import DatabaseOperationError, validate_database
-from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunCreate, RunOut, StatisticsAnalysisDetailOut, StatisticsAnalysisMetadataOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, StatisticsRuntimeConfigOut, StatisticsRuntimeConfigRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
+from app.schemas import ArtifactOut, CaptureSnapshotOut, LogOut, OrderActionRequest, OrderRuntimeConfigWrite, ParserTableExportOut, ParserTableExportRequest, RunComparisonCandidateOut, RunComparisonOut, RunComparisonWrite, RunCreate, RunOut, StatisticsAnalysisDetailOut, StatisticsAnalysisMetadataOut, StatisticsCsvFilesOut, StatisticsInputSelectionOut, StatisticsInputSelectionRequest, StatisticsRuntimeConfigOut, StatisticsRuntimeConfigRequest, VerdictOut, VerdictWrite, WiringInterfaceNamesWrite
 from app.services.audit import write_audit
 from app.services.durable_tasks import enqueue_task, schedule_task
 from app.services.events import broker
@@ -46,6 +47,7 @@ from app.services.order_configs import OrderConfigError, order_config_service
 from app.services.order_sessions import cleanup_order_session, order_session_name, send_order_action, supported_order_actions
 from app.services.resource_relations import run_resource_ids, sync_run_resources
 from app.services.reports import generate_reports
+from app.services.run_comparisons import RunComparisonError, comparison_candidates, comparison_payload, save_comparison
 from app.services.run_state import PAUSABLE_RUN_STATUSES, TERMINAL_RUN_STATUSES, transition_run, transition_step
 from app.services.statistics_execution import (
     list_statistics_csv_files,
@@ -253,6 +255,102 @@ def get_run(run_id: int, _: User = Depends(get_current_user), db: Session = Depe
     return load_run(db, run_id)
 
 
+def _comparison_http_error(exc: RunComparisonError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={"code": exc.code, "message": exc.message},
+    )
+
+
+@router.get(
+    "/runs/{run_id}/comparison-candidates",
+    response_model=typing.List[RunComparisonCandidateOut],
+)
+def list_run_comparison_candidates(
+    run_id: int,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict[str, typing.Any]]:
+    run = load_run(db, run_id)
+    try:
+        return comparison_candidates(db, run)
+    except RunComparisonError as exc:
+        raise _comparison_http_error(exc) from exc
+
+
+@router.get(
+    "/runs/{run_id}/comparison",
+    response_model=typing.Optional[RunComparisonOut],
+)
+def get_run_comparison(
+    run_id: int,
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> typing.Optional[dict[str, typing.Any]]:
+    load_run(db, run_id)
+    comparison = db.scalar(select(RunComparison).where(RunComparison.run_id == run_id))
+    return comparison_payload(db, comparison) if comparison else None
+
+
+@router.put("/runs/{run_id}/comparison", response_model=RunComparisonOut)
+def put_run_comparison(
+    run_id: int,
+    payload: RunComparisonWrite,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> dict[str, typing.Any]:
+    run = load_run(db, run_id)
+    baseline = load_run(db, payload.baseline_run_id)
+    try:
+        comparison = save_comparison(db, run, baseline, actor.id)
+    except RunComparisonError as exc:
+        raise _comparison_http_error(exc) from exc
+    write_audit(
+        db,
+        "run.comparison_save",
+        "run_comparison",
+        comparison.id,
+        actor,
+        request,
+        detail={
+            "run_id": run.id,
+            "baseline_run_id": baseline.id,
+            "compatible": comparison.is_compatible,
+        },
+    )
+    db.commit()
+    db.refresh(comparison)
+    return comparison_payload(db, comparison)
+
+
+@router.delete("/runs/{run_id}/comparison", status_code=204)
+def delete_run_comparison(
+    run_id: int,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> Response:
+    load_run(db, run_id)
+    comparison = db.scalar(select(RunComparison).where(RunComparison.run_id == run_id))
+    if comparison is None:
+        raise not_found("运行对比")
+    comparison_id = comparison.id
+    baseline_run_id = comparison.baseline_run_id
+    db.delete(comparison)
+    write_audit(
+        db,
+        "run.comparison_delete",
+        "run_comparison",
+        comparison_id,
+        actor,
+        request,
+        detail={"run_id": run_id, "baseline_run_id": baseline_run_id},
+    )
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.get(
     "/runs/{run_id}/steps/{step_id}/statistics-analyses",
     response_model=typing.List[StatisticsAnalysisMetadataOut],
@@ -335,11 +433,17 @@ def _delete_run_database_records(db: Session, run_id: int) -> None:
         Artifact,
         Metric,
         Verdict,
+        RunComparison,
         ResourceLock,
         RunResource,
         RunStatusTransition,
     ):
         db.execute(delete(model).where(model.run_id == run_id))
+    db.execute(
+        update(RunComparison)
+        .where(RunComparison.baseline_run_id == run_id)
+        .values(baseline_run_id=None)
+    )
     db.execute(delete(RunStep).where(RunStep.run_id == run_id))
 
     db.execute(delete(DurableTask).where(DurableTask.run_id == run_id))

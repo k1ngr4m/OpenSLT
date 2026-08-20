@@ -3019,6 +3019,318 @@
         "title": "ResourceWrite",
         "type": "object"
       },
+      "RunComparisonCandidateOut": {
+        "properties": {
+          "compatible": {
+            "title": "Compatible",
+            "type": "boolean"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "matched_metric_count": {
+            "title": "Matched Metric Count",
+            "type": "integer"
+          },
+          "metric_count": {
+            "title": "Metric Count",
+            "type": "integer"
+          },
+          "recommended": {
+            "default": false,
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          },
+          "run_number": {
+            "title": "Run Number",
+            "type": "string"
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "workflow_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Version Id"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_number",
+          "finished_at",
+          "verdict",
+          "workflow_version_id",
+          "compatible",
+          "warnings",
+          "matched_metric_count",
+          "metric_count"
+        ],
+        "title": "RunComparisonCandidateOut",
+        "type": "object"
+      },
+      "RunComparisonMetricOut": {
+        "properties": {
+          "absolute_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Absolute Delta"
+          },
+          "assessment": {
+            "enum": [
+              "improved",
+              "stable",
+              "regressed",
+              "added",
+              "missing",
+              "incompatible"
+            ],
+            "title": "Assessment",
+            "type": "string"
+          },
+          "baseline_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Value"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "metric_key": {
+            "title": "Metric Key",
+            "type": "string"
+          },
+          "metric_label": {
+            "title": "Metric Label",
+            "type": "string"
+          },
+          "percentage_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percentage Delta"
+          },
+          "source_file": {
+            "title": "Source File",
+            "type": "string"
+          },
+          "step_code": {
+            "title": "Step Code",
+            "type": "string"
+          },
+          "step_name": {
+            "title": "Step Name",
+            "type": "string"
+          },
+          "target_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Value"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "step_code",
+          "step_name",
+          "source_file",
+          "metric_key",
+          "metric_label",
+          "unit",
+          "baseline_value",
+          "target_value",
+          "absolute_delta",
+          "percentage_delta",
+          "assessment"
+        ],
+        "title": "RunComparisonMetricOut",
+        "type": "object"
+      },
+      "RunComparisonOut": {
+        "properties": {
+          "baseline_analysis_refs": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Baseline Analysis Refs",
+            "type": "array"
+          },
+          "baseline_metrics_changed": {
+            "title": "Baseline Metrics Changed",
+            "type": "boolean"
+          },
+          "baseline_run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Run Id"
+          },
+          "baseline_run_number": {
+            "title": "Baseline Run Number",
+            "type": "string"
+          },
+          "compatible": {
+            "title": "Compatible",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RunComparisonMetricOut"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "integer"
+          },
+          "target_analysis_refs": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Target Analysis Refs",
+            "type": "array"
+          },
+          "target_metrics_stale": {
+            "title": "Target Metrics Stale",
+            "type": "boolean"
+          },
+          "target_run_number": {
+            "title": "Target Run Number",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "baseline_run_id",
+          "target_run_number",
+          "baseline_run_number",
+          "target_analysis_refs",
+          "baseline_analysis_refs",
+          "rows",
+          "warnings",
+          "compatible",
+          "target_metrics_stale",
+          "baseline_metrics_changed",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RunComparisonOut",
+        "type": "object"
+      },
+      "RunComparisonWrite": {
+        "properties": {
+          "baseline_run_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Baseline Run Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "baseline_run_id"
+        ],
+        "title": "RunComparisonWrite",
+        "type": "object"
+      },
       "RunCreate": {
         "properties": {
           "plan_id": {
@@ -8300,6 +8612,193 @@
           }
         ],
         "summary": "Run Cancel"
+      }
+    },
+    "/api/v1/runs/{run_id}/comparison": {
+      "delete": {
+        "operationId": "delete_run_comparison_api_v1_runs__run_id__comparison_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Run Comparison"
+      },
+      "get": {
+        "operationId": "get_run_comparison_api_v1_runs__run_id__comparison_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/RunComparisonOut"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Run Comparison Api V1 Runs  Run Id  Comparison Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Run Comparison"
+      },
+      "put": {
+        "operationId": "put_run_comparison_api_v1_runs__run_id__comparison_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunComparisonWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunComparisonOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Put Run Comparison"
+      }
+    },
+    "/api/v1/runs/{run_id}/comparison-candidates": {
+      "get": {
+        "operationId": "list_run_comparison_candidates_api_v1_runs__run_id__comparison_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RunComparisonCandidateOut"
+                  },
+                  "title": "Response List Run Comparison Candidates Api V1 Runs  Run Id  Comparison Candidates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Run Comparison Candidates"
       }
     },
     "/api/v1/runs/{run_id}/confirm-wiring": {
