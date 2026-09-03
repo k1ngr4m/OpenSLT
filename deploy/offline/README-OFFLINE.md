@@ -292,6 +292,12 @@ deploy/offline/build-offline-bundle.sh \
 时启用的软件源，正式发布前应在关闭所有外部仓库的干净 RHEL 7.9 测试机上验证 RPM
 能够完整安装。
 
+默认 RPM 清单包含智能用例知识同步所需的 `subversion`。安装后必须确认：
+
+```bash
+svn --version --quiet
+```
+
 ## 6. 校验与传输
 
 在外网制包机检查输出：
@@ -625,6 +631,7 @@ reload 服务。
 | `/etc/openslt/openslt.env` | 数据库、端口和初始管理员配置 | `root:openslt 0640` |
 | `/etc/openslt/database-mode` | 持久化数据库模式 | `root:root 0644` |
 | `/var/lib/openslt/artifacts` | 抓包、解析、统计和报告产物 | `openslt:openslt` |
+| `/var/lib/openslt/knowledge` | SVN working copy 与已发布 embedding 索引 | `openslt:openslt 0700` |
 | `/var/lib/openslt/secrets` | JWT 与凭据加密密钥 | 目录 `0700`、文件 `0600` |
 | `/var/lib/openslt/installed-bundle-version` | 已安装离线包版本 | `root:root 0644` |
 | `/var/log/openslt` | 应用日志 | `openslt:openslt` |
@@ -763,6 +770,7 @@ DATABASE_MODE="$(cat /etc/openslt/database-mode 2>/dev/null || printf existing)"
 2. `/etc/openslt/openslt.env` 和 `/etc/openslt/database-mode`。
 3. `/var/lib/openslt/secrets`。
 4. `/var/lib/openslt/artifacts`。
+5. `/var/lib/openslt/knowledge`。
 
 日志和已安装版本文件建议一并保留，便于审计和定位。备份必须存放到另一台设备或受控
 备份系统，不能只留在应用服务器本机。
@@ -830,7 +838,9 @@ sha256sum -c SHA256SUMS
 systemctl stop openslt-api
 tar -C / -xzf openslt-files.tar.gz
 chown -R openslt:openslt /var/lib/openslt/artifacts /var/lib/openslt/secrets
+chown -R openslt:openslt /var/lib/openslt/knowledge
 chmod 0700 /var/lib/openslt/secrets
+chmod 0700 /var/lib/openslt/knowledge
 find /var/lib/openslt/secrets -maxdepth 1 -type f -exec chmod 0600 {} \;
 chown root:openslt /etc/openslt/openslt.env
 chmod 0640 /etc/openslt/openslt.env
@@ -889,7 +899,10 @@ curl -fsSI "http://127.0.0.1:${FRONTEND_PORT:-7777}/"
 systemctl is-enabled openslt-api nginx
 systemctl is-active openslt-api nginx
 journalctl -u openslt-api -n 100 --no-pager
+svn --version --quiet
 ```
+
+启用智能用例前，还应在管理页面完成 SVN 白名单与内网 embedding 配置，依次执行“测试连接”和“立即同步”，确认页面显示最近成功 revision、向量维度和文件变化数。HTTP 地址必须由管理员显式确认明文传输风险。
 
 `provision` 和 `initialize` 模式还需检查：
 

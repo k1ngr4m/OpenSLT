@@ -19,7 +19,7 @@ from app.services.run_state import TERMINAL_RUN_STATUSES
 
 
 WORKER_ID = "%s:%s:%s" % (socket.gethostname(), os.getpid(), uuid4().hex[:8])
-TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step"})
+TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step", "svn_sync"})
 
 
 def _payload_run_id(payload: typing.Mapping[str, typing.Any]) -> typing.Optional[int]:
@@ -195,12 +195,19 @@ def recover_abandoned_tasks(db: Session) -> int:
 async def _execute_payload(task: DurableTask) -> None:
     from app.services import orchestration
 
-    run_id = int(task.payload["run_id"])
-    if task.task_type == "start_run":
+    if task.task_type == "svn_sync":
+        from app.services.svn_knowledge import execute_svn_sync
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, execute_svn_sync, int(task.payload["source_id"]))
+    elif task.task_type == "start_run":
+        run_id = int(task.payload["run_id"])
         await orchestration.start_run(run_id)
     elif task.task_type == "continue_after_wiring":
+        run_id = int(task.payload["run_id"])
         await orchestration.continue_after_wiring(run_id)
     elif task.task_type == "start_workflow_step":
+        run_id = int(task.payload["run_id"])
         await orchestration.start_workflow_run(run_id, int(task.payload["step_id"]))
     else:
         raise ValueError("unsupported durable task type: %s" % task.task_type)

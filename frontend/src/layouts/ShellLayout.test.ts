@@ -51,6 +51,7 @@ async function mountLayout(path: string, role: User['role']) {
       { path: '/runs', component: EmptyView, meta: { section: 'home' } },
       { path: '/plans', component: EmptyView, meta: { section: 'management' } },
       { path: '/resources', component: EmptyView, meta: { section: 'management' } },
+      { path: '/smart-cases', component: EmptyView, meta: { section: 'management' } },
       { path: '/logs', component: EmptyView, meta: { section: 'management' } },
       { path: '/users', component: EmptyView, meta: { section: 'management' } },
       { path: '/login', component: EmptyView },
@@ -105,6 +106,9 @@ describe('ShellLayout navigation', () => {
     expect(testerNavigation.text()).toContain('方案与场景')
     expect(testerNavigation.text()).toContain('资源管理')
     expect(testerNavigation.text()).toContain('日志中心')
+    expect(testerNavigation.text()).toContain('智能用例')
+    expect(testerNavigation.text().indexOf('资源管理')).toBeLessThan(testerNavigation.text().indexOf('智能用例'))
+    expect(testerNavigation.text().indexOf('智能用例')).toBeLessThan(testerNavigation.text().indexOf('系统'))
     expect(testerNavigation.text()).not.toContain('用户管理')
     expect(testerNavigation.text()).not.toContain('工作台')
     expect(tester.wrapper.get('.management-center').classes()).toContain('is-active')
@@ -125,6 +129,7 @@ describe('ShellLayout navigation', () => {
     expect(navigation.text()).toContain('方案与场景')
     expect(navigation.text()).toContain('资源管理')
     expect(navigation.text()).not.toContain('日志中心')
+    expect(navigation.text()).not.toContain('智能用例')
     management.wrapper.unmount()
   })
 

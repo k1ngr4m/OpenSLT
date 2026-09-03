@@ -1371,6 +1371,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/smart-cases/knowledge-search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Knowledge */
+        post: operations["search_knowledge_api_v1_smart_cases_knowledge_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/knowledge-source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Knowledge Source */
+        get: operations["get_knowledge_source_api_v1_smart_cases_knowledge_source_get"];
+        /** Save Knowledge Source */
+        put: operations["save_knowledge_source_api_v1_smart_cases_knowledge_source_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/knowledge-source/connection-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connection Test */
+        post: operations["connection_test_api_v1_smart_cases_knowledge_source_connection_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/knowledge-source/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Now */
+        post: operations["sync_now_api_v1_smart_cases_knowledge_source_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/knowledge-source/sync-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sync Status */
+        get: operations["sync_status_api_v1_smart_cases_knowledge_source_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/users": {
         parameters: {
             query?: never;
@@ -1746,6 +1832,38 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** KnowledgeSearchOut */
+        KnowledgeSearchOut: {
+            /** Query */
+            query: string;
+            /** Results */
+            results: components["schemas"]["KnowledgeSearchResult"][];
+        };
+        /** KnowledgeSearchRequest */
+        KnowledgeSearchRequest: {
+            /** Query */
+            query: string;
+            /**
+             * Top K
+             * @default 10
+             */
+            top_k: number;
+        };
+        /** KnowledgeSearchResult */
+        KnowledgeSearchResult: {
+            /** Keyword Score */
+            keyword_score: number;
+            /** Revision */
+            revision: string;
+            /** Score */
+            score: number;
+            /** Snippet */
+            snippet: string;
+            /** Source Path */
+            source_path: string;
+            /** Vector Score */
+            vector_score: number;
         };
         /** LogDetailOut */
         LogDetailOut: {
@@ -3179,6 +3297,202 @@ export interface components {
          * @enum {string}
          */
         StepStatus: "pending" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
+        /** SvnConnectionTestOut */
+        SvnConnectionTestOut: {
+            /** Checked Paths */
+            checked_paths: string[];
+            /** Embedding Dimensions */
+            embedding_dimensions: number;
+            /** Ok */
+            ok: boolean;
+            /** Svn Version */
+            svn_version: string;
+        };
+        /** SvnKnowledgeConnectionTest */
+        SvnKnowledgeConnectionTest: {
+            /**
+             * Allow Insecure Embedding Http
+             * @default false
+             */
+            allow_insecure_embedding_http: boolean;
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /** Embedding Api Key */
+            embedding_api_key?: string | null;
+            /** Embedding Base Url */
+            embedding_base_url: string;
+            /** Embedding Model */
+            embedding_model: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Include Paths */
+            include_paths: string[];
+            /** Password */
+            password?: string | null;
+            /** Repository Url */
+            repository_url: string;
+            /**
+             * Sync Interval Minutes
+             * @default 30
+             * @constant
+             */
+            sync_interval_minutes: 30;
+            /** Username */
+            username: string;
+        };
+        /** SvnKnowledgeSourceOut */
+        SvnKnowledgeSourceOut: {
+            /**
+             * Allow Insecure Embedding Http
+             * @default false
+             */
+            allow_insecure_embedding_http: boolean;
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /** Configured */
+            configured: boolean;
+            /**
+             * Embedding Base Url
+             * @default
+             */
+            embedding_base_url: string;
+            /**
+             * Embedding Model
+             * @default
+             */
+            embedding_model: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Has Embedding Api Key
+             * @default false
+             */
+            has_embedding_api_key: boolean;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
+            /** Include Paths */
+            include_paths?: string[];
+            /**
+             * Repository Url
+             * @default
+             */
+            repository_url: string;
+            /**
+             * Sync Interval Minutes
+             * @default 30
+             */
+            sync_interval_minutes: number;
+            /** Updated At */
+            updated_at?: string | null;
+            /**
+             * Username
+             * @default
+             */
+            username: string;
+        };
+        /** SvnKnowledgeSourceWrite */
+        SvnKnowledgeSourceWrite: {
+            /**
+             * Allow Insecure Embedding Http
+             * @default false
+             */
+            allow_insecure_embedding_http: boolean;
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /** Embedding Api Key */
+            embedding_api_key?: string | null;
+            /** Embedding Base Url */
+            embedding_base_url: string;
+            /** Embedding Model */
+            embedding_model: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Include Paths */
+            include_paths: string[];
+            /** Password */
+            password?: string | null;
+            /** Repository Url */
+            repository_url: string;
+            /**
+             * Sync Interval Minutes
+             * @default 30
+             * @constant
+             */
+            sync_interval_minutes: 30;
+            /** Username */
+            username: string;
+        };
+        /** SvnSyncStatusOut */
+        SvnSyncStatusOut: {
+            /** Changes */
+            changes?: {
+                [key: string]: number;
+            };
+            /** Client Ready */
+            client_ready: boolean;
+            /** Configured */
+            configured: boolean;
+            /** Embedding Dimensions */
+            embedding_dimensions?: number | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Failed File Count
+             * @default 0
+             */
+            failed_file_count: number;
+            /**
+             * File Count
+             * @default 0
+             */
+            file_count: number;
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Last Success At */
+            last_success_at?: string | null;
+            /** Revisions */
+            revisions?: {
+                [key: string]: string;
+            };
+            /** Status */
+            status: string;
+            /** Svn Version */
+            svn_version?: string | null;
+            /** Task Id */
+            task_id?: number | null;
+        };
+        /** SvnSyncTaskOut */
+        SvnSyncTaskOut: {
+            /** Reused */
+            reused: boolean;
+            /** Status */
+            status: string;
+            /** Task Id */
+            task_id: number;
+        };
         /** TokenPair */
         TokenPair: {
             /** Access Token */
@@ -6741,6 +7055,165 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_knowledge_api_v1_smart_cases_knowledge_search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSearchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_knowledge_source_api_v1_smart_cases_knowledge_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnKnowledgeSourceOut"];
+                };
+            };
+        };
+    };
+    save_knowledge_source_api_v1_smart_cases_knowledge_source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SvnKnowledgeSourceWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnKnowledgeSourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connection_test_api_v1_smart_cases_knowledge_source_connection_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SvnKnowledgeConnectionTest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnConnectionTestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_now_api_v1_smart_cases_knowledge_source_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnSyncTaskOut"];
+                };
+            };
+        };
+    };
+    sync_status_api_v1_smart_cases_knowledge_source_sync_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnSyncStatusOut"];
                 };
             };
         };

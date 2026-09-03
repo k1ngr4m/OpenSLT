@@ -142,6 +142,7 @@ ENVIRONMENT=development
 TZ=Asia/Shanghai
 DATABASE_URL=sqlite:///./backend/data/openslt.sqlite3
 ARTIFACT_ROOT=./backend/data/artifacts
+KNOWLEDGE_ROOT=./backend/data/knowledge
 LOG_DIR=./backend/logs
 ENABLE_INTERNAL_SCHEDULER=true
 INITIAL_ADMIN_USERNAME=admin

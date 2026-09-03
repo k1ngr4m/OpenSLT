@@ -8,3 +8,4 @@ mariadb-server
 mariadb-libs
 libaio
 numactl-libs
+subversion

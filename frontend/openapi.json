@@ -892,6 +892,87 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "KnowledgeSearchOut": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSearchResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "query",
+          "results"
+        ],
+        "title": "KnowledgeSearchOut",
+        "type": "object"
+      },
+      "KnowledgeSearchRequest": {
+        "properties": {
+          "query": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 10,
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "KnowledgeSearchRequest",
+        "type": "object"
+      },
+      "KnowledgeSearchResult": {
+        "properties": {
+          "keyword_score": {
+            "title": "Keyword Score",
+            "type": "number"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "snippet": {
+            "title": "Snippet",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          },
+          "vector_score": {
+            "title": "Vector Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source_path",
+          "revision",
+          "snippet",
+          "score",
+          "vector_score",
+          "keyword_score"
+        ],
+        "title": "KnowledgeSearchResult",
+        "type": "object"
+      },
       "LogDetailOut": {
         "properties": {
           "payload": {
@@ -4858,6 +4939,444 @@
         ],
         "title": "StepStatus",
         "type": "string"
+      },
+      "SvnConnectionTestOut": {
+        "properties": {
+          "checked_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checked Paths",
+            "type": "array"
+          },
+          "embedding_dimensions": {
+            "title": "Embedding Dimensions",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "svn_version": {
+            "title": "Svn Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok",
+          "svn_version",
+          "checked_paths",
+          "embedding_dimensions"
+        ],
+        "title": "SvnConnectionTestOut",
+        "type": "object"
+      },
+      "SvnKnowledgeConnectionTest": {
+        "properties": {
+          "allow_insecure_embedding_http": {
+            "default": false,
+            "title": "Allow Insecure Embedding Http",
+            "type": "boolean"
+          },
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "embedding_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Api Key"
+          },
+          "embedding_base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Embedding Base Url",
+            "type": "string"
+          },
+          "embedding_model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "include_paths": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Include Paths",
+            "type": "array"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "repository_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "sync_interval_minutes": {
+            "const": 30,
+            "default": 30,
+            "title": "Sync Interval Minutes",
+            "type": "integer"
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_url",
+          "username",
+          "embedding_base_url",
+          "embedding_model",
+          "include_paths"
+        ],
+        "title": "SvnKnowledgeConnectionTest",
+        "type": "object"
+      },
+      "SvnKnowledgeSourceOut": {
+        "properties": {
+          "allow_insecure_embedding_http": {
+            "default": false,
+            "title": "Allow Insecure Embedding Http",
+            "type": "boolean"
+          },
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "embedding_base_url": {
+            "default": "",
+            "title": "Embedding Base Url",
+            "type": "string"
+          },
+          "embedding_model": {
+            "default": "",
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "has_embedding_api_key": {
+            "default": false,
+            "title": "Has Embedding Api Key",
+            "type": "boolean"
+          },
+          "has_password": {
+            "default": false,
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "include_paths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Include Paths",
+            "type": "array"
+          },
+          "repository_url": {
+            "default": "",
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "sync_interval_minutes": {
+            "default": 30,
+            "title": "Sync Interval Minutes",
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "username": {
+            "default": "",
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "SvnKnowledgeSourceOut",
+        "type": "object"
+      },
+      "SvnKnowledgeSourceWrite": {
+        "properties": {
+          "allow_insecure_embedding_http": {
+            "default": false,
+            "title": "Allow Insecure Embedding Http",
+            "type": "boolean"
+          },
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "embedding_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Api Key"
+          },
+          "embedding_base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Embedding Base Url",
+            "type": "string"
+          },
+          "embedding_model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Embedding Model",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "include_paths": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Include Paths",
+            "type": "array"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "repository_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Repository Url",
+            "type": "string"
+          },
+          "sync_interval_minutes": {
+            "const": 30,
+            "default": 30,
+            "title": "Sync Interval Minutes",
+            "type": "integer"
+          },
+          "username": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_url",
+          "username",
+          "embedding_base_url",
+          "embedding_model",
+          "include_paths"
+        ],
+        "title": "SvnKnowledgeSourceWrite",
+        "type": "object"
+      },
+      "SvnSyncStatusOut": {
+        "properties": {
+          "changes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Changes",
+            "type": "object"
+          },
+          "client_ready": {
+            "title": "Client Ready",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "embedding_dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Dimensions"
+          },
+          "embedding_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_file_count": {
+            "default": 0,
+            "title": "Failed File Count",
+            "type": "integer"
+          },
+          "file_count": {
+            "default": 0,
+            "title": "File Count",
+            "type": "integer"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "revisions": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Revisions",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "svn_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Svn Version"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "configured",
+          "client_ready",
+          "status"
+        ],
+        "title": "SvnSyncStatusOut",
+        "type": "object"
+      },
+      "SvnSyncTaskOut": {
+        "properties": {
+          "reused": {
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_id": {
+            "title": "Task Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "task_id",
+          "status",
+          "reused"
+        ],
+        "title": "SvnSyncTaskOut",
+        "type": "object"
       },
       "TokenPair": {
         "properties": {
@@ -11131,6 +11650,202 @@
           }
         ],
         "summary": "Archive Workflow Version"
+      }
+    },
+    "/api/v1/smart-cases/knowledge-search": {
+      "post": {
+        "operationId": "search_knowledge_api_v1_smart_cases_knowledge_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search Knowledge"
+      }
+    },
+    "/api/v1/smart-cases/knowledge-source": {
+      "get": {
+        "operationId": "get_knowledge_source_api_v1_smart_cases_knowledge_source_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SvnKnowledgeSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Knowledge Source"
+      },
+      "put": {
+        "operationId": "save_knowledge_source_api_v1_smart_cases_knowledge_source_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SvnKnowledgeSourceWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SvnKnowledgeSourceOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Knowledge Source"
+      }
+    },
+    "/api/v1/smart-cases/knowledge-source/connection-test": {
+      "post": {
+        "operationId": "connection_test_api_v1_smart_cases_knowledge_source_connection_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SvnKnowledgeConnectionTest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SvnConnectionTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Connection Test"
+      }
+    },
+    "/api/v1/smart-cases/knowledge-source/sync": {
+      "post": {
+        "operationId": "sync_now_api_v1_smart_cases_knowledge_source_sync_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SvnSyncTaskOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sync Now"
+      }
+    },
+    "/api/v1/smart-cases/knowledge-source/sync-status": {
+      "get": {
+        "operationId": "sync_status_api_v1_smart_cases_knowledge_source_sync_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SvnSyncStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Sync Status"
       }
     },
     "/api/v1/users": {

@@ -30,6 +30,7 @@ from app.services.orchestration import (
     expire_timed_out_runs,
     reclaim_expired_locks,
 )
+from app.services.svn_knowledge import enqueue_due_svn_syncs, svn_client_status
 from app.version import APP_VERSION
 
 
@@ -52,6 +53,7 @@ async def internal_scheduler() -> None:
     next_lock_reclaim = loop.time()
     next_retention_cleanup = loop.time() + 300
     next_observability_retry = loop.time() + 60
+    next_svn_enqueue = loop.time()
     while True:
         now = loop.time()
         db = SessionLocal()
@@ -60,6 +62,9 @@ async def internal_scheduler() -> None:
                 expire_timed_out_runs(db)
                 reclaim_expired_locks(db)
                 next_lock_reclaim = now + 60
+            if now >= next_svn_enqueue:
+                enqueue_due_svn_syncs(db)
+                next_svn_enqueue = now + 60
             task_ids = claim_due_tasks(db)
         except Exception:
             logger.exception("internal_scheduler_iteration_failed")
@@ -96,6 +101,11 @@ async def lifespan(_: FastAPI):
             version=database_server.raw_version,
         )
     seed_database()
+    svn_status = svn_client_status()
+    if svn_status["ready"]:
+        logger.info("svn_client_ready", version=svn_status["version"])
+    else:
+        logger.warning("svn_client_unavailable", message=svn_status["error"])
     recovery_db = SessionLocal()
     try:
         recovered = recover_abandoned_tasks(recovery_db)

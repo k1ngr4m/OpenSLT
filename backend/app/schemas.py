@@ -33,6 +33,89 @@ class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SvnKnowledgeSourceWrite(BaseModel):
+    repository_url: str = Field(min_length=1, max_length=1024)
+    username: str = Field(min_length=1, max_length=128)
+    password: typing.Union[str, None] = None
+    embedding_base_url: str = Field(min_length=1, max_length=1024)
+    embedding_model: str = Field(min_length=1, max_length=255)
+    embedding_api_key: typing.Union[str, None] = None
+    allow_insecure_embedding_http: bool = False
+    include_paths: typing.List[str] = Field(min_length=1)
+    sync_interval_minutes: Literal[30] = 30
+    enabled: bool = True
+    allow_insecure_http: bool = False
+
+
+class SvnKnowledgeConnectionTest(SvnKnowledgeSourceWrite):
+    pass
+
+
+class SvnKnowledgeSourceOut(BaseModel):
+    configured: bool
+    repository_url: str = ""
+    username: str = ""
+    has_password: bool = False
+    embedding_base_url: str = ""
+    embedding_model: str = ""
+    has_embedding_api_key: bool = False
+    allow_insecure_embedding_http: bool = False
+    include_paths: typing.List[str] = Field(default_factory=list)
+    sync_interval_minutes: int = 30
+    enabled: bool = False
+    allow_insecure_http: bool = False
+    updated_at: typing.Union[datetime, None] = None
+
+
+class SvnConnectionTestOut(BaseModel):
+    ok: bool
+    svn_version: str
+    checked_paths: typing.List[str]
+    embedding_dimensions: int
+
+
+class SvnSyncTaskOut(BaseModel):
+    task_id: int
+    status: str
+    reused: bool
+
+
+class SvnSyncStatusOut(BaseModel):
+    configured: bool
+    client_ready: bool
+    svn_version: typing.Union[str, None] = None
+    embedding_model: typing.Union[str, None] = None
+    embedding_dimensions: typing.Union[int, None] = None
+    status: str
+    task_id: typing.Union[int, None] = None
+    last_attempt_at: typing.Union[datetime, None] = None
+    last_success_at: typing.Union[datetime, None] = None
+    revisions: typing.Dict[str, str] = Field(default_factory=dict)
+    file_count: int = 0
+    failed_file_count: int = 0
+    changes: typing.Dict[str, int] = Field(default_factory=dict)
+    error: typing.Union[str, None] = None
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+    top_k: int = Field(default=10, ge=1, le=50)
+
+
+class KnowledgeSearchResult(BaseModel):
+    source_path: str
+    revision: str
+    snippet: str
+    score: float
+    vector_score: float
+    keyword_score: float
+
+
+class KnowledgeSearchOut(BaseModel):
+    query: str
+    results: typing.List[KnowledgeSearchResult]
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

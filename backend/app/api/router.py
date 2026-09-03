@@ -7,6 +7,7 @@ from app.api.routes import (
     plans,
     resources,
     runs,
+    smart_cases,
     websockets,
     workflows,
 )
@@ -19,4 +20,5 @@ router.include_router(plans.router)
 router.include_router(workflows.router)
 router.include_router(runs.router)
 router.include_router(observability.router)
+router.include_router(smart_cases.router)
 router.include_router(websockets.router)

@@ -167,6 +167,7 @@ environment.update(
         "ENVIRONMENT": "production",
         "TZ": "Asia/Shanghai",
         "ARTIFACT_ROOT": "/var/lib/openslt/artifacts",
+        "KNOWLEDGE_ROOT": "/var/lib/openslt/knowledge",
         "LOG_DIR": "/var/log/openslt",
         "LOG_LEVEL": "INFO",
         "APP_LOG_RETENTION_DAYS": "90",
@@ -188,6 +189,7 @@ PY
 fi
 
 install -d -o openslt -g openslt -m 0700 /var/lib/openslt/secrets
+install -d -o openslt -g openslt -m 0700 /var/lib/openslt/knowledge
 chown -R openslt:openslt /var/lib/openslt /var/log/openslt
 find /var/lib/openslt/secrets -maxdepth 1 -type f -exec chmod 0600 {} \;
 render_runtime_configuration /opt/openslt

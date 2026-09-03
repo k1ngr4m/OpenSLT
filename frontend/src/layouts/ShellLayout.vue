@@ -15,6 +15,7 @@ import {
   Expand,
   House,
   Setting,
+  MagicStick,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -39,7 +40,7 @@ const sidebarClass = computed(() => ({
 const managementMode = computed(() => route.meta.section === 'management')
 const activePath = computed(() => {
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
-  return ['/dashboard', '/runs', '/plans', '/resources', '/logs', '/users'].includes(first) ? first : '/dashboard'
+  return ['/dashboard', '/runs', '/plans', '/resources', '/smart-cases', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
 const navToggleLabel = computed(() => {
   if (isMobile.value) return '打开导航'
@@ -120,6 +121,10 @@ onBeforeUnmount(() => {
             <el-menu-item index="/resources">
               <el-icon><SetUp /></el-icon>
               <template #title>资源管理</template>
+            </el-menu-item>
+            <el-menu-item v-if="auth.canOperate" index="/smart-cases">
+              <el-icon><MagicStick /></el-icon>
+              <template #title>智能用例</template>
             </el-menu-item>
 
             <div v-if="auth.canOperate && !collapsed" class="nav-label">系统</div>

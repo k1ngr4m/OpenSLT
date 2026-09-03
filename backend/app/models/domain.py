@@ -47,6 +47,32 @@ class DatabaseConfigTemplate(TimestampMixin, Base):
     user: Mapped['User'] = relationship(back_populates="database_config_templates")
 
 
+class SvnKnowledgeSource(TimestampMixin, Base):
+    __tablename__ = "t_svn_knowledge_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    repository_url: Mapped[str] = mapped_column(String(1024))
+    username: Mapped[str] = mapped_column(String(128))
+    encrypted_password: Mapped[str] = mapped_column(Text)
+    embedding_base_url: Mapped[str] = mapped_column(String(1024), default="")
+    embedding_model: Mapped[str] = mapped_column(String(255), default="")
+    encrypted_embedding_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    allow_insecure_embedding_http: Mapped[bool] = mapped_column(Boolean, default=False)
+    embedding_dimensions: Mapped[typing.Union[int, None]] = mapped_column(Integer)
+    include_paths: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
+    sync_interval_minutes: Mapped[int] = mapped_column(Integer, default=30)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_insecure_http: Mapped[bool] = mapped_column(Boolean, default=False)
+    sync_status: Mapped[str] = mapped_column(String(24), default="never")
+    last_attempt_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    last_success_at: Mapped[typing.Union[datetime, None]] = mapped_column(BeijingDateTime())
+    last_revisions: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    file_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_file_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_changes: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    last_error: Mapped[typing.Union[str, None]] = mapped_column(Text)
+
+
 class RefreshToken(Base):
     __tablename__ = "t_refresh_tokens"
     id: Mapped[int] = mapped_column(primary_key=True)

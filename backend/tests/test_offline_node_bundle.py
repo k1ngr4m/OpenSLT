@@ -110,3 +110,9 @@ def test_intranet_frontend_builder_is_strictly_offline() -> None:
     assert "run build" in script
     assert "systemctl reload nginx" in script
     assert "npm install" not in script
+
+
+def test_svn_client_is_included_in_the_rhel7_offline_bundle() -> None:
+    packages = (OFFLINE_DIR / "rpm-packages-rhel7.txt").read_text(encoding="utf-8").splitlines()
+    assert "subversion" in packages
+    assert "svn --version --quiet" in _script("README-OFFLINE.md")

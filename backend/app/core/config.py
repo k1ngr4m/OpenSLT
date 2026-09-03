@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     jwt_refresh_days: int = 7
     credential_encryption_key: typing.Union[str, None] = None
     artifact_root: Path = Path("./backend/data/artifacts")
+    knowledge_root: Path = Path("./backend/data/knowledge")
     log_dir: Path = Path("./backend/logs")
     log_level: str = "INFO"
     app_log_retention_days: int = 90
@@ -89,6 +90,11 @@ class Settings(BaseSettings):
             candidate = Path(__file__).resolve().parents[3] / "frontend" / "dist"
             self.frontend_dist = candidate if candidate.is_dir() else None
         self.artifact_root.mkdir(parents=True, exist_ok=True)
+        self.knowledge_root.mkdir(parents=True, exist_ok=True)
+        try:
+            self.knowledge_root.chmod(0o700)
+        except OSError:
+            pass
         self.log_dir.mkdir(parents=True, exist_ok=True)
         if self.database_url.startswith("sqlite:///"):
             database_path = self.database_url[len("sqlite:///") :]

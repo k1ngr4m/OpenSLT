@@ -23,6 +23,7 @@ step_id_ctx: ContextVar[typing.Union[int, None]] = ContextVar("step_id", default
 SENSITIVE_KEYS = {
     "access_token",
     "authorization",
+    "api_key",
     "cookie",
     "credential",
     "database_password",
@@ -79,8 +80,8 @@ def _is_sensitive_key(key: str) -> bool:
     if normalized in {item.replace("-", "_") for item in SENSITIVE_KEYS}:
         return True
     return normalized.endswith(
-        ("_password", "_passwd", "_private_key", "_token", "_secret", "_cookie")
-    ) or normalized.startswith(("encrypted_password", "encrypted_private_key"))
+        ("_password", "_passwd", "_private_key", "_token", "_secret", "_cookie", "_api_key")
+    ) or normalized.startswith(("encrypted_password", "encrypted_private_key", "encrypted_embedding_api_key"))
 
 
 def bounded_json(value: Any, limit: int) -> typing.Tuple[Any, bool]:

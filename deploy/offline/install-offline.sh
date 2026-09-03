@@ -230,6 +230,7 @@ getent group openslt >/dev/null 2>&1 || groupadd --system openslt
 id openslt >/dev/null 2>&1 || useradd --system --gid openslt --home-dir /var/lib/openslt --shell /sbin/nologin openslt
 install -d -o openslt -g openslt -m 0750 /var/lib/openslt /var/lib/openslt/artifacts /var/log/openslt
 install -d -o openslt -g openslt -m 0700 /var/lib/openslt/secrets
+install -d -o openslt -g openslt -m 0700 /var/lib/openslt/knowledge
 install -d -o root -g openslt -m 0750 /etc/openslt
 install -d -o root -g root -m 0755 /opt/openslt
 install_canonical_environment "$ENV_FILE"
@@ -305,6 +306,7 @@ environment.update(
         "ENVIRONMENT": "production",
         "TZ": "Asia/Shanghai",
         "ARTIFACT_ROOT": "/var/lib/openslt/artifacts",
+        "KNOWLEDGE_ROOT": "/var/lib/openslt/knowledge",
         "LOG_DIR": "/var/log/openslt",
         "LOG_LEVEL": "INFO",
         "APP_LOG_RETENTION_DAYS": "90",
