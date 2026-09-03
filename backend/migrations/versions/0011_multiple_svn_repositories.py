@@ -27,54 +27,78 @@ def _mysql_options() -> dict:
 
 
 def upgrade() -> None:
-    op.add_column(
-        "t_svn_knowledge_sources",
+    context = op.get_context()
+    inspector = None if getattr(context, "as_sql", False) else sa.inspect(op.get_bind())
+    source_columns = (
+        {column["name"]: column for column in inspector.get_columns("t_svn_knowledge_sources")}
+        if inspector
+        else {}
+    )
+    columns = (
         sa.Column("llm_base_url", sa.String(length=1024), nullable=False, server_default=""),
-    )
-    op.add_column(
-        "t_svn_knowledge_sources",
         sa.Column("llm_model", sa.String(length=255), nullable=False, server_default=""),
-    )
-    op.add_column("t_svn_knowledge_sources", sa.Column("encrypted_llm_api_key", sa.Text(), nullable=True))
-    op.add_column(
-        "t_svn_knowledge_sources",
-        sa.Column("allow_insecure_llm_http", sa.Boolean(), nullable=False, server_default=sa.false()),
-    )
-    op.add_column(
-        "t_svn_knowledge_sources",
+        sa.Column("encrypted_llm_api_key", sa.Text(), nullable=True),
+        sa.Column(
+            "allow_insecure_llm_http",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.false(),
+        ),
         sa.Column("repository_urls", JSONText(), nullable=True),
     )
+    for column in columns:
+        if not inspector or column.name not in source_columns:
+            op.add_column("t_svn_knowledge_sources", column)
     op.execute(sa.text("UPDATE t_svn_knowledge_sources SET repository_urls = '[]' WHERE repository_urls IS NULL"))
-    with op.batch_alter_table("t_svn_knowledge_sources") as batch_op:
-        batch_op.alter_column("repository_urls", existing_type=JSONText(), nullable=False)
-    op.create_table(
-        "t_smart_case_generations",
-        sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("requirement_path", sa.String(length=1024), nullable=False),
-        sa.Column("requirement_revision", sa.String(length=64), nullable=False),
-        sa.Column("requirement_no", sa.String(length=64), nullable=True),
-        sa.Column("requirement_name", sa.String(length=255), nullable=False),
-        sa.Column("status", sa.String(length=24), nullable=False),
-        sa.Column("llm_model", sa.String(length=255), nullable=False),
-        sa.Column("index_revisions", JSONText(), nullable=False),
-        sa.Column("referenced_sources", JSONText(), nullable=False),
-        sa.Column("result_cases", JSONText(), nullable=False),
-        sa.Column("case_count", sa.Integer(), nullable=False),
-        sa.Column("artifact_path", sa.String(length=1024), nullable=True),
-        sa.Column("artifact_size", sa.Integer(), nullable=False),
-        sa.Column("artifact_checksum", sa.String(length=64), nullable=True),
-        sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("created_by", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["created_by"], ["t_users.id"]),
-        sa.PrimaryKeyConstraint("id"),
-        **_mysql_options(),
+    repository_urls_nullable = (
+        not inspector
+        or "repository_urls" not in source_columns
+        or source_columns["repository_urls"]["nullable"]
     )
-    op.create_index("ix_t_smart_case_generations_requirement_path", "t_smart_case_generations", ["requirement_path"])
-    op.create_index("ix_t_smart_case_generations_requirement_no", "t_smart_case_generations", ["requirement_no"])
-    op.create_index("ix_t_smart_case_generations_status", "t_smart_case_generations", ["status"])
-    op.create_index("ix_t_smart_case_generations_created_by", "t_smart_case_generations", ["created_by"])
+    if repository_urls_nullable:
+        with op.batch_alter_table("t_svn_knowledge_sources") as batch_op:
+            batch_op.alter_column("repository_urls", existing_type=JSONText(), nullable=False)
+
+    generation_table_exists = inspector is not None and inspector.has_table("t_smart_case_generations")
+    if not generation_table_exists:
+        op.create_table(
+            "t_smart_case_generations",
+            sa.Column("id", sa.Integer(), nullable=False),
+            sa.Column("requirement_path", sa.String(length=1024), nullable=False),
+            sa.Column("requirement_revision", sa.String(length=64), nullable=False),
+            sa.Column("requirement_no", sa.String(length=64), nullable=True),
+            sa.Column("requirement_name", sa.String(length=255), nullable=False),
+            sa.Column("status", sa.String(length=24), nullable=False),
+            sa.Column("llm_model", sa.String(length=255), nullable=False),
+            sa.Column("index_revisions", JSONText(), nullable=False),
+            sa.Column("referenced_sources", JSONText(), nullable=False),
+            sa.Column("result_cases", JSONText(), nullable=False),
+            sa.Column("case_count", sa.Integer(), nullable=False),
+            sa.Column("artifact_path", sa.String(length=1024), nullable=True),
+            sa.Column("artifact_size", sa.Integer(), nullable=False),
+            sa.Column("artifact_checksum", sa.String(length=64), nullable=True),
+            sa.Column("error", sa.Text(), nullable=True),
+            sa.Column("created_by", sa.Integer(), nullable=False),
+            sa.Column("created_at", sa.DateTime(), nullable=False),
+            sa.Column("updated_at", sa.DateTime(), nullable=False),
+            sa.ForeignKeyConstraint(["created_by"], ["t_users.id"]),
+            sa.PrimaryKeyConstraint("id"),
+            **_mysql_options(),
+        )
+    existing_indexes = (
+        {index["name"] for index in inspector.get_indexes("t_smart_case_generations")}
+        if generation_table_exists
+        else set()
+    )
+    indexes = (
+        ("ix_t_smart_case_generations_requirement_path", ["requirement_path"]),
+        ("ix_t_smart_case_generations_requirement_no", ["requirement_no"]),
+        ("ix_t_smart_case_generations_status", ["status"]),
+        ("ix_t_smart_case_generations_created_by", ["created_by"]),
+    )
+    for name, index_columns in indexes:
+        if name not in existing_indexes:
+            op.create_index(name, "t_smart_case_generations", index_columns)
 
 
 def downgrade() -> None:

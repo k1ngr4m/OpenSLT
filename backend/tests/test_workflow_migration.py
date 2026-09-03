@@ -314,6 +314,29 @@ def test_model_management_migration_preserves_existing_configuration(tmp_path: P
         )
 
 
+def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "resumed-smart-case.sqlite3"
+    _alembic(database_path, "upgrade", "0011")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            f"UPDATE {VERSION_TABLE} SET version_num = '0010' WHERE version_num = '0011'"
+        )
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "head")
+
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    assert set(inspector.get_table_names()) == set(Base.metadata.tables) | {VERSION_TABLE}
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            f"SELECT version_num FROM {VERSION_TABLE}"
+        ).scalar_one() == "0012"
+    engine.dispose()
+
+
 def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     environment = dict(os.environ)
     environment["DATABASE_URL"] = (
