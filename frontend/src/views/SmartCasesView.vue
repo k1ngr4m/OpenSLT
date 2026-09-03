@@ -124,7 +124,11 @@ async function save() {
 async function testConnection() {
   testing.value = true
   try {
-    const { data } = await api.post('/smart-cases/knowledge-source/connection-test', payload())
+    const { data } = await api.post(
+      '/smart-cases/knowledge-source/connection-test',
+      payload(),
+      { timeout: 0 },
+    )
     ElMessage.success(`SVN 连接成功，已检查 ${data.checked_paths.length} 个路径`)
   } catch (error) { ElMessage.error(errorMessage(error)) }
   finally { testing.value = false }
