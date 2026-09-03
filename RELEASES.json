@@ -6,7 +6,7 @@
     },
     {
       "type": "fixed",
-      "text": "修复 MySQL/MariaDB 数据库迁移中断后重启时因重复列或索引而无法继续升级的问题。"
+      "text": "修复 MySQL/MariaDB 数据库迁移中断后重启时的重复对象错误，以及旧版 InnoDB 联合索引长度超限问题。"
     },
     {
       "type": "added",

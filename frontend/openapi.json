@@ -12,7 +12,7 @@
             "type": "string"
           },
           "model_id": {
-            "maxLength": 255,
+            "maxLength": 160,
             "minLength": 1,
             "title": "Model Id",
             "type": "string"

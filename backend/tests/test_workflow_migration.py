@@ -337,6 +337,40 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     engine.dispose()
 
 
+def test_model_management_migration_resumes_after_provider_table_creation(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "resumed-model-management.sqlite3"
+    _alembic(database_path, "upgrade", "0011")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "CREATE TABLE t_model_providers ("
+            "id INTEGER NOT NULL PRIMARY KEY, name VARCHAR(128) NOT NULL UNIQUE, "
+            "base_url VARCHAR(1024) NOT NULL, encrypted_api_key TEXT, "
+            "allow_insecure_http BOOLEAN NOT NULL, created_at DATETIME NOT NULL, "
+            "updated_at DATETIME NOT NULL)"
+        )
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "head")
+
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    assert set(inspector.get_table_names()) == set(Base.metadata.tables) | {VERSION_TABLE}
+    model_columns = {
+        column["name"]: column for column in inspector.get_columns("t_ai_models")
+    }
+    assert model_columns["model_id"]["type"].length == 160
+    engine.dispose()
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            f"UPDATE {VERSION_TABLE} SET version_num = '0011' WHERE version_num = '0012'"
+        )
+        connection.commit()
+    _alembic(database_path, "upgrade", "head")
+
+
 def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     environment = dict(os.environ)
     environment["DATABASE_URL"] = (
@@ -362,6 +396,7 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     assert sql.count("COLLATE utf8mb4_unicode_ci") == 35
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
+    assert "model_id VARCHAR(160) NOT NULL" in sql
     assert (
         "ALTER TABLE t_test_scenarios ADD CONSTRAINT "
         "fk_test_scenarios_draft_workflow_version_id"

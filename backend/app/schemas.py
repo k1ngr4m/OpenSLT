@@ -84,7 +84,7 @@ class ModelProviderWrite(BaseModel):
 
 class AiModelCreate(BaseModel):
     kind: Literal["chat", "embedding"]
-    model_id: str = Field(min_length=1, max_length=255)
+    model_id: str = Field(min_length=1, max_length=160)
 
 
 class AiModelOut(BaseModel):

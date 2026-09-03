@@ -94,7 +94,7 @@ class AiModel(TimestampMixin, Base):
         ForeignKey("t_model_providers.id", ondelete="CASCADE"), index=True
     )
     kind: Mapped[str] = mapped_column(String(16), index=True)
-    model_id: Mapped[str] = mapped_column(String(255))
+    model_id: Mapped[str] = mapped_column(String(160))
     provider: Mapped[ModelProvider] = relationship(back_populates="models")
 
 
