@@ -247,10 +247,22 @@ def test_svn_connection(
     runner = client or SvnClient()
     version = runner.version()
     for repository_url in repository_urls:
-        _xml_root(runner.run(["info", "--xml", repository_url], username, password))
+        try:
+            _xml_root(runner.run(["info", "--xml", repository_url], username, password))
+        except SvnKnowledgeError as exc:
+            raise SvnKnowledgeError("SVN 仓库检查失败：%s" % exc) from exc
     targets = _svn_targets(repository_urls, include_paths)
-    for repository_url, relative_path, _ in targets:
-        _xml_root(runner.run(["list", "--xml", join_repository_url(repository_url, relative_path)], username, password))
+    for repository_url, relative_path, source_ref in targets:
+        try:
+            _xml_root(
+                runner.run(
+                    ["info", "--xml", join_repository_url(repository_url, relative_path)],
+                    username,
+                    password,
+                )
+            )
+        except SvnKnowledgeError as exc:
+            raise SvnKnowledgeError("SVN 路径检查失败（%s）：%s" % (source_ref, exc)) from exc
     return {"ok": True, "svn_version": version, "checked_paths": [item[2] for item in targets]}
 
 
@@ -663,8 +675,10 @@ def enqueue_svn_sync(db: Session, source: SvnKnowledgeSource, reason: str, now: 
 
 
 def enqueue_due_svn_syncs(db: Session, now: typing.Optional[datetime] = None) -> typing.Optional[DurableTask]:
+    from app.services.model_providers import active_model
+
     source = db.scalar(select(SvnKnowledgeSource).where(SvnKnowledgeSource.enabled.is_(True)))
-    if source is None:
+    if source is None or active_model(db, "embedding") is None:
         return None
     return enqueue_svn_sync(db, source, "scheduled", now)
 

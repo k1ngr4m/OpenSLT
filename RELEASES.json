@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "type": "fixed",
+      "text": "修复部分 VisualSVN 目录枚举超时导致连接测试失败，并避免未配置 Embedding 时定时同步反复记录错误。"
+    },
+    {
+      "type": "fixed",
       "text": "修复 SVN 连接测试超过 30 秒时被前端提前判定为超时的问题。"
     },
     {

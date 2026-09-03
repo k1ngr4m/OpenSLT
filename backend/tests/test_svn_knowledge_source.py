@@ -15,8 +15,18 @@ from app.core.logging import redact
 from app.models import AuditLog, DurableTask, SmartCaseGeneration, SvnKnowledgeSource
 from app.services.llm import parse_cases
 from app.services.smart_case_generation import build_workbook
-from app.services.svn_knowledge import SvnClient, _build_manifest, _publish_vector_index, _svn_targets, list_indexed_requirements, normalize_include_paths, normalize_repository_urls, search_vector_index
-from app.services.svn_knowledge import enqueue_due_svn_syncs
+from app.services.svn_knowledge import (
+    SvnClient,
+    _build_manifest,
+    _publish_vector_index,
+    _svn_targets,
+    enqueue_due_svn_syncs,
+    list_indexed_requirements,
+    normalize_include_paths,
+    normalize_repository_urls,
+    search_vector_index,
+    test_svn_connection as check_svn_connection,
+)
 from app.core.time import beijing_now
 
 
@@ -157,6 +167,36 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
     assert "svn-secret-value" not in tested.text
 
 
+def test_connection_test_checks_repository_and_paths_without_listing() -> None:
+    class RecordingClient:
+        calls = []
+
+        def version(self):
+            return "1.10.0"
+
+        def run(self, arguments, username, password):
+            self.calls.append(arguments)
+            return '<?xml version="1.0"?><info/>'
+
+    runner = RecordingClient()
+    result = check_svn_connection(
+        ["http://svn.example/repository"],
+        "readonly",
+        "secret",
+        ["公司制度"],
+        runner,
+    )
+    assert result["checked_paths"] == ["公司制度"]
+    assert runner.calls == [
+        ["info", "--xml", "http://svn.example/repository"],
+        [
+            "info",
+            "--xml",
+            "http://svn.example/repository/%E5%85%AC%E5%8F%B8%E5%88%B6%E5%BA%A6",
+        ],
+    ]
+
+
 def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(settings, "knowledge_root", tmp_path)
     working_copy = tmp_path / "wc"
@@ -290,5 +330,17 @@ def test_scheduled_sync_is_idempotent_per_thirty_minute_window(client, admin_hea
         next_window = enqueue_due_svn_syncs(db, now + timedelta(minutes=31))
         assert next_window is not None and next_window.id != first.id
         assert next_window.status == "queued"
+    finally:
+        db.close()
+
+
+def test_scheduled_sync_waits_for_an_embedding_model(client, admin_headers) -> None:
+    assert client.put(
+        "/api/v1/smart-cases/knowledge-source", headers=admin_headers, json=_payload()
+    ).status_code == 200
+    db = SessionLocal()
+    try:
+        assert enqueue_due_svn_syncs(db) is None
+        assert db.scalar(select(DurableTask).where(DurableTask.task_type == "svn_sync")) is None
     finally:
         db.close()
