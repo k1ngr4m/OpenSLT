@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import typing
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
@@ -209,7 +209,7 @@ def delete_provider(
     request: Request,
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     provider = _provider(db, provider_id)
     model_ids = [model.id for model in provider.models]
     if _active_ids(db).intersection(model_ids):
@@ -219,6 +219,7 @@ def delete_provider(
     write_audit(db, "model_provider.delete", "model_provider", provider.id, actor, request)
     db.delete(provider)
     db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/{provider_id}/models/discover", response_model=ModelDiscoveryOut)
@@ -341,7 +342,7 @@ def delete_model(
     request: Request,
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     model = _model(db, model_id)
     if db.scalar(select(ActiveAiModel.kind).where(ActiveAiModel.model_id == model.id)) is not None:
         raise _error(409, "ACTIVE_MODEL_IN_USE", "当前模型不能删除，请先切换")
@@ -350,3 +351,4 @@ def delete_model(
     write_audit(db, "ai_model.delete", "ai_model", model.id, actor, request)
     db.delete(model)
     db.commit()
+    return Response(status_code=204)

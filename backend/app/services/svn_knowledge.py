@@ -156,28 +156,24 @@ class SvnClient:
             "--config-option", "config:auth:store-passwords=no",
             *arguments[1:],
         ]
-        master, slave = pty.openpty()
-        attributes = termios.tcgetattr(slave)
-        attributes[3] &= ~termios.ECHO
-        termios.tcsetattr(slave, termios.TCSANOW, attributes)
         environment = dict(os.environ)
         environment.update({"LC_ALL": "C", "LANG": "C"})
-        process = subprocess.Popen(
-            command,
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
-            env=environment,
-            close_fds=True,
-        )
-        os.close(slave)
+        pid, master = pty.fork()
+        if pid == 0:
+            try:
+                attributes = termios.tcgetattr(0)
+                attributes[3] &= ~termios.ECHO
+                termios.tcsetattr(0, termios.TCSANOW, attributes)
+                os.execve(executable, command, environment)
+            except BaseException:
+                os._exit(127)
         output = bytearray()
         prompted = False
+        process_status: typing.Optional[int] = None
         deadline = time.monotonic() + self.timeout_seconds
         try:
             while True:
                 if time.monotonic() >= deadline:
-                    process.terminate()
                     raise SvnKnowledgeError("SVN 请求超时")
                 ready, _, _ = io_select.select([master], [], [], 0.1)
                 if ready:
@@ -188,11 +184,16 @@ class SvnClient:
                             raise
                         chunk = b""
                     output.extend(chunk)
-                    lowered = bytes(output[-1024:]).lower()
-                    if not prompted and b"password for" in lowered:
-                        os.write(master, password.encode("utf-8") + b"\n")
-                        prompted = True
-                if process.poll() is not None:
+                    prompt_count = bytes(output).lower().count(b"password for")
+                    if prompt_count:
+                        if prompted and prompt_count > 1:
+                            raise SvnKnowledgeError("SVN 认证失败，请检查只读账号和密码")
+                        if not prompted:
+                            os.write(master, password.encode("utf-8") + b"\n")
+                            prompted = True
+                waited_pid, status = os.waitpid(pid, os.WNOHANG)
+                if waited_pid == pid:
+                    process_status = status
                     while True:
                         try:
                             chunk = os.read(master, 4096)
@@ -205,18 +206,30 @@ class SvnClient:
                         output.extend(chunk)
                     break
         finally:
+            if process_status is None:
+                try:
+                    os.kill(pid, 9)
+                except ProcessLookupError:
+                    pass
+                try:
+                    _, process_status = os.waitpid(pid, 0)
+                except ChildProcessError:
+                    process_status = 0
             os.close(master)
-            if process.poll() is None:
-                process.kill()
-            process.wait()
+        if os.WIFEXITED(process_status):
+            return_code = os.WEXITSTATUS(process_status)
+        elif os.WIFSIGNALED(process_status):
+            return_code = -os.WTERMSIG(process_status)
+        else:
+            return_code = 1
         text = output.decode("utf-8", errors="replace")
-        if process.returncode:
+        if return_code:
             lowered = text.casefold()
             if "authentication failed" in lowered or "authorization failed" in lowered or "could not authenticate" in lowered:
                 raise SvnKnowledgeError("SVN 认证失败，请检查只读账号、密码和目录权限")
             if "conflict" in lowered:
                 raise SvnKnowledgeError("SVN working copy 存在冲突，已停止同步且未覆盖本地文件")
-            raise SvnKnowledgeError("SVN 命令执行失败（退出码 %s）" % process.returncode)
+            raise SvnKnowledgeError("SVN 命令执行失败（退出码 %s）" % return_code)
         return text
 
 

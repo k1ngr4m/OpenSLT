@@ -300,8 +300,11 @@ def test_svn_password_only_enters_the_non_echoing_pty(tmp_path: Path) -> None:
         "import os, sys\n"
         "secret = 'unique-pty-secret-92841'\n"
         "if secret in ' '.join(sys.argv) or secret in '\\n'.join(os.environ.values()): sys.exit(9)\n"
-        "print(\"Password for 'readonly': \", end='', flush=True)\n"
-        "if sys.stdin.readline().strip() != secret: sys.exit(8)\n"
+        "terminal = os.open('/dev/tty', os.O_RDWR)\n"
+        "os.write(terminal, b\"Password for 'readonly': \")\n"
+        "entered = b''\n"
+        "while not entered.endswith(b'\\n'): entered += os.read(terminal, 1)\n"
+        "if entered.strip().decode() != secret: sys.exit(8)\n"
         "print('<?xml version=\"1.0\"?><info/>')\n",
         encoding="utf-8",
     )
