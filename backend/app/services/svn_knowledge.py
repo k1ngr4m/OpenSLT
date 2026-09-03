@@ -158,16 +158,22 @@ class SvnClient:
         ]
         environment = dict(os.environ)
         environment.update({"LC_ALL": "C", "LANG": "C"})
+        stdout_read, stdout_write = os.pipe()
         pid, master = pty.fork()
         if pid == 0:
             try:
+                os.close(stdout_read)
+                os.dup2(stdout_write, 1)
+                os.close(stdout_write)
                 attributes = termios.tcgetattr(0)
                 attributes[3] &= ~termios.ECHO
                 termios.tcsetattr(0, termios.TCSANOW, attributes)
                 os.execve(executable, command, environment)
             except BaseException:
                 os._exit(127)
+        os.close(stdout_write)
         output = bytearray()
+        terminal_output = bytearray()
         prompted = False
         process_status: typing.Optional[int] = None
         deadline = time.monotonic() + self.timeout_seconds
@@ -175,35 +181,42 @@ class SvnClient:
             while True:
                 if time.monotonic() >= deadline:
                     raise SvnKnowledgeError("SVN 请求超时")
-                ready, _, _ = io_select.select([master], [], [], 0.1)
-                if ready:
+                ready, _, _ = io_select.select([master, stdout_read], [], [], 0.1)
+                for descriptor in ready:
                     try:
-                        chunk = os.read(master, 4096)
+                        chunk = os.read(descriptor, 4096)
                     except OSError as exc:
-                        if exc.errno != errno.EIO:
+                        if descriptor != master or exc.errno != errno.EIO:
                             raise
                         chunk = b""
-                    output.extend(chunk)
-                    prompt_count = bytes(output).lower().count(b"password for")
-                    if prompt_count:
-                        if prompted and prompt_count > 1:
-                            raise SvnKnowledgeError("SVN 认证失败，请检查只读账号和密码")
-                        if not prompted:
-                            os.write(master, password.encode("utf-8") + b"\n")
-                            prompted = True
+                    if descriptor == master:
+                        terminal_output.extend(chunk)
+                    else:
+                        output.extend(chunk)
+                prompt_count = bytes(terminal_output).lower().count(b"password for")
+                if prompt_count:
+                    if prompted and prompt_count > 1:
+                        raise SvnKnowledgeError("SVN 认证失败，请检查只读账号和密码")
+                    if not prompted:
+                        os.write(master, password.encode("utf-8") + b"\n")
+                        prompted = True
                 waited_pid, status = os.waitpid(pid, os.WNOHANG)
                 if waited_pid == pid:
                     process_status = status
-                    while True:
-                        try:
-                            chunk = os.read(master, 4096)
-                        except OSError as exc:
-                            if exc.errno == errno.EIO:
+                    for descriptor, destination in (
+                        (master, terminal_output),
+                        (stdout_read, output),
+                    ):
+                        while True:
+                            try:
+                                chunk = os.read(descriptor, 4096)
+                            except OSError as exc:
+                                if descriptor == master and exc.errno == errno.EIO:
+                                    break
+                                raise
+                            if not chunk:
                                 break
-                            raise
-                        if not chunk:
-                            break
-                        output.extend(chunk)
+                            destination.extend(chunk)
                     break
         finally:
             if process_status is None:
@@ -216,6 +229,7 @@ class SvnClient:
                 except ChildProcessError:
                     process_status = 0
             os.close(master)
+            os.close(stdout_read)
         if os.WIFEXITED(process_status):
             return_code = os.WEXITSTATUS(process_status)
         elif os.WIFSIGNALED(process_status):
@@ -224,7 +238,7 @@ class SvnClient:
             return_code = 1
         text = output.decode("utf-8", errors="replace")
         if return_code:
-            lowered = text.casefold()
+            lowered = (bytes(terminal_output) + output).decode("utf-8", errors="replace").casefold()
             if "authentication failed" in lowered or "authorization failed" in lowered or "could not authenticate" in lowered:
                 raise SvnKnowledgeError("SVN 认证失败，请检查只读账号、密码和目录权限")
             if "conflict" in lowered:

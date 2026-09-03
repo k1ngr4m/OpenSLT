@@ -2,7 +2,7 @@
   "unreleased": [
     {
       "type": "fixed",
-      "text": "修复后台进程无法向 VisualSVN 安全提交交互式密码及目录枚举超时，并避免未配置 Embedding 时定时同步反复记录错误。"
+      "text": "修复后台进程无法向 VisualSVN 安全提交交互式密码、终端提示破坏 XML 响应及目录枚举超时，并避免未配置 Embedding 时定时同步反复记录错误。"
     },
     {
       "type": "fixed",
