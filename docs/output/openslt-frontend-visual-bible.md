@@ -1,502 +1,1009 @@
-# OpenSLT 前端视觉圣经
+# OpenSLT Visual Design 2.0：前端视觉圣经
 
-> 当前实现基线：OpenSLT `0.2.2`，2026-09-03 代码状态  
-> 适用范围：`frontend/src` 中的登录页、主应用框架、业务页面、工作流编辑器、运行详情、日志与终端界面  
-> 本文描述现有视觉事实，并将重复出现的规律固化为后续设计与开发约束；不代表已经完成设计令牌重构。
+> 文档状态：2.0 目标态规范  
+> 适用范围：OpenSLT Web 前端的产品设计、交互设计与工程实现  
+> 优先级：本文定义的 2.0 规则高于现有 1.x 页面样式；现有截图仅代表迁移前状态，不作为 2.0 视觉基准。
 
 ## 1. 视觉定位
 
-OpenSLT 是面向专业测试人员的自动化测试平台。它的视觉任务不是制造强烈情绪，而是让复杂的资源、流程、运行状态和诊断信息始终清晰、可信、可操作。
+OpenSLT 不应像普通后台管理系统。用户第一眼应当感知到：
 
-四个核心气质：
+> 这是一个用于观察、控制和诊断复杂测试系统的专业工程工具。
 
-- **专业克制**：低饱和冷色为主，装饰让位于信息和操作。
-- **精密可靠**：边界清楚、数字对齐、状态颜色稳定，形成仪器与控制台感。
-- **高密度但不拥挤**：用分区、留白和层级组织复杂信息，而不是盲目放大组件。
-- **平静可追溯**：正常流程保持安静，异常、等待和危险操作才提高视觉强度。
+视觉语言围绕三个核心概念建立。
 
-一句话定义：**冷静的测试控制台，而不是营销型 SaaS。**
+### 1.1 CONTROL｜控制
 
-## 2. 视觉世界
+用户始终知道：
 
-### 2.1 主工作区：冷静控制台
+- 当前系统状态；
+- 当前操作对象；
+- 当前运行阶段；
+- 下一步能够执行什么。
 
-主应用使用深青黑侧栏、雾灰画布、白色面板和海松绿强调色。整体对比清晰但不刺眼，适合长时间阅读数据、配置流程和观察运行状态。
+### 1.2 OBSERVE｜观察
 
-![主工作区视觉基线](screenshots/user-guide/figure-02-dashboard.png)
+数据是视觉中心。日志、指标、运行状态、设备、拓扑和测试流程应像仪表数据一样被组织，而不是被包装成普通 CRUD 数据。
 
-### 2.2 登录页：科技入口
+### 1.3 TRACE｜追溯
 
-登录页是独立的品牌场景：深蓝渐变、网格、雷达和操作台插画形成“进入测试中心”的仪式感；右侧表单仍回到白底、深色文字与绿色主操作，完成与主工作区的衔接。
+运行、节点、错误、日志、设备和时间必须形成连续证据链。页面结构需要帮助用户从系统状态逐层追到具体事件，而不是迫使用户在多个无关卡片之间跳转。
 
-![登录页视觉基线](screenshots/user-guide/figure-01-login.png)
+一句话定义：**现代测试实验室的数字控制台。**
 
-两套场景允许差异化，但必须共享以下识别线索：清晰的中文无衬线字体、深色正文、绿色主操作、6–10px 的克制圆角、明确的输入焦点和状态反馈。
+## 2. 整体视觉气质
 
-## 3. 设计原则
+### 2.1 关键词
+
+- Precision
+- Quiet Tech
+- Instrument UI
+- Engineering
+- Observable
+- Structured
+
+### 2.2 应当呈现
+
+- 深色 Graphite 导航；
+- 冷中性工作区；
+- 白色结构化表面；
+- 信号绿色交互；
+- 具有固定含义的数据色；
+- 等宽工程数据；
+- 极少阴影；
+- 紧凑信息密度。
+
+### 2.3 必须避免
+
+- SaaS 模板感；
+- 大量彩色卡片；
+- Card inside Card inside Card；
+- 过度圆润和大量 Pill Button；
+- 大面积渐变和毛玻璃泛滥；
+- 插画化业务后台；
+- 过度 Cyberpunk；
+- Dashboard KPI 大数字堆砌；
+- 用颜色做无意义装饰。
+
+最终效果应更接近 **Professional Engineering Software**，而不是 **Enterprise Admin Template**。
+
+## 3. 核心设计原则
 
 ### 3.1 信息优先
 
-- 页面首先回答“我在哪里、当前状态是什么、下一步能做什么”。
-- 标题、状态、主要操作应在首屏建立稳定三角关系。
-- 不为装饰牺牲表格列宽、日志可读性、表单标签或流程上下文。
+- 页面首先回答“状态、对象、阶段、动作”。
+- 数据区获得首屏最多空间，标题和描述不得挤占工作区。
+- 表格、日志、拓扑和流程图优先保证扫描效率与内容完整性。
 
-### 3.2 颜色有含义
+### 3.2 颜色等于数据
 
-- 主绿色只用于主操作、选中态、当前态、可交互链接和正向强调。
-- 红、橙、蓝必须承载危险、警告、信息等语义，不作为随机装饰。
-- 大面积背景保持中性；高彩度色只占小面积。
+- 绿色不是大面积品牌底色，而是系统操作信号色。
+- Success、Running、Waiting、Failed 等颜色必须保持稳定语义。
+- 没有数据含义的区域使用中性色。
 
-### 3.3 结构胜于阴影
+### 3.3 结构胜于装饰
 
-- 面板主要通过 1px 边框、留白和背景层次分组。
-- 常规卡片几乎无阴影；抽屉、弹窗、浮层和悬浮节点才使用明显阴影。
-- 同层级容器避免层层套卡片。
+- 主要依靠背景层级、1px 边界、分隔线和留白组织信息。
+- 普通页面几乎不使用阴影。
+- 大区域优先形成连续工作面，不拆成大量漂浮卡片。
 
-### 3.4 操作强度与视觉强度一致
+### 3.4 紧凑但不拥挤
 
-- 页面级主操作使用实心主按钮。
-- 次要操作使用默认按钮、文字按钮或链接按钮。
-- 删除、终止、失败处理才使用危险色。
-- 不可用状态降低对比，同时保留标签与原因。
+- 默认采用 Compact Density。
+- 控件更紧凑，但文字、点击目标、错误反馈和任务完成能力不能被压缩掉。
+- 同组元素靠近，不同层级通过分区和边界拉开。
 
-### 3.5 动效只解释状态
+### 3.5 动效像仪器响应
 
-- 动效用于悬停、按下、面板进出、进度变化和状态切换。
-- 基准时长为 `160ms`，缓动为 `cubic-bezier(0.2, 0, 0, 1)`。
-- 登录页雷达扫描是品牌性例外；业务页不使用持续装饰动画。
+- 动效短、准、可预测。
+- 动画只解释交互、状态或空间变化。
+- 运行状态只让 Signal 或状态指示器变化，整个容器不得闪烁。
 
-## 4. 色彩系统
+## 4. 设计令牌体系
 
-### 4.1 核心令牌
+2.0 按三层令牌组织：
 
-以下变量定义于 `frontend/src/styles.css`，是当前实现的首选来源。
-
-| 角色 | CSS 变量 | 色值 | 用途 |
-|---|---|---:|---|
-| 页面画布 | `--ui-canvas` | `#F3F7F7` | 页面底色、低层级空白区域 |
-| 主表面 | `--ui-surface` | `#FFFFFF` | 卡片、表格、弹窗、表单 |
-| 次表面 | `--ui-surface-subtle` | `#EAF1F2` | 筛选条、弱分组、摘要块 |
-| 强次表面 | `--ui-surface-strong` | `#DDE8E9` | 更强的结构分隔 |
-| 侧栏 | `--ui-sidebar` | `#0D292E` | 主导航背景 |
-| 侧栏悬停 | `--ui-sidebar-hover` | `#16383E` | 导航悬停 |
-| 侧栏选中 | `--ui-sidebar-active` | `#1D474A` | 当前导航 |
-| 主色 | `--ui-primary` | `#0E806F` | 主按钮、链接、选中、焦点 |
-| 主色悬停 | `--ui-primary-hover` | `#0B6B5E` | 主操作悬停、强调文字 |
-| 主色浅底 | `--ui-primary-soft` | `#D9EFEA` | 选中背景、弱提示、标签 |
-| 主文字 | `--ui-text-primary` | `#132B30` | 标题、正文重点、核心数值 |
-| 次文字 | `--ui-text-secondary` | `#5C7075` | 正文说明、标签、辅助信息 |
-| 弱文字 | `--ui-text-tertiary` | `#819196` | 元数据、占位信息、次级注释 |
-| 默认边框 | `--ui-border` | `#D7E2E4` | 卡片、输入、表格分隔 |
-| 强边框 | `--ui-border-strong` | `#B8C9CC` | 悬停、重要轮廓、结构线 |
-| 成功 | `--ui-success` | `#187B61` | 完成、健康、通过 |
-| 警告 | `--ui-warning` | `#A86618` | 等待、需人工处理、风险 |
-| 危险 | `--ui-danger` | `#BD3F4B` | 失败、删除、阻断错误 |
-| 信息 | `--ui-info` | `#356FA3` | 运行中、普通信息 |
-| 终端 | `--ui-terminal` | `#101C24` | 日志、SQL、命令与终端背景 |
-
-### 4.2 状态配色
-
-| 状态 | 前景色 | 建议浅背景 | 使用方式 |
-|---|---:|---:|---|
-| 成功 / 健康 / 完成 | `#187B61` | `#DFF1EB` | 标签、圆点、图标、数值 |
-| 运行中 / 信息 | `#356FA3` | `#E3EDF6` | 标签、流程步骤、提示 |
-| 等待 / 警告 | `#A86618` | `#F8EAD5` | 待人工处理、非阻断风险 |
-| 失败 / 危险 | `#BD3F4B` | `#F8E2E4` | 错误、删除、失败节点 |
-| 默认 / 未开始 | `#5C7075` | `#EAF1F2` | 中性状态、禁用状态 |
-
-状态不能只依赖颜色表达。现有实现以“颜色 + 文字 + 圆点或图标”组合为准，例如 `StatusBadge` 的状态点和文本标签。
-
-### 4.3 专用配色
-
-- **登录页背景**：`#061A43 → #0A3272 → #06204B` 深蓝渐变，局部叠加亮蓝径向光。
-- **登录页品牌面板**：`#064BB6 → #053592 → #061D5A`。
-- **终端与代码面板**：背景 `#101C24` 或 `#242632`，正文使用 `#D1DDE0`、`#D9E6DF` 一类冷白色。
-- **接线拓扑**：上行链路 `#C43D47`，下行链路 `#326EAA`。这两个颜色只表示方向，不与业务成功/失败语义混用。
-- **管理中心入口**：激活态使用橙色 `#CF6419` 与浅橙底 `#FFF0E5`，作为“进入配置域”的局部识别，不扩展为第二主色。
-
-### 4.4 色彩禁忌
-
-- 不在同一视图中引入新的品牌主色。
-- 不用绿色表示纯装饰，也不用红色吸引无风险操作。
-- 不用终端深色背景承载普通说明文字或大段业务表单。
-- 新组件优先引用现有 `--ui-*` 变量；只有具有独立语义的专用图形才使用局部色值。
-
-## 5. 字体与排版
-
-### 5.1 字体族
-
-**界面字体**
-
-```css
-font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+```text
+Primitive 原始值
+        ↓
+Semantic 语义角色
+        ↓
+Component 组件状态
 ```
 
-用于导航、标题、正文、表单和按钮。中文环境优先使用系统原生字体，避免额外字体下载与内网部署风险。
+- **Primitive**：颜色、字号、间距、圆角、时长等原始值。
+- **Semantic**：Canvas、Surface、Text、Border、Interactive、Status 等用途。
+- **Component**：Button、Input、Table、Workflow Node、Timeline 等具体组件状态。
 
-**等宽字体**
+组件不得直接依赖无语义的临时色值。专用图形可使用局部令牌，但必须说明含义。
+
+## 5. 色彩系统
+
+### 5.1 Canvas 与 Surface
+
+| 语义 | 色值 | 用途 |
+|---|---:|---|
+| App Background | `#F5F7F8` | 应用主画布、Level 0 |
+| Secondary Background | `#F0F3F4` | 大区域工作区、Level 1 |
+| Raised Surface | `#FFFFFF` | Panel、表格、表单、Level 2/3 |
+| Panel Border | `#E1E7E9` | 主面板边界 |
+| Control Border | `#D6DFE2` | 输入、选择器等控件边界 |
+| Strong Border | `#AEBFC4` | 悬停、强调轮廓 |
+
+### 5.2 Navigation
+
+| 语义 | 色值 | 用途 |
+|---|---:|---|
+| Sidebar | `#11191D` | 主导航背景 |
+| Sidebar Secondary | `#172227` | 次级区域、分隔区域 |
+| Sidebar Hover | `#1D2B30` | 导航悬停 |
+| Sidebar Selected | `#20343A` | 当前导航项 |
+
+导航采用 Charcoal Blue / Graphite，而不是明显偏绿的深色。
+
+### 5.3 Text
+
+| 语义 | 色值 | 用途 |
+|---|---:|---|
+| Primary | `#182328` | 标题、正文重点、核心数值 |
+| Secondary | `#58686E` | 正文说明、标签 |
+| Tertiary | `#849298` | 元数据、帮助信息 |
+| Disabled | `#AEB8BC` | 禁用文字、不可用信息 |
+| Placeholder | `#98A5AA` | 输入占位符 |
+
+关键状态、错误原因和任务指令不得使用 Tertiary 或 Disabled 色。
+
+### 5.4 Brand / Interaction
+
+| 语义 | 色值 | 用途 |
+|---|---:|---|
+| Primary | `#00A88F` | Primary Button、Focus、Active、Interactive、Current、Key Metric |
+| Hover | `#008C79` | 可交互元素悬停 |
+| Pressed | `#007565` | 按下状态 |
+| Soft | `#DDF5F0` | 选中背景、弱提示、Signal 衬底 |
+| Focus Ring | `rgba(0,168,143,.12)` | 控件与节点焦点环 |
+
+使用约束：
+
+- 绿色只表示可操作、激活、当前或关键数据。
+- 选中状态优先使用 Signal Line、边框或文字，不使用大面积绿色填充。
+- 一个操作域只能有一个视觉最强的 Primary Action。
+
+### 5.5 Data Colors
+
+| 数据状态 | 色值 | 默认表现 |
+|---|---:|---|
+| Success | `#188866` | `● PASSED`、完成、健康 |
+| Running | `#3378B7` | `◉ RUNNING`、活动路径 |
+| Waiting | `#B7791F` | `○ WAITING`、待处理 |
+| Failed | `#D1495B` | `× FAILED`、失败路径 |
+| Paused | `#73838A` | 暂停 |
+| Unknown | `#9CA8AD` | 未知、不可判定 |
+
+重要状态可使用 Soft Tag。失败标签推荐：
 
 ```css
-font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+background: #FCECEE;
+color: #C63D50;
+border-radius: 4px;
 ```
 
-用于运行编号、Trace ID、时间戳、IP、命令、日志、SQL、XML、指标数值和其他机器标识。全局启用 `tabular-nums`，让数字列稳定对齐。
+成功状态通常只显示 `● PASSED`，不铺设绿色背景。
 
-### 5.2 字号层级
+### 5.6 Terminal Colors
 
-| 层级 | 字号 / 行高 | 字重 | 典型用途 |
-|---|---|---:|---|
-| 页面标题 | `26 / 36px` | 650 | 工作台、资源管理、日志中心 |
-| 移动端页面标题 | `22 / 30px` | 650 | 767px 以下 |
-| 详情主标题 | `23 / 1.18` | 650–700 | 当前运行节点、详情实体 |
-| 弹窗 / 抽屉标题 | `17–21px` | 600–750 | 对话框、创建流程 |
-| 区块标题 | `15–16px` | 600–650 | 面板标题、列表分区 |
-| 正文 / 控件 | `13–14px` | 400–600 | 表单、主要内容、按钮 |
-| 标签 / 表格 / 辅助正文 | `12px` | 500–650 | 高频主力字号 |
-| 元数据 / 帮助 | `11px` | 400–650 | 时间、说明、计数、次信息 |
-| 导航分组 / 微标签 | `10px` | 500–600 | Kicker、版本号、字段补充 |
-| 核心指标 | `26–28px` | 650 | 总数、进度、关键数值 |
+| 角色 | 色值 |
+|---|---:|
+| Background | `#11181D` |
+| Toolbar | `#182126` |
+| Code | `#D7E2E5` |
+| Timestamp | `#72848A` |
+| Info | `#62A6D8` |
+| Success | `#65C49D` |
+| Warning | `#E0A555` |
+| Error | `#E56A76` |
 
-当前界面本身偏紧凑，`10px` 和 `11px` 仅用于辅助信息；关键操作、错误原因和需要阅读的正文不得降到 `11px` 以下。
+终端配色服务于扫描性，而不是营造“酷”的黑色界面。
 
-### 5.3 排版规则
+## 6. 表面层级
 
-- 页面标题使用轻微负字距 `-0.025em`，大数字使用 `-0.04em`。
-- 页面说明建议最大宽度 `65ch`，行高约 `1.6`。
-- 机器标识单行省略；解释性文本允许换行并使用 `overflow-wrap: anywhere`。
-- 表格数字、时间、编号保持等宽或表格数字样式。
-- 中文标题不使用全大写；英文微标签可使用约 `0.1em` 的字距。
+### LEVEL 0 — Canvas
 
-## 6. 空间、尺寸与形状
+- 背景：`#F5F7F8`。
+- 承载整个页面，不添加阴影。
 
-### 6.1 空间节奏
+### LEVEL 1 — Workspace
 
-现有实现没有完整的 spacing token，但实际遵循约 4px 基础节奏。优先使用：
+- 背景：`#F0F3F4` 或专用画布色。
+- 用于 Run Workspace、Workflow Canvas、资源工作区等大区域。
+- 通过空间与分隔组织功能，不做漂浮卡片。
 
-| 尺度 | 用途 |
+### LEVEL 2 — Panel
+
+```css
+background: #FFFFFF;
+border: 1px solid #E1E7E9;
+border-radius: 8px;
+box-shadow: none;
+```
+
+用于主要信息区、表格容器、属性面板和结构化表单。
+
+### LEVEL 3 — Floating
+
+用于 Drawer、Popover、Dialog、Context Menu。
+
+```css
+background: #FFFFFF;
+box-shadow: 0 16px 40px rgba(21, 32, 37, .12);
+```
+
+Floating 是明显阴影的主要合法场景。
+
+## 7. 圆角与边界
+
+| 类型 | 数值 | 用途 |
+|---|---:|---|
+| Control | `6px` | Button、Input、Select |
+| Panel | `8px` | 常规面板、节点、信息块 |
+| Large Panel | `10px` | 大型工作区、特殊容器 |
+| Dialog | `12px` | Dialog、Message Box |
+| Status Tag | `4px` | 状态标签 |
+
+禁止：
+
+- `16px`、`20px` 的普通卡片圆角；
+- 大量胶囊按钮；
+- 通过圆角大小制造无意义层级；
+- 面板内重复套用同等级圆角卡片。
+
+## 8. 间距与密度
+
+### 8.1 基础间距
+
+使用 4px 基础节奏：
+
+| Token | 数值 | 典型用途 |
+|---|---:|---|
+| `space-1` | `4px` | 微间距、图标与文字 |
+| `space-2` | `8px` | 同组操作、紧凑内边距 |
+| `space-3` | `12px` | 表单字段、工具栏控件 |
+| `space-4` | `16px` | Panel 内边距、区块间距 |
+| `space-5` | `20px` | 复杂面板、页面次级间距 |
+| `space-6` | `24px` | 页面水平留白、大区块 |
+| `space-8` | `32px` | 宽屏页面边距 |
+
+### 8.2 默认密度
+
+| 组件 | 高度 |
+|---|---:|
+| Button | `34px` |
+| Input / Select | `34px` |
+| Large Input | `40px` |
+| Table Header | `36px` |
+| Table Row | `44–46px` |
+| Navigation Item | `38px` |
+| Toolbar | `40–44px` |
+
+紧凑不等于缩小文字。优先减少无效 padding 和容器嵌套。
+
+## 9. 字体与数据排版
+
+### 9.1 字体族
+
+**Interface**
+
+```css
+font-family: "PingFang SC", Inter, system-ui, sans-serif;
+```
+
+用于导航、标题、正文、表单和按钮。中文环境优先 PingFang SC；Inter 主要服务于英文与数字界面。
+
+**Data**
+
+```css
+font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+font-variant-numeric: tabular-nums;
+```
+
+用于运行编号、Trace ID、时间戳、IP、端口、命令、日志、SQL、XML、百分比和机器数据。
+
+### 9.2 严格字号体系
+
+整个产品限定为以下 8 个字号：
+
+| 字号 | 层级 | 用途 |
+|---:|---|---|
+| `26px` | Page Title | 页面主标题、Dashboard 关键值 |
+| `20px` | Entity Title | 运行、资源、节点等当前对象 |
+| `16px` | Section | Panel 与主要区块标题 |
+| `14px` | Body | 主要正文、表单说明 |
+| `13px` | Control | Button、Input、Select、导航文字 |
+| `12px` | Table | 表格正文、常规数据 |
+| `11px` | Metadata | 时间、趋势、辅助标签、Mono Identifier |
+| `10px` | Micro Label | Kicker、类型、极次级元数据 |
+
+规则：
+
+- 不新增 15px、17px、18px、21px、23px、28px 等中间字号。
+- 标题靠字号、字重和位置建立层级，不依赖彩色。
+- 机器数据全部使用等宽字体或 `tabular-nums`。
+- 解释性正文建议行高 `1.5–1.65`，日志固定为 `1.65`。
+- 长标识符单行省略时必须提供查看完整值的方式。
+
+## 10. 图标系统
+
+- 全部采用线性图标。
+- Stroke：`1.7px`。
+- 尺寸限定：`14px`、`16px`、`18px`、`20px`。
+- 常用隐喻：Dashboard、Box、Server、Activity、Workflow、Terminal、Database、Settings。
+- 图标颜色继承文字，不使用独立彩色图标。
+- 禁止填充图标、3D 图标和 Emoji。
+- 状态图标是例外，但必须使用 Data Colors。
+- 单独图标按钮必须提供 Tooltip 与可访问名称。
+
+## 11. 应用骨架
+
+### 11.1 桌面结构
+
+```text
+┌──────────┬────────────────────────────────┐
+│          │ Top Navigation                 │
+│ Sidebar  ├────────────────────────────────┤
+│          │                                │
+│          │ Workspace                      │
+│          │                                │
+└──────────┴────────────────────────────────┘
+```
+
+| 区域 | 尺寸 |
+|---|---:|
+| Sidebar | `220px` |
+| Collapsed Sidebar | `60px` |
+| Topbar | `48px` |
+
+### 11.2 Sidebar
+
+Sidebar 是产品最主要的品牌视觉。
+
+- 背景：`#11191D`。
+- Logo 区高度：`44px`，内容为 Logo + OpenSLT。
+- Navigation Item：`38px` 高，`6px` 圆角。
+- 默认：透明。
+- Hover：`#1D2B30`。
+- Selected：`#20343A`。
+- Selected 左侧增加 `2px`、`#00A88F` Signal Line。
+- 选中项不得使用大面积绿色背景。
+- 图标使用 `16px` 线性图标。
+
+### 11.3 Topbar
+
+Topbar 是工程工具栏，不承担复杂导航。
+
+```text
+左：Breadcrumb       中：Current Environment       右：Health / Notice / Help / Avatar
+```
+
+示例：
+
+```text
+运行中心 / RUN-20260903-0142      TEST ENV      ● HEALTHY   通知   帮助   用户
+```
+
+规则：
+
+- 高度 `48px`，背景使用 Raised Surface。
+- 主导航全部交给 Sidebar。
+- Breadcrumb 必须突出当前对象，并允许返回上级。
+- 环境名称保持短小、明确，避免与状态混用。
+- System Health 使用状态点 + 文本，不使用大色块。
+- 不使用大面积毛玻璃；仅在确有滚动层叠需求时使用极轻透明度。
+
+## 12. 页面 Header
+
+取消高占用的 `Kicker + Title + Description + Button` 纵向结构，改为紧凑双列：
+
+```text
+Page Title                         Primary Action
+description                        Secondary Action
+```
+
+- 总高度控制在 `72–84px`。
+- 页面标题 `26px`，描述 `14px`。
+- Primary Action 位于右上，Secondary Action 与其同组。
+- Kicker 仅用于确有必要的 Micro Label，不作为所有页面的固定模板。
+- Header 后立即进入数据或工作区。
+
+## 13. Dashboard
+
+### 13.1 System Overview
+
+不使用独立 KPI 卡片。所有指标组合成连续信息条：
+
+```text
+SYSTEM OVERVIEW
+┌────────────────────────────────────────────┐
+│ Active Runs │ Pass Rate │ Failed │ SLA     │
+│     12      │   94.2%   │   3    │ 99%     │
+└────────────────────────────────────────────┘
+```
+
+- 指标之间使用 1px Divider。
+- Label：`11px`。
+- Value：`26px`，Mono 或 tabular number。
+- Trend：`11px`。
+- 指标默认使用主文字色，只有具有数据意义时使用 Data Color 或 Signal Green。
+- 不给每个指标独立阴影、圆角和背景色。
+
+### 13.2 主区域
+
+采用约 8 / 4 布局：
+
+```text
+┌──────────────────────────┬─────────────────┐
+│ RECENT RUNS              │ SYSTEM HEALTH   │
+│                          │ API       ● OK   │
+│                          │ DB        ● OK   │
+│                          │ Worker    ● OK   │
+│                          ├─────────────────┤
+│                          │ ATTENTION       │
+└──────────────────────────┴─────────────────┘
+```
+
+- 左侧是 Recent Runs，保持列表连续性。
+- 右侧是 System Monitor，由 System Health 与 Pending Actions 组成。
+- 右栏不是普通小卡片堆叠，而是一个连续监控区域。
+- 异常与待处理事项提高视觉权重，健康状态保持安静。
+
+## 14. Table
+
+表格是 OpenSLT 最重要的组件之一，必须降低传统“表格框”感。
+
+### 14.1 基础结构
+
+| 属性 | 规范 |
+|---|---|
+| Header Height | `36px` |
+| Header Background | `#F4F6F7` |
+| Header Font | `11px` |
+| Row Height | `44–46px` |
+| Separator | 仅水平 1px 分隔 |
+| Vertical Border | 默认无 |
+| Hover | `#F3F8F7` |
+| Selected | `#EAF7F4` + 左侧 2px Signal Line |
+
+### 14.2 数据呈现
+
+- 运行编号统一为 `RUN-20260903-0192` 一类可扫描格式。
+- Identifier 使用 Mono `11px`。
+- 数值、时间、百分比使用 tabular numbers。
+- 状态使用 Dot Label，不使用大色块 Badge。
+- 行内主操作采用文本或 Ghost Button；Danger 默认只使用红色文字。
+- 行选择与当前对象通过 Signal Line 表达，不将整行涂成主色。
+
+## 15. Status
+
+默认状态形式：
+
+```text
+● RUNNING
+```
+
+- Dot：`5px`。
+- Label：`11px`。
+- Dot 和文字使用对应 Data Color。
+- 普通状态没有边框和背景。
+- 只有需要提高辨识度的重要异常或结果才使用 `4px` 圆角 Soft Tag。
+- 状态不能只依赖颜色，必须同时有文字或符号。
+
+推荐符号：
+
+| 状态 | 表现 |
+|---|---|
+| Completed | `● COMPLETED` |
+| Running | `◉ RUNNING` |
+| Waiting | `○ WAITING` |
+| Failed | `× FAILED` |
+| Paused | `Ⅱ PAUSED` |
+| Unknown | `— UNKNOWN` |
+
+## 16. Filter Toolbar
+
+Filter 不再是浅色卡片，而是透明工具栏。
+
+```text
+Search   Status   Type   Owner                         Results 128   Reset
+─────────────────────────────────────────────────────────────────────────
+```
+
+- 总高度 `40–44px`。
+- 背景透明。
+- Filter Control 高度 `32px`。
+- Filter 与数据表之间通过水平分隔线建立关系。
+- Results 与 Reset 靠右。
+- 不使用完整圆角背景包住整条 Filter。
+- 小屏下可换行或堆叠，但仍保持工具栏语义。
+
+## 17. Button
+
+### 17.1 Primary
+
+```css
+height: 34px;
+border-radius: 6px;
+background: #00A88F;
+color: #FFFFFF;
+```
+
+- Hover：`#008C79`。
+- Pressed：`#007565`。
+- 用于操作域唯一主动作。
+
+### 17.2 Default
+
+```css
+height: 34px;
+border: 1px solid #D8E1E3;
+background: #FFFFFF;
+color: #182328;
+```
+
+用于取消、刷新、返回和普通辅助操作。
+
+### 17.3 Ghost
+
+- 背景透明。
+- 用于 Topbar、Toolbar、Table Row 的低强度操作。
+- Hover 可使用 Secondary Background。
+
+### 17.4 Danger
+
+- 默认使用红色文字或红色边框，不使用实心红色。
+- 只有最终危险确认使用实心红色。
+- 不可逆操作必须有明确对象和确认语义。
+
+## 18. Input 与表单
+
+### 18.1 Input
+
+| 属性 | 默认 | Large |
+|---|---:|---:|
+| Height | `34px` | `40px` |
+| Radius | `6px` | `6px` |
+| Background | `#FFFFFF` | `#FFFFFF` |
+| Border | `#D6DFE2` | `#D6DFE2` |
+
+Focus：
+
+```css
+border-color: #00A88F;
+box-shadow: 0 0 0 3px rgba(0, 168, 143, .12);
+```
+
+Placeholder：`#98A5AA`。
+
+### 18.2 表单规则
+
+- Label 使用 `13px`，Help 与 Error 使用 `11px`。
+- 必填项使用标签后的红色 `*`，不依赖 Placeholder 表示字段含义。
+- 错误信息紧邻字段，并说明恢复方式。
+- 长表单放入 Drawer 或专用 Workspace；底部操作保持可见。
+- 同一层级字段对齐，避免每个字段额外套卡片。
+- 技术参数、命令和标识符使用 Mono。
+
+## 19. Panel、Dialog 与 Drawer
+
+### 19.1 Panel
+
+- 默认为 Level 2 Surface。
+- Header 与 Body 通过水平分隔线区分。
+- 常规内边距 `16px`，复杂表单可用 `20px`。
+- 不使用默认阴影。
+
+### 19.2 Dialog
+
+- Radius：`12px`。
+- 用于聚焦确认、简短编辑和不可逆操作。
+- Header / Body / Footer 明确分区。
+- Primary Action 位于右下，取消在其左侧。
+
+### 19.3 Drawer
+
+- 用于长表单、创建流程和不离开当前数据上下文的编辑。
+- 属于 Level 3 Floating，可使用标准 Floating Shadow。
+- Footer 固定或粘性，Body 独立滚动。
+- 不在 Drawer 内继续堆叠同级 Card。
+
+## 20. Workflow Editor
+
+Workflow 是 OpenSLT 最应建立视觉辨识度的页面。
+
+### 20.1 Canvas
+
+| 属性 | 规范 |
+|---|---|
+| Background | `#F5F7F8` |
+| Grid | `20px` Dot Grid |
+| Dot | `#D6DEE1` |
+| Node Width | `320px` |
+
+画布是工程线路图，不使用大面积彩色分区。
+
+### 20.2 Node Anatomy
+
+```text
+┌─────────────────────────────┐
+│ ● HTTP REQUEST        ⋮     │  Type Header
+│─────────────────────────────│
+│ GET                         │
+│ /api/device/status          │
+│                             │
+│ Timeout            3000 ms  │
+│ Retry                     2 │
+│─────────────────────────────│
+│ INPUT 3             OUTPUT 2│
+└─────────────────────────────┘
+```
+
+- 节点顶部建立 Type Header。
+- 不同 Node Type 只通过 `4px` Type Indicator 和线性 Icon 区分。
+- 节点主体保持白色，不整块染色。
+- 方法、路径、超时、重试、输入输出等工程数据使用 Mono。
+- 更多操作放在右上角 Ghost Menu。
+
+### 20.3 Node State
+
+| 状态 | 表现 |
+|---|---|
+| Default | `border: #DCE4E6` |
+| Hover | `border: #AEBFC4` |
+| Selected | `border: #00A88F` |
+| Selection Ring | `0 0 0 3px rgba(0,168,143,.12)` |
+| Running | 左侧 Signal Pulse，Data Blue |
+| Success | Success 图标 `✓` |
+| Failure | Failed 图标 `!` 或 `×` |
+
+动画只发生在状态指示器，整个 Node 不闪烁、不呼吸、不缩放。
+
+### 20.4 Connection
+
+| 状态 | 颜色 | 线宽 |
+|---|---:|---:|
+| Default | `#AAB8BC` | `1.5px` |
+| Active Path | `#00A88F` | `1.5px` |
+| Running | `#3378B7` | `1.5px` |
+| Failed | `#D1495B` | `1.5px` |
+| Selected | 对应状态色 | `2px` |
+
+默认连接线不使用绿色。箭头、端点和连线共享状态语义。
+
+## 21. Run Detail
+
+Run Detail 是产品视觉样板，必须形成以下连续阅读：
+
+```text
+状态 → 时间线 → 当前节点 → 证据
+```
+
+### 21.1 Run Header
+
+```text
+RUN-20260903-00129          ◉ RUNNING          42%
+```
+
+- 运行编号使用 Mono Entity Title。
+- 状态与进度在同一视觉层级，但不压过编号。
+- 关键操作位于 Header 右侧。
+- Trace ID、环境和创建时间作为次级元数据。
+
+### 21.2 Pipeline Timeline
+
+取消传统 Stepper，改为执行流水线：
+
+```text
+○━━━━●━━━━◉━━━━○━━━━○
+PREPARE   CONNECT   TEST   VALIDATE   REPORT
+          14.2s
+```
+
+| 状态 | 符号 |
+|---|---|
+| Completed | `●` |
+| Running | `◉` |
+| Waiting | `○` |
+| Failed | `×` |
+
+- 节点下显示阶段名和耗时。
+- 活动路径与失败路径使用对应 Data Color。
+- 当前阶段使用 Signal，而不是整个卡片闪烁。
+
+### 21.3 Current Step 与 Live Log
+
+```text
+┌────────────────────────────┬──────────────────────────┐
+│ CURRENT STEP               │ LIVE LOG                 │
+│ HTTP Request               │ 14:31:02 request.start  │
+│ 192.168.2.2                │ 14:31:02 socket.open    │
+│ GET /status                │ 14:31:03 response.200   │
+└────────────────────────────┴──────────────────────────┘
+```
+
+- 左侧解释当前节点与参数。
+- 右侧提供实时证据。
+- 两区共享相同时间线与状态语义，避免用户在 Tabs 中寻找当前证据。
+- 低宽度下改为单列，先 Current Step，后 Live Log。
+
+## 22. Log 与 Terminal
+
+### 22.1 目标
+
+日志首先服务于 Scanability：用户能够快速扫过时间、级别、来源、事件和消息，并沿 Trace ID 追溯。
+
+### 22.2 规范
+
+- Background：`#11181D`。
+- Toolbar：`#182126`。
+- Font：JetBrains Mono，`12px / 1.65`。
+- Timestamp 使用低对比色 `#72848A`。
+- Info、Success、Warning、Error 使用专用 Terminal Colors。
+- 只高亮 Level、关键事件和异常片段，不让整行持续高亮。
+- 长命令与 Trace ID 支持复制、换行或横向滚动。
+- 实时日志新增内容不得造成页面大幅跳动；用户主动滚离底部后不强制抢回滚动位置。
+
+## 23. Login Page
+
+### 23.1 定位
+
+登录页改为统一的 Brand Environment，取消传统“左插画 + 右登录 Card”。
+
+### 23.2 背景与构成
+
+```text
+OPENSLT
+AUTOMATED TESTING CONTROL PLATFORM
+
+NODE ───── RUN ───── DEVICE ───── LOG                  SIGN IN
+```
+
+- 背景从 `#0D171C` 过渡到 `#13242A`。
+- 左侧使用 NODE、RUN、DEVICE、LOG 等抽象数据线路表达系统环境。
+- 不使用具象人物插画、3D 设备或大面积蓝色科技渐变。
+- 右侧 Sign in 极简，表单可置于透明或轻微抬升表面。
+- 品牌绿色只用于 Login Button、Focus 和 System Signal。
+- 登录页与主应用共享 Graphite、Signal Green、Mono Data 和线性图标。
+
+## 24. Signal Line：品牌微视觉语言
+
+Signal Line 是 OpenSLT 2.0 的品牌 DNA。
+
+### 24.1 形式
+
+- 线宽：`2px`。
+- 主色：`#00A88F`。
+- 位置：通常位于元素左侧或路径上。
+- 长度：与被标记对象的有效内容区域一致，不做无意义延伸。
+
+### 24.2 使用场景
+
+- Active Navigation；
+- Current Workflow Node；
+- Selected Table Row；
+- Live Run；
+- Active Device；
+- Current Panel 或活动路径。
+
+### 24.3 限制
+
+- 同一局部区域最多一个主 Signal。
+- Signal 必须表示“当前、活动、选中或正在传递”。
+- 静态装饰线、普通 Divider 和输入边框不得伪装成 Signal。
+- Running Signal 可脉冲，其他 Signal 保持静止。
+
+## 25. Motion
+
+| 类别 | 时长 | 用途 |
+|---|---:|---|
+| Button | `120ms` | Hover、Pressed |
+| Hover | `120ms` | Row、Node、Icon |
+| Panel | `160ms` | 展开、切换、轻位移 |
+| Drawer | `180ms` | 进入与退出 |
+| Workflow State | `200ms` | Signal、路径状态 |
+
+推荐缓动：
+
+```css
+cubic-bezier(.2, 0, 0, 1)
+```
+
+禁止：
+
+- Bounce；
+- Spring；
+- Scale Pop；
+- Large Fade；
+- Parallax；
+- 整个 Node、Card 或页面持续闪烁。
+
+Loading 可使用低幅度 Signal Pulse，并支持 reduced motion。
+
+## 26. 响应式原则
+
+2.0 保持现有响应式能力，但以紧凑工程工作区为核心。
+
+| 断点 | 主要变化 |
 |---:|---|
-| `4px` | 图标与微文案、紧凑内部间隔 |
-| `8px` | 同组操作、标签、紧凑卡片内部间隔 |
-| `12px` | 表单字段、列表项、筛选控件间隔 |
-| `16px` | 面板间距、常规卡片内边距 |
-| `20px` | 页面区块、弹窗主体、复杂卡片内边距 |
-| `24px` | 页面主要区块与宽松表单间距 |
-| `28–32px` | 桌面页面水平留白 |
-| `36–40px` | 页面底部与大段落收尾留白 |
-
-相邻关系越紧密，间距越小；禁止用多个空行或随意 margin 制造层级。
-
-### 6.2 圆角
-
-| 令牌 / 数值 | 用途 |
-|---|---|
-| `--ui-radius-control: 6px` | 按钮、输入框、下拉框 |
-| `7–8px` | 筛选条内部块、小卡片、提示条 |
-| `--ui-radius-panel: 10px` | 主卡片、面板、指标组 |
-| `--ui-radius-dialog: 12px` | 弹窗 |
-| `50%` | 状态点、头像式标记、圆形按钮 |
-
-圆角应体现层级：控件小、面板中、弹窗大。不要在普通后台卡片上使用夸张胶囊形状。
-
-### 6.3 边框与阴影
-
-- 默认容器：`1px solid var(--ui-border)`。
-- 悬停或选中：提升到 `--ui-border-strong` 或 `--ui-primary`。
-- 普通卡片阴影：`0 1px 2px rgba(19, 43, 48, 0.025)`，近乎无感。
-- 弹层阴影：`0 10px 30px rgba(19, 43, 48, 0.1)`。
-- 工作流节点：允许 `0 7px 20px rgba(35, 58, 68, 0.07)`，选中时叠加绿色焦点环。
-- 登录卡片是品牌例外，可使用更深、更大的蓝黑阴影。
-
-## 7. 应用框架
-
-### 7.1 桌面布局
-
-- 侧栏宽 `224px`，折叠后 `64px`，固定占满 `100dvh`。
-- 顶栏高 `52px`，白色半透明背景，`12px` 模糊，滚动时保持粘性。
-- 内容区最大宽 `1600px`，桌面内边距 `28px 32px 40px`。
-- 顶栏采用三列布局：导航开关 / 居中页域导航 / 管理入口与版本号。
-
-### 7.2 导航
-
-- 侧栏导航项高 `42px`，圆角 `6px`，图标 `17px`。
-- 当前项使用深青高亮底，并在左侧显示 `3px` 薄荷绿标记。
-- 分组标题使用 `10px`、较大字距和低对比青灰色。
-- 侧栏底部固定显示当前用户与退出操作。
-- “首页”与“管理中心”是两个页面域：管理中心允许使用局部橙色激活态，但侧栏交互仍保持绿色体系。
-
-### 7.3 页面头部
-
-标准顺序为：
-
-1. `page-kicker`：12px 绿色领域标签；
-2. `page-title`：26px 页面名称；
-3. `muted`：一句话说明当前页面任务；
-4. 右侧主操作：创建、提交、刷新等。
-
-页面头部下方才进入指标、筛选、表格或工作区，不在标题旁堆积低频操作。
-
-## 8. 核心组件规范
-
-### 8.1 按钮
-
-| 类型 | 视觉 | 使用场景 |
-|---|---|---|
-| Primary | 绿色实心、白字 | 每个操作域唯一主动作 |
-| Default | 白底、灰边、深色文字 | 取消、返回、刷新、辅助动作 |
-| Text / Link | 无容器或弱容器 | 表格行操作、低频工具 |
-| Danger | 红色文字或红色强调 | 删除、终止、不可逆操作 |
-| Circle icon | 32–36px | 顶栏、紧凑工具栏 |
-
-默认按钮最小高度 `36px`。按下态下移 `1px`；键盘焦点使用绿色描边或 `--ui-focus`，不能只改变颜色。
-
-### 8.2 表单控件
-
-- 控件圆角 `6px`，标准高度约 `36px`；登录输入与关键选择器可提高到 `42–46px`。
-- 标签使用 `12–14px` 深色文字，字段说明使用 `11–12px` 次文字。
-- 聚焦态：绿色内描边加浅绿色外环。
-- 错误态紧邻字段，使用危险色文字；服务端错误可使用浅红提示块。
-- 创建运行、方案和场景等长表单放入抽屉或弹窗，底部操作区保持粘性。
-- 必填项使用文字标签后的红色 `*`，不依赖 placeholder 表示字段含义。
-
-### 8.3 筛选条
-
-- 使用次表面底色、1px 边框、`8px` 圆角和 `12px` 内边距。
-- 控件水平排列并保持 `10px` 间隔；结果计数和“重置”靠右。
-- 搜索框通常宽 `280–360px`，分类筛选约 `145–160px`。
-- 小屏下所有筛选器堆叠为满宽，不保留狭窄多列。
-
-### 8.4 表格
-
-- 表头高 `40px`，背景 `#EEF4F4`，文字 `12px / 600`。
-- 数据行高至少 `44px`，悬停背景 `#F1F7F6`。
-- 时间和机器标识使用 `10–12px` 等宽或数字等宽样式。
-- 行内主要操作用绿色链接，删除用红色；高频列表避免每行出现多个实心按钮。
-- 可点击行使用指针光标；隐藏的复制等快捷操作在悬停或键盘聚焦时出现，移动端必须常显。
-
-### 8.5 卡片与面板
-
-- `.panel` 用于结构分区；`.card` 可带极浅阴影。
-- 面板标题区通常为 `16–18px` 内边距，并用底边框与主体分隔。
-- 小型信息卡使用 `8px` 圆角、渐变或次表面背景；悬停最多上移 `1px`。
-- 指标组用 1px 网格缝隙连接为整体，避免一排悬浮孤岛卡片。
-
-### 8.6 标签、状态与进度
-
-- 标签圆角 `4px`，字重 500–600，颜色按状态语义映射。
-- `StatusBadge` 使用 `5px` 圆点加文字；列表中不得只显示彩色圆点。
-- 进度条轨道使用冷灰，填充使用主绿色；百分比与条形同时存在。
-- “当前”“选中”“健康”和“已完成”虽然都可使用绿色，但文案必须明确对象。
-
-### 8.7 Tabs、折叠与版本列表
-
-- Tabs 高 `44–48px`，当前项绿色并提高字重。
-- 版本、方案等折叠项使用整行点击区域、清晰箭头变化和底部分隔。
-- 收起状态仍保留标题、状态与关键元数据。
-
-### 8.8 弹窗、抽屉与遮罩
-
-- 弹窗圆角 `12px`；抽屉保持直角外边缘和清晰分区。
-- Header、Body、Footer 通过边框分隔，主体通常为 `20px` 内边距。
-- 遮罩为 `rgba(5, 25, 29, 0.46)` 并带 `2px` 模糊。
-- 页面级创建流程优先用右侧抽屉；需要聚焦确认的小任务使用居中弹窗。
-- 主操作位于右下，取消操作在其左侧；长内容中 Footer 保持可见。
-
-### 8.9 空、错、载入状态
-
-- 空状态最小高度约 `180–220px`，使用标题 + 简短说明 + 可选动作。
-- 错误信息在发生位置就近出现；页面加载失败使用 Alert 并提供重试。
-- 无数据不是错误，不使用红色。
-- 骨架、Spinner 或按钮 loading 只覆盖正在变化的区域，不冻结无关页面。
-
-## 9. 专业数据组件
-
-### 9.1 工作流编辑器
-
-工作流编辑器是独立的全屏工作区，不套用主侧栏。顶部为 72px 流程头部，下方是 48px 页签，主体由流程画布与属性面板组成。
-
-![工作流编辑器视觉基线](screenshots/user-guide/figure-07-workflow-nodes.png)
-
-- 画布使用 `#F4F8F8` 和 22px 点阵，表达可编辑空间。
-- 节点宽约 `360px`，在紧凑屏幕缩至 `290–330px`；白底、左侧 4px 类型色条、10px 圆角。
-- 默认节点色为青绿；蓝、琥珀、玫红、紫色只区分节点类型或性质。
-- 选中态使用主绿色边框与浅绿色焦点环；悬停只上移 `1px`。
-- 流程方向由居中的连线和箭头表达，新增点放在线路中，不与节点主内容抢层级。
-- 1023px 以下属性面板变为右侧滑层；767px 以下仍保持画布可用宽度和节点可读性。
-
-### 9.2 运行详情
-
-运行详情遵循“全局状态 → 流程定位 → 当前节点 → 日志证据”的阅读顺序。
-
-![运行详情视觉基线](screenshots/user-guide/figure-10-run-detail.png)
-
-- 顶部摘要在桌面端为四列，在 1023px 以下变两列，767px 以下单列。
-- 流程步骤使用横向滚动条带，当前、成功、失败、运行中、等待均有文字和颜色。
-- 主工作台桌面端为内容 + `380px` 日志栏；1023px 以下改为单列。
-- 节点详情用 68px 以上的信息块展示类型、状态、进度、耗时和时间。
-- 日志栏深色、粘性定位，作为证据层而非主视觉层。
-
-### 9.3 日志、终端与代码
-
-- 日志、SQL、命令、XML 和 SSH 终端统一使用深色表面与等宽字体。
-- 正文约 `11–13px / 1.6–1.7`；时间、来源和事件名使用更低对比色。
-- 错误行可使用浅红文字，但不改变整个终端背景。
-- 长内容必须可滚动并支持换行或横向滚动，不能裁掉完整命令或 Trace ID。
-- SSH 终端可使用青色光标、绿/青/黄 ANSI 色；高饱和颜色只用于终端语义。
-
-### 9.4 接线拓扑
-
-![接线拓扑视觉基线](screenshots/user-guide/figure-11-wiring.png)
-
-- 设备和交换机使用白色或浅灰外壳，1–1.5px 冷灰描边。
-- 上行固定为红色，下行固定为蓝色，图例必须同时出现。
-- 端口与接口使用浅青块，名称与 IP 保持高可读对比。
-- 图形最小宽度约 `720–760px`，窄屏通过横向滚动保留拓扑结构，不压缩到不可读。
-
-## 10. 页面模式
-
-| 页面类型 | 结构 | 视觉重点 |
-|---|---|---|
-| 登录 | 品牌面板 + 表单面板 | 品牌入口、明确焦点、单一主动作 |
-| 工作台 | 指标条 + 近期运行 + 待处理/健康侧栏 | 状态概览与下一步 |
-| 资源 / 运行 / 日志列表 | 页面头 + 筛选条 + 表格 | 扫描效率与批量定位 |
-| 方案与场景 | 目录栏 + 方案卡 + 场景表 | 层级关系与配置入口 |
-| 创建 / 编辑 | 抽屉或弹窗 + 分组表单 + 固定 Footer | 连续填写与安全提交 |
-| 工作流 | 全屏画布 + 属性面板 | 顺序、节点类型、选中上下文 |
-| 运行详情 | 摘要 + 流程条 + 节点详情 + 日志 | 运行定位与证据链 |
-| 数据库 / 终端 | 工具栏 + 深色编辑区或终端 | 专业工具感与内容完整性 |
-
-## 11. 响应式规则
-
-### 11.1 断点
-
-现有实现的主断点：
-
-| 断点 | 行为 |
-|---:|---|
-| `≤1250px` | 压缩复杂工作台、日志栏和工作流节点宽度 |
-| `≤1199px` | 页面水平内边距由 32px 降为 24px；侧栏进入紧凑模式 |
-| `≤1023px` | 双栏详情改为单栏；工作流属性面板改为滑层 |
-| `≤900/980px` | 两列表单或设置页改为单列 |
-| `≤767px` | 移动端主断点：侧栏变抽屉、页面 16px 边距、筛选器满宽、弹窗适配视口 |
-| `≤599/640px` | 复杂表单、卡片和详情元数据进一步单列 |
-| `≤420/480px` | 登录卡片贴边、版本列表等紧凑适配 |
-
-### 11.2 响应式原则
-
-- 优先重排，不缩小到不可读。
-- 表格和拓扑允许横向滚动；表单和卡片优先改为单列。
-- 侧栏在 767px 以下变为覆盖式抽屉，并提供遮罩和关闭操作。
-- 移动端保留主要操作，悬停才能出现的动作必须常显。
-- 弹窗宽度为 `calc(100vw - 24px)`，高度不超过视口并让 Body 独立滚动。
-- 终端高度使用 `dvh`，避免移动浏览器工具栏造成遮挡。
-
-## 12. 图标、品牌资产与插画
-
-- 通用图标来自 `@element-plus/icons-vue`，保持线性、简洁和约 `14–19px` 的尺寸范围。
-- 图标通常与文字共同出现；单独图标按钮必须提供 Tooltip 和 `aria-label`。
-- 主框架品牌图标使用 `/assets/global.logo.jpg`，显示在 34×34px 容器内。
-- 登录页品牌 Logo 使用 `/assets/atl.site.logo.png`，桌面最大约 231px 宽。
-- 登录插画由 CSS 图形组成，使用网格、雷达、屏幕和操作员抽象形态；业务页面不复制这一装饰语言。
-- 不混用填充风格、拟物风格和线性图标；新增图标优先从现有 Element Plus 图标集中选择。
-
-## 13. 可访问性底线
-
-- 所有键盘可操作元素必须有可见 `:focus-visible` 状态。
-- 页面提供“跳到主要内容”链接，主内容可聚焦。
-- 图标按钮必须有可访问名称；纯装饰图形使用 `aria-hidden` 或空 `alt`。
-- 状态使用文字补充颜色；错误与字段建立就近关系。
-- 正文、按钮、输入标签保持足够对比；弱文字不承载关键决策信息。
-- 支持 `prefers-reduced-motion: reduce`：取消平滑滚动，将动画和过渡压缩到近乎即时。
-- 触屏环境不依赖 hover 才能完成操作。
-
-## 14. 动效与交互反馈
-
-| 场景 | 当前动作 |
-|---|---|
-| 按钮按下 | `translateY(1px)` |
-| 卡片 / 节点悬停 | 边框增强，最多上移 `1px` |
-| 选中节点 | 绿色边框 + 浅绿色 3px 光环 |
-| 导航激活 | 左侧标记由缩短变为完整高度 |
-| 进度变化 | `220ms` 平滑宽度变化 |
-| 侧栏 / 属性面板 | `160ms` 位移过渡 |
-| 登录雷达 | `5.8s` 线性循环旋转 |
-
-不要添加弹跳、弹簧、视差或大面积渐变位移动画。OpenSLT 的反馈应像仪器响应：短、准、可预测。
-
-## 15. 文案与数据呈现
-
-- 页面 Kicker 用领域词：如“运行总览”“基础设施”“可观测性”。
-- 标题使用任务对象：如“工作台”“资源管理”“日志中心”。
-- 说明句描述用户能做什么，不重复标题。
-- 按钮使用动词 + 对象：如“创建测速运行”“新增资源”“提交人工结论”。
-- 状态文案保持稳定：完成、运行中、等待、失败、已启用、已暂停等不随页面变化。
-- 空状态先描述事实，再给下一步；错误文案说明失败对象和恢复动作。
-- 技术标识保留原始大小写与格式，不翻译 Trace ID、SQL、WebSocket、SLA、IP 等术语。
-
-## 16. 设计与开发检查表
-
-新增或修改界面前，逐项确认：
-
-- [ ] 是否沿用“雾灰画布 + 白色表面 + 深青文字 + 海松绿主色”？
-- [ ] 是否复用了现有 `--ui-*` 或 Element Plus 变量，而非新增近似色？
-- [ ] 是否只有一个最强主操作？危险操作是否准确使用红色？
-- [ ] 页面标题、说明、主操作和内容首区是否形成清晰顺序？
-- [ ] 数字、时间、命令和机器标识是否使用等宽或表格数字？
-- [ ] 状态是否同时提供文字与颜色/图标？
-- [ ] 普通容器是否优先使用边框而非重阴影？
-- [ ] 复杂内容在 1023px、767px 和小屏下是否仍可完成任务？
-- [ ] 移动端是否不依赖 hover？
-- [ ] 键盘焦点、错误提示、空状态、载入状态是否完整？
-- [ ] 是否支持 reduced motion？
-- [ ] 是否避免把登录页的装饰性蓝色科技视觉带入业务数据页？
-
-## 17. 实现约束与演进边界
-
-### 17.1 当前事实
-
-- 全局核心色、圆角、阴影、焦点和过渡已经令牌化，并同步覆盖 Element Plus。
-- 组件内仍存在较多局部硬编码色值，尤其是工作流节点、登录插画、终端和状态浅背景。
-- 间距与字号已形成稳定尺度，但尚未定义为完整 CSS token。
-- 当前仅实现浅色主工作区；深色仅用于侧栏、终端与登录品牌场景。
-
-### 17.2 后续新增界面的最小规则
+| `≤1200px` | 压缩页面水平留白与多栏比例 |
+| `≤1024px` | Dashboard、Run Detail 等双栏改为单栏；属性面板变滑层 |
+| `≤768px` | Sidebar 变覆盖式导航；页面边距降至 16px；Header 与 Toolbar 可换行 |
+| `≤640px` | 多列表单、指标条和复杂元数据改为单列或横向滚动 |
+
+规则：
+
+- 优先重排，不把控件和文字缩小到不可读。
+- 表格、拓扑、时间线和 Workflow Canvas 可横向滚动以保留结构。
+- 移动端不能依赖 Hover 才能完成操作。
+- Floating Body 独立滚动，Header 与 Footer 保持可见。
+- 终端与全屏工作区使用 `dvh`，避免浏览器工具栏遮挡。
+
+## 27. 可访问性底线
+
+- 所有键盘可操作元素都有可见 `:focus-visible`。
+- Focus 使用 `#00A88F` 与 `rgba(0,168,143,.12)`，不能只改变文字色。
+- 页面保留“跳到主要内容”能力。
+- 状态使用符号或文字补充颜色。
+- 单独图标按钮具有 Tooltip 和 `aria-label`。
+- 装饰线路、网格与 Signal 动画不进入可访问名称。
+- 错误信息与字段就近关联，并说明恢复动作。
+- 关键正文不使用 Tertiary 或 Disabled 色。
+- 支持 `prefers-reduced-motion: reduce`，停止 Signal Pulse 和非必要过渡。
+- 触控目标不得因 34px 视觉高度而失去可操作性；可通过透明点击区满足至少约 40px 的有效触控范围。
+
+## 28. 文案与数据格式
+
+- 页面标题直接使用任务对象，如“运行中心”“资源管理”“日志中心”。
+- 描述只解释用户能做什么，不重复标题。
+- 按钮使用“动词 + 对象”，如“创建运行”“新增资源”“提交结论”。
+- 状态词保持稳定：RUNNING、PASSED、FAILED、WAITING、PAUSED、UNKNOWN。
+- 用户界面正文可使用中文；机器状态码、事件名和协议术语保留原始英文。
+- 运行编号统一使用可扫描格式，例如 `RUN-20260903-0192`。
+- 时间根据任务选择 `HH:mm:ss.SSS` 或完整时间，统一使用 Mono。
+- IP、端口、百分比、耗时、Trace ID 等保持原始精度。
+
+## 29. CSS 令牌蓝图
+
+以下变量是 2.0 实现时的最小语义层，不要求一次性引入额外 Token 工具链。
 
 ```css
-.new-panel {
-  padding: 16px;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--ui-radius-panel);
-  background: var(--ui-surface);
-}
+:root {
+  /* Canvas & surface */
+  --ui-canvas: #f5f7f8;
+  --ui-workspace: #f0f3f4;
+  --ui-surface: #ffffff;
+  --ui-border: #e1e7e9;
+  --ui-border-control: #d6dfe2;
+  --ui-border-strong: #aebfc4;
 
-.new-panel__title {
-  color: var(--ui-text-primary);
-  font-size: 15px;
-  font-weight: 600;
-}
+  /* Navigation */
+  --ui-sidebar: #11191d;
+  --ui-sidebar-secondary: #172227;
+  --ui-sidebar-hover: #1d2b30;
+  --ui-sidebar-selected: #20343a;
 
-.new-panel__meta {
-  color: var(--ui-text-secondary);
-  font-size: 11px;
+  /* Text */
+  --ui-text-primary: #182328;
+  --ui-text-secondary: #58686e;
+  --ui-text-tertiary: #849298;
+  --ui-text-disabled: #aeb8bc;
+  --ui-placeholder: #98a5aa;
+
+  /* Interaction */
+  --ui-primary: #00a88f;
+  --ui-primary-hover: #008c79;
+  --ui-primary-pressed: #007565;
+  --ui-primary-soft: #ddf5f0;
+  --ui-focus-ring: 0 0 0 3px rgba(0, 168, 143, .12);
+
+  /* Data */
+  --ui-success: #188866;
+  --ui-running: #3378b7;
+  --ui-waiting: #b7791f;
+  --ui-failed: #d1495b;
+  --ui-paused: #73838a;
+  --ui-unknown: #9ca8ad;
+
+  /* Shape & motion */
+  --ui-radius-control: 6px;
+  --ui-radius-panel: 8px;
+  --ui-radius-large-panel: 10px;
+  --ui-radius-dialog: 12px;
+  --ui-shadow-floating: 0 16px 40px rgba(21, 32, 37, .12);
+  --ui-duration-fast: 120ms;
+  --ui-duration-panel: 160ms;
+  --ui-duration-drawer: 180ms;
+  --ui-duration-state: 200ms;
+  --ui-ease-instrument: cubic-bezier(.2, 0, 0, 1);
 }
 ```
 
-新增组件先复用现有变量和 Element Plus 能力。只有当同一视觉值在多个独立组件中重复且语义稳定时，才新增令牌；不要为单一页面创建抽象层。
+组件层变量只在同一组件出现多个稳定状态时增加，例如：
 
-## 18. 视觉基准索引
+```css
+:root {
+  --table-row-hover: #f3f8f7;
+  --table-row-selected: #eaf7f4;
+  --workflow-connection: #aab8bc;
+  --workflow-node-border: #dce4e6;
+  --terminal-bg: #11181d;
+  --terminal-toolbar: #182126;
+}
+```
 
-| 基准 | 文件 |
-|---|---|
-| 全局令牌与 Element Plus 覆盖 | `frontend/src/styles.css` |
-| 主框架与响应式导航 | `frontend/src/layouts/ShellLayout.vue` |
-| 登录品牌场景 | `frontend/src/views/LoginView.vue` |
-| 工作流画布与节点 | `frontend/src/views/WorkflowEditorView.vue` |
-| 运行详情体系 | `frontend/src/styles/run-detail.css` |
-| 状态标签 | `frontend/src/components/StatusBadge.vue` |
-| SSH 终端 | `frontend/src/components/SshTerminalPanel.vue` |
-| 接线拓扑 | `frontend/src/components/WiringTopologyDiagram.vue` |
-| 当前页面截图 | `docs/output/screenshots/user-guide/` |
+## 30. 1.x → 2.0 迁移边界
+
+| 领域 | 1.x 倾向 | 2.0 目标 |
+|---|---|---|
+| 品牌主色 | 深绿色占比较高 | 更明亮 Signal Green，仅用于操作与数据 |
+| Sidebar | 深青绿、224/64px | Graphite、220/60px、2px Signal Line |
+| Topbar | 52px、承担页域导航 | 48px 工具栏、Breadcrumb / Environment / Health |
+| Page Header | Kicker + Title + Description | 72–84px 紧凑双列 |
+| Dashboard | KPI 视觉权重偏高 | 连续 Overview Strip + System Monitor |
+| Filter | 浅色 Filter Card | 透明 Filter Toolbar |
+| Table | 表格容器感明显 | 无纵线、36px Header、选择 Signal |
+| Status | 边框 Tag 较多 | Dot Label 为默认，Soft Tag 为例外 |
+| Workflow Node | 摘要卡片式节点 | Type Header + 工程参数 + I/O Footer |
+| Workflow Path | 默认线色不统一 | 中性默认线 + 状态路径色 |
+| Run Flow | 横向步骤卡片 | Pipeline Timeline |
+| Run Detail | Tabs 与信息块并列 | 状态 → Timeline → Current Step → Live Log |
+| Login | 深蓝插画 + 白色表单 | Graphite Brand Environment + 抽象数据线路 |
+| Typography | 存在较多近似字号 | 严格限制 8 个字号 |
+| Motion | 统一约 160ms | 按 Button / Panel / Drawer / State 分级 |
+
+迁移时优先改全局令牌和高频组件，再处理页面结构。不得同时长期维护两套同义视觉变量。
+
+## 31. 设计与开发验收清单
+
+### 31.1 全局语言
+
+- [ ] 界面是否像工程控制台，而非 SaaS 后台模板？
+- [ ] Graphite Navigation、Cold Neutral Workspace、White Surface 是否清晰成立？
+- [ ] 绿色是否只表示操作、激活、当前或关键数据？
+- [ ] 页面是否几乎无普通卡片阴影？
+- [ ] 是否避免 Card inside Card？
+
+### 31.2 信息与状态
+
+- [ ] 用户能否快速识别当前状态、对象、阶段和下一步？
+- [ ] 状态是否同时提供颜色与文字/符号？
+- [ ] 运行、节点、日志、设备和时间是否形成可追溯证据链？
+- [ ] 工程数据是否使用 Mono 或 tabular numbers？
+- [ ] 是否避免无意义彩色卡片和 KPI 堆砌？
+
+### 31.3 组件与密度
+
+- [ ] Button、Input、Navigation、Toolbar、Table 是否符合 Compact Density？
+- [ ] 圆角是否限制在 4/6/8/10/12px？
+- [ ] Table 是否默认无纵向边框？
+- [ ] Status 是否默认使用 Dot Label？
+- [ ] Filter 是否表现为 Toolbar，而不是 Card？
+- [ ] Signal Line 是否只标记当前、活动或选中状态？
+
+### 31.4 专业页面
+
+- [ ] Workflow Node 是否保持白色并通过 Type Indicator 区分类别？
+- [ ] Workflow Connection 是否默认中性、按运行状态着色？
+- [ ] Run Detail 是否遵循“状态 → 时间线 → 当前节点 → 证据”？
+- [ ] Log / Terminal 是否优先支持快速扫描和追溯？
+- [ ] Login 是否与主应用共享 Graphite 与 Signal Green，而非独立插画风？
+
+### 31.5 交互与可访问性
+
+- [ ] 是否只有一个最强 Primary Action？
+- [ ] Danger 是否仅在最终危险确认时使用实心红色？
+- [ ] 键盘焦点、错误、空、载入与禁用状态是否完整？
+- [ ] 移动端是否不依赖 Hover？
+- [ ] reduced motion 下是否停止非必要动画？
+- [ ] 紧凑视觉高度是否仍保留足够触控范围？
 
 ---
 
-**最终判断标准：** 如果一个新界面看起来像同一套冷静、精密、可长期使用的测试控制台，并且用户能在几秒内辨认层级、状态和下一步操作，它就符合 OpenSLT 的视觉语言。
+**最终判断标准：** OpenSLT 2.0 应让用户在几秒内看清系统状态、当前对象、执行阶段和证据链；它安静、紧凑、精确，像真实测试实验室中的专业仪器。
