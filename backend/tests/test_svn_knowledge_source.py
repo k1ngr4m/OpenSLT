@@ -25,14 +25,6 @@ def _payload(**overrides):
         "repository_urls": ["http://svn.intranet.example/svn/knowledge"],
         "username": "openslt-readonly",
         "password": "svn-secret-value",
-        "embedding_base_url": "http://embedding.intranet.example/v1",
-        "embedding_model": "bge-m3",
-        "embedding_api_key": "embedding-secret-value",
-        "allow_insecure_embedding_http": True,
-        "llm_base_url": "http://llm.intranet.example/v1",
-        "llm_model": "qwen3",
-        "llm_api_key": "llm-secret-value",
-        "allow_insecure_llm_http": True,
         "include_paths": ["docs/测试文档", "docs/需求文档"],
         "sync_interval_minutes": 30,
         "enabled": True,
@@ -40,6 +32,36 @@ def _payload(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def _add_model(client, headers, kind, base_url, model_id, api_key=None):
+    provider = client.post(
+        "/api/v1/model-providers",
+        headers=headers,
+        json={
+            "name": "%s-provider" % kind,
+            "base_url": base_url,
+            "api_key": api_key,
+            "allow_insecure_http": base_url.startswith("http://"),
+        },
+    ).json()
+    model = client.post(
+        "/api/v1/model-providers/%s/models" % provider["id"],
+        headers=headers,
+        json={"kind": kind, "model_id": model_id},
+    ).json()
+    assert client.post(
+        "/api/v1/model-providers/models/%s/activate" % model["id"], headers=headers
+    ).status_code == 200
+    return model
+
+
+def _configure_models(client, headers):
+    embedding = _add_model(
+        client, headers, "embedding", "http://embedding.intranet.example/v1", "bge-m3"
+    )
+    chat = _add_model(client, headers, "chat", "http://llm.intranet.example/v1", "qwen3")
+    return embedding, chat
 
 
 def test_svn_config_validates_scope_and_never_returns_or_queues_password(client, admin_headers) -> None:
@@ -85,13 +107,13 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
         "https://svn.intranet.example/svn/archive",
     ]
     assert saved.json()["has_password"] is True
-    assert saved.json()["has_embedding_api_key"] is True
-    assert saved.json()["has_llm_api_key"] is True
     assert "password" not in saved.text.replace("has_password", "")
     fetched = client.get("/api/v1/smart-cases/knowledge-source", headers=admin_headers)
     assert "svn-secret-value" not in fetched.text
-    assert "embedding-secret-value" not in fetched.text
-    assert "llm-secret-value" not in fetched.text
+
+    _add_model(
+        client, admin_headers, "embedding", "http://embedding.intranet.example/v1", "bge-m3"
+    )
 
     first = client.post("/api/v1/smart-cases/knowledge-source/sync", headers=admin_headers)
     second = client.post("/api/v1/smart-cases/knowledge-source/sync", headers=admin_headers)
@@ -105,13 +127,9 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
         task = db.scalar(select(DurableTask).where(DurableTask.task_type == "svn_sync"))
         audits = list(db.scalars(select(AuditLog)).all())
         assert source is not None and source.encrypted_password != "svn-secret-value"
-        assert source.encrypted_embedding_api_key != "embedding-secret-value"
-        assert source.encrypted_llm_api_key != "llm-secret-value"
         assert task is not None and task.payload == {"source_id": source.id, "reason": "manual"}
         serialized = json.dumps([item.detail for item in audits], ensure_ascii=False)
         assert "svn-secret-value" not in serialized
-        assert "embedding-secret-value" not in serialized
-        assert "llm-secret-value" not in serialized
     finally:
         db.close()
 
@@ -127,8 +145,6 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
         return {"ok": True, "svn_version": "1.10.0", "checked_paths": include_paths}
 
     monkeypatch.setattr("app.api.routes.smart_cases.test_svn_connection", fake_test)
-    monkeypatch.setattr("app.api.routes.smart_cases.test_embedding_connection", lambda *args: 1024)
-    monkeypatch.setattr("app.api.routes.smart_cases.test_llm_connection", lambda *args: None)
     tested = client.post(
         "/api/v1/smart-cases/knowledge-source/connection-test",
         headers=admin_headers,
@@ -136,8 +152,6 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
     )
     assert tested.status_code == 200
     assert tested.json()["checked_paths"] == ["docs/测试文档", "docs/需求文档"]
-    assert tested.json()["embedding_dimensions"] == 1024
-    assert tested.json()["llm_model"] == "qwen3"
     assert received["repository_urls"] == ["http://svn.intranet.example/svn/knowledge"]
     assert received["password"] == "svn-secret-value"
     assert "svn-secret-value" not in tested.text
@@ -180,6 +194,7 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
 
 def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers, tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(settings, "knowledge_root", tmp_path)
+    embedding_model, chat_model = _configure_models(client, admin_headers)
     assert client.put("/api/v1/smart-cases/knowledge-source", headers=admin_headers, json=_payload(include_paths=["docs/测试文档"])).status_code == 200
     working_copy = tmp_path / "wc"
     working_copy.mkdir()
@@ -210,6 +225,7 @@ def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers,
         task = db.scalar(select(DurableTask).where(DurableTask.task_type == "smart_case_generate"))
         generation = db.scalar(select(SmartCaseGeneration))
         assert task.payload == {"generation_id": generation.id}
+        assert generation.ai_model_id == chat_model["id"]
         assert "用户输入" not in json.dumps(task.payload, ensure_ascii=False)
     finally:
         db.close()
@@ -256,6 +272,9 @@ def test_svn_password_only_enters_the_non_echoing_pty(tmp_path: Path) -> None:
 
 
 def test_scheduled_sync_is_idempotent_per_thirty_minute_window(client, admin_headers) -> None:
+    _add_model(
+        client, admin_headers, "embedding", "http://embedding.intranet.example/v1", "bge-m3"
+    )
     assert client.put(
         "/api/v1/smart-cases/knowledge-source", headers=admin_headers, json=_payload()
     ).status_code == 200

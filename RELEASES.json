@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "type": "added",
+      "text": "管理中心新增独立模型管理，支持多提供商、多对话与 Embedding 模型、当前模型选择及独立连通测试。"
+    },
+    {
       "type": "fixed",
       "text": "修复 MySQL/MariaDB 数据库迁移中断后重启时因重复列或索引而无法继续升级的问题。"
     },

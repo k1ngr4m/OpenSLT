@@ -16,6 +16,7 @@ import {
   House,
   Setting,
   MagicStick,
+  Cpu,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -41,7 +42,7 @@ const managementMode = computed(() => route.meta.section === 'management')
 const activePath = computed(() => {
   if (route.path.startsWith('/smart-cases/settings')) return '/smart-cases/settings'
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
-  return ['/dashboard', '/runs', '/plans', '/resources', '/smart-cases', '/logs', '/users'].includes(first) ? first : '/dashboard'
+  return ['/dashboard', '/runs', '/plans', '/resources', '/smart-cases', '/models', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
 const navToggleLabel = computed(() => {
   if (isMobile.value) return '打开导航'
@@ -125,7 +126,11 @@ onBeforeUnmount(() => {
             </el-menu-item>
             <el-menu-item v-if="auth.canOperate" index="/smart-cases/settings">
               <el-icon><MagicStick /></el-icon>
-              <template #title>智能用例</template>
+              <template #title>知识源管理</template>
+            </el-menu-item>
+            <el-menu-item v-if="auth.isAdmin" index="/models">
+              <el-icon><Cpu /></el-icon>
+              <template #title>模型管理</template>
             </el-menu-item>
 
             <div v-if="auth.canOperate && !collapsed" class="nav-label">系统</div>

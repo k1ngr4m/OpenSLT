@@ -55,15 +55,7 @@ class SvnKnowledgeSource(TimestampMixin, Base):
     repository_urls: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
     username: Mapped[str] = mapped_column(String(128))
     encrypted_password: Mapped[str] = mapped_column(Text)
-    embedding_base_url: Mapped[str] = mapped_column(String(1024), default="")
-    embedding_model: Mapped[str] = mapped_column(String(255), default="")
-    encrypted_embedding_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
-    allow_insecure_embedding_http: Mapped[bool] = mapped_column(Boolean, default=False)
     embedding_dimensions: Mapped[typing.Union[int, None]] = mapped_column(Integer)
-    llm_base_url: Mapped[str] = mapped_column(String(1024), default="")
-    llm_model: Mapped[str] = mapped_column(String(255), default="")
-    encrypted_llm_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
-    allow_insecure_llm_http: Mapped[bool] = mapped_column(Boolean, default=False)
     include_paths: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
     sync_interval_minutes: Mapped[int] = mapped_column(Integer, default=30)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -78,6 +70,43 @@ class SvnKnowledgeSource(TimestampMixin, Base):
     last_error: Mapped[typing.Union[str, None]] = mapped_column(Text)
 
 
+class ModelProvider(TimestampMixin, Base):
+    __tablename__ = "t_model_providers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    base_url: Mapped[str] = mapped_column(String(1024))
+    encrypted_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    allow_insecure_http: Mapped[bool] = mapped_column(Boolean, default=False)
+    models: Mapped[typing.List["AiModel"]] = relationship(
+        back_populates="provider", cascade="all, delete-orphan"
+    )
+
+
+class AiModel(TimestampMixin, Base):
+    __tablename__ = "t_ai_models"
+    __table_args__ = (
+        UniqueConstraint("provider_id", "kind", "model_id", name="uq_ai_model_provider_kind_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    provider_id: Mapped[int] = mapped_column(
+        ForeignKey("t_model_providers.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    model_id: Mapped[str] = mapped_column(String(255))
+    provider: Mapped[ModelProvider] = relationship(back_populates="models")
+
+
+class ActiveAiModel(Base):
+    __tablename__ = "t_active_ai_models"
+
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    model_id: Mapped[int] = mapped_column(
+        ForeignKey("t_ai_models.id", ondelete="RESTRICT"), unique=True
+    )
+
+
 class SmartCaseGeneration(TimestampMixin, Base):
     __tablename__ = "t_smart_case_generations"
 
@@ -88,6 +117,9 @@ class SmartCaseGeneration(TimestampMixin, Base):
     requirement_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     llm_model: Mapped[str] = mapped_column(String(255))
+    ai_model_id: Mapped[typing.Union[int, None]] = mapped_column(
+        ForeignKey("t_ai_models.id", ondelete="SET NULL"), index=True
+    )
     index_revisions: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     referenced_sources: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
     result_cases: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)

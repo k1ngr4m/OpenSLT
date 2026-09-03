@@ -38,14 +38,6 @@ class SvnKnowledgeSourceWrite(BaseModel):
     repository_url: typing.Union[str, None] = Field(default=None, min_length=1, max_length=1024)
     username: str = Field(min_length=1, max_length=128)
     password: typing.Union[str, None] = None
-    embedding_base_url: str = Field(min_length=1, max_length=1024)
-    embedding_model: str = Field(min_length=1, max_length=255)
-    embedding_api_key: typing.Union[str, None] = None
-    allow_insecure_embedding_http: bool = False
-    llm_base_url: str = Field(min_length=1, max_length=1024)
-    llm_model: str = Field(min_length=1, max_length=255)
-    llm_api_key: typing.Union[str, None] = None
-    allow_insecure_llm_http: bool = False
     include_paths: typing.List[str] = Field(min_length=1)
     sync_interval_minutes: Literal[30] = 30
     enabled: bool = True
@@ -70,14 +62,6 @@ class SvnKnowledgeSourceOut(BaseModel):
     repository_url: str = ""
     username: str = ""
     has_password: bool = False
-    embedding_base_url: str = ""
-    embedding_model: str = ""
-    has_embedding_api_key: bool = False
-    allow_insecure_embedding_http: bool = False
-    llm_base_url: str = ""
-    llm_model: str = ""
-    has_llm_api_key: bool = False
-    allow_insecure_llm_http: bool = False
     include_paths: typing.List[str] = Field(default_factory=list)
     sync_interval_minutes: int = 30
     enabled: bool = False
@@ -89,8 +73,51 @@ class SvnConnectionTestOut(BaseModel):
     ok: bool
     svn_version: str
     checked_paths: typing.List[str]
-    embedding_dimensions: int
-    llm_model: str
+
+
+class ModelProviderWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    base_url: str = Field(min_length=1, max_length=1024)
+    api_key: typing.Union[str, None] = None
+    allow_insecure_http: bool = False
+
+
+class AiModelCreate(BaseModel):
+    kind: Literal["chat", "embedding"]
+    model_id: str = Field(min_length=1, max_length=255)
+
+
+class AiModelOut(BaseModel):
+    id: int
+    provider_id: int
+    kind: Literal["chat", "embedding"]
+    model_id: str
+    is_active: bool = False
+
+
+class ModelProviderOut(BaseModel):
+    id: int
+    name: str
+    base_url: str
+    has_api_key: bool
+    allow_insecure_http: bool
+    models: typing.List[AiModelOut] = Field(default_factory=list)
+    updated_at: datetime
+
+
+class ModelDiscoveryRequest(BaseModel):
+    kind: Literal["chat", "embedding"]
+
+
+class ModelDiscoveryOut(BaseModel):
+    models: typing.List[str]
+
+
+class ModelConnectionTestOut(BaseModel):
+    ok: bool = True
+    kind: Literal["chat", "embedding"]
+    model_id: str
+    dimensions: typing.Union[int, None] = None
 
 
 class SvnSyncTaskOut(BaseModel):

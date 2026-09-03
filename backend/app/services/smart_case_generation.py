@@ -16,9 +16,10 @@ from app.core.database import SessionLocal
 from app.core.logging import redact
 from app.core.security import decrypt_secret
 from app.core.time import beijing_now
-from app.models import SmartCaseGeneration, SvnKnowledgeSource
+from app.models import AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource
 from app.services.embedding import EmbeddingClient
 from app.services.llm import LlmClient, generate_cases
+from app.services.model_providers import require_active_model
 from app.services.svn_knowledge import get_indexed_document, published_index_matches, search_vector_index
 
 
@@ -94,7 +95,20 @@ def execute_smart_case_generation(generation_id: int) -> None:
             raise RuntimeError("智能用例生成任务或知识源不存在")
         if generation.status == "succeeded":
             return
-        if not published_index_matches(source) or dict(generation.index_revisions) != dict(source.last_revisions):
+        embedding_provider, embedding_model = require_active_model(db, "embedding")
+        chat_model = db.get(AiModel, generation.ai_model_id) if generation.ai_model_id else None
+        if chat_model is None or chat_model.kind != "chat":
+            chat_provider, chat_model = require_active_model(db, "chat")
+        else:
+            chat_provider = db.get(ModelProvider, chat_model.provider_id)
+            if chat_provider is None:
+                raise RuntimeError("用例生成任务使用的模型提供商不存在")
+        if (
+            not published_index_matches(
+                source, embedding_provider.base_url, embedding_model.model_id
+            )
+            or dict(generation.index_revisions) != dict(source.last_revisions)
+        ):
             raise RuntimeError("知识索引已变化，请重新选择需求")
         generation.status = "running"
         generation.error = None
@@ -103,7 +117,11 @@ def execute_smart_case_generation(generation_id: int) -> None:
         if selected["revision"] != generation.requirement_revision:
             raise RuntimeError("需求 revision 已变化，请重新选择需求")
         query = "%s %s %s" % (generation.requirement_no or "", generation.requirement_name, selected["content"][:1500])
-        embedding = EmbeddingClient(source.embedding_base_url, source.embedding_model, decrypt_secret(source.encrypted_embedding_api_key))
+        embedding = EmbeddingClient(
+            embedding_provider.base_url,
+            embedding_model.model_id,
+            decrypt_secret(embedding_provider.encrypted_api_key),
+        )
         vector = embedding.embed([query])[0]
         hits = search_vector_index(query, vector, 8)
         references = [{"source_path": selected["source_path"], "revision": selected["revision"], "content": selected["content"][:12000]}]
@@ -115,7 +133,11 @@ def execute_smart_case_generation(generation_id: int) -> None:
             references.append({"source_path": hit["source_path"], "revision": hit["revision"], "content": hit["snippet"][:1500]})
         generation.referenced_sources = [{"source_path": item["source_path"], "revision": item["revision"]} for item in references]
         cases = generate_cases(
-            LlmClient(source.llm_base_url, source.llm_model, decrypt_secret(source.encrypted_llm_api_key)),
+            LlmClient(
+                chat_provider.base_url,
+                chat_model.model_id,
+                decrypt_secret(chat_provider.encrypted_api_key),
+            ),
             {"requirement_no": generation.requirement_no or "", "requirement_name": generation.requirement_name, "source_path": generation.requirement_path, "revision": generation.requirement_revision},
             references,
         )

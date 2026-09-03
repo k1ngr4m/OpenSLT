@@ -41,9 +41,9 @@ from app.services.svn_knowledge import (
     search_vector_index,
     test_svn_connection,
 )
-from app.services.embedding import EmbeddingClient, normalize_embedding_base_url, test_embedding_connection
+from app.services.embedding import EmbeddingClient
 from app.services.durable_tasks import enqueue_task
-from app.services.llm import normalize_llm_base_url, test_llm_connection
+from app.services.model_providers import ModelProviderError, active_model, require_active_model
 from app.core.config import settings
 
 
@@ -54,21 +54,25 @@ def _source(db: Session) -> typing.Optional[SvnKnowledgeSource]:
     return db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
 
 
+def _required_model(db: Session, kind: str):
+    try:
+        return require_active_model(db, kind)
+    except ModelProviderError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "AI_MODEL_NOT_CONFIGURED", "message": str(exc)},
+        ) from exc
+
+
 def _repository_urls(source: SvnKnowledgeSource) -> typing.List[str]:
     return list(source.repository_urls or []) or [source.repository_url]
 
 
-def _normalized(payload: SvnKnowledgeSourceWrite) -> typing.Tuple[typing.List[str], typing.List[str], str, str]:
+def _normalized(payload: SvnKnowledgeSourceWrite) -> typing.Tuple[typing.List[str], typing.List[str]]:
     try:
-        if not payload.embedding_model.strip():
-            raise ValueError("Embedding 模型名称不能为空")
-        if not payload.llm_model.strip():
-            raise ValueError("生成模型名称不能为空")
         return (
             normalize_repository_urls(payload.repository_urls, payload.allow_insecure_http),
             normalize_include_paths(payload.include_paths),
-            normalize_embedding_base_url(payload.embedding_base_url, payload.allow_insecure_embedding_http),
-            normalize_llm_base_url(payload.llm_base_url, payload.allow_insecure_llm_http),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "INVALID_SVN_CONFIG", "message": str(exc)}) from exc
@@ -83,14 +87,6 @@ def _out(source: typing.Optional[SvnKnowledgeSource]) -> SvnKnowledgeSourceOut:
         repository_url=source.repository_url,
         username=source.username,
         has_password=bool(source.encrypted_password),
-        embedding_base_url=source.embedding_base_url,
-        embedding_model=source.embedding_model,
-        has_embedding_api_key=bool(source.encrypted_embedding_api_key),
-        allow_insecure_embedding_http=source.allow_insecure_embedding_http,
-        llm_base_url=source.llm_base_url,
-        llm_model=source.llm_model,
-        has_llm_api_key=bool(source.encrypted_llm_api_key),
-        allow_insecure_llm_http=source.allow_insecure_llm_http,
         include_paths=list(source.include_paths),
         sync_interval_minutes=source.sync_interval_minutes,
         enabled=source.enabled,
@@ -114,15 +110,13 @@ def save_knowledge_source(
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
 ) -> SvnKnowledgeSourceOut:
-    repository_urls, include_paths, embedding_base_url, llm_base_url = _normalized(payload)
+    repository_urls, include_paths = _normalized(payload)
     if active_svn_task(db):
         raise HTTPException(status_code=409, detail={"code": "SVN_SYNC_RUNNING", "message": "同步任务运行期间不能修改知识源配置"})
     source = _source(db)
     previous_index_identity = None if source is None else (
         tuple(_repository_urls(source)),
         tuple(source.include_paths),
-        source.embedding_base_url,
-        source.embedding_model,
     )
     identity_changed = source is not None and (_repository_urls(source) != repository_urls or source.username != payload.username.strip())
     if not payload.password and (source is None or identity_changed):
@@ -133,14 +127,6 @@ def save_knowledge_source(
             repository_urls=repository_urls,
             username=payload.username.strip(),
             encrypted_password=encrypt_secret(payload.password) or "",
-            embedding_base_url=embedding_base_url,
-            embedding_model=payload.embedding_model.strip(),
-            encrypted_embedding_api_key=encrypt_secret(payload.embedding_api_key),
-            allow_insecure_embedding_http=payload.allow_insecure_embedding_http,
-            llm_base_url=llm_base_url,
-            llm_model=payload.llm_model.strip(),
-            encrypted_llm_api_key=encrypt_secret(payload.llm_api_key),
-            allow_insecure_llm_http=payload.allow_insecure_llm_http,
         )
         db.add(source)
     else:
@@ -149,20 +135,6 @@ def save_knowledge_source(
         source.username = payload.username.strip()
         if payload.password:
             source.encrypted_password = encrypt_secret(payload.password) or ""
-        if source.embedding_base_url != embedding_base_url and not payload.embedding_api_key:
-            source.encrypted_embedding_api_key = None
-        elif payload.embedding_api_key:
-            source.encrypted_embedding_api_key = encrypt_secret(payload.embedding_api_key)
-        source.embedding_base_url = embedding_base_url
-        source.embedding_model = payload.embedding_model.strip()
-        source.allow_insecure_embedding_http = payload.allow_insecure_embedding_http
-        if source.llm_base_url != llm_base_url and not payload.llm_api_key:
-            source.encrypted_llm_api_key = None
-        elif payload.llm_api_key:
-            source.encrypted_llm_api_key = encrypt_secret(payload.llm_api_key)
-        source.llm_base_url = llm_base_url
-        source.llm_model = payload.llm_model.strip()
-        source.allow_insecure_llm_http = payload.allow_insecure_llm_http
     source.include_paths = include_paths
     source.sync_interval_minutes = payload.sync_interval_minutes
     source.enabled = payload.enabled
@@ -170,8 +142,6 @@ def save_knowledge_source(
     current_index_identity = (
         tuple(_repository_urls(source)),
         tuple(source.include_paths),
-        source.embedding_base_url,
-        source.embedding_model,
     )
     if previous_index_identity is not None and previous_index_identity != current_index_identity:
         source.sync_status = "stale"
@@ -190,14 +160,6 @@ def save_knowledge_source(
             "enabled": source.enabled,
             "allow_insecure_http": source.allow_insecure_http,
             "has_password": bool(source.encrypted_password),
-            "embedding_base_url": embedding_base_url,
-            "embedding_model": source.embedding_model,
-            "has_embedding_api_key": bool(source.encrypted_embedding_api_key),
-            "allow_insecure_embedding_http": source.allow_insecure_embedding_http,
-            "llm_base_url": llm_base_url,
-            "llm_model": source.llm_model,
-            "has_llm_api_key": bool(source.encrypted_llm_api_key),
-            "allow_insecure_llm_http": source.allow_insecure_llm_http,
         },
     )
     db.commit()
@@ -212,16 +174,12 @@ async def connection_test(
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
 ) -> typing.Dict[str, typing.Any]:
-    repository_urls, include_paths, embedding_base_url, llm_base_url = _normalized(payload)
+    repository_urls, include_paths = _normalized(payload)
     source = _source(db)
     identity_matches = source is not None and _repository_urls(source) == repository_urls and source.username == payload.username.strip()
     password = payload.password or (decrypt_secret(source.encrypted_password) if identity_matches else None)
     if not password:
         raise HTTPException(status_code=422, detail={"code": "SVN_PASSWORD_REQUIRED", "message": "连接测试需要 SVN 密码"})
-    embedding_identity_matches = source is not None and source.embedding_base_url == embedding_base_url
-    embedding_api_key = payload.embedding_api_key or (decrypt_secret(source.encrypted_embedding_api_key) if embedding_identity_matches else None)
-    llm_identity_matches = source is not None and source.llm_base_url == llm_base_url
-    llm_api_key = payload.llm_api_key or (decrypt_secret(source.encrypted_llm_api_key) if llm_identity_matches else None)
     loop = asyncio.get_running_loop()
     try:
         result = await loop.run_in_executor(
@@ -232,15 +190,6 @@ async def connection_test(
             password,
             include_paths,
         )
-        result["embedding_dimensions"] = await loop.run_in_executor(
-            None,
-            test_embedding_connection,
-            embedding_base_url,
-            payload.embedding_model.strip(),
-            embedding_api_key,
-        )
-        await loop.run_in_executor(None, test_llm_connection, llm_base_url, payload.llm_model.strip(), llm_api_key)
-        result["llm_model"] = payload.llm_model.strip()
     except Exception as exc:
         write_audit(db, "smart_cases.svn_connection.test", "svn_knowledge_source", source.id if source else None, actor, request, result="failed")
         db.commit()
@@ -260,7 +209,13 @@ def sync_now(
     if source is None:
         raise HTTPException(status_code=409, detail={"code": "SVN_NOT_CONFIGURED", "message": "请先保存 SVN 知识源配置"})
     existing = active_svn_task(db)
-    task = existing or enqueue_svn_sync(db, source, "manual")
+    try:
+        task = existing or enqueue_svn_sync(db, source, "manual")
+    except ModelProviderError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "AI_MODEL_NOT_CONFIGURED", "message": str(exc)},
+        ) from exc
     write_audit(db, "smart_cases.svn_sync.start", "svn_knowledge_source", source.id, actor, request, detail={"task_id": task.id, "reused": existing is not None})
     db.commit()
     return SvnSyncTaskOut(task_id=task.id, status=task.status, reused=existing is not None)
@@ -274,12 +229,13 @@ def sync_status(
     source = _source(db)
     client = svn_client_status()
     task = active_svn_task(db)
+    embedding = active_model(db, "embedding")
     error = client["error"] if not client["ready"] else (source.last_error if source else None)
     return SvnSyncStatusOut(
         configured=source is not None,
         client_ready=client["ready"],
         svn_version=client["version"],
-        embedding_model=source.embedding_model if source else None,
+        embedding_model=embedding[1].model_id if embedding else None,
         embedding_dimensions=source.embedding_dimensions if source else None,
         status=task.status if task else (source.sync_status if source else "unconfigured"),
         task_id=task.id if task else None,
@@ -302,10 +258,10 @@ async def search_knowledge(
     source = _source(db)
     if source is None:
         raise HTTPException(status_code=409, detail={"code": "SVN_NOT_CONFIGURED", "message": "请先配置并同步知识源"})
-    if not published_index_matches(source):
+    provider, model = _required_model(db, "embedding")
+    if not published_index_matches(source, provider.base_url, model.model_id):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "当前配置没有匹配的成功索引，请先完成同步"})
-    api_key = decrypt_secret(source.encrypted_embedding_api_key)
-    client = EmbeddingClient(source.embedding_base_url, source.embedding_model, api_key)
+    client = EmbeddingClient(provider.base_url, model.model_id, decrypt_secret(provider.encrypted_api_key))
     loop = asyncio.get_running_loop()
     try:
         vectors = await loop.run_in_executor(None, client.embed, [payload.query.strip()])
@@ -340,7 +296,8 @@ def requirements(
     db: Session = Depends(get_db),
 ) -> typing.List[typing.Dict[str, typing.Any]]:
     source = _source(db)
-    if source is None or not published_index_matches(source):
+    provider, model = _required_model(db, "embedding")
+    if source is None or not published_index_matches(source, provider.base_url, model.model_id):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
     return list_indexed_requirements(query[:255])
 
@@ -353,8 +310,12 @@ def create_generation(
     db: Session = Depends(get_db),
 ) -> SmartCaseGenerationOut:
     source = _source(db)
-    if source is None or not published_index_matches(source):
+    embedding_provider, embedding_model = _required_model(db, "embedding")
+    if source is None or not published_index_matches(
+        source, embedding_provider.base_url, embedding_model.model_id
+    ):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
+    _, chat_model = _required_model(db, "chat")
     requirement = next((item for item in list_indexed_requirements() if item["source_path"] == payload.requirement_path), None)
     if requirement is None:
         raise HTTPException(status_code=404, detail={"code": "REQUIREMENT_NOT_FOUND", "message": "需求不在当前知识索引中"})
@@ -363,7 +324,8 @@ def create_generation(
         requirement_revision=requirement["revision"],
         requirement_no=requirement["requirement_no"],
         requirement_name=requirement["requirement_name"],
-        llm_model=source.llm_model,
+        llm_model=chat_model.model_id,
+        ai_model_id=chat_model.id,
         index_revisions=dict(source.last_revisions),
         created_by=actor.id,
     )

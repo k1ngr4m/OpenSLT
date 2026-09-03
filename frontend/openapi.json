@@ -1,6 +1,67 @@
 {
   "components": {
     "schemas": {
+      "AiModelCreate": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "model_id"
+        ],
+        "title": "AiModelCreate",
+        "type": "object"
+      },
+      "AiModelOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_active": {
+            "default": false,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "provider_id",
+          "kind",
+          "model_id"
+        ],
+        "title": "AiModelOut",
+        "type": "object"
+      },
       "ArtifactOut": {
         "properties": {
           "artifact_type": {
@@ -1621,6 +1682,161 @@
           "detail"
         ],
         "title": "MetricOut",
+        "type": "object"
+      },
+      "ModelConnectionTestOut": {
+        "properties": {
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions"
+          },
+          "kind": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "model_id"
+        ],
+        "title": "ModelConnectionTestOut",
+        "type": "object"
+      },
+      "ModelDiscoveryOut": {
+        "properties": {
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          }
+        },
+        "required": [
+          "models"
+        ],
+        "title": "ModelDiscoveryOut",
+        "type": "object"
+      },
+      "ModelDiscoveryRequest": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ModelDiscoveryRequest",
+        "type": "object"
+      },
+      "ModelProviderOut": {
+        "properties": {
+          "allow_insecure_http": {
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "has_api_key": {
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/AiModelOut"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "base_url",
+          "has_api_key",
+          "allow_insecure_http",
+          "updated_at"
+        ],
+        "title": "ModelProviderOut",
+        "type": "object"
+      },
+      "ModelProviderWrite": {
+        "properties": {
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "base_url"
+        ],
+        "title": "ModelProviderWrite",
         "type": "object"
       },
       "OrderActionRequest": {
@@ -5090,14 +5306,6 @@
             "title": "Checked Paths",
             "type": "array"
           },
-          "embedding_dimensions": {
-            "title": "Embedding Dimensions",
-            "type": "integer"
-          },
-          "llm_model": {
-            "title": "Llm Model",
-            "type": "string"
-          },
           "ok": {
             "title": "Ok",
             "type": "boolean"
@@ -5110,52 +5318,17 @@
         "required": [
           "ok",
           "svn_version",
-          "checked_paths",
-          "embedding_dimensions",
-          "llm_model"
+          "checked_paths"
         ],
         "title": "SvnConnectionTestOut",
         "type": "object"
       },
       "SvnKnowledgeConnectionTest": {
         "properties": {
-          "allow_insecure_embedding_http": {
-            "default": false,
-            "title": "Allow Insecure Embedding Http",
-            "type": "boolean"
-          },
           "allow_insecure_http": {
             "default": false,
             "title": "Allow Insecure Http",
             "type": "boolean"
-          },
-          "allow_insecure_llm_http": {
-            "default": false,
-            "title": "Allow Insecure Llm Http",
-            "type": "boolean"
-          },
-          "embedding_api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Embedding Api Key"
-          },
-          "embedding_base_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Embedding Base Url",
-            "type": "string"
-          },
-          "embedding_model": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Embedding Model",
-            "type": "string"
           },
           "enabled": {
             "default": true,
@@ -5169,29 +5342,6 @@
             "minItems": 1,
             "title": "Include Paths",
             "type": "array"
-          },
-          "llm_api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llm Api Key"
-          },
-          "llm_base_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Llm Base Url",
-            "type": "string"
-          },
-          "llm_model": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Llm Model",
-            "type": "string"
           },
           "password": {
             "anyOf": [
@@ -5241,10 +5391,6 @@
         },
         "required": [
           "username",
-          "embedding_base_url",
-          "embedding_model",
-          "llm_base_url",
-          "llm_model",
           "include_paths"
         ],
         "title": "SvnKnowledgeConnectionTest",
@@ -5252,48 +5398,18 @@
       },
       "SvnKnowledgeSourceOut": {
         "properties": {
-          "allow_insecure_embedding_http": {
-            "default": false,
-            "title": "Allow Insecure Embedding Http",
-            "type": "boolean"
-          },
           "allow_insecure_http": {
             "default": false,
             "title": "Allow Insecure Http",
-            "type": "boolean"
-          },
-          "allow_insecure_llm_http": {
-            "default": false,
-            "title": "Allow Insecure Llm Http",
             "type": "boolean"
           },
           "configured": {
             "title": "Configured",
             "type": "boolean"
           },
-          "embedding_base_url": {
-            "default": "",
-            "title": "Embedding Base Url",
-            "type": "string"
-          },
-          "embedding_model": {
-            "default": "",
-            "title": "Embedding Model",
-            "type": "string"
-          },
           "enabled": {
             "default": false,
             "title": "Enabled",
-            "type": "boolean"
-          },
-          "has_embedding_api_key": {
-            "default": false,
-            "title": "Has Embedding Api Key",
-            "type": "boolean"
-          },
-          "has_llm_api_key": {
-            "default": false,
-            "title": "Has Llm Api Key",
             "type": "boolean"
           },
           "has_password": {
@@ -5307,16 +5423,6 @@
             },
             "title": "Include Paths",
             "type": "array"
-          },
-          "llm_base_url": {
-            "default": "",
-            "title": "Llm Base Url",
-            "type": "string"
-          },
-          "llm_model": {
-            "default": "",
-            "title": "Llm Model",
-            "type": "string"
           },
           "repository_url": {
             "default": "",
@@ -5361,43 +5467,10 @@
       },
       "SvnKnowledgeSourceWrite": {
         "properties": {
-          "allow_insecure_embedding_http": {
-            "default": false,
-            "title": "Allow Insecure Embedding Http",
-            "type": "boolean"
-          },
           "allow_insecure_http": {
             "default": false,
             "title": "Allow Insecure Http",
             "type": "boolean"
-          },
-          "allow_insecure_llm_http": {
-            "default": false,
-            "title": "Allow Insecure Llm Http",
-            "type": "boolean"
-          },
-          "embedding_api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Embedding Api Key"
-          },
-          "embedding_base_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Embedding Base Url",
-            "type": "string"
-          },
-          "embedding_model": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Embedding Model",
-            "type": "string"
           },
           "enabled": {
             "default": true,
@@ -5411,29 +5484,6 @@
             "minItems": 1,
             "title": "Include Paths",
             "type": "array"
-          },
-          "llm_api_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Llm Api Key"
-          },
-          "llm_base_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Llm Base Url",
-            "type": "string"
-          },
-          "llm_model": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Llm Model",
-            "type": "string"
           },
           "password": {
             "anyOf": [
@@ -5483,10 +5533,6 @@
         },
         "required": [
           "username",
-          "embedding_base_url",
-          "embedding_model",
-          "llm_base_url",
-          "llm_model",
           "include_paths"
         ],
         "title": "SvnKnowledgeSourceWrite",
@@ -7352,6 +7398,448 @@
           }
         ],
         "summary": "Log Detail"
+      }
+    },
+    "/api/v1/model-providers": {
+      "get": {
+        "operationId": "providers_api_v1_model_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelProviderOut"
+                  },
+                  "title": "Response Providers Api V1 Model Providers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Providers"
+      },
+      "post": {
+        "operationId": "create_provider_api_v1_model_providers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Provider"
+      }
+    },
+    "/api/v1/model-providers/models": {
+      "get": {
+        "operationId": "models_by_kind_api_v1_model_providers_models_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "chat",
+                "embedding"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AiModelOut"
+                  },
+                  "title": "Response Models By Kind Api V1 Model Providers Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Models By Kind"
+      }
+    },
+    "/api/v1/model-providers/models/{model_id}": {
+      "delete": {
+        "operationId": "delete_model_api_v1_model_providers_models__model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Model"
+      }
+    },
+    "/api/v1/model-providers/models/{model_id}/activate": {
+      "post": {
+        "operationId": "activate_model_api_v1_model_providers_models__model_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Activate Model"
+      }
+    },
+    "/api/v1/model-providers/models/{model_id}/connection-test": {
+      "post": {
+        "operationId": "test_model_api_v1_model_providers_models__model_id__connection_test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "title": "Model Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConnectionTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Model"
+      }
+    },
+    "/api/v1/model-providers/{provider_id}": {
+      "delete": {
+        "operationId": "delete_provider_api_v1_model_providers__provider_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Provider"
+      },
+      "put": {
+        "operationId": "update_provider_api_v1_model_providers__provider_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelProviderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelProviderOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Provider"
+      }
+    },
+    "/api/v1/model-providers/{provider_id}/models": {
+      "post": {
+        "operationId": "create_model_api_v1_model_providers__provider_id__models_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiModelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiModelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Model"
+      }
+    },
+    "/api/v1/model-providers/{provider_id}/models/discover": {
+      "post": {
+        "operationId": "discover_models_api_v1_model_providers__provider_id__models_discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDiscoveryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Discover Models"
       }
     },
     "/api/v1/plan-directories": {

@@ -322,7 +322,11 @@ def _manifest_repository_urls(manifest: typing.Dict[str, typing.Any]) -> typing.
     return [str(repository_url)] if repository_url else []
 
 
-def published_index_matches(source: SvnKnowledgeSource) -> bool:
+def published_index_matches(
+    source: SvnKnowledgeSource,
+    embedding_base_url: str,
+    embedding_model: str,
+) -> bool:
     path = settings.knowledge_root / "published" / "svn-index.sqlite3"
     manifest = _load_manifest(path)
     if not manifest:
@@ -339,8 +343,8 @@ def published_index_matches(source: SvnKnowledgeSource) -> bool:
     return (
         _manifest_repository_urls(manifest) == repository_urls
         and set(manifest.get("revisions", {})) == {item[2] for item in _svn_targets(repository_urls, source.include_paths)}
-        and metadata.get("embedding_model") == source.embedding_model
-        and metadata.get("embedding_base_url") == source.embedding_base_url
+        and metadata.get("embedding_model") == embedding_model
+        and metadata.get("embedding_base_url") == embedding_base_url
     )
 
 
@@ -636,6 +640,9 @@ def active_svn_task(db: Session) -> typing.Optional[DurableTask]:
 
 
 def enqueue_svn_sync(db: Session, source: SvnKnowledgeSource, reason: str, now: typing.Optional[datetime] = None) -> DurableTask:
+    from app.services.model_providers import require_active_model
+
+    require_active_model(db, "embedding")
     locked = db.scalar(select(SvnKnowledgeSource).where(SvnKnowledgeSource.id == source.id).with_for_update())
     if locked is None:
         raise SvnKnowledgeError("SVN 知识源尚未配置")
@@ -663,6 +670,8 @@ def enqueue_due_svn_syncs(db: Session, now: typing.Optional[datetime] = None) ->
 
 
 def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None) -> None:
+    from app.services.model_providers import require_active_model
+
     db = SessionLocal()
     try:
         source = db.get(SvnKnowledgeSource, source_id)
@@ -671,9 +680,10 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None) 
         repository_urls = list(source.repository_urls or []) or [source.repository_url]
         username = source.username
         password = decrypt_secret(source.encrypted_password) or ""
-        embedding_base_url = source.embedding_base_url
-        embedding_model = source.embedding_model
-        embedding_api_key = decrypt_secret(source.encrypted_embedding_api_key)
+        embedding_provider, embedding = require_active_model(db, "embedding")
+        embedding_base_url = embedding_provider.base_url
+        embedding_model = embedding.model_id
+        embedding_api_key = decrypt_secret(embedding_provider.encrypted_api_key)
         include_paths = list(source.include_paths)
         source.sync_status = "running"
         source.last_attempt_at = beijing_now()

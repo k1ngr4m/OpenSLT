@@ -52,6 +52,11 @@ export const routes: RouteRecordRaw[] = [
         meta: { section: 'management', operator: true },
       },
       {
+        path: 'models',
+        component: () => import('@/views/ModelsView.vue'),
+        meta: { section: 'management', admin: true },
+      },
+      {
         path: 'logs',
         component: () => import('@/views/LogsView.vue'),
         meta: { section: 'management', operator: true },

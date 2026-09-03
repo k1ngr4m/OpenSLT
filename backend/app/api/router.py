@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     auth,
     database_config_templates,
+    model_providers,
     observability,
     plans,
     resources,
@@ -16,6 +17,7 @@ router = APIRouter()
 router.include_router(auth.router)
 router.include_router(resources.router)
 router.include_router(database_config_templates.router)
+router.include_router(model_providers.router)
 router.include_router(plans.router)
 router.include_router(workflows.router)
 router.include_router(runs.router)

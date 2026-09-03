@@ -227,6 +227,144 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/model-providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Providers */
+        get: operations["providers_api_v1_model_providers_get"];
+        put?: never;
+        /** Create Provider */
+        post: operations["create_provider_api_v1_model_providers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Models By Kind */
+        get: operations["models_by_kind_api_v1_model_providers_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/models/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Model */
+        delete: operations["delete_model_api_v1_model_providers_models__model_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/models/{model_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activate Model */
+        post: operations["activate_model_api_v1_model_providers_models__model_id__activate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/models/{model_id}/connection-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Model */
+        post: operations["test_model_api_v1_model_providers_models__model_id__connection_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Provider */
+        put: operations["update_provider_api_v1_model_providers__provider_id__put"];
+        post?: never;
+        /** Delete Provider */
+        delete: operations["delete_provider_api_v1_model_providers__provider_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/{provider_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Model */
+        post: operations["create_model_api_v1_model_providers__provider_id__models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/{provider_id}/models/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover Models */
+        post: operations["discover_models_api_v1_model_providers__provider_id__models_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plan-directories": {
         parameters: {
             query?: never;
@@ -1582,6 +1720,35 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AiModelCreate */
+        AiModelCreate: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chat" | "embedding";
+            /** Model Id */
+            model_id: string;
+        };
+        /** AiModelOut */
+        AiModelOut: {
+            /** Id */
+            id: number;
+            /**
+             * Is Active
+             * @default false
+             */
+            is_active: boolean;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chat" | "embedding";
+            /** Model Id */
+            model_id: string;
+            /** Provider Id */
+            provider_id: number;
+        };
         /** ArtifactOut */
         ArtifactOut: {
             /** Artifact Type */
@@ -2136,6 +2303,70 @@ export interface components {
             unit: string;
             /** Value */
             value: number;
+        };
+        /** ModelConnectionTestOut */
+        ModelConnectionTestOut: {
+            /** Dimensions */
+            dimensions?: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chat" | "embedding";
+            /** Model Id */
+            model_id: string;
+            /**
+             * Ok
+             * @default true
+             */
+            ok: boolean;
+        };
+        /** ModelDiscoveryOut */
+        ModelDiscoveryOut: {
+            /** Models */
+            models: string[];
+        };
+        /** ModelDiscoveryRequest */
+        ModelDiscoveryRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chat" | "embedding";
+        };
+        /** ModelProviderOut */
+        ModelProviderOut: {
+            /** Allow Insecure Http */
+            allow_insecure_http: boolean;
+            /** Base Url */
+            base_url: string;
+            /** Has Api Key */
+            has_api_key: boolean;
+            /** Id */
+            id: number;
+            /** Models */
+            models?: components["schemas"]["AiModelOut"][];
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ModelProviderWrite */
+        ModelProviderWrite: {
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url: string;
+            /** Name */
+            name: string;
         };
         /** OrderActionRequest */
         OrderActionRequest: {
@@ -3421,10 +3652,6 @@ export interface components {
         SvnConnectionTestOut: {
             /** Checked Paths */
             checked_paths: string[];
-            /** Embedding Dimensions */
-            embedding_dimensions: number;
-            /** Llm Model */
-            llm_model: string;
             /** Ok */
             ok: boolean;
             /** Svn Version */
@@ -3433,26 +3660,10 @@ export interface components {
         /** SvnKnowledgeConnectionTest */
         SvnKnowledgeConnectionTest: {
             /**
-             * Allow Insecure Embedding Http
-             * @default false
-             */
-            allow_insecure_embedding_http: boolean;
-            /**
              * Allow Insecure Http
              * @default false
              */
             allow_insecure_http: boolean;
-            /**
-             * Allow Insecure Llm Http
-             * @default false
-             */
-            allow_insecure_llm_http: boolean;
-            /** Embedding Api Key */
-            embedding_api_key?: string | null;
-            /** Embedding Base Url */
-            embedding_base_url: string;
-            /** Embedding Model */
-            embedding_model: string;
             /**
              * Enabled
              * @default true
@@ -3460,12 +3671,6 @@ export interface components {
             enabled: boolean;
             /** Include Paths */
             include_paths: string[];
-            /** Llm Api Key */
-            llm_api_key?: string | null;
-            /** Llm Base Url */
-            llm_base_url: string;
-            /** Llm Model */
-            llm_model: string;
             /** Password */
             password?: string | null;
             /** Repository Url */
@@ -3484,47 +3689,17 @@ export interface components {
         /** SvnKnowledgeSourceOut */
         SvnKnowledgeSourceOut: {
             /**
-             * Allow Insecure Embedding Http
-             * @default false
-             */
-            allow_insecure_embedding_http: boolean;
-            /**
              * Allow Insecure Http
              * @default false
              */
             allow_insecure_http: boolean;
-            /**
-             * Allow Insecure Llm Http
-             * @default false
-             */
-            allow_insecure_llm_http: boolean;
             /** Configured */
             configured: boolean;
-            /**
-             * Embedding Base Url
-             * @default
-             */
-            embedding_base_url: string;
-            /**
-             * Embedding Model
-             * @default
-             */
-            embedding_model: string;
             /**
              * Enabled
              * @default false
              */
             enabled: boolean;
-            /**
-             * Has Embedding Api Key
-             * @default false
-             */
-            has_embedding_api_key: boolean;
-            /**
-             * Has Llm Api Key
-             * @default false
-             */
-            has_llm_api_key: boolean;
             /**
              * Has Password
              * @default false
@@ -3532,16 +3707,6 @@ export interface components {
             has_password: boolean;
             /** Include Paths */
             include_paths?: string[];
-            /**
-             * Llm Base Url
-             * @default
-             */
-            llm_base_url: string;
-            /**
-             * Llm Model
-             * @default
-             */
-            llm_model: string;
             /**
              * Repository Url
              * @default
@@ -3565,26 +3730,10 @@ export interface components {
         /** SvnKnowledgeSourceWrite */
         SvnKnowledgeSourceWrite: {
             /**
-             * Allow Insecure Embedding Http
-             * @default false
-             */
-            allow_insecure_embedding_http: boolean;
-            /**
              * Allow Insecure Http
              * @default false
              */
             allow_insecure_http: boolean;
-            /**
-             * Allow Insecure Llm Http
-             * @default false
-             */
-            allow_insecure_llm_http: boolean;
-            /** Embedding Api Key */
-            embedding_api_key?: string | null;
-            /** Embedding Base Url */
-            embedding_base_url: string;
-            /** Embedding Model */
-            embedding_model: string;
             /**
              * Enabled
              * @default true
@@ -3592,12 +3741,6 @@ export interface components {
             enabled: boolean;
             /** Include Paths */
             include_paths: string[];
-            /** Llm Api Key */
-            llm_api_key?: string | null;
-            /** Llm Base Url */
-            llm_base_url: string;
-            /** Llm Model */
-            llm_model: string;
             /** Password */
             password?: string | null;
             /** Repository Url */
@@ -4352,6 +4495,315 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LogDetailOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    providers_api_v1_model_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProviderOut"][];
+                };
+            };
+        };
+    };
+    create_provider_api_v1_model_providers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelProviderWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProviderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    models_by_kind_api_v1_model_providers_models_get: {
+        parameters: {
+            query: {
+                kind: "chat" | "embedding";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiModelOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_model_api_v1_model_providers_models__model_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_model_api_v1_model_providers_models__model_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_model_api_v1_model_providers_models__model_id__connection_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionTestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_provider_api_v1_model_providers__provider_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelProviderWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelProviderOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_provider_api_v1_model_providers__provider_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_model_api_v1_model_providers__provider_id__models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiModelCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiModelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_models_api_v1_model_providers__provider_id__models_discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelDiscoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelDiscoveryOut"];
                 };
             };
             /** @description Validation Error */

@@ -53,5 +53,7 @@ describe('management route permissions', () => {
   it('keeps user management admin-only', async () => {
     expect(await navigateAs('tester', '/users')).toBe('/forbidden')
     expect(await navigateAs('admin', '/users')).toBe('/users')
+    expect(await navigateAs('tester', '/models')).toBe('/forbidden')
+    expect(await navigateAs('admin', '/models')).toBe('/models')
   })
 })

@@ -67,7 +67,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 32
+    assert len(model_table_names) == 35
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -111,7 +111,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0011"
+        ).scalar_one() == "0012"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -265,6 +265,55 @@ def test_artifact_idempotency_key_migration_is_nullable_and_unique(tmp_path: Pat
             )
 
 
+def test_model_management_migration_preserves_existing_configuration(tmp_path: Path) -> None:
+    database_path = tmp_path / "model-management.sqlite3"
+    _alembic(database_path, "upgrade", "0011")
+    timestamp = "2026-09-03 00:00:00"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO t_svn_knowledge_sources "
+            "(repository_url, repository_urls, username, encrypted_password, "
+            "embedding_base_url, embedding_model, encrypted_embedding_api_key, "
+            "allow_insecure_embedding_http, embedding_dimensions, llm_base_url, llm_model, "
+            "encrypted_llm_api_key, allow_insecure_llm_http, include_paths, "
+            "sync_interval_minutes, enabled, allow_insecure_http, sync_status, "
+            "last_attempt_at, last_success_at, last_revisions, file_count, failed_file_count, "
+            "last_changes, last_error, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "https://svn.example/knowledge", '["https://svn.example/knowledge"]',
+                "readonly", "svn-encrypted", "https://embedding.example/v1", "bge-m3",
+                "embedding-encrypted", 0, 1024, "https://chat.example/v1", "qwen3",
+                "chat-encrypted", 0, '["docs"]', 30, 1, 0, "succeeded", None, timestamp,
+                '{"docs":"12"}', 1, 0, "{}", None, timestamp, timestamp,
+            ),
+        )
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "head")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT kind, model_id FROM t_ai_models ORDER BY kind"
+        ).fetchall() == [("chat", "qwen3"), ("embedding", "bge-m3")]
+        assert connection.execute(
+            "SELECT kind FROM t_active_ai_models ORDER BY kind"
+        ).fetchall() == [("chat",), ("embedding",)]
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(t_svn_knowledge_sources)")
+        }
+        assert "llm_model" not in columns and "embedding_model" not in columns
+
+    _alembic(database_path, "downgrade", "0011")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT embedding_base_url, embedding_model, encrypted_embedding_api_key, "
+            "llm_base_url, llm_model, encrypted_llm_api_key FROM t_svn_knowledge_sources"
+        ).fetchone() == (
+            "https://embedding.example/v1", "bge-m3", "embedding-encrypted",
+            "https://chat.example/v1", "qwen3", "chat-encrypted",
+        )
+
+
 def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     environment = dict(os.environ)
     environment["DATABASE_URL"] = (
@@ -281,13 +330,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 33
+    assert len(created_tables) == 36
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 32
-    assert sql.count("CHARSET=utf8mb4") == 32
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 32
+    assert sql.count("ENGINE=InnoDB") == 35
+    assert sql.count("CHARSET=utf8mb4") == 35
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 35
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert (
@@ -315,6 +364,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0009_run_comparisons.py",
         "0010_svn_knowledge_source.py",
         "0011_multiple_svn_repositories.py",
+        "0012_model_management.py",
     }
 
     completed = subprocess.run(
@@ -324,4 +374,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0011 (head)"
+    assert completed.stdout.strip() == "0012 (head)"
