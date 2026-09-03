@@ -558,7 +558,7 @@ watch(
             @click="$router.push('/runs')"
           />
         </el-tooltip>
-        <div class="run-title-line"><h1 class="page-title mono">{{ run.run_number }}</h1><StatusBadge :status="run.status" show-raw /></div>
+        <div class="run-title-line"><h1 class="page-title mono">{{ run.run_number }}</h1><StatusBadge :status="run.status" show-raw /><span class="run-progress mono">{{ run.progress }}%</span></div>
         <p class="muted">{{ businessText[run.business_code] }} · {{ run.config_snapshot?.plan?.name }} / {{ run.config_snapshot?.scenario?.name }}</p>
       </div>
       <div v-if="auth.canOperate" class="toolbar">
@@ -609,7 +609,7 @@ watch(
 
     <section class="summary card" aria-label="运行摘要">
       <div><span class="muted">当前状态</span><p><StatusBadge :status="run.status" show-raw /></p></div>
-      <div><span class="muted">总体进度</span><el-progress :percentage="run.progress" :stroke-width="12" /></div>
+      <div><span class="muted">总体进度</span><el-progress :percentage="run.progress" :stroke-width="8" /></div>
       <div><span class="muted">Trace ID</span><p class="mono trace">{{ run.trace_id }}</p></div>
       <div><span class="muted">日志完整性</span><p>{{ run.logs_complete ? '完整' : '已降级，待补传' }}</p></div>
     </section>

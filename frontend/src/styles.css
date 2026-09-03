@@ -1,63 +1,79 @@
 :root {
-  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
-  color: #132b30;
-  background: #f3f7f7;
+  font-family: "PingFang SC", Inter, "Microsoft YaHei", system-ui, sans-serif;
+  color: #182328;
+  background: #f5f7f8;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   font-variant-numeric: tabular-nums;
 
-  --ui-canvas: #f3f7f7;
+  --ui-canvas: #f5f7f8;
+  --ui-workspace: #f0f3f4;
   --ui-surface: #ffffff;
-  --ui-surface-subtle: #eaf1f2;
-  --ui-surface-strong: #dde8e9;
-  --ui-sidebar: #0d292e;
-  --ui-sidebar-hover: #16383e;
-  --ui-sidebar-active: #1d474a;
-  --ui-primary: #0e806f;
-  --ui-primary-hover: #0b6b5e;
-  --ui-primary-soft: #d9efea;
-  --ui-text-primary: #132b30;
-  --ui-text-secondary: #5c7075;
-  --ui-text-tertiary: #819196;
-  --ui-border: #d7e2e4;
-  --ui-border-strong: #b8c9cc;
-  --ui-success: #187b61;
-  --ui-warning: #a86618;
-  --ui-danger: #bd3f4b;
-  --ui-info: #356fa3;
-  --ui-terminal: #101c24;
-  --ui-shadow: 0 10px 30px rgba(19, 43, 48, 0.1);
-  --ui-focus: 0 0 0 3px rgba(14, 128, 111, 0.2);
+  --ui-surface-subtle: #f0f3f4;
+  --ui-surface-strong: #e1e7e9;
+  --ui-sidebar: #11191d;
+  --ui-sidebar-secondary: #172227;
+  --ui-sidebar-hover: #1d2b30;
+  --ui-sidebar-active: #20343a;
+  --ui-primary: #00a88f;
+  --ui-primary-hover: #008c79;
+  --ui-primary-pressed: #007565;
+  --ui-primary-soft: #ddf5f0;
+  --ui-text-primary: #182328;
+  --ui-text-secondary: #58686e;
+  --ui-text-tertiary: #849298;
+  --ui-text-disabled: #aeb8bc;
+  --ui-border: #e1e7e9;
+  --ui-border-control: #d6dfe2;
+  --ui-border-strong: #aebfc4;
+  --ui-success: #188866;
+  --ui-running: #3378b7;
+  --ui-warning: #b7791f;
+  --ui-danger: #d1495b;
+  --ui-paused: #73838a;
+  --ui-unknown: #9ca8ad;
+  --ui-info: var(--ui-running);
+  --ui-terminal: #11181d;
+  --ui-terminal-toolbar: #182126;
+  --ui-terminal-text: #d7e2e5;
+  --ui-terminal-muted: #72848a;
+  --ui-shadow: 0 16px 40px rgba(21, 32, 37, 0.12);
+  --ui-focus: 0 0 0 3px rgba(0, 168, 143, 0.12);
   --ui-radius-control: 6px;
-  --ui-radius-panel: 10px;
+  --ui-radius-panel: 8px;
+  --ui-radius-large-panel: 10px;
   --ui-radius-dialog: 12px;
+  --ui-transition-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
   --ui-transition: 160ms cubic-bezier(0.2, 0, 0, 1);
+  --ui-transition-drawer: 180ms cubic-bezier(0.2, 0, 0, 1);
+  --ui-transition-state: 200ms cubic-bezier(0.2, 0, 0, 1);
+  --ui-font-mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
 
-  --el-color-primary: #0e806f;
-  --el-color-primary-light-3: #4da698;
-  --el-color-primary-light-5: #80bfb5;
-  --el-color-primary-light-7: #b3d8d2;
-  --el-color-primary-light-8: #cce6e2;
-  --el-color-primary-light-9: #e5f3f1;
-  --el-color-primary-dark-2: #0b6759;
-  --el-color-success: #187b61;
-  --el-color-warning: #a86618;
-  --el-color-danger: #bd3f4b;
-  --el-color-info: #667a80;
-  --el-border-color: #d7e2e4;
-  --el-border-color-light: #e4ebec;
-  --el-border-color-lighter: #edf2f3;
-  --el-fill-color-light: #f1f6f6;
-  --el-fill-color-lighter: #f6f9f9;
+  --el-color-primary: #00a88f;
+  --el-color-primary-light-3: #4dbfad;
+  --el-color-primary-light-5: #80d4c7;
+  --el-color-primary-light-7: #b3e5dd;
+  --el-color-primary-light-8: #cceee9;
+  --el-color-primary-light-9: #e6f7f4;
+  --el-color-primary-dark-2: #008673;
+  --el-color-success: #188866;
+  --el-color-warning: #b7791f;
+  --el-color-danger: #d1495b;
+  --el-color-info: #73838a;
+  --el-border-color: #d6dfe2;
+  --el-border-color-light: #e1e7e9;
+  --el-border-color-lighter: #edf1f2;
+  --el-fill-color-light: #f0f3f4;
+  --el-fill-color-lighter: #f5f7f8;
   --el-fill-color-blank: #ffffff;
-  --el-bg-color-page: #f3f7f7;
-  --el-text-color-primary: #132b30;
-  --el-text-color-regular: #385057;
-  --el-text-color-secondary: #667b80;
-  --el-text-color-placeholder: #91a0a4;
+  --el-bg-color-page: #f5f7f8;
+  --el-text-color-primary: #182328;
+  --el-text-color-regular: #58686e;
+  --el-text-color-secondary: #849298;
+  --el-text-color-placeholder: #98a5aa;
   --el-border-radius-base: 6px;
   --el-border-radius-small: 4px;
-  --el-box-shadow-light: 0 10px 30px rgba(19, 43, 48, 0.1);
+  --el-box-shadow-light: var(--ui-shadow);
 }
 
 * {
@@ -127,15 +143,16 @@ select:focus-visible {
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
-  padding: 28px 32px 40px;
+  padding: 20px 32px 32px;
 }
 
 .page-header {
   display: flex;
-  align-items: flex-start;
+  min-height: 76px;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .page-header > div:first-child {
@@ -145,7 +162,8 @@ select:focus-visible {
 .page-header .muted {
   max-width: 65ch;
   margin: 6px 0 0;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .page-title {
@@ -153,17 +171,18 @@ select:focus-visible {
   color: var(--ui-text-primary);
   font-size: 26px;
   font-weight: 650;
-  line-height: 36px;
+  line-height: 32px;
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
 
 .page-kicker {
   display: block;
-  margin-bottom: 4px;
-  color: var(--ui-primary);
-  font-size: 12px;
+  margin-bottom: 2px;
+  color: var(--ui-text-tertiary);
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.08em;
 }
 
 .card,
@@ -174,7 +193,7 @@ select:focus-visible {
 }
 
 .card {
-  box-shadow: 0 1px 2px rgba(19, 43, 48, 0.025);
+  box-shadow: none;
 }
 
 .muted {
@@ -186,7 +205,7 @@ select:focus-visible {
 }
 
 .mono {
-  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-family: var(--ui-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -209,12 +228,20 @@ select:focus-visible {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 12px;
-  border: 1px solid var(--ui-border);
-  border-radius: 8px;
-  background: var(--ui-surface-subtle);
+  min-height: 44px;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.filter-bar .el-input__wrapper,
+.filter-bar .el-select__wrapper,
+.filter-bar .el-input-number {
+  min-height: 32px;
 }
 
 .load-alert {
@@ -231,8 +258,8 @@ select:focus-visible {
 
 .status-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 5px;
+  height: 5px;
   margin-right: 7px;
   border-radius: 50%;
   background: currentColor;
@@ -268,7 +295,7 @@ select:focus-visible {
   display: block;
   margin-bottom: 6px;
   color: var(--ui-text-primary);
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .log-view {
@@ -276,9 +303,9 @@ select:focus-visible {
   overflow: auto;
   padding: 14px;
   border-radius: 8px;
-  color: #d7e1e4;
+  color: var(--ui-terminal-text);
   background: var(--ui-terminal);
-  font: 13px/1.65 "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font: 12px/1.65 var(--ui-font-mono);
 }
 
 .metrics {
@@ -300,8 +327,8 @@ select:focus-visible {
 .metric-value {
   margin-top: 8px;
   color: var(--ui-text-primary);
-  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
-  font-size: 28px;
+  font-family: var(--ui-font-mono);
+  font-size: 26px;
   font-weight: 650;
   line-height: 1.2;
   letter-spacing: -0.04em;
@@ -309,7 +336,7 @@ select:focus-visible {
 
 .metric-label {
   color: var(--ui-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -321,10 +348,10 @@ select:focus-visible {
 
 /* Element Plus system overrides */
 .el-button {
-  min-height: 36px;
+  min-height: 34px;
   border-radius: var(--ui-radius-control);
   font-weight: 500;
-  transition: color var(--ui-transition), background-color var(--ui-transition), border-color var(--ui-transition), transform var(--ui-transition), box-shadow var(--ui-transition);
+  transition: color var(--ui-transition-fast), background-color var(--ui-transition-fast), border-color var(--ui-transition-fast), transform var(--ui-transition-fast), box-shadow var(--ui-transition-fast);
 }
 
 .el-button:active:not(.is-disabled) {
@@ -343,6 +370,7 @@ select:focus-visible {
 .el-select__wrapper,
 .el-textarea__inner,
 .el-input-number {
+  min-height: 34px;
   border-radius: var(--ui-radius-control);
   transition: box-shadow var(--ui-transition), background-color var(--ui-transition);
 }
@@ -354,7 +382,8 @@ select:focus-visible {
 }
 
 .el-form-item__label {
-  color: #425a60;
+  color: var(--ui-text-secondary);
+  font-size: 13px;
   font-weight: 500;
 }
 
@@ -364,27 +393,40 @@ select:focus-visible {
 }
 
 .el-table {
-  --el-table-header-bg-color: #eef4f4;
-  --el-table-row-hover-bg-color: #f1f7f6;
-  --el-table-border-color: #e1e9ea;
+  --el-table-header-bg-color: #f4f6f7;
+  --el-table-row-hover-bg-color: #f3f8f7;
+  --el-table-border-color: var(--ui-border);
   border-radius: var(--ui-radius-panel);
   color: var(--ui-text-primary);
 }
 
 .el-table th.el-table__cell {
-  height: 40px;
-  color: #60757a;
-  background: #eef4f4;
-  font-size: 12px;
+  height: 36px;
+  color: var(--ui-text-secondary);
+  background: #f4f6f7;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .el-table td.el-table__cell {
-  height: 44px;
+  height: 46px;
+}
+
+.el-table th.el-table__cell,
+.el-table td.el-table__cell {
+  border-right: 0;
 }
 
 .el-table .cell {
   line-height: 1.45;
+}
+
+.el-table__body tr.current-row > td.el-table__cell {
+  background: var(--ui-primary-soft);
+}
+
+.el-table__body tr.current-row > td.el-table__cell:first-child {
+  box-shadow: inset 2px 0 0 var(--ui-primary);
 }
 
 .el-table__empty-text {
@@ -392,7 +434,8 @@ select:focus-visible {
 }
 
 .el-table__row {
-  transition: background-color var(--ui-transition);
+  position: relative;
+  transition: background-color var(--ui-transition-fast);
 }
 
 .el-tag {
@@ -407,16 +450,16 @@ select:focus-visible {
 }
 
 .el-progress-bar__outer {
-  background: #e3ebec;
+  background: var(--ui-border);
 }
 
 .el-progress-bar__inner {
-  transition: width 220ms cubic-bezier(0.2, 0, 0, 1);
+  transition: width var(--ui-transition-state);
 }
 
 .el-dialog,
 .el-drawer {
-  border: 1px solid rgba(184, 201, 204, 0.8);
+  border: 1px solid var(--ui-border);
   background: var(--ui-surface);
   box-shadow: var(--ui-shadow);
 }
@@ -435,7 +478,7 @@ select:focus-visible {
 
 .el-dialog__title,
 .el-drawer__title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -478,13 +521,12 @@ select:focus-visible {
 }
 
 .el-overlay {
-  background-color: rgba(5, 25, 29, 0.46);
-  backdrop-filter: blur(2px);
+  background-color: rgba(17, 25, 29, 0.5);
 }
 
 @media (max-width: 1199px) {
   .page {
-    padding: 24px 24px 36px;
+    padding: 18px 24px 32px;
   }
 
   .metrics {
@@ -494,7 +536,7 @@ select:focus-visible {
 
 @media (max-width: 767px) {
   .page {
-    padding: 20px 16px 32px;
+    padding: 16px 16px 28px;
   }
 
   .page-header {

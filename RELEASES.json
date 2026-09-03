@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "type": "changed",
+      "text": "前端升级为 OpenSLT Visual Design 2.0，统一控制台导航、紧凑数据界面、状态信号和运行流水线展示。"
+    },
+    {
       "type": "added",
       "text": "智能用例新增多仓库 SVN 知识同步、embedding 检索、主界面需求选择及 LLM 生成 Excel 用例草稿。"
     },

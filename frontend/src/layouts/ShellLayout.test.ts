@@ -49,6 +49,7 @@ async function mountLayout(path: string, role: User['role']) {
     routes: [
       { path: '/dashboard', component: EmptyView, meta: { section: 'home' } },
       { path: '/runs', component: EmptyView, meta: { section: 'home' } },
+      { path: '/runs/:id', component: EmptyView, meta: { section: 'home' } },
       { path: '/plans', component: EmptyView, meta: { section: 'management' } },
       { path: '/resources', component: EmptyView, meta: { section: 'management' } },
       { path: '/smart-cases', component: EmptyView, meta: { section: 'home' } },
@@ -79,26 +80,26 @@ async function mountLayout(path: string, role: User['role']) {
 }
 
 describe('ShellLayout navigation', () => {
-  it('shows the workspace before the speed-test navigation group in home mode', async () => {
+  it('shows all available work areas in the engineering sidebar', async () => {
     const { wrapper } = await mountLayout('/dashboard', 'admin')
     const navigation = wrapper.get('.el-menu-stub')
     const navigationText = navigation.text()
 
     expect(wrapper.get('.brand-copy small').text()).toBe('自动化测试平台')
+    expect(navigationText).toContain('观察与控制')
     expect(navigationText).toContain('工作台')
+    expect(navigationText).toContain('运行中心')
     expect(navigationText).toContain('智能用例')
-    expect(navigationText).toContain('测速')
-    expect(navigationText).toContain('测速运行')
-    expect(navigationText.indexOf('工作台')).toBeLessThan(navigationText.indexOf('测速'))
-    expect(navigationText.indexOf('智能用例')).toBeLessThan(navigationText.indexOf('测速'))
-    expect(navigationText.indexOf('测速')).toBeLessThan(navigationText.indexOf('测速运行'))
-    expect(navigationText).not.toContain('任务')
-    expect(navigationText).not.toContain('方案与场景')
-    expect(wrapper.get('.section-nav-item').classes()).toContain('is-active')
-    expect(wrapper.find('.management-center').exists()).toBe(true)
-    expect(wrapper.get('.management-center').classes()).not.toContain('is-active')
-    expect(wrapper.find('.beijing-time').exists()).toBe(false)
-    expect(wrapper.get('.topbar-end').element.lastElementChild?.tagName).toBe('VERSION-HISTORY-STUB')
+    expect(navigationText).toContain('方案与场景')
+    expect(navigationText).toContain('资源管理')
+    expect(navigationText).toContain('日志中心')
+    expect(navigationText).toContain('用户管理')
+    expect(navigationText.indexOf('运行中心')).toBeLessThan(navigationText.indexOf('配置'))
+    expect(wrapper.get('.breadcrumb').text()).toBe('工作台')
+    expect(wrapper.get('.environment-label').text()).toContain('ENV')
+    expect(wrapper.find('.management-center').exists()).toBe(false)
+    expect(wrapper.get('.topbar-end').element.firstElementChild?.tagName).toBe('VERSION-HISTORY-STUB')
+    expect(wrapper.get('.account-avatar').text()).toBe('A')
     wrapper.unmount()
   })
 
@@ -110,11 +111,11 @@ describe('ShellLayout navigation', () => {
     expect(testerNavigation.text()).toContain('资源管理')
     expect(testerNavigation.text()).toContain('日志中心')
     expect(testerNavigation.text()).toContain('智能用例')
-    expect(testerNavigation.text().indexOf('资源管理')).toBeLessThan(testerNavigation.text().indexOf('智能用例'))
-    expect(testerNavigation.text().indexOf('智能用例')).toBeLessThan(testerNavigation.text().indexOf('系统'))
+    expect(testerNavigation.text().indexOf('运行中心')).toBeLessThan(testerNavigation.text().indexOf('方案与场景'))
+    expect(testerNavigation.text().indexOf('智能用例配置')).toBeLessThan(testerNavigation.text().indexOf('系统'))
     expect(testerNavigation.text()).not.toContain('用户管理')
-    expect(testerNavigation.text()).not.toContain('工作台')
-    expect(tester.wrapper.get('.management-center').classes()).toContain('is-active')
+    expect(testerNavigation.text()).toContain('工作台')
+    expect(tester.wrapper.get('.breadcrumb').text()).toBe('方案与场景')
     tester.wrapper.unmount()
 
     const admin = await mountLayout('/users', 'admin')
@@ -124,7 +125,9 @@ describe('ShellLayout navigation', () => {
 
   it('lets visitors open the read-only plans area', async () => {
     const { wrapper } = await mountLayout('/dashboard', 'visitor')
-    expect(wrapper.find('.management-center').exists()).toBe(true)
+    expect(wrapper.get('.el-menu-stub').text()).toContain('方案与场景')
+    expect(wrapper.get('.el-menu-stub').text()).toContain('资源管理')
+    expect(wrapper.get('.el-menu-stub').text()).not.toContain('日志中心')
     wrapper.unmount()
 
     const management = await mountLayout('/plans', 'visitor')
@@ -136,22 +139,14 @@ describe('ShellLayout navigation', () => {
     management.wrapper.unmount()
   })
 
-  it('navigates between home and management with only the home section link', async () => {
-    const { wrapper, router } = await mountLayout('/dashboard', 'tester')
+  it('uses the breadcrumb to return from a run to the run center', async () => {
+    const { wrapper, router } = await mountLayout('/runs/42', 'tester')
 
-    await wrapper.get('.management-center').trigger('click')
+    expect(wrapper.get('.breadcrumb').text()).toContain('运行中心')
+    expect(wrapper.get('.breadcrumb').text()).toContain('RUN #42')
+    await wrapper.get('.breadcrumb button').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/plans')
-
-    await wrapper.get('.section-nav-item:not(.is-disabled)').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/dashboard')
-
-    const sectionLinks = wrapper.findAll('.section-nav-item')
-    expect(sectionLinks).toHaveLength(1)
-    expect(sectionLinks[0].text()).toContain('首页')
-    expect(wrapper.find('.section-nav-item.is-disabled').exists()).toBe(false)
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+    expect(router.currentRoute.value.path).toBe('/runs')
     wrapper.unmount()
   })
 })
