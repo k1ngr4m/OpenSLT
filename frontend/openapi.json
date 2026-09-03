@@ -892,6 +892,40 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "IndexedRequirementOut": {
+        "properties": {
+          "requirement_name": {
+            "title": "Requirement Name",
+            "type": "string"
+          },
+          "requirement_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement No"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "source_path": {
+            "title": "Source Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_path",
+          "revision",
+          "requirement_name"
+        ],
+        "title": "IndexedRequirementOut",
+        "type": "object"
+      },
       "KnowledgeSearchOut": {
         "properties": {
           "query": {
@@ -4323,6 +4357,113 @@
         "title": "SlnicStopNodeWrite",
         "type": "object"
       },
+      "SmartCaseGenerationCreate": {
+        "properties": {
+          "requirement_path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Requirement Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement_path"
+        ],
+        "title": "SmartCaseGenerationCreate",
+        "type": "object"
+      },
+      "SmartCaseGenerationOut": {
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_ready": {
+            "title": "Download Ready",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "llm_model": {
+            "title": "Llm Model",
+            "type": "string"
+          },
+          "referenced_sources": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Referenced Sources",
+            "type": "array"
+          },
+          "requirement_name": {
+            "title": "Requirement Name",
+            "type": "string"
+          },
+          "requirement_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement No"
+          },
+          "requirement_path": {
+            "title": "Requirement Path",
+            "type": "string"
+          },
+          "requirement_revision": {
+            "title": "Requirement Revision",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requirement_path",
+          "requirement_revision",
+          "requirement_no",
+          "requirement_name",
+          "status",
+          "llm_model",
+          "case_count",
+          "referenced_sources",
+          "error",
+          "download_ready",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SmartCaseGenerationOut",
+        "type": "object"
+      },
       "StatisticsAnalysisDetailOut": {
         "properties": {
           "analysis": {
@@ -4953,6 +5094,10 @@
             "title": "Embedding Dimensions",
             "type": "integer"
           },
+          "llm_model": {
+            "title": "Llm Model",
+            "type": "string"
+          },
           "ok": {
             "title": "Ok",
             "type": "boolean"
@@ -4966,7 +5111,8 @@
           "ok",
           "svn_version",
           "checked_paths",
-          "embedding_dimensions"
+          "embedding_dimensions",
+          "llm_model"
         ],
         "title": "SvnConnectionTestOut",
         "type": "object"
@@ -4981,6 +5127,11 @@
           "allow_insecure_http": {
             "default": false,
             "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "allow_insecure_llm_http": {
+            "default": false,
+            "title": "Allow Insecure Llm Http",
             "type": "boolean"
           },
           "embedding_api_key": {
@@ -5019,6 +5170,29 @@
             "title": "Include Paths",
             "type": "array"
           },
+          "llm_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Api Key"
+          },
+          "llm_base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Llm Base Url",
+            "type": "string"
+          },
+          "llm_model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Llm Model",
+            "type": "string"
+          },
           "password": {
             "anyOf": [
               {
@@ -5054,6 +5228,8 @@
           "username",
           "embedding_base_url",
           "embedding_model",
+          "llm_base_url",
+          "llm_model",
           "include_paths"
         ],
         "title": "SvnKnowledgeConnectionTest",
@@ -5069,6 +5245,11 @@
           "allow_insecure_http": {
             "default": false,
             "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "allow_insecure_llm_http": {
+            "default": false,
+            "title": "Allow Insecure Llm Http",
             "type": "boolean"
           },
           "configured": {
@@ -5095,6 +5276,11 @@
             "title": "Has Embedding Api Key",
             "type": "boolean"
           },
+          "has_llm_api_key": {
+            "default": false,
+            "title": "Has Llm Api Key",
+            "type": "boolean"
+          },
           "has_password": {
             "default": false,
             "title": "Has Password",
@@ -5106,6 +5292,16 @@
             },
             "title": "Include Paths",
             "type": "array"
+          },
+          "llm_base_url": {
+            "default": "",
+            "title": "Llm Base Url",
+            "type": "string"
+          },
+          "llm_model": {
+            "default": "",
+            "title": "Llm Model",
+            "type": "string"
           },
           "repository_url": {
             "default": "",
@@ -5153,6 +5349,11 @@
             "title": "Allow Insecure Http",
             "type": "boolean"
           },
+          "allow_insecure_llm_http": {
+            "default": false,
+            "title": "Allow Insecure Llm Http",
+            "type": "boolean"
+          },
           "embedding_api_key": {
             "anyOf": [
               {
@@ -5189,6 +5390,29 @@
             "title": "Include Paths",
             "type": "array"
           },
+          "llm_api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Api Key"
+          },
+          "llm_base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Llm Base Url",
+            "type": "string"
+          },
+          "llm_model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Llm Model",
+            "type": "string"
+          },
           "password": {
             "anyOf": [
               {
@@ -5224,6 +5448,8 @@
           "username",
           "embedding_base_url",
           "embedding_model",
+          "llm_base_url",
+          "llm_model",
           "include_paths"
         ],
         "title": "SvnKnowledgeSourceWrite",
@@ -11652,6 +11878,160 @@
         "summary": "Archive Workflow Version"
       }
     },
+    "/api/v1/smart-cases/generations": {
+      "get": {
+        "operationId": "generations_api_v1_smart_cases_generations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SmartCaseGenerationOut"
+                  },
+                  "title": "Response Generations Api V1 Smart Cases Generations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generations"
+      },
+      "post": {
+        "operationId": "create_generation_api_v1_smart_cases_generations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartCaseGenerationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartCaseGenerationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Generation"
+      }
+    },
+    "/api/v1/smart-cases/generations/{generation_id}": {
+      "get": {
+        "operationId": "generation_api_v1_smart_cases_generations__generation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartCaseGenerationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Generation"
+      }
+    },
+    "/api/v1/smart-cases/generations/{generation_id}/download": {
+      "get": {
+        "operationId": "download_generation_api_v1_smart_cases_generations__generation_id__download_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Generation"
+      }
+    },
     "/api/v1/smart-cases/knowledge-search": {
       "post": {
         "operationId": "search_knowledge_api_v1_smart_cases_knowledge_search_post",
@@ -11846,6 +12226,55 @@
           }
         ],
         "summary": "Sync Status"
+      }
+    },
+    "/api/v1/smart-cases/requirements": {
+      "get": {
+        "operationId": "requirements_api_v1_smart_cases_requirements_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Query",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IndexedRequirementOut"
+                  },
+                  "title": "Response Requirements Api V1 Smart Cases Requirements Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Requirements"
       }
     },
     "/api/v1/users": {

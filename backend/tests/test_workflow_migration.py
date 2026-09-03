@@ -67,7 +67,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 31
+    assert len(model_table_names) == 32
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -277,13 +277,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 32
+    assert len(created_tables) == 33
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 31
-    assert sql.count("CHARSET=utf8mb4") == 31
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 31
+    assert sql.count("ENGINE=InnoDB") == 32
+    assert sql.count("CHARSET=utf8mb4") == 32
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 32
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert (

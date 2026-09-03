@@ -43,6 +43,11 @@ export const routes: RouteRecordRaw[] = [
       },
       {
         path: 'smart-cases',
+        component: () => import('@/views/SmartCaseGenerateView.vue'),
+        meta: { section: 'home', operator: true },
+      },
+      {
+        path: 'smart-cases/settings',
         component: () => import('@/views/SmartCasesView.vue'),
         meta: { section: 'management', operator: true },
       },

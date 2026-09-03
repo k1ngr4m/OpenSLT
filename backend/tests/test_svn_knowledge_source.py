@@ -10,8 +10,9 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.logging import redact
-from app.models import AuditLog, DurableTask, SvnKnowledgeSource
-from app.services.svn_knowledge import SvnClient, _build_manifest, _publish_vector_index, normalize_include_paths, search_vector_index
+from app.models import AuditLog, DurableTask, SmartCaseGeneration, SvnKnowledgeSource
+from app.services.llm import parse_cases
+from app.services.svn_knowledge import SvnClient, _build_manifest, _publish_vector_index, join_repository_url, list_indexed_requirements, normalize_include_paths, search_vector_index
 from app.services.svn_knowledge import enqueue_due_svn_syncs
 from app.core.time import beijing_now
 
@@ -25,6 +26,10 @@ def _payload(**overrides):
         "embedding_model": "bge-m3",
         "embedding_api_key": "embedding-secret-value",
         "allow_insecure_embedding_http": True,
+        "llm_base_url": "http://llm.intranet.example/v1",
+        "llm_model": "qwen3",
+        "llm_api_key": "llm-secret-value",
+        "allow_insecure_llm_http": True,
         "include_paths": ["docs/测试文档", "docs/需求文档"],
         "sync_interval_minutes": 30,
         "enabled": True,
@@ -43,6 +48,20 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
     )
     assert refused.status_code == 422
     assert normalize_include_paths(["docs/tests", "docs/tests"]) == ["docs/tests"]
+    assert normalize_include_paths(
+        ["docs/tests", "https://svn.example/other/需求文档"],
+    ) == ["docs/tests", "https://svn.example/other/需求文档"]
+    assert join_repository_url("https://svn.example/default", "https://svn.example/other/需求文档") == "https://svn.example/other/需求文档"
+    refused_external_http = client.put(
+        "/api/v1/smart-cases/knowledge-source",
+        headers=admin_headers,
+        json=_payload(
+            repository_url="https://svn.example/default",
+            include_paths=["http://svn.example/other"],
+            allow_insecure_http=False,
+        ),
+    )
+    assert refused_external_http.status_code == 422
     for invalid in ["", "/absolute", "../outside", "docs/.svn/text"]:
         response = client.put(
             "/api/v1/smart-cases/knowledge-source",
@@ -59,10 +78,12 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
     assert saved.status_code == 200
     assert saved.json()["has_password"] is True
     assert saved.json()["has_embedding_api_key"] is True
+    assert saved.json()["has_llm_api_key"] is True
     assert "password" not in saved.text.replace("has_password", "")
     fetched = client.get("/api/v1/smart-cases/knowledge-source", headers=admin_headers)
     assert "svn-secret-value" not in fetched.text
     assert "embedding-secret-value" not in fetched.text
+    assert "llm-secret-value" not in fetched.text
 
     first = client.post("/api/v1/smart-cases/knowledge-source/sync", headers=admin_headers)
     second = client.post("/api/v1/smart-cases/knowledge-source/sync", headers=admin_headers)
@@ -77,10 +98,12 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
         audits = list(db.scalars(select(AuditLog)).all())
         assert source is not None and source.encrypted_password != "svn-secret-value"
         assert source.encrypted_embedding_api_key != "embedding-secret-value"
+        assert source.encrypted_llm_api_key != "llm-secret-value"
         assert task is not None and task.payload == {"source_id": source.id, "reason": "manual"}
         serialized = json.dumps([item.detail for item in audits], ensure_ascii=False)
         assert "svn-secret-value" not in serialized
         assert "embedding-secret-value" not in serialized
+        assert "llm-secret-value" not in serialized
     finally:
         db.close()
 
@@ -97,6 +120,7 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
 
     monkeypatch.setattr("app.api.routes.smart_cases.test_svn_connection", fake_test)
     monkeypatch.setattr("app.api.routes.smart_cases.test_embedding_connection", lambda *args: 1024)
+    monkeypatch.setattr("app.api.routes.smart_cases.test_llm_connection", lambda *args: None)
     tested = client.post(
         "/api/v1/smart-cases/knowledge-source/connection-test",
         headers=admin_headers,
@@ -105,6 +129,7 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
     assert tested.status_code == 200
     assert tested.json()["checked_paths"] == ["docs/测试文档", "docs/需求文档"]
     assert tested.json()["embedding_dimensions"] == 1024
+    assert tested.json()["llm_model"] == "qwen3"
     assert received["password"] == "svn-secret-value"
     assert "svn-secret-value" not in tested.text
 
@@ -140,6 +165,50 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
     assert dimensions == 2
     assert results[0]["source_path"] == "docs/tests/cases/用例.md"
     assert results[0]["revision"] == "41"
+    requirements = list_indexed_requirements("用例")
+    assert requirements[0]["requirement_name"] == "用例"
+
+
+def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers, tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "knowledge_root", tmp_path)
+    assert client.put("/api/v1/smart-cases/knowledge-source", headers=admin_headers, json=_payload(include_paths=["docs/测试文档"])).status_code == 200
+    working_copy = tmp_path / "wc"
+    working_copy.mkdir()
+    document = working_copy / "REQ-1024_登录需求.md"
+    document.write_text("用户输入正确账号密码后进入首页", encoding="utf-8")
+    manifest, _ = _build_manifest("http://svn.intranet.example/svn/knowledge", {"docs/测试文档": "51"}, {"docs/测试文档": working_copy}, {})
+
+    class FakeEmbedding:
+        base_url = "http://embedding.intranet.example/v1"
+        model = "bge-m3"
+        def embed(self, texts):
+            return [[1.0, 0.0] for _ in texts]
+
+    _publish_vector_index(manifest, {}, {"docs/测试文档": working_copy}, FakeEmbedding())
+    db = SessionLocal()
+    try:
+        source = db.scalar(select(SvnKnowledgeSource))
+        source.last_revisions = {"docs/测试文档": "51"}
+        db.commit()
+    finally:
+        db.close()
+    listed = client.get("/api/v1/smart-cases/requirements?query=REQ-1024", headers=admin_headers)
+    assert listed.status_code == 200 and listed.json()[0]["requirement_no"] == "REQ-1024"
+    created = client.post("/api/v1/smart-cases/generations", headers=admin_headers, json={"requirement_path": listed.json()[0]["source_path"]})
+    assert created.status_code == 202 and created.json()["status"] == "queued"
+    db = SessionLocal()
+    try:
+        task = db.scalar(select(DurableTask).where(DurableTask.task_type == "smart_case_generate"))
+        generation = db.scalar(select(SmartCaseGeneration))
+        assert task.payload == {"generation_id": generation.id}
+        assert "用户输入" not in json.dumps(task.payload, ensure_ascii=False)
+    finally:
+        db.close()
+
+
+def test_generated_case_json_requires_matching_steps_and_results() -> None:
+    rows = parse_cases('{"cases":[{"title":"登录成功","preconditions":[],"steps":["登录"],"expected_results":["进入首页"]}]}')
+    assert rows[0]["priority"] == "中"
 
 
 def test_svn_password_only_enters_the_non_echoing_pty(tmp_path: Path) -> None:

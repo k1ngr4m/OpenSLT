@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import pty
+import re
 import select as io_select
 import shutil
 import sqlite3
@@ -60,10 +61,19 @@ def normalize_repository_url(value: str, allow_insecure_http: bool) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
 
 
-def normalize_include_paths(values: typing.Iterable[str]) -> typing.List[str]:
+def normalize_include_paths(values: typing.Iterable[str], allow_insecure_http: bool = False) -> typing.List[str]:
     result: typing.List[str] = []
     seen = set()
     for value in values:
+        parts = urlsplit(value.strip())
+        if parts.scheme or parts.netloc:
+            normalized = normalize_repository_url(value, allow_insecure_http)
+            if ".svn" in PurePosixPath(parts.path).parts:
+                raise ValueError("SVN 路径不得包含 .svn")
+            if normalized not in seen:
+                seen.add(normalized)
+                result.append(normalized)
+            continue
         raw = value.strip().replace("\\", "/").strip("/")
         path = PurePosixPath(raw)
         if not raw or value.strip().startswith(("/", "\\")) or any(part in {"", ".", "..", ".svn"} for part in path.parts):
@@ -81,6 +91,8 @@ def normalize_include_paths(values: typing.Iterable[str]) -> typing.List[str]:
 
 
 def join_repository_url(repository_url: str, relative_path: str) -> str:
+    if urlsplit(relative_path).scheme:
+        return relative_path
     return repository_url.rstrip("/") + "/" + quote(relative_path, safe="/")
 
 
@@ -323,7 +335,7 @@ def _build_manifest(
                 if source.is_symlink() or source.suffix.casefold() not in SUPPORTED_SUFFIXES:
                     continue
                 relative = source.relative_to(root).as_posix()
-                source_ref = PurePosixPath(include_path, relative).as_posix()
+                source_ref = include_path.rstrip("/") + "/" + relative
                 stat = source.stat()
                 old = previous_files.get(source_ref, {})
                 item = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
@@ -544,6 +556,44 @@ def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k:
     finally:
         connection.close()
     return sorted(results, key=lambda item: item["score"], reverse=True)[:top_k]
+
+
+def list_indexed_requirements(query: str = "") -> typing.List[typing.Dict[str, typing.Any]]:
+    index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
+    if not index_path.exists():
+        raise SvnKnowledgeError("尚无成功发布的知识索引")
+    needle = query.strip().casefold()
+    connection = sqlite3.connect(str(index_path))
+    try:
+        rows = connection.execute("SELECT source_path, revision FROM files ORDER BY source_path").fetchall()
+    finally:
+        connection.close()
+    result = []
+    for source_path, revision in rows:
+        stem = PurePosixPath(source_path).stem
+        match = re.search(r"(?<![A-Za-z0-9])([A-Za-z]{0,8}[-_]?\d{2,})(?!\d)", stem)
+        requirement_no = match.group(1) if match else None
+        name = re.sub(r"^[A-Za-z]{0,8}[-_]?\d{2,}[\s._-]*", "", stem).strip() or stem
+        name = re.sub(r"[\s_-]*(需求规格说明书|需求说明书|需求文档|需求)$", "", name).strip() or stem
+        if needle and needle not in source_path.casefold() and needle not in name.casefold() and needle not in (requirement_no or "").casefold():
+            continue
+        result.append({"source_path": source_path, "revision": revision, "requirement_no": requirement_no, "requirement_name": name[:255]})
+    return result[:500]
+
+
+def get_indexed_document(source_path: str) -> typing.Dict[str, str]:
+    index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
+    connection = sqlite3.connect(str(index_path))
+    try:
+        row = connection.execute("SELECT revision FROM files WHERE source_path = ?", (source_path,)).fetchone()
+        if row is None:
+            raise SvnKnowledgeError("选中的需求不在当前知识索引中")
+        chunks = connection.execute("SELECT content FROM chunks WHERE source_path = ? ORDER BY chunk_no", (source_path,)).fetchall()
+    finally:
+        connection.close()
+    if not chunks:
+        raise SvnKnowledgeError("选中的需求没有可用正文")
+    return {"source_path": source_path, "revision": row[0], "content": "\n".join(item[0] for item in chunks)}
 
 
 def active_svn_task(db: Session) -> typing.Optional[DurableTask]:

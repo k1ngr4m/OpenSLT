@@ -2,7 +2,7 @@
   "unreleased": [
     {
       "type": "added",
-      "text": "智能用例新增内网 SVN 白名单同步、embedding 增量索引与混合检索管理页面。"
+      "text": "智能用例新增 SVN 知识同步、embedding 检索、主界面需求选择及 LLM 生成 Excel 用例草稿。"
     },
     {
       "type": "added",

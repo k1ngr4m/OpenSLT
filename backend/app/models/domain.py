@@ -59,6 +59,10 @@ class SvnKnowledgeSource(TimestampMixin, Base):
     encrypted_embedding_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
     allow_insecure_embedding_http: Mapped[bool] = mapped_column(Boolean, default=False)
     embedding_dimensions: Mapped[typing.Union[int, None]] = mapped_column(Integer)
+    llm_base_url: Mapped[str] = mapped_column(String(1024), default="")
+    llm_model: Mapped[str] = mapped_column(String(255), default="")
+    encrypted_llm_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    allow_insecure_llm_http: Mapped[bool] = mapped_column(Boolean, default=False)
     include_paths: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
     sync_interval_minutes: Mapped[int] = mapped_column(Integer, default=30)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -71,6 +75,27 @@ class SvnKnowledgeSource(TimestampMixin, Base):
     failed_file_count: Mapped[int] = mapped_column(Integer, default=0)
     last_changes: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
     last_error: Mapped[typing.Union[str, None]] = mapped_column(Text)
+
+
+class SmartCaseGeneration(TimestampMixin, Base):
+    __tablename__ = "t_smart_case_generations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requirement_path: Mapped[str] = mapped_column(String(1024), index=True)
+    requirement_revision: Mapped[str] = mapped_column(String(64))
+    requirement_no: Mapped[typing.Union[str, None]] = mapped_column(String(64), index=True)
+    requirement_name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    llm_model: Mapped[str] = mapped_column(String(255))
+    index_revisions: Mapped[typing.Dict[str, Any]] = mapped_column(JSONText, default=dict)
+    referenced_sources: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
+    result_cases: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
+    case_count: Mapped[int] = mapped_column(Integer, default=0)
+    artifact_path: Mapped[typing.Union[str, None]] = mapped_column(String(1024))
+    artifact_size: Mapped[int] = mapped_column(Integer, default=0)
+    artifact_checksum: Mapped[typing.Union[str, None]] = mapped_column(String(64))
+    error: Mapped[typing.Union[str, None]] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
 
 
 class RefreshToken(Base):

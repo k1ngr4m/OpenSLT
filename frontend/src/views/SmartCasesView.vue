@@ -15,6 +15,10 @@ interface KnowledgeSource {
   embedding_model: string
   has_embedding_api_key: boolean
   allow_insecure_embedding_http: boolean
+  llm_base_url: string
+  llm_model: string
+  has_llm_api_key: boolean
+  allow_insecure_llm_http: boolean
   include_paths: string[]
   sync_interval_minutes: number
   enabled: boolean
@@ -57,6 +61,10 @@ const form = reactive({
   embedding_model: '',
   embedding_api_key: '',
   allow_insecure_embedding_http: false,
+  llm_base_url: '',
+  llm_model: '',
+  llm_api_key: '',
+  allow_insecure_llm_http: false,
   include_paths_text: '',
   sync_interval_minutes: 30,
   enabled: true,
@@ -64,8 +72,10 @@ const form = reactive({
 })
 let timer: ReturnType<typeof setInterval> | undefined
 
-const isHttp = computed(() => form.repository_url.trim().toLowerCase().startsWith('http://'))
+const svnPaths = () => form.include_paths_text.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+const isHttp = computed(() => [form.repository_url, ...svnPaths()].some(item => item.toLowerCase().startsWith('http://')))
 const isEmbeddingHttp = computed(() => form.embedding_base_url.trim().toLowerCase().startsWith('http://'))
+const isLlmHttp = computed(() => form.llm_base_url.trim().toLowerCase().startsWith('http://'))
 const isBusy = computed(() => ['queued', 'running'].includes(status.value?.status || ''))
 const statusText: Record<string, string> = {
   unconfigured: '未配置', never: '尚未同步', stale: '配置已变更', queued: '排队中', running: '同步中', succeeded: '同步成功', failed: '同步失败',
@@ -80,7 +90,11 @@ function payload() {
     embedding_model: form.embedding_model.trim(),
     embedding_api_key: form.embedding_api_key || null,
     allow_insecure_embedding_http: form.allow_insecure_embedding_http,
-    include_paths: form.include_paths_text.split(/\r?\n/).map(item => item.trim()).filter(Boolean),
+    llm_base_url: form.llm_base_url.trim(),
+    llm_model: form.llm_model.trim(),
+    llm_api_key: form.llm_api_key || null,
+    allow_insecure_llm_http: form.allow_insecure_llm_http,
+    include_paths: svnPaths(),
     sync_interval_minutes: 30,
     enabled: form.enabled,
     allow_insecure_http: form.allow_insecure_http,
@@ -105,6 +119,10 @@ async function load(showError = true) {
         embedding_model: source.value.embedding_model,
         embedding_api_key: '',
         allow_insecure_embedding_http: source.value.allow_insecure_embedding_http,
+        llm_base_url: source.value.llm_base_url,
+        llm_model: source.value.llm_model,
+        llm_api_key: '',
+        allow_insecure_llm_http: source.value.allow_insecure_llm_http,
         include_paths_text: source.value.include_paths.join('\n'),
         sync_interval_minutes: source.value.sync_interval_minutes,
         enabled: source.value.enabled,
@@ -122,7 +140,8 @@ async function save() {
     source.value = (await api.put<KnowledgeSource>('/smart-cases/knowledge-source', payload())).data
     form.password = ''
     form.embedding_api_key = ''
-    ElMessage.success('SVN 知识源配置已保存')
+    form.llm_api_key = ''
+    ElMessage.success('智能用例配置已保存')
     await load(false)
   } catch (error) { ElMessage.error(errorMessage(error)) }
   finally { saving.value = false }
@@ -132,7 +151,7 @@ async function testConnection() {
   testing.value = true
   try {
     const { data } = await api.post('/smart-cases/knowledge-source/connection-test', payload())
-    ElMessage.success(`连接成功，已验证 ${data.checked_paths.length} 个白名单目录`)
+    ElMessage.success(`连接成功，已验证 SVN、Embedding 和 ${data.llm_model}`)
   } catch (error) { ElMessage.error(errorMessage(error)) }
   finally { testing.value = false }
 }
@@ -166,12 +185,13 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 <template>
   <div v-loading="loading" class="page smart-cases-page">
     <header class="page-header">
-      <div><span class="page-kicker">知识驱动测试设计</span><h1 class="page-title">智能用例</h1><p class="muted">同步授权的 SVN 测试资料，为后续 LLM 生成 Excel 用例草稿提供可追溯知识版本</p></div>
+      <div><span class="page-kicker">管理员配置</span><h1 class="page-title">智能用例配置</h1><p class="muted">配置 SVN 知识源、语义检索与用例生成模型</p></div>
       <el-button v-if="auth.isAdmin" type="primary" :icon="Refresh" :loading="syncing" :disabled="!source?.configured || isBusy || !status?.client_ready" @click="syncNow">立即同步</el-button>
     </header>
 
     <el-alert v-if="isHttp || source?.repository_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前 SVN 使用 HTTP，用户名、密码和资料可能以明文经过网络。仅应在受限内网中使用专用只读账号，并尽快迁移到 HTTPS。" />
     <el-alert v-if="isEmbeddingHttp || source?.embedding_base_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前 Embedding 服务使用 HTTP，API Key 和待向量化资料可能明文传输。仅允许连接受控的内网服务。" />
+    <el-alert v-if="isLlmHttp || source?.llm_base_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前生成模型使用 HTTP，API Key、需求和参考资料可能明文传输。仅允许连接受控的内网服务。" />
 
     <div class="content-grid">
       <section class="card status-card" aria-labelledby="sync-status-title" aria-live="polite">
@@ -194,22 +214,27 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <section class="card config-card" aria-labelledby="source-config-title">
         <div class="section-heading"><div><span class="page-kicker">管理员配置</span><h2 id="source-config-title">SVN 知识源</h2></div><span class="credential-state"><el-icon><Lock /></el-icon>{{ source?.has_password ? '凭据已配置' : '未配置凭据' }}</span></div>
         <el-form v-if="auth.isAdmin" label-position="top" @submit.prevent>
-          <el-form-item label="仓库 URL" required><el-input v-model="form.repository_url" placeholder="http://svn.intranet.example/svn/knowledge" /></el-form-item>
+          <el-form-item label="默认仓库 URL" required><el-input v-model="form.repository_url" placeholder="http://svn.intranet.example/svn/knowledge" /></el-form-item>
           <div class="form-row"><el-form-item label="只读用户名" required><el-input v-model="form.username" autocomplete="username" /></el-form-item><el-form-item label="密码" :required="!source?.has_password"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="source?.has_password ? '留空表示不修改' : '请输入密码'" /></el-form-item></div>
-          <el-form-item label="允许索引的相对路径（每行一个）" required><el-input v-model="form.include_paths_text" type="textarea" :rows="5" placeholder="docs/测试文档&#10;docs/需求文档/2026年需求" /><p class="field-help">禁止空路径、绝对路径、.. 和 .svn；平台仅检出这里列出的子目录。</p></el-form-item>
+          <el-form-item label="允许索引的 SVN 路径（每行一个）" required><el-input v-model="form.include_paths_text" type="textarea" :rows="7" placeholder="docs/测试文档&#10;http://svn.intranet.example/svn/other/需求文档" /><p class="field-help">可填写默认仓库下的相对路径，也可填写完整 HTTP/HTTPS URL；禁止本地绝对路径、.. 和 .svn。</p></el-form-item>
           <el-form-item v-if="isHttp"><el-checkbox v-model="form.allow_insecure_http">我已知晓 HTTP 明文传输风险，并允许在当前受限内网中使用</el-checkbox></el-form-item>
           <div class="config-divider"><span>语义检索模型</span></div>
           <el-form-item label="Embedding Base URL" required><el-input v-model="form.embedding_base_url" placeholder="http://embedding.intranet.example/v1" /></el-form-item>
           <div class="form-row"><el-form-item label="Embedding 模型" required><el-input v-model="form.embedding_model" placeholder="bge-m3" /></el-form-item><el-form-item label="API Key"><el-input v-model="form.embedding_api_key" type="password" show-password autocomplete="new-password" :placeholder="source?.has_embedding_api_key ? '留空表示不修改' : '服务无需鉴权时可留空'" /></el-form-item></div>
           <el-form-item v-if="isEmbeddingHttp"><el-checkbox v-model="form.allow_insecure_embedding_http">我已知晓 Embedding HTTP 明文传输风险，并允许连接当前内网服务</el-checkbox></el-form-item>
+          <div class="config-divider"><span>用例生成模型</span></div>
+          <el-form-item label="OpenAI-compatible Base URL" required><el-input v-model="form.llm_base_url" placeholder="http://llm.intranet.example/v1" /></el-form-item>
+          <div class="form-row"><el-form-item label="生成模型" required><el-input v-model="form.llm_model" placeholder="Qwen3-32B" /></el-form-item><el-form-item label="API Key"><el-input v-model="form.llm_api_key" type="password" show-password autocomplete="new-password" :placeholder="source?.has_llm_api_key ? '留空表示不修改' : '服务无需鉴权时可留空'" /></el-form-item></div>
+          <el-form-item v-if="isLlmHttp"><el-checkbox v-model="form.allow_insecure_llm_http">我已知晓生成模型 HTTP 明文传输风险，并允许连接当前内网服务</el-checkbox></el-form-item>
           <el-form-item label="自动同步"><el-switch v-model="form.enabled" active-text="启用，每 30 分钟" inactive-text="停用" /></el-form-item>
           <div class="form-actions"><el-button :icon="Connection" :loading="testing" :disabled="isBusy" @click="testConnection">测试连接</el-button><el-button type="primary" :loading="saving" :disabled="isBusy" @click="save">保存配置</el-button></div>
         </el-form>
         <dl v-else class="status-list readonly-config">
-          <div><dt>仓库</dt><dd>{{ source?.repository_url || '未配置' }}</dd></div>
-          <div><dt>白名单</dt><dd>{{ source?.include_paths.join('、') || '未配置' }}</dd></div>
+          <div><dt>默认仓库</dt><dd>{{ source?.repository_url || '未配置' }}</dd></div>
+          <div><dt>SVN 路径</dt><dd>{{ source?.include_paths.join('、') || '未配置' }}</dd></div>
           <div><dt>自动同步</dt><dd>{{ source?.enabled ? '每 30 分钟' : '已停用' }}</dd></div>
           <div><dt>Embedding</dt><dd>{{ source?.embedding_model || '未配置' }}</dd></div>
+          <div><dt>生成模型</dt><dd>{{ source?.llm_model || '未配置' }}</dd></div>
         </dl>
       </section>
     </div>

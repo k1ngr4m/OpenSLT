@@ -1371,6 +1371,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/smart-cases/generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generations */
+        get: operations["generations_api_v1_smart_cases_generations_get"];
+        put?: never;
+        /** Create Generation */
+        post: operations["create_generation_api_v1_smart_cases_generations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/generations/{generation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Generation */
+        get: operations["generation_api_v1_smart_cases_generations__generation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/generations/{generation_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Generation */
+        get: operations["download_generation_api_v1_smart_cases_generations__generation_id__download_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/smart-cases/knowledge-search": {
         parameters: {
             query?: never;
@@ -1449,6 +1501,23 @@ export interface paths {
         };
         /** Sync Status */
         get: operations["sync_status_api_v1_smart_cases_knowledge_source_sync_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Requirements */
+        get: operations["requirements_api_v1_smart_cases_requirements_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1832,6 +1901,17 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** IndexedRequirementOut */
+        IndexedRequirementOut: {
+            /** Requirement Name */
+            requirement_name: string;
+            /** Requirement No */
+            requirement_no?: string | null;
+            /** Revision */
+            revision: string;
+            /** Source Path */
+            source_path: string;
         };
         /** KnowledgeSearchOut */
         KnowledgeSearchOut: {
@@ -3074,6 +3154,46 @@ export interface components {
              */
             node_type: "slnic_stop_capture";
         };
+        /** SmartCaseGenerationCreate */
+        SmartCaseGenerationCreate: {
+            /** Requirement Path */
+            requirement_path: string;
+        };
+        /** SmartCaseGenerationOut */
+        SmartCaseGenerationOut: {
+            /** Case Count */
+            case_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Download Ready */
+            download_ready: boolean;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /** Llm Model */
+            llm_model: string;
+            /** Referenced Sources */
+            referenced_sources: Record<string, unknown>[];
+            /** Requirement Name */
+            requirement_name: string;
+            /** Requirement No */
+            requirement_no: string | null;
+            /** Requirement Path */
+            requirement_path: string;
+            /** Requirement Revision */
+            requirement_revision: string;
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** StatisticsAnalysisDetailOut */
         StatisticsAnalysisDetailOut: {
             analysis: components["schemas"]["StatisticsAnalysisMetadataOut"];
@@ -3303,6 +3423,8 @@ export interface components {
             checked_paths: string[];
             /** Embedding Dimensions */
             embedding_dimensions: number;
+            /** Llm Model */
+            llm_model: string;
             /** Ok */
             ok: boolean;
             /** Svn Version */
@@ -3320,6 +3442,11 @@ export interface components {
              * @default false
              */
             allow_insecure_http: boolean;
+            /**
+             * Allow Insecure Llm Http
+             * @default false
+             */
+            allow_insecure_llm_http: boolean;
             /** Embedding Api Key */
             embedding_api_key?: string | null;
             /** Embedding Base Url */
@@ -3333,6 +3460,12 @@ export interface components {
             enabled: boolean;
             /** Include Paths */
             include_paths: string[];
+            /** Llm Api Key */
+            llm_api_key?: string | null;
+            /** Llm Base Url */
+            llm_base_url: string;
+            /** Llm Model */
+            llm_model: string;
             /** Password */
             password?: string | null;
             /** Repository Url */
@@ -3358,6 +3491,11 @@ export interface components {
              * @default false
              */
             allow_insecure_http: boolean;
+            /**
+             * Allow Insecure Llm Http
+             * @default false
+             */
+            allow_insecure_llm_http: boolean;
             /** Configured */
             configured: boolean;
             /**
@@ -3381,12 +3519,27 @@ export interface components {
              */
             has_embedding_api_key: boolean;
             /**
+             * Has Llm Api Key
+             * @default false
+             */
+            has_llm_api_key: boolean;
+            /**
              * Has Password
              * @default false
              */
             has_password: boolean;
             /** Include Paths */
             include_paths?: string[];
+            /**
+             * Llm Base Url
+             * @default
+             */
+            llm_base_url: string;
+            /**
+             * Llm Model
+             * @default
+             */
+            llm_model: string;
             /**
              * Repository Url
              * @default
@@ -3417,6 +3570,11 @@ export interface components {
              * @default false
              */
             allow_insecure_http: boolean;
+            /**
+             * Allow Insecure Llm Http
+             * @default false
+             */
+            allow_insecure_llm_http: boolean;
             /** Embedding Api Key */
             embedding_api_key?: string | null;
             /** Embedding Base Url */
@@ -3430,6 +3588,12 @@ export interface components {
             enabled: boolean;
             /** Include Paths */
             include_paths: string[];
+            /** Llm Api Key */
+            llm_api_key?: string | null;
+            /** Llm Base Url */
+            llm_base_url: string;
+            /** Llm Model */
+            llm_model: string;
             /** Password */
             password?: string | null;
             /** Repository Url */
@@ -7059,6 +7223,121 @@ export interface operations {
             };
         };
     };
+    generations_api_v1_smart_cases_generations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartCaseGenerationOut"][];
+                };
+            };
+        };
+    };
+    create_generation_api_v1_smart_cases_generations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmartCaseGenerationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartCaseGenerationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generation_api_v1_smart_cases_generations__generation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartCaseGenerationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_generation_api_v1_smart_cases_generations__generation_id__download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_knowledge_api_v1_smart_cases_knowledge_search_post: {
         parameters: {
             query?: never;
@@ -7214,6 +7493,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SvnSyncStatusOut"];
+                };
+            };
+        };
+    };
+    requirements_api_v1_smart_cases_requirements_get: {
+        parameters: {
+            query?: {
+                query?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexedRequirementOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

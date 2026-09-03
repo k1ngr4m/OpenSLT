@@ -8,7 +8,8 @@ describe('SmartCasesView SVN knowledge source', () => {
   it('keeps credentials write-only and exposes the required safety controls', () => {
     expect(source).toContain('留空表示不修改')
     expect(source).toContain('HTTP 明文传输风险')
-    expect(source).toContain('允许索引的相对路径')
+    expect(source).toContain('允许索引的 SVN 路径')
+    expect(source).toContain('完整 HTTP/HTTPS URL')
     expect(source).toContain('每 30 分钟')
     expect(source).toContain('aria-live="polite"')
     expect(source).not.toContain('{{ form.password }}')

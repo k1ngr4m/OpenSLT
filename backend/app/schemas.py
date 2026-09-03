@@ -41,6 +41,10 @@ class SvnKnowledgeSourceWrite(BaseModel):
     embedding_model: str = Field(min_length=1, max_length=255)
     embedding_api_key: typing.Union[str, None] = None
     allow_insecure_embedding_http: bool = False
+    llm_base_url: str = Field(min_length=1, max_length=1024)
+    llm_model: str = Field(min_length=1, max_length=255)
+    llm_api_key: typing.Union[str, None] = None
+    allow_insecure_llm_http: bool = False
     include_paths: typing.List[str] = Field(min_length=1)
     sync_interval_minutes: Literal[30] = 30
     enabled: bool = True
@@ -60,6 +64,10 @@ class SvnKnowledgeSourceOut(BaseModel):
     embedding_model: str = ""
     has_embedding_api_key: bool = False
     allow_insecure_embedding_http: bool = False
+    llm_base_url: str = ""
+    llm_model: str = ""
+    has_llm_api_key: bool = False
+    allow_insecure_llm_http: bool = False
     include_paths: typing.List[str] = Field(default_factory=list)
     sync_interval_minutes: int = 30
     enabled: bool = False
@@ -72,6 +80,7 @@ class SvnConnectionTestOut(BaseModel):
     svn_version: str
     checked_paths: typing.List[str]
     embedding_dimensions: int
+    llm_model: str
 
 
 class SvnSyncTaskOut(BaseModel):
@@ -114,6 +123,33 @@ class KnowledgeSearchResult(BaseModel):
 class KnowledgeSearchOut(BaseModel):
     query: str
     results: typing.List[KnowledgeSearchResult]
+
+
+class IndexedRequirementOut(BaseModel):
+    source_path: str
+    revision: str
+    requirement_no: typing.Union[str, None] = None
+    requirement_name: str
+
+
+class SmartCaseGenerationCreate(BaseModel):
+    requirement_path: str = Field(min_length=1, max_length=1024)
+
+
+class SmartCaseGenerationOut(BaseModel):
+    id: int
+    requirement_path: str
+    requirement_revision: str
+    requirement_no: typing.Union[str, None]
+    requirement_name: str
+    status: str
+    llm_model: str
+    case_count: int
+    referenced_sources: typing.List[typing.Dict[str, Any]]
+    error: typing.Union[str, None]
+    download_ready: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class LoginRequest(BaseModel):

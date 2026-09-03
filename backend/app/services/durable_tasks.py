@@ -19,7 +19,7 @@ from app.services.run_state import TERMINAL_RUN_STATUSES
 
 
 WORKER_ID = "%s:%s:%s" % (socket.gethostname(), os.getpid(), uuid4().hex[:8])
-TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step", "svn_sync"})
+TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step", "svn_sync", "smart_case_generate"})
 
 
 def _payload_run_id(payload: typing.Mapping[str, typing.Any]) -> typing.Optional[int]:
@@ -195,7 +195,12 @@ def recover_abandoned_tasks(db: Session) -> int:
 async def _execute_payload(task: DurableTask) -> None:
     from app.services import orchestration
 
-    if task.task_type == "svn_sync":
+    if task.task_type == "smart_case_generate":
+        from app.services.smart_case_generation import execute_smart_case_generation
+
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, execute_smart_case_generation, int(task.payload["generation_id"]))
+    elif task.task_type == "svn_sync":
         from app.services.svn_knowledge import execute_svn_sync
 
         loop = asyncio.get_running_loop()
