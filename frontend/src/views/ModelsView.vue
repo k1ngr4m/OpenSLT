@@ -98,6 +98,7 @@ async function discoverModels() {
   try {
     discovered.value = (await api.post<{ models: string[] }>(
       `/model-providers/${selected.value.id}/models/discover`, { kind: kind.value },
+      { timeout: 0 },
     )).data.models
     discoveryVisible.value = true
   } catch (error) { ElMessage.error(errorMessage(error)) }
@@ -136,7 +137,9 @@ async function activateModel(model: AiModel) {
 async function testModel(model: AiModel) {
   testingId.value = model.id
   try {
-    const { data } = await api.post(`/model-providers/models/${model.id}/connection-test`)
+    const { data } = await api.post(
+      `/model-providers/models/${model.id}/connection-test`, undefined, { timeout: 0 },
+    )
     ElMessage.success(model.kind === 'embedding'
       ? `Embedding 连接成功，向量维度 ${data.dimensions}`
       : '对话模型连接成功')

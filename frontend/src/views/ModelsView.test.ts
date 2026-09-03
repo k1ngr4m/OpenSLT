@@ -12,6 +12,7 @@ describe('ModelsView', () => {
     expect(source).toContain('手动添加')
     expect(source).toContain('设为当前')
     expect(source).toContain('/connection-test')
+    expect(source.match(/\{ timeout: 0 \}/g)).toHaveLength(2)
     expect(source).toContain('留空表示不修改')
     expect(source).not.toContain('{{ form.api_key }}')
   })
