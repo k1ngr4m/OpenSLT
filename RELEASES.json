@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "type": "fixed",
+      "text": "修复 MySQL/MariaDB 数据库迁移中断后重启时因重复列或索引而无法继续升级的问题。"
+    },
+    {
       "type": "added",
       "text": "智能用例新增多仓库 SVN 知识同步、embedding 检索、主界面需求选择及 LLM 生成 Excel 用例草稿。"
     },

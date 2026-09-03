@@ -156,7 +156,7 @@ def test_plan_directory_migration_backfills_existing_plans(tmp_path: Path) -> No
         ).fetchone() == (1,)
 
 
-def test_durable_task_run_id_migration_backfills_and_indexes(tmp_path: Path) -> None:
+def test_durable_task_run_id_migration_resumes_and_backfills(tmp_path: Path) -> None:
     database_path = tmp_path / "durable-task-run-id.sqlite3"
     _alembic(database_path, "upgrade", "0006")
 
@@ -198,6 +198,10 @@ def test_durable_task_run_id_migration_backfills_and_indexes(tmp_path: Path) -> 
             "available_at, lease_expires_at, locked_by, last_error, created_at, started_at, finished_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (1, "start_run", '{"run_id":1}', "migration:start:1", "queued", 0, 3, timestamp, None, None, None, timestamp, None, None),
+        )
+        connection.execute("ALTER TABLE t_durable_tasks ADD COLUMN run_id INTEGER")
+        connection.execute(
+            "CREATE INDEX ix_t_durable_tasks_run_id ON t_durable_tasks (run_id)"
         )
         connection.commit()
 

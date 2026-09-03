@@ -68,59 +68,92 @@ def _backfill_task_run_ids() -> None:
 
 
 def upgrade() -> None:
+    context = op.get_context()
+    inspector = None if getattr(context, "as_sql", False) else sa.inspect(op.get_bind())
+    durable_columns = (
+        {column["name"] for column in inspector.get_columns("t_durable_tasks")}
+        if inspector
+        else set()
+    )
+    durable_foreign_keys = inspector.get_foreign_keys("t_durable_tasks") if inspector else []
+    existing_indexes = (
+        {
+            table_name: {index["name"] for index in inspector.get_indexes(table_name)}
+            for table_name in (
+                "t_durable_tasks",
+                "t_log_records",
+                "t_audit_logs",
+                "t_resource_locks",
+            )
+        }
+        if inspector
+        else {}
+    )
+
     with op.batch_alter_table("t_durable_tasks") as batch:
-        batch.add_column(sa.Column("run_id", sa.Integer(), nullable=True))
-        batch.create_foreign_key(
-            "fk_durable_tasks_run_id",
-            "t_test_runs",
-            ["run_id"],
-            ["id"],
-            ondelete="CASCADE",
-        )
+        if "run_id" not in durable_columns:
+            batch.add_column(sa.Column("run_id", sa.Integer(), nullable=True))
+        if not any(
+            foreign_key["constrained_columns"] == ["run_id"]
+            and foreign_key["referred_table"] == "t_test_runs"
+            for foreign_key in durable_foreign_keys
+        ):
+            batch.create_foreign_key(
+                "fk_durable_tasks_run_id",
+                "t_test_runs",
+                ["run_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
 
     _backfill_task_run_ids()
 
-    op.create_index("ix_t_durable_tasks_run_id", "t_durable_tasks", ["run_id"])
-    op.create_index(
-        "ix_t_durable_tasks_task_status_run",
-        "t_durable_tasks",
-        ["task_type", "status", "run_id"],
+    indexes = (
+        ("ix_t_durable_tasks_run_id", "t_durable_tasks", ["run_id"]),
+        (
+            "ix_t_durable_tasks_task_status_run",
+            "t_durable_tasks",
+            ["task_type", "status", "run_id"],
+        ),
+        (
+            "ix_t_log_records_log_type_created",
+            "t_log_records",
+            ["log_type", "created_at"],
+        ),
+        (
+            "ix_t_log_records_database_scope_created",
+            "t_log_records",
+            ["database_scope", "created_at"],
+        ),
+        (
+            "ix_t_log_records_sql_fingerprint_created",
+            "t_log_records",
+            ["sql_fingerprint", "created_at"],
+        ),
+        (
+            "ix_t_log_records_result_created",
+            "t_log_records",
+            ["result", "created_at"],
+        ),
+        (
+            "ix_t_audit_logs_action_created",
+            "t_audit_logs",
+            ["action", "created_at"],
+        ),
+        (
+            "ix_t_audit_logs_object_type_created",
+            "t_audit_logs",
+            ["object_type", "created_at"],
+        ),
+        (
+            "ix_t_resource_locks_active_resource",
+            "t_resource_locks",
+            ["resource_id", "released_at"],
+        ),
     )
-    op.create_index(
-        "ix_t_log_records_log_type_created",
-        "t_log_records",
-        ["log_type", "created_at"],
-    )
-    op.create_index(
-        "ix_t_log_records_database_scope_created",
-        "t_log_records",
-        ["database_scope", "created_at"],
-    )
-    op.create_index(
-        "ix_t_log_records_sql_fingerprint_created",
-        "t_log_records",
-        ["sql_fingerprint", "created_at"],
-    )
-    op.create_index(
-        "ix_t_log_records_result_created",
-        "t_log_records",
-        ["result", "created_at"],
-    )
-    op.create_index(
-        "ix_t_audit_logs_action_created",
-        "t_audit_logs",
-        ["action", "created_at"],
-    )
-    op.create_index(
-        "ix_t_audit_logs_object_type_created",
-        "t_audit_logs",
-        ["object_type", "created_at"],
-    )
-    op.create_index(
-        "ix_t_resource_locks_active_resource",
-        "t_resource_locks",
-        ["resource_id", "released_at"],
-    )
+    for name, table_name, columns in indexes:
+        if name not in existing_indexes.get(table_name, set()):
+            op.create_index(name, table_name, columns)
 
 
 def downgrade() -> None:
