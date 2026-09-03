@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from '@/ui/elementPlusServices'
-import { Refresh, Connection, Lock, Search } from '@element-plus/icons-vue'
+import { Refresh, Connection, Delete, Lock, Plus, Search } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/time'
 
 interface KnowledgeSource {
   configured: boolean
+  repository_urls: string[]
   repository_url: string
   username: string
   has_password: boolean
@@ -54,7 +55,7 @@ const searchResults = ref<Array<{ source_path: string; revision: string; snippet
 const source = ref<KnowledgeSource | null>(null)
 const status = ref<SyncStatus | null>(null)
 const form = reactive({
-  repository_url: '',
+  repository_urls: [''],
   username: '',
   password: '',
   embedding_base_url: '',
@@ -72,8 +73,9 @@ const form = reactive({
 })
 let timer: ReturnType<typeof setInterval> | undefined
 
+const repositoryUrls = () => form.repository_urls.map(item => item.trim()).filter(Boolean)
 const svnPaths = () => form.include_paths_text.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
-const isHttp = computed(() => [form.repository_url, ...svnPaths()].some(item => item.toLowerCase().startsWith('http://')))
+const isHttp = computed(() => repositoryUrls().some(item => item.toLowerCase().startsWith('http://')))
 const isEmbeddingHttp = computed(() => form.embedding_base_url.trim().toLowerCase().startsWith('http://'))
 const isLlmHttp = computed(() => form.llm_base_url.trim().toLowerCase().startsWith('http://'))
 const isBusy = computed(() => ['queued', 'running'].includes(status.value?.status || ''))
@@ -81,9 +83,17 @@ const statusText: Record<string, string> = {
   unconfigured: '未配置', never: '尚未同步', stale: '配置已变更', queued: '排队中', running: '同步中', succeeded: '同步成功', failed: '同步失败',
 }
 
+function addRepositoryUrl() {
+  form.repository_urls.push('')
+}
+
+function removeRepositoryUrl(index: number) {
+  if (form.repository_urls.length > 1) form.repository_urls.splice(index, 1)
+}
+
 function payload() {
   return {
-    repository_url: form.repository_url.trim(),
+    repository_urls: repositoryUrls(),
     username: form.username.trim(),
     password: form.password || null,
     embedding_base_url: form.embedding_base_url.trim(),
@@ -110,9 +120,9 @@ async function load(showError = true) {
     ])
     source.value = sourceResponse.data
     status.value = statusResponse.data
-    if (!form.repository_url && source.value.configured) {
+    if (!form.repository_urls.some(Boolean) && source.value.configured) {
       Object.assign(form, {
-        repository_url: source.value.repository_url,
+        repository_urls: source.value.repository_urls?.length ? [...source.value.repository_urls] : [source.value.repository_url],
         username: source.value.username,
         password: '',
         embedding_base_url: source.value.embedding_base_url,
@@ -189,7 +199,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <el-button v-if="auth.isAdmin" type="primary" :icon="Refresh" :loading="syncing" :disabled="!source?.configured || isBusy || !status?.client_ready" @click="syncNow">立即同步</el-button>
     </header>
 
-    <el-alert v-if="isHttp || source?.repository_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前 SVN 使用 HTTP，用户名、密码和资料可能以明文经过网络。仅应在受限内网中使用专用只读账号，并尽快迁移到 HTTPS。" />
+    <el-alert v-if="isHttp || source?.repository_urls?.some(item => item.startsWith('http://')) || source?.repository_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前 SVN 使用 HTTP，用户名、密码和资料可能以明文经过网络。仅应在受限内网中使用专用只读账号，并尽快迁移到 HTTPS。" />
     <el-alert v-if="isEmbeddingHttp || source?.embedding_base_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前 Embedding 服务使用 HTTP，API Key 和待向量化资料可能明文传输。仅允许连接受控的内网服务。" />
     <el-alert v-if="isLlmHttp || source?.llm_base_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前生成模型使用 HTTP，API Key、需求和参考资料可能明文传输。仅允许连接受控的内网服务。" />
 
@@ -214,9 +224,19 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <section class="card config-card" aria-labelledby="source-config-title">
         <div class="section-heading"><div><span class="page-kicker">管理员配置</span><h2 id="source-config-title">SVN 知识源</h2></div><span class="credential-state"><el-icon><Lock /></el-icon>{{ source?.has_password ? '凭据已配置' : '未配置凭据' }}</span></div>
         <el-form v-if="auth.isAdmin" label-position="top" @submit.prevent>
-          <el-form-item label="默认仓库 URL" required><el-input v-model="form.repository_url" placeholder="http://svn.intranet.example/svn/knowledge" /></el-form-item>
+          <el-form-item label="默认仓库 URL（可多条）" required>
+            <div class="svn-path-list">
+              <div v-for="(_, index) in form.repository_urls" :key="index" class="svn-path-row">
+                <span class="svn-path-index">{{ index + 1 }}</span>
+                <el-input v-model="form.repository_urls[index]" placeholder="http://svn.intranet.example/svn/knowledge" />
+                <el-button :icon="Delete" text circle type="danger" :disabled="form.repository_urls.length === 1" :aria-label="`删除第 ${index + 1} 条仓库 URL`" @click="removeRepositoryUrl(index)" />
+              </div>
+              <el-button :icon="Plus" text @click="addRepositoryUrl">添加仓库 URL</el-button>
+            </div>
+            <p class="field-help">相对白名单路径会应用到每个默认仓库，所有仓库共用下方只读账号。</p>
+          </el-form-item>
           <div class="form-row"><el-form-item label="只读用户名" required><el-input v-model="form.username" autocomplete="username" /></el-form-item><el-form-item label="密码" :required="!source?.has_password"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="source?.has_password ? '留空表示不修改' : '请输入密码'" /></el-form-item></div>
-          <el-form-item label="允许索引的 SVN 路径（每行一个）" required><el-input v-model="form.include_paths_text" type="textarea" :rows="7" placeholder="docs/测试文档&#10;http://svn.intranet.example/svn/other/需求文档" /><p class="field-help">可填写默认仓库下的相对路径，也可填写完整 HTTP/HTTPS URL；禁止本地绝对路径、.. 和 .svn。</p></el-form-item>
+          <el-form-item label="允许索引的相对路径（每行一个）" required><el-input v-model="form.include_paths_text" type="textarea" :rows="5" placeholder="docs/测试文档&#10;docs/需求文档/2026年需求" /><p class="field-help">相对路径应用到每个默认仓库；禁止空路径、绝对路径、.. 和 .svn。</p></el-form-item>
           <el-form-item v-if="isHttp"><el-checkbox v-model="form.allow_insecure_http">我已知晓 HTTP 明文传输风险，并允许在当前受限内网中使用</el-checkbox></el-form-item>
           <div class="config-divider"><span>语义检索模型</span></div>
           <el-form-item label="Embedding Base URL" required><el-input v-model="form.embedding_base_url" placeholder="http://embedding.intranet.example/v1" /></el-form-item>
@@ -230,7 +250,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
           <div class="form-actions"><el-button :icon="Connection" :loading="testing" :disabled="isBusy" @click="testConnection">测试连接</el-button><el-button type="primary" :loading="saving" :disabled="isBusy" @click="save">保存配置</el-button></div>
         </el-form>
         <dl v-else class="status-list readonly-config">
-          <div><dt>默认仓库</dt><dd>{{ source?.repository_url || '未配置' }}</dd></div>
+          <div><dt>默认仓库</dt><dd>{{ source?.repository_urls?.join('、') || source?.repository_url || '未配置' }}</dd></div>
           <div><dt>SVN 路径</dt><dd>{{ source?.include_paths.join('、') || '未配置' }}</dd></div>
           <div><dt>自动同步</dt><dd>{{ source?.enabled ? '每 30 分钟' : '已停用' }}</dd></div>
           <div><dt>Embedding</dt><dd>{{ source?.embedding_model || '未配置' }}</dd></div>
@@ -249,5 +269,5 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 </template>
 
 <style scoped>
-.smart-cases-page{max-width:1500px}.http-warning{margin-bottom:14px}.content-grid{display:grid;grid-template-columns:minmax(320px,.8fr) minmax(520px,1.2fr);gap:14px}.status-card,.config-card,.search-card{padding:20px}.search-card{margin-top:14px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.section-heading h2{margin:3px 0 0;font-size:18px}.status-list{display:grid;margin:0}.status-list>div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:11px 0;border-bottom:1px solid var(--ui-border)}.status-list dt{color:var(--ui-text-secondary);font-size:11px}.status-list dd{min-width:0;margin:0;overflow-wrap:anywhere;font-size:12px}.revision-list{display:grid;gap:7px;margin:18px 0}.revision-list>strong{font-size:11px}.revision-list>div{display:flex;justify-content:space-between;gap:12px;padding:8px 10px;border-radius:6px;background:var(--ui-canvas);font-size:11px}.credential-state{display:inline-flex;align-items:center;gap:5px;color:var(--ui-text-secondary);font-size:11px}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-row :deep(.el-form-item){min-width:0}.field-help{margin:5px 0 0;color:var(--ui-text-secondary);font-size:11px;line-height:1.5}.config-divider{display:flex;align-items:center;gap:10px;margin:20px 0 16px;color:var(--ui-text-secondary);font-size:11px;font-weight:650}.config-divider::after{height:1px;flex:1;background:var(--ui-border);content:""}.form-actions{display:flex;justify-content:flex-end;gap:8px}.readonly-config{margin-top:8px}.search-row{display:flex;gap:8px}.search-results{display:grid;gap:8px;margin-top:14px}.search-results article{padding:12px 14px;border:1px solid var(--ui-border);border-radius:7px}.search-results article>div{display:flex;align-items:center;gap:8px}.search-results article>div span:last-child{margin-left:auto;color:var(--ui-text-secondary);font:11px/1 monospace}.search-results p{margin:8px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.6;white-space:pre-wrap}@media(max-width:980px){.content-grid{grid-template-columns:1fr}}@media(max-width:640px){.form-row{grid-template-columns:1fr}.status-list>div{grid-template-columns:1fr;gap:4px}.search-row{align-items:stretch;flex-direction:column}}
+.smart-cases-page{max-width:1500px}.http-warning{margin-bottom:14px}.content-grid{display:grid;grid-template-columns:minmax(320px,.8fr) minmax(520px,1.2fr);gap:14px}.status-card,.config-card,.search-card{padding:20px}.search-card{margin-top:14px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.section-heading h2{margin:3px 0 0;font-size:18px}.status-list{display:grid;margin:0}.status-list>div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:11px 0;border-bottom:1px solid var(--ui-border)}.status-list dt{color:var(--ui-text-secondary);font-size:11px}.status-list dd{min-width:0;margin:0;overflow-wrap:anywhere;font-size:12px}.revision-list{display:grid;gap:7px;margin:18px 0}.revision-list>strong{font-size:11px}.revision-list>div{display:flex;justify-content:space-between;gap:12px;padding:8px 10px;border-radius:6px;background:var(--ui-canvas);font-size:11px}.credential-state{display:inline-flex;align-items:center;gap:5px;color:var(--ui-text-secondary);font-size:11px}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-row :deep(.el-form-item){min-width:0}.svn-path-list{display:grid;width:100%;gap:8px}.svn-path-list>.el-button{justify-self:start}.svn-path-row{display:grid;grid-template-columns:24px minmax(0,1fr) 32px;align-items:center;gap:8px}.svn-path-index{display:grid;width:24px;height:24px;place-items:center;border-radius:50%;background:var(--ui-canvas);color:var(--ui-text-secondary);font-size:11px}.field-help{margin:5px 0 0;color:var(--ui-text-secondary);font-size:11px;line-height:1.5}.config-divider{display:flex;align-items:center;gap:10px;margin:20px 0 16px;color:var(--ui-text-secondary);font-size:11px;font-weight:650}.config-divider::after{height:1px;flex:1;background:var(--ui-border);content:""}.form-actions{display:flex;justify-content:flex-end;gap:8px}.readonly-config{margin-top:8px}.search-row{display:flex;gap:8px}.search-results{display:grid;gap:8px;margin-top:14px}.search-results article{padding:12px 14px;border:1px solid var(--ui-border);border-radius:7px}.search-results article>div{display:flex;align-items:center;gap:8px}.search-results article>div span:last-child{margin-left:auto;color:var(--ui-text-secondary);font:11px/1 monospace}.search-results p{margin:8px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.6;white-space:pre-wrap}@media(max-width:980px){.content-grid{grid-template-columns:1fr}}@media(max-width:640px){.form-row{grid-template-columns:1fr}.status-list>div{grid-template-columns:1fr;gap:4px}.search-row{align-items:stretch;flex-direction:column}}
 </style>

@@ -61,19 +61,20 @@ def normalize_repository_url(value: str, allow_insecure_http: bool) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
 
 
-def normalize_include_paths(values: typing.Iterable[str], allow_insecure_http: bool = False) -> typing.List[str]:
+def normalize_repository_urls(values: typing.Iterable[str], allow_insecure_http: bool) -> typing.List[str]:
+    result = list(dict.fromkeys(normalize_repository_url(value, allow_insecure_http) for value in values))
+    if not result:
+        raise ValueError("至少配置一个 SVN 仓库 URL")
+    return result
+
+
+def normalize_include_paths(values: typing.Iterable[str]) -> typing.List[str]:
     result: typing.List[str] = []
     seen = set()
     for value in values:
         parts = urlsplit(value.strip())
         if parts.scheme or parts.netloc:
-            normalized = normalize_repository_url(value, allow_insecure_http)
-            if ".svn" in PurePosixPath(parts.path).parts:
-                raise ValueError("SVN 路径不得包含 .svn")
-            if normalized not in seen:
-                seen.add(normalized)
-                result.append(normalized)
-            continue
+            raise ValueError("白名单路径必须是 SVN 相对路径")
         raw = value.strip().replace("\\", "/").strip("/")
         path = PurePosixPath(raw)
         if not raw or value.strip().startswith(("/", "\\")) or any(part in {"", ".", "..", ".svn"} for part in path.parts):
@@ -91,9 +92,24 @@ def normalize_include_paths(values: typing.Iterable[str], allow_insecure_http: b
 
 
 def join_repository_url(repository_url: str, relative_path: str) -> str:
-    if urlsplit(relative_path).scheme:
-        return relative_path
     return repository_url.rstrip("/") + "/" + quote(relative_path, safe="/")
+
+
+def _svn_targets(
+    repository_urls: typing.Sequence[str],
+    include_paths: typing.Sequence[str],
+) -> typing.List[typing.Tuple[str, str, str]]:
+    targets: typing.List[typing.Tuple[str, str, str]] = []
+    seen = set()
+    for include_path in include_paths:
+        for repository_url in repository_urls:
+            target_url = join_repository_url(repository_url, include_path)
+            if target_url in seen:
+                continue
+            seen.add(target_url)
+            source_ref = include_path if len(repository_urls) == 1 else target_url
+            targets.append((repository_url, include_path, source_ref))
+    return targets
 
 
 class SvnClient:
@@ -222,7 +238,7 @@ def _xml_root(output: str) -> ET.Element:
 
 
 def test_svn_connection(
-    repository_url: str,
+    repository_urls: typing.Sequence[str],
     username: str,
     password: str,
     include_paths: typing.Sequence[str],
@@ -230,10 +246,12 @@ def test_svn_connection(
 ) -> typing.Dict[str, typing.Any]:
     runner = client or SvnClient()
     version = runner.version()
-    _xml_root(runner.run(["info", "--xml", repository_url], username, password))
-    for relative_path in include_paths:
+    for repository_url in repository_urls:
+        _xml_root(runner.run(["info", "--xml", repository_url], username, password))
+    targets = _svn_targets(repository_urls, include_paths)
+    for repository_url, relative_path, _ in targets:
         _xml_root(runner.run(["list", "--xml", join_repository_url(repository_url, relative_path)], username, password))
-    return {"ok": True, "svn_version": version, "checked_paths": list(include_paths)}
+    return {"ok": True, "svn_version": version, "checked_paths": [item[2] for item in targets]}
 
 
 def _working_copy_path(repository_url: str, relative_path: str) -> Path:
@@ -296,6 +314,14 @@ def _load_manifest(path: Path) -> typing.Dict[str, typing.Any]:
         return {}
 
 
+def _manifest_repository_urls(manifest: typing.Dict[str, typing.Any]) -> typing.List[str]:
+    repository_urls = manifest.get("repository_urls")
+    if isinstance(repository_urls, list):
+        return [str(value) for value in repository_urls]
+    repository_url = manifest.get("repository_url")
+    return [str(repository_url)] if repository_url else []
+
+
 def published_index_matches(source: SvnKnowledgeSource) -> bool:
     path = settings.knowledge_root / "published" / "svn-index.sqlite3"
     manifest = _load_manifest(path)
@@ -309,21 +335,23 @@ def published_index_matches(source: SvnKnowledgeSource) -> bool:
             connection.close()
     except sqlite3.Error:
         return False
+    repository_urls = list(source.repository_urls or []) or [source.repository_url]
     return (
-        manifest.get("repository_url") == source.repository_url
-        and set(manifest.get("revisions", {})) == set(source.include_paths)
+        _manifest_repository_urls(manifest) == repository_urls
+        and set(manifest.get("revisions", {})) == {item[2] for item in _svn_targets(repository_urls, source.include_paths)}
         and metadata.get("embedding_model") == source.embedding_model
         and metadata.get("embedding_base_url") == source.embedding_base_url
     )
 
 
 def _build_manifest(
-    repository_url: str,
+    repository_urls: typing.Union[str, typing.Sequence[str]],
     revisions: typing.Dict[str, str],
     working_copies: typing.Dict[str, Path],
     previous: typing.Dict[str, typing.Any],
 ) -> typing.Tuple[typing.Dict[str, typing.Any], typing.Dict[str, int]]:
-    previous_files = previous.get("files") if previous.get("repository_url") == repository_url else {}
+    repositories = [repository_urls] if isinstance(repository_urls, str) else list(repository_urls)
+    previous_files = previous.get("files") if _manifest_repository_urls(previous) == repositories else {}
     previous_files = previous_files if isinstance(previous_files, dict) else {}
     files: typing.Dict[str, typing.Any] = {}
     changes = {"added": 0, "changed": 0, "deleted": 0, "unchanged": 0}
@@ -352,7 +380,8 @@ def _build_manifest(
                 files[source_ref] = item
     changes["deleted"] = len(set(previous_files) - set(files))
     return {
-        "repository_url": repository_url,
+        "repository_url": repositories[0],
+        "repository_urls": repositories,
         "revisions": revisions,
         "published_at": beijing_now().isoformat(),
         "files": files,
@@ -447,7 +476,7 @@ def _publish_vector_index(
                 or old_model[0] != embedding.model
                 or not old_base_url
                 or old_base_url[0] != embedding.base_url
-                or previous.get("repository_url") != manifest.get("repository_url")
+                or _manifest_repository_urls(previous) != _manifest_repository_urls(manifest)
             )
             previous_files = previous.get("files", {}) if not model_changed else {}
             current_files = manifest["files"]
@@ -573,6 +602,8 @@ def list_indexed_requirements(query: str = "") -> typing.List[typing.Dict[str, t
         stem = PurePosixPath(source_path).stem
         match = re.search(r"(?<![A-Za-z0-9])([A-Za-z]{0,8}[-_]?\d{2,})(?!\d)", stem)
         requirement_no = match.group(1) if match else None
+        if not requirement_no and not any(marker in source_path.casefold() for marker in ("需求", "requirement", "prd")):
+            continue
         name = re.sub(r"^[A-Za-z]{0,8}[-_]?\d{2,}[\s._-]*", "", stem).strip() or stem
         name = re.sub(r"[\s_-]*(需求规格说明书|需求说明书|需求文档|需求)$", "", name).strip() or stem
         if needle and needle not in source_path.casefold() and needle not in name.casefold() and needle not in (requirement_no or "").casefold():
@@ -637,7 +668,7 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None) 
         source = db.get(SvnKnowledgeSource, source_id)
         if source is None:
             raise SvnKnowledgeError("SVN 知识源不存在")
-        repository_url = source.repository_url
+        repository_urls = list(source.repository_urls or []) or [source.repository_url]
         username = source.username
         password = decrypt_secret(source.encrypted_password) or ""
         embedding_base_url = source.embedding_base_url
@@ -655,13 +686,13 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None) 
         runner.version()
         working_copies: typing.Dict[str, Path] = {}
         revisions: typing.Dict[str, str] = {}
-        for relative_path in include_paths:
+        for repository_url, relative_path, source_ref in _svn_targets(repository_urls, include_paths):
             working_copy, revision = _sync_working_copy(runner, repository_url, relative_path, username, password)
-            working_copies[relative_path] = working_copy
-            revisions[relative_path] = revision
+            working_copies[source_ref] = working_copy
+            revisions[source_ref] = revision
         index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
         previous = _load_manifest(index_path)
-        manifest, changes = _build_manifest(repository_url, revisions, working_copies, previous)
+        manifest, changes = _build_manifest(repository_urls, revisions, working_copies, previous)
         dimensions = _publish_vector_index(
             manifest,
             previous,

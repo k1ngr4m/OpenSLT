@@ -111,7 +111,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0010"
+        ).scalar_one() == "0011"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -310,6 +310,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0008_artifact_idempotency_key.py",
         "0009_run_comparisons.py",
         "0010_svn_knowledge_source.py",
+        "0011_multiple_svn_repositories.py",
     }
 
     completed = subprocess.run(
@@ -319,4 +320,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0010 (head)"
+    assert completed.stdout.strip() == "0011 (head)"

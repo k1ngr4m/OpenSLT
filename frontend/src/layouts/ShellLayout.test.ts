@@ -51,7 +51,8 @@ async function mountLayout(path: string, role: User['role']) {
       { path: '/runs', component: EmptyView, meta: { section: 'home' } },
       { path: '/plans', component: EmptyView, meta: { section: 'management' } },
       { path: '/resources', component: EmptyView, meta: { section: 'management' } },
-      { path: '/smart-cases', component: EmptyView, meta: { section: 'management' } },
+      { path: '/smart-cases', component: EmptyView, meta: { section: 'home' } },
+      { path: '/smart-cases/settings', component: EmptyView, meta: { section: 'management' } },
       { path: '/logs', component: EmptyView, meta: { section: 'management' } },
       { path: '/users', component: EmptyView, meta: { section: 'management' } },
       { path: '/login', component: EmptyView },
@@ -85,9 +86,11 @@ describe('ShellLayout navigation', () => {
 
     expect(wrapper.get('.brand-copy small').text()).toBe('自动化测试平台')
     expect(navigationText).toContain('工作台')
+    expect(navigationText).toContain('智能用例')
     expect(navigationText).toContain('测速')
     expect(navigationText).toContain('测速运行')
     expect(navigationText.indexOf('工作台')).toBeLessThan(navigationText.indexOf('测速'))
+    expect(navigationText.indexOf('智能用例')).toBeLessThan(navigationText.indexOf('测速'))
     expect(navigationText.indexOf('测速')).toBeLessThan(navigationText.indexOf('测速运行'))
     expect(navigationText).not.toContain('任务')
     expect(navigationText).not.toContain('方案与场景')

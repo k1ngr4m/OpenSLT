@@ -74,21 +74,28 @@ def parse_cases(raw: str) -> typing.List[typing.Dict[str, typing.Any]]:
     if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
         raise LlmError("生成模型返回的用例数量必须为 1 到 100 条")
     result = []
+    titles = set()
     for row in rows:
         if not isinstance(row, dict):
             raise LlmError("生成模型返回了无效用例")
         title = str(row.get("title", "")).strip()
         steps = row.get("steps")
         expected = row.get("expected_results")
-        if not title or not isinstance(steps, list) or not isinstance(expected, list) or not steps or len(steps) != len(expected):
+        if not title or not isinstance(steps, list) or not isinstance(expected, list) or not steps or len(steps) != len(expected) or any(not str(item).strip() for item in steps + expected):
             raise LlmError("每条用例必须包含名称及数量一致的测试步骤和预期结果")
+        if title.casefold() in titles:
+            raise LlmError("生成模型返回了重复的用例名称")
+        titles.add(title.casefold())
+        priority = str(row.get("priority") or "中").strip()
+        if priority not in {"最高", "高", "中", "低"}:
+            priority = "中"
         result.append({
             "title": title[:255],
             "preconditions": [str(item).strip() for item in row.get("preconditions", []) if str(item).strip()] if isinstance(row.get("preconditions", []), list) else [str(row.get("preconditions", "")).strip()],
             "steps": [str(item).strip() for item in steps],
             "expected_results": [str(item).strip() for item in expected],
             "case_type": str(row.get("case_type") or "功能")[:32],
-            "priority": str(row.get("priority") or "中")[:16],
+            "priority": priority,
         })
     return result
 

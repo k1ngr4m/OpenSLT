@@ -4,7 +4,9 @@ import json
 import sys
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
+from openpyxl import load_workbook
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -12,14 +14,15 @@ from app.core.database import SessionLocal
 from app.core.logging import redact
 from app.models import AuditLog, DurableTask, SmartCaseGeneration, SvnKnowledgeSource
 from app.services.llm import parse_cases
-from app.services.svn_knowledge import SvnClient, _build_manifest, _publish_vector_index, join_repository_url, list_indexed_requirements, normalize_include_paths, search_vector_index
+from app.services.smart_case_generation import build_workbook
+from app.services.svn_knowledge import SvnClient, _build_manifest, _publish_vector_index, _svn_targets, list_indexed_requirements, normalize_include_paths, normalize_repository_urls, search_vector_index
 from app.services.svn_knowledge import enqueue_due_svn_syncs
 from app.core.time import beijing_now
 
 
 def _payload(**overrides):
     value = {
-        "repository_url": "http://svn.intranet.example/svn/knowledge",
+        "repository_urls": ["http://svn.intranet.example/svn/knowledge"],
         "username": "openslt-readonly",
         "password": "svn-secret-value",
         "embedding_base_url": "http://embedding.intranet.example/v1",
@@ -48,21 +51,13 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
     )
     assert refused.status_code == 422
     assert normalize_include_paths(["docs/tests", "docs/tests"]) == ["docs/tests"]
-    assert normalize_include_paths(
-        ["docs/tests", "https://svn.example/other/需求文档"],
-    ) == ["docs/tests", "https://svn.example/other/需求文档"]
-    assert join_repository_url("https://svn.example/default", "https://svn.example/other/需求文档") == "https://svn.example/other/需求文档"
-    refused_external_http = client.put(
-        "/api/v1/smart-cases/knowledge-source",
-        headers=admin_headers,
-        json=_payload(
-            repository_url="https://svn.example/default",
-            include_paths=["http://svn.example/other"],
-            allow_insecure_http=False,
-        ),
-    )
-    assert refused_external_http.status_code == 422
-    for invalid in ["", "/absolute", "../outside", "docs/.svn/text"]:
+    assert normalize_repository_urls(
+        ["https://svn.example/one/", "https://svn.example/two"], False,
+    ) == ["https://svn.example/one", "https://svn.example/two"]
+    assert [item[2] for item in _svn_targets(
+        ["https://svn.example/one", "https://svn.example/two"], ["docs/tests"],
+    )] == ["https://svn.example/one/docs/tests", "https://svn.example/two/docs/tests"]
+    for invalid in ["", "/absolute", "../outside", "docs/.svn/text", "https://svn.example/other"]:
         response = client.put(
             "/api/v1/smart-cases/knowledge-source",
             headers=admin_headers,
@@ -70,12 +65,25 @@ def test_svn_config_validates_scope_and_never_returns_or_queues_password(client,
         )
         assert response.status_code == 422
 
+    legacy_payload = _payload(repository_urls=[])
+    legacy_payload["repository_url"] = "http://svn.intranet.example/svn/legacy"
+    legacy = client.put("/api/v1/smart-cases/knowledge-source", headers=admin_headers, json=legacy_payload)
+    assert legacy.status_code == 200
+    assert legacy.json()["repository_urls"] == ["http://svn.intranet.example/svn/legacy"]
+
     saved = client.put(
         "/api/v1/smart-cases/knowledge-source",
         headers=admin_headers,
-        json=_payload(),
+        json=_payload(repository_urls=[
+            "http://svn.intranet.example/svn/knowledge",
+            "https://svn.intranet.example/svn/archive",
+        ]),
     )
     assert saved.status_code == 200
+    assert saved.json()["repository_urls"] == [
+        "http://svn.intranet.example/svn/knowledge",
+        "https://svn.intranet.example/svn/archive",
+    ]
     assert saved.json()["has_password"] is True
     assert saved.json()["has_embedding_api_key"] is True
     assert saved.json()["has_llm_api_key"] is True
@@ -114,8 +122,8 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
     ).status_code == 200
     received = {}
 
-    def fake_test(repository_url, username, password, include_paths):
-        received.update(password=password, paths=include_paths)
+    def fake_test(repository_urls, username, password, include_paths):
+        received.update(repository_urls=repository_urls, password=password, paths=include_paths)
         return {"ok": True, "svn_version": "1.10.0", "checked_paths": include_paths}
 
     monkeypatch.setattr("app.api.routes.smart_cases.test_svn_connection", fake_test)
@@ -130,6 +138,7 @@ def test_connection_test_reuses_saved_password_without_exposing_it(client, admin
     assert tested.json()["checked_paths"] == ["docs/测试文档", "docs/需求文档"]
     assert tested.json()["embedding_dimensions"] == 1024
     assert tested.json()["llm_model"] == "qwen3"
+    assert received["repository_urls"] == ["http://svn.intranet.example/svn/knowledge"]
     assert received["password"] == "svn-secret-value"
     assert "svn-secret-value" not in tested.text
 
@@ -140,7 +149,7 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
     (working_copy / ".svn").mkdir(parents=True)
     (working_copy / ".svn" / "entries").write_text("private", encoding="utf-8")
     (working_copy / "cases").mkdir()
-    document = working_copy / "cases" / "用例.md"
+    document = working_copy / "cases" / "登录需求.md"
     document.write_text("first", encoding="utf-8")
     first, first_changes = _build_manifest(
         "http://svn.example/repo", {"docs/tests": "41"}, {"docs/tests": working_copy}, {}
@@ -148,7 +157,7 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
     second, second_changes = _build_manifest(
         "http://svn.example/repo", {"docs/tests": "42"}, {"docs/tests": working_copy}, first
     )
-    assert list(second["files"]) == ["docs/tests/cases/用例.md"]
+    assert list(second["files"]) == ["docs/tests/cases/登录需求.md"]
     assert first_changes["added"] == 1
     assert second_changes == {"added": 0, "changed": 0, "deleted": 0, "unchanged": 1}
     assert second["revisions"] == {"docs/tests": "42"}
@@ -163,10 +172,10 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
     dimensions = _publish_vector_index(first, {}, {"docs/tests": working_copy}, FakeEmbedding())
     results = search_vector_index("first", [1.0, 0.0], 5)
     assert dimensions == 2
-    assert results[0]["source_path"] == "docs/tests/cases/用例.md"
+    assert results[0]["source_path"] == "docs/tests/cases/登录需求.md"
     assert results[0]["revision"] == "41"
-    requirements = list_indexed_requirements("用例")
-    assert requirements[0]["requirement_name"] == "用例"
+    requirements = list_indexed_requirements("登录")
+    assert requirements[0]["requirement_name"] == "登录"
 
 
 def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers, tmp_path: Path, monkeypatch) -> None:
@@ -209,6 +218,22 @@ def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers,
 def test_generated_case_json_requires_matching_steps_and_results() -> None:
     rows = parse_cases('{"cases":[{"title":"登录成功","preconditions":[],"steps":["登录"],"expected_results":["进入首页"]}]}')
     assert rows[0]["priority"] == "中"
+
+
+def test_generated_excel_is_a_traceable_draft(tmp_path: Path) -> None:
+    path = tmp_path / "cases.xlsx"
+    generation = SimpleNamespace(
+        requirement_no="REQ-1024", requirement_name="登录", requirement_path="需求/REQ-1024_登录.md",
+        requirement_revision="51", llm_model="qwen3", referenced_sources=[{"source_path": "需求/REQ-1024_登录.md", "revision": "51"}],
+    )
+    build_workbook(path, generation, [{"title": "=登录", "preconditions": [], "steps": ["输入账号"], "expected_results": ["进入首页"], "case_type": "功能", "priority": "高"}])
+    workbook = load_workbook(path, read_only=True)
+    try:
+        assert workbook["测试用例"]["D2"].value == "'=登录"
+        assert workbook["测试用例"]["J2"].value == "草稿待复核"
+        assert workbook["生成说明"]["B4"].value == "需求/REQ-1024_登录.md"
+    finally:
+        workbook.close()
 
 
 def test_svn_password_only_enters_the_non_echoing_pty(tmp_path: Path) -> None:

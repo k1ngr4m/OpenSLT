@@ -34,7 +34,8 @@ class ORMModel(BaseModel):
 
 
 class SvnKnowledgeSourceWrite(BaseModel):
-    repository_url: str = Field(min_length=1, max_length=1024)
+    repository_urls: typing.List[Annotated[str, Field(min_length=1, max_length=1024)]] = Field(default_factory=list)
+    repository_url: typing.Union[str, None] = Field(default=None, min_length=1, max_length=1024)
     username: str = Field(min_length=1, max_length=128)
     password: typing.Union[str, None] = None
     embedding_base_url: str = Field(min_length=1, max_length=1024)
@@ -50,6 +51,14 @@ class SvnKnowledgeSourceWrite(BaseModel):
     enabled: bool = True
     allow_insecure_http: bool = False
 
+    @model_validator(mode="after")
+    def accept_legacy_repository_url(self) -> "SvnKnowledgeSourceWrite":
+        if not self.repository_urls and self.repository_url:
+            self.repository_urls = [self.repository_url]
+        if not self.repository_urls:
+            raise ValueError("至少配置一个 SVN 仓库 URL")
+        return self
+
 
 class SvnKnowledgeConnectionTest(SvnKnowledgeSourceWrite):
     pass
@@ -57,6 +66,7 @@ class SvnKnowledgeConnectionTest(SvnKnowledgeSourceWrite):
 
 class SvnKnowledgeSourceOut(BaseModel):
     configured: bool
+    repository_urls: typing.List[str] = Field(default_factory=list)
     repository_url: str = ""
     username: str = ""
     has_password: bool = False

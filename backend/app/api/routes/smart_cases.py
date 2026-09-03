@@ -33,9 +33,9 @@ from app.services.audit import write_audit
 from app.services.svn_knowledge import (
     active_svn_task,
     enqueue_svn_sync,
-    normalize_include_paths,
-    normalize_repository_url,
     list_indexed_requirements,
+    normalize_include_paths,
+    normalize_repository_urls,
     published_index_matches,
     svn_client_status,
     search_vector_index,
@@ -54,15 +54,19 @@ def _source(db: Session) -> typing.Optional[SvnKnowledgeSource]:
     return db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
 
 
-def _normalized(payload: SvnKnowledgeSourceWrite) -> typing.Tuple[str, typing.List[str], str, str]:
+def _repository_urls(source: SvnKnowledgeSource) -> typing.List[str]:
+    return list(source.repository_urls or []) or [source.repository_url]
+
+
+def _normalized(payload: SvnKnowledgeSourceWrite) -> typing.Tuple[typing.List[str], typing.List[str], str, str]:
     try:
         if not payload.embedding_model.strip():
             raise ValueError("Embedding 模型名称不能为空")
         if not payload.llm_model.strip():
             raise ValueError("生成模型名称不能为空")
         return (
-            normalize_repository_url(payload.repository_url, payload.allow_insecure_http),
-            normalize_include_paths(payload.include_paths, payload.allow_insecure_http),
+            normalize_repository_urls(payload.repository_urls, payload.allow_insecure_http),
+            normalize_include_paths(payload.include_paths),
             normalize_embedding_base_url(payload.embedding_base_url, payload.allow_insecure_embedding_http),
             normalize_llm_base_url(payload.llm_base_url, payload.allow_insecure_llm_http),
         )
@@ -75,6 +79,7 @@ def _out(source: typing.Optional[SvnKnowledgeSource]) -> SvnKnowledgeSourceOut:
         return SvnKnowledgeSourceOut(configured=False)
     return SvnKnowledgeSourceOut(
         configured=True,
+        repository_urls=_repository_urls(source),
         repository_url=source.repository_url,
         username=source.username,
         has_password=bool(source.encrypted_password),
@@ -109,22 +114,23 @@ def save_knowledge_source(
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
 ) -> SvnKnowledgeSourceOut:
-    repository_url, include_paths, embedding_base_url, llm_base_url = _normalized(payload)
+    repository_urls, include_paths, embedding_base_url, llm_base_url = _normalized(payload)
     if active_svn_task(db):
         raise HTTPException(status_code=409, detail={"code": "SVN_SYNC_RUNNING", "message": "同步任务运行期间不能修改知识源配置"})
     source = _source(db)
     previous_index_identity = None if source is None else (
-        source.repository_url,
+        tuple(_repository_urls(source)),
         tuple(source.include_paths),
         source.embedding_base_url,
         source.embedding_model,
     )
-    identity_changed = source is not None and (source.repository_url != repository_url or source.username != payload.username.strip())
+    identity_changed = source is not None and (_repository_urls(source) != repository_urls or source.username != payload.username.strip())
     if not payload.password and (source is None or identity_changed):
         raise HTTPException(status_code=422, detail={"code": "SVN_PASSWORD_REQUIRED", "message": "首次配置或修改仓库/账号时必须重新输入密码"})
     if source is None:
         source = SvnKnowledgeSource(
-            repository_url=repository_url,
+            repository_url=repository_urls[0],
+            repository_urls=repository_urls,
             username=payload.username.strip(),
             encrypted_password=encrypt_secret(payload.password) or "",
             embedding_base_url=embedding_base_url,
@@ -138,7 +144,8 @@ def save_knowledge_source(
         )
         db.add(source)
     else:
-        source.repository_url = repository_url
+        source.repository_url = repository_urls[0]
+        source.repository_urls = repository_urls
         source.username = payload.username.strip()
         if payload.password:
             source.encrypted_password = encrypt_secret(payload.password) or ""
@@ -161,7 +168,7 @@ def save_knowledge_source(
     source.enabled = payload.enabled
     source.allow_insecure_http = payload.allow_insecure_http
     current_index_identity = (
-        source.repository_url,
+        tuple(_repository_urls(source)),
         tuple(source.include_paths),
         source.embedding_base_url,
         source.embedding_model,
@@ -177,7 +184,7 @@ def save_knowledge_source(
         actor,
         request,
         detail={
-            "repository_url": repository_url,
+            "repository_urls": repository_urls,
             "username": source.username,
             "include_paths": include_paths,
             "enabled": source.enabled,
@@ -205,9 +212,9 @@ async def connection_test(
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
 ) -> typing.Dict[str, typing.Any]:
-    repository_url, include_paths, embedding_base_url, llm_base_url = _normalized(payload)
+    repository_urls, include_paths, embedding_base_url, llm_base_url = _normalized(payload)
     source = _source(db)
-    identity_matches = source is not None and source.repository_url == repository_url and source.username == payload.username.strip()
+    identity_matches = source is not None and _repository_urls(source) == repository_urls and source.username == payload.username.strip()
     password = payload.password or (decrypt_secret(source.encrypted_password) if identity_matches else None)
     if not password:
         raise HTTPException(status_code=422, detail={"code": "SVN_PASSWORD_REQUIRED", "message": "连接测试需要 SVN 密码"})
@@ -220,7 +227,7 @@ async def connection_test(
         result = await loop.run_in_executor(
             None,
             test_svn_connection,
-            repository_url,
+            repository_urls,
             payload.username.strip(),
             password,
             include_paths,
@@ -238,7 +245,7 @@ async def connection_test(
         write_audit(db, "smart_cases.svn_connection.test", "svn_knowledge_source", source.id if source else None, actor, request, result="failed")
         db.commit()
         raise HTTPException(status_code=502, detail={"code": "SVN_CONNECTION_FAILED", "message": str(redact(str(exc)))}) from exc
-    write_audit(db, "smart_cases.svn_connection.test", "svn_knowledge_source", source.id if source else None, actor, request, detail={"repository_url": repository_url, "include_paths": include_paths})
+    write_audit(db, "smart_cases.svn_connection.test", "svn_knowledge_source", source.id if source else None, actor, request, detail={"repository_urls": repository_urls, "include_paths": include_paths})
     db.commit()
     return result
 

@@ -9,6 +9,7 @@ from uuid import uuid4
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -88,17 +89,19 @@ def execute_smart_case_generation(generation_id: int) -> None:
     db = SessionLocal()
     try:
         generation = db.get(SmartCaseGeneration, generation_id)
-        source = db.query(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).first()
+        source = db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
         if generation is None or source is None:
             raise RuntimeError("智能用例生成任务或知识源不存在")
         if generation.status == "succeeded":
             return
-        if not published_index_matches(source):
+        if not published_index_matches(source) or dict(generation.index_revisions) != dict(source.last_revisions):
             raise RuntimeError("知识索引已变化，请重新选择需求")
         generation.status = "running"
         generation.error = None
         db.commit()
         selected = get_indexed_document(generation.requirement_path)
+        if selected["revision"] != generation.requirement_revision:
+            raise RuntimeError("需求 revision 已变化，请重新选择需求")
         query = "%s %s %s" % (generation.requirement_no or "", generation.requirement_name, selected["content"][:1500])
         embedding = EmbeddingClient(source.embedding_base_url, source.embedding_model, decrypt_secret(source.encrypted_embedding_api_key))
         vector = embedding.embed([query])[0]

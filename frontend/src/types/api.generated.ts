@@ -3469,7 +3469,9 @@ export interface components {
             /** Password */
             password?: string | null;
             /** Repository Url */
-            repository_url: string;
+            repository_url?: string | null;
+            /** Repository Urls */
+            repository_urls?: string[];
             /**
              * Sync Interval Minutes
              * @default 30
@@ -3545,6 +3547,8 @@ export interface components {
              * @default
              */
             repository_url: string;
+            /** Repository Urls */
+            repository_urls?: string[];
             /**
              * Sync Interval Minutes
              * @default 30
@@ -3597,7 +3601,9 @@ export interface components {
             /** Password */
             password?: string | null;
             /** Repository Url */
-            repository_url: string;
+            repository_url?: string | null;
+            /** Repository Urls */
+            repository_urls?: string[];
             /**
              * Sync Interval Minutes
              * @default 30

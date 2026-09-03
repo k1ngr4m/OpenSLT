@@ -52,6 +52,7 @@ class SvnKnowledgeSource(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     repository_url: Mapped[str] = mapped_column(String(1024))
+    repository_urls: Mapped[typing.List[str]] = mapped_column(JSONText, default=list)
     username: Mapped[str] = mapped_column(String(128))
     encrypted_password: Mapped[str] = mapped_column(Text)
     embedding_base_url: Mapped[str] = mapped_column(String(1024), default="")

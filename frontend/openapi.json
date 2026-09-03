@@ -5205,10 +5205,26 @@
             "title": "Password"
           },
           "repository_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Repository Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Url"
+          },
+          "repository_urls": {
+            "items": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Repository Urls",
+            "type": "array"
           },
           "sync_interval_minutes": {
             "const": 30,
@@ -5224,7 +5240,6 @@
           }
         },
         "required": [
-          "repository_url",
           "username",
           "embedding_base_url",
           "embedding_model",
@@ -5307,6 +5322,13 @@
             "default": "",
             "title": "Repository Url",
             "type": "string"
+          },
+          "repository_urls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repository Urls",
+            "type": "array"
           },
           "sync_interval_minutes": {
             "default": 30,
@@ -5425,10 +5447,26 @@
             "title": "Password"
           },
           "repository_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Repository Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repository Url"
+          },
+          "repository_urls": {
+            "items": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Repository Urls",
+            "type": "array"
           },
           "sync_interval_minutes": {
             "const": 30,
@@ -5444,7 +5482,6 @@
           }
         },
         "required": [
-          "repository_url",
           "username",
           "embedding_base_url",
           "embedding_model",

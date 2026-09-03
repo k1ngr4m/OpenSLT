@@ -31,6 +31,8 @@ describe('management route permissions', () => {
     '/plans/scenarios/1/workflow',
     '/resources/1/database',
     '/resources/1/terminal',
+    '/smart-cases',
+    '/smart-cases/settings',
     '/logs',
   ])('blocks visitors from %s', async path => {
     expect(await navigateAs('visitor', path)).toBe('/forbidden')
