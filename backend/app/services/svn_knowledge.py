@@ -243,7 +243,12 @@ class SvnClient:
                 raise SvnKnowledgeError("SVN 认证失败，请检查只读账号、密码和目录权限")
             if "conflict" in lowered:
                 raise SvnKnowledgeError("SVN working copy 存在冲突，已停止同步且未覆盖本地文件")
-            raise SvnKnowledgeError("SVN 命令执行失败（退出码 %s）" % return_code)
+            diagnostic = (bytes(terminal_output) + output).decode("utf-8", errors="replace")
+            if password:
+                diagnostic = diagnostic.replace(password, "[REDACTED]")
+            diagnostic = str(redact(diagnostic)).strip()[:2000]
+            message = "SVN 命令执行失败（退出码 %s）" % return_code
+            raise SvnKnowledgeError(message + ("：" + diagnostic if diagnostic else ""))
         return text
 
 

@@ -349,3 +349,23 @@ def test_scheduled_sync_waits_for_an_embedding_model(client, admin_headers) -> N
         assert db.scalar(select(DurableTask).where(DurableTask.task_type == "svn_sync")) is None
     finally:
         db.close()
+
+
+def test_svn_failure_preserves_diagnostic_without_password(tmp_path: Path) -> None:
+    import pytest
+    from app.services.svn_knowledge import SvnKnowledgeError
+
+    executable = tmp_path / 'failed-svn'
+    secret = 'private-svn-password'
+    executable.write_text(
+        '#!' + sys.executable + '\n'
+        'import sys\n'
+        'sys.stderr.write("svn: E000022: Cannot convert filename; private-svn-password\\n")\n'
+        'sys.exit(1)\n', encoding='utf-8',
+    )
+    executable.chmod(0o700)
+    with pytest.raises(SvnKnowledgeError) as error:
+        SvnClient(str(executable), timeout_seconds=5).run(['info', 'http://svn/repo'], 'user', secret)
+    assert 'E000022: Cannot convert filename' in str(error.value)
+    assert secret not in str(error.value)
+    assert '[REDACTED]' in str(error.value)

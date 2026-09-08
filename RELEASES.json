@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "type": "fixed",
+      "text": "SVN 同步失败时显示脱敏后的命令错误详情，便于定位路径、权限及编码问题。"
+    },
+    {
+      "type": "fixed",
       "text": "Embedding 请求显式指定浮点向量格式，兼容 ModelScope 等要求 encoding_format 的服务。"
     },
     {
