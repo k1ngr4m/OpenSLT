@@ -1,6 +1,18 @@
 {
   "unreleased": [
     {
+      "type": "fixed",
+      "text": "Embedding 请求显式指定浮点向量格式，兼容 ModelScope 等要求 encoding_format 的服务。"
+    },
+    {
+      "type": "added",
+      "text": "远端模型列表支持输入模型 ID 实时筛选。"
+    },
+    {
+      "type": "changed",
+      "text": "SVN 已保存的密码和模型提供商 API Key 以星号提示，未输入新值时保留原配置。"
+    },
+    {
       "type": "changed",
       "text": "资源列表移除健康列，操作改为带提示的图标按钮。"
     },

@@ -25,6 +25,11 @@ const query = ref('')
 const providers = ref<Provider[]>([])
 const discovered = ref<string[]>([])
 const discoveryVisible = ref(false)
+const discoveryQuery = ref('')
+const filteredDiscovered = computed(() => {
+  const needle = discoveryQuery.value.trim().toLowerCase()
+  return discovered.value.filter(modelId => modelId.toLowerCase().includes(needle))
+})
 const form = reactive({ name: '', base_url: '', api_key: '', allow_insecure_http: false })
 
 const selected = computed(() => providers.value.find(item => item.id === selectedId.value) || null)
@@ -100,6 +105,7 @@ async function discoverModels() {
       `/model-providers/${selected.value.id}/models/discover`, { kind: kind.value },
       { timeout: 0 },
     )).data.models
+    discoveryQuery.value = ''
     discoveryVisible.value = true
   } catch (error) { ElMessage.error(errorMessage(error)) }
   finally { discovering.value = false }
@@ -191,7 +197,7 @@ onMounted(() => load())
         </div>
         <el-form @submit.prevent label-position="left" label-width="var(--ui-field-label-width)">
           <div class="form-row"><el-form-item label="名称" required><el-input v-model="form.name" placeholder="内网模型服务" /></el-form-item><el-form-item label="API Base URL" required><el-input v-model="form.base_url" placeholder="https://api.example.com/v1" /></el-form-item></div>
-          <el-form-item label="API Key"><el-input v-model="form.api_key" type="password" show-password autocomplete="new-password" :placeholder="selected?.has_api_key ? '留空表示不修改' : '服务无需鉴权时可留空'" /></el-form-item>
+          <el-form-item label="API Key"><el-input v-model="form.api_key" type="password" show-password autocomplete="new-password" :placeholder="selected?.has_api_key ? '********' : '服务无需鉴权时可留空'" /></el-form-item>
           <el-form-item v-if="isHttp"><el-checkbox v-model="form.allow_insecure_http">我已知晓 HTTP 会明文传输 API Key 和业务资料，并允许连接当前受控内网服务</el-checkbox></el-form-item>
         </el-form>
 
@@ -209,15 +215,17 @@ onMounted(() => load())
     </div>
 
     <el-dialog v-model="discoveryVisible" title="远端模型列表" width="min(680px, 92vw)">
+      <el-input v-model="discoveryQuery" class="discovery-search" clearable :prefix-icon="Search" placeholder="输入模型 ID 筛选" aria-label="筛选远端模型" />
       <div class="discovery-list">
-        <div v-for="modelId in discovered" :key="modelId"><code>{{ modelId }}</code><el-button text type="primary" :disabled="configuredIds.has(modelId)" @click="addModel(modelId)">{{ configuredIds.has(modelId) ? '已添加' : '添加' }}</el-button></div>
-        <el-empty v-if="!discovered.length" description="服务未返回模型" :image-size="58" />
+        <div v-for="modelId in filteredDiscovered" :key="modelId"><code>{{ modelId }}</code><el-button text type="primary" :disabled="configuredIds.has(modelId)" @click="addModel(modelId)">{{ configuredIds.has(modelId) ? '已添加' : '添加' }}</el-button></div>
+        <el-empty v-if="!filteredDiscovered.length" :description="discovered.length ? '没有匹配的模型' : '服务未返回模型'" :image-size="58" />
       </div>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.discovery-search { margin-bottom: 12px; }
 .models-page{max-width:1500px}.model-tabs{margin-bottom:14px}.provider-layout{display:grid;grid-template-columns:minmax(240px,.34fr) minmax(560px,1fr);gap:14px}.provider-list,.provider-detail{padding:18px}.list-heading,.detail-heading,.models-heading,.detail-actions,.model-actions,.model-item,.model-row-actions{display:flex;align-items:center}.list-heading,.detail-heading,.models-heading,.model-item{justify-content:space-between}.list-heading{margin-bottom:12px}.provider-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;margin:3px 0;padding:12px;border:0;border-radius:7px;background:transparent;color:var(--ui-text);text-align:left;cursor:pointer}.provider-item:hover,.provider-item.active{background:var(--ui-primary-soft)}.provider-item span,.provider-item strong,.provider-item small{display:block;min-width:0}.provider-item small{max-width:210px;margin-top:4px;overflow:hidden;color:var(--ui-text-secondary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.detail-heading{gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--ui-border)}.detail-heading h2,.models-heading h2{margin:3px 0 0;font-size:18px}.detail-actions,.model-actions,.model-row-actions{gap:8px}.form-row{display:grid;grid-template-columns:.55fr 1fr;gap:12px}.models-section{margin-top:12px;padding-top:20px;border-top:1px solid var(--ui-border)}.models-heading{align-items:flex-end;gap:16px;margin-bottom:14px}.model-actions .el-input{width:190px}.models-list{border-top:1px solid var(--ui-border)}.model-item{gap:16px;padding:13px 4px;border-bottom:1px solid var(--ui-border)}.model-item>div:first-child{display:flex;min-width:0;align-items:center;gap:8px}.model-item strong{overflow-wrap:anywhere;font-size:12px}.discovery-list{display:grid;max-height:440px;overflow:auto}.discovery-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 4px;border-bottom:1px solid var(--ui-border)}.discovery-list code{overflow-wrap:anywhere;font-size:12px}@media(max-width:980px){.provider-layout{grid-template-columns:1fr}.provider-list{max-height:260px;overflow:auto}}@media(max-width:700px){.form-row{grid-template-columns:1fr}.detail-heading,.models-heading{align-items:stretch;flex-direction:column}.detail-actions,.model-actions{flex-wrap:wrap}.model-actions .el-input{width:100%}.model-item{align-items:flex-start;flex-direction:column}.model-row-actions{align-self:stretch;justify-content:flex-end}}
 
 .form-row { grid-template-columns: minmax(0, 1fr); }

@@ -41,7 +41,7 @@ class EmbeddingClient:
     def embed(self, texts: typing.Sequence[str]) -> typing.List[typing.List[float]]:
         if not texts:
             return []
-        body = json.dumps({"model": self.model, "input": list(texts)}, ensure_ascii=False).encode("utf-8")
+        body = json.dumps({"model": self.model, "input": list(texts), "encoding_format": "float"}, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self.api_key:
             headers["Authorization"] = "Bearer " + self.api_key

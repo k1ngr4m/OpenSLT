@@ -201,7 +201,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
             </div>
             <p class="field-help">相对白名单路径会应用到每个默认仓库，所有仓库共用下方只读账号。</p>
           </el-form-item>
-          <div class="form-row"><el-form-item label="用户名" required><el-input v-model="form.username" autocomplete="username" /></el-form-item><el-form-item label="密码" :required="!source?.has_password"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="source?.has_password ? '留空表示不修改' : '请输入密码'" /></el-form-item></div>
+          <div class="form-row"><el-form-item label="用户名" required><el-input v-model="form.username" autocomplete="username" /></el-form-item><el-form-item label="密码" :required="!source?.has_password"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" :placeholder="source?.has_password ? '********' : '请输入密码'" /></el-form-item></div>
           <el-form-item label="允许索引的相对路径（每行一个）" required><el-input v-model="form.include_paths_text" type="textarea" :rows="5" placeholder="docs/测试文档&#10;docs/需求文档/2026年需求" /><p class="field-help">相对路径应用到每个默认仓库；禁止空路径、绝对路径、.. 和 .svn。</p></el-form-item>
           <el-form-item v-if="isHttp"><el-checkbox v-model="form.allow_insecure_http">我已知晓 HTTP 明文传输风险，并允许在当前受限内网中使用</el-checkbox></el-form-item>
           <el-form-item label="自动同步"><el-switch v-model="form.enabled" active-text="启用，每 30 分钟" inactive-text="停用" /></el-form-item>
