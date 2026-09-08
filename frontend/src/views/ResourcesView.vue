@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from '@/ui/elementPlusServices'
-import { RefreshRight, Search } from '@element-plus/icons-vue'
+import { RefreshRight, Search, Connection, CopyDocument, Monitor, Edit, Delete } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { businessText, resourceText } from '@/utils/status'
@@ -493,26 +493,21 @@ onMounted(load)
         <el-table-column label="连接地址" min-width="280">
           <template #default="scope"><span class="mono">{{ connectionText(scope.row) }}</span></template>
         </el-table-column>
-        <el-table-column label="健康" width="110">
-          <template #default="scope">
-            <el-tag :type="scope.row.health_status === 'healthy' ? 'success' : scope.row.health_status === 'unhealthy' ? 'danger' : 'info'" effect="plain">
-              {{ scope.row.health_status === 'healthy' ? '健康' : scope.row.health_status === 'unhealthy' ? '异常' : '未知' }}
-            </el-tag>
-          </template>
-        </el-table-column>
         <el-table-column label="启用" width="90">
           <template #default="scope"><el-tag :type="scope.row.is_enabled ? 'success' : 'info'" effect="plain">{{ scope.row.is_enabled ? '已启用' : '已停用' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="380" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="scope">
-            <el-button v-if="auth.canOperate" link type="primary" @click="health(scope.row)">连通测试</el-button>
-            <el-button link type="primary" @click="copyResource(scope.row)">复制</el-button>
-            <el-button v-if="scope.row.resource_type === 'database' && auth.canOperate" link type="primary" @click="router.push(`/resources/${scope.row.id}/database`)">操作台</el-button>
-            <el-button v-if="['rem', 'market', 'order', 'slnic', 'parser'].includes(scope.row.resource_type) && auth.canOperate" link type="primary" :disabled="!scope.row.is_enabled" @click="router.push(`/resources/${scope.row.id}/terminal`)">操作台</el-button>
+          <div class="resource-actions">
+            <el-tooltip v-if="auth.canOperate" content="连通测试" placement="top"><el-button text circle type="primary" @click="health(scope.row)" :icon="Connection" aria-label="连通测试" /></el-tooltip>
+            <el-tooltip content="复制" placement="top"><el-button text circle type="primary" @click="copyResource(scope.row)" :icon="CopyDocument" aria-label="复制" /></el-tooltip>
+            <el-tooltip v-if="scope.row.resource_type === 'database' && auth.canOperate" content="操作台" placement="top"><el-button text circle type="primary" @click="router.push(`/resources/${scope.row.id}/database`)" :icon="Monitor" aria-label="操作台" /></el-tooltip>
+            <el-tooltip v-if="['rem', 'market', 'order', 'slnic', 'parser'].includes(scope.row.resource_type) && auth.canOperate" content="操作台" placement="top"><el-button text circle type="primary" :disabled="!scope.row.is_enabled" @click="router.push(`/resources/${scope.row.id}/terminal`)" :icon="Monitor" aria-label="操作台" /></el-tooltip>
             <template v-if="auth.isAdmin">
-              <el-button link @click="open(scope.row)">编辑</el-button>
-              <el-button link type="danger" @click="remove(scope.row)">删除</el-button>
+              <el-tooltip content="编辑" placement="top"><el-button text circle @click="open(scope.row)" :icon="Edit" aria-label="编辑" /></el-tooltip>
+              <el-tooltip content="删除" placement="top"><el-button text circle type="danger" @click="remove(scope.row)" :icon="Delete" aria-label="删除" /></el-tooltip>
             </template>
+          </div>
           </template>
         </el-table-column>
       </el-table>
@@ -693,6 +688,8 @@ onMounted(load)
 </template>
 
 <style scoped>
+.resource-actions { display: flex; align-items: center; gap: 4px; }
+.resource-actions .el-button { margin-left: 0; width: 32px; height: 32px; }
 .resource-filters > .el-select {
   width: 160px;
 }

@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "type": "changed",
+      "text": "资源列表移除健康列，操作改为带提示的图标按钮。"
+    },
+    {
+      "type": "changed",
       "text": "SVN 配置中的“只读用户名”字段更名为“用户名”。"
     },
     {
