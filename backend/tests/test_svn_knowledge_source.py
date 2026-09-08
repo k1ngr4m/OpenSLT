@@ -378,12 +378,12 @@ def test_svn_locale_supports_legacy_linux_and_overrides_ascii(monkeypatch) -> No
     monkeypatch.setenv('LC_ALL', 'C')
     monkeypatch.setenv('LC_CTYPE', 'C')
     monkeypatch.setenv('LANGUAGE', 'zh_CN')
-    monkeypatch.setattr('app.services.svn_knowledge.subprocess.run', lambda *a, **k: SimpleNamespace(stdout='C\nPOSIX\nen_US.utf8\n'))
+    monkeypatch.setattr('app.services.svn_knowledge.subprocess.run', lambda *a, **k: SimpleNamespace(stdout=b'C\nPOSIX\nen_US.utf8\n'))
     environment = _svn_environment()
     assert 'LC_ALL' not in environment
     assert environment['LC_CTYPE'] == 'en_US.utf8'
     assert environment['LC_MESSAGES'] == environment['LANGUAGE'] == 'C'
-    monkeypatch.setattr('app.services.svn_knowledge.subprocess.run', lambda *a, **k: SimpleNamespace(stdout='C\nPOSIX\n'))
+    monkeypatch.setattr('app.services.svn_knowledge.subprocess.run', lambda *a, **k: SimpleNamespace(stdout=b'C\nPOSIX\n'))
     with pytest.raises(SvnKnowledgeError, match='系统缺少 UTF-8 locale'):
         _svn_environment()
 
@@ -407,3 +407,21 @@ def test_svn_checkout_preserves_chinese_filenames(tmp_path: Path, monkeypatch) -
     destination = tmp_path / 'checkout'
     SvnClient(timeout_seconds=10).run(['checkout', repository.as_uri(), str(destination)], 'user', '')
     assert (destination / filename).read_bytes() == b'test content'
+
+
+def test_svn_locale_command_handles_non_utf8_output(tmp_path: Path, monkeypatch) -> None:
+    from app.services.svn_knowledge import _svn_environment
+
+    executable = tmp_path / 'locale'
+    executable.write_text(
+        '#!' + sys.executable + '\n'
+        'import sys\n'
+        "sys.stdout.buffer.write(b'C\\ninvalid-\\xe5\\xff\\nzh_CN.gbk\\nen_US.utf8\\n')\n"
+        "sys.stderr.buffer.write(b'warning: \\xe5\\xff')\n",
+        encoding='utf-8',
+    )
+    executable.chmod(0o700)
+    monkeypatch.setenv('PATH', str(tmp_path))
+    environment = _svn_environment()
+    assert environment['LC_CTYPE'] == 'en_US.utf8'
+    assert environment['LC_MESSAGES'] == 'C'
