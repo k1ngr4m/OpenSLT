@@ -112,6 +112,25 @@ def _svn_targets(
     return targets
 
 
+def _svn_environment() -> typing.Dict[str, str]:
+    environment = dict(os.environ)
+    try:
+        available = subprocess.run(
+            ["locale", "-a"], capture_output=True, text=True, timeout=10, check=True,
+            env={**environment, "LC_ALL": "C"},
+        ).stdout.splitlines()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SvnKnowledgeError("无法检测 SVN 字符编码，请确认系统 locale 命令可用") from exc
+    locales = {name.lower().replace("-", ""): name for name in available if "utf8" in name.lower().replace("-", "")}
+    selected = locales.get("c.utf8") or locales.get("en_us.utf8") or next(iter(locales.values()), None)
+    if selected is None:
+        raise SvnKnowledgeError("系统缺少 UTF-8 locale，请安装或启用 en_US.UTF-8 后重试 SVN 同步")
+    # File names need UTF-8; password prompt matching still needs English messages.
+    environment.pop("LC_ALL", None)
+    environment.update({"LANG": selected, "LC_CTYPE": selected, "LC_MESSAGES": "C", "LANGUAGE": "C"})
+    return environment
+
+
 class SvnClient:
     """Run SVN without putting a password in argv, env, logs, or auth cache."""
 
@@ -156,8 +175,7 @@ class SvnClient:
             "--config-option", "config:auth:store-passwords=no",
             *arguments[1:],
         ]
-        environment = dict(os.environ)
-        environment.update({"LC_ALL": "C", "LANG": "C"})
+        environment = _svn_environment()
         stdout_read, stdout_write = os.pipe()
         pid, master = pty.fork()
         if pid == 0:

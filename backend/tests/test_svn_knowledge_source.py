@@ -369,3 +369,41 @@ def test_svn_failure_preserves_diagnostic_without_password(tmp_path: Path) -> No
     assert 'E000022: Cannot convert filename' in str(error.value)
     assert secret not in str(error.value)
     assert '[REDACTED]' in str(error.value)
+
+
+def test_svn_locale_supports_legacy_linux_and_overrides_ascii(monkeypatch) -> None:
+    import pytest
+    from app.services.svn_knowledge import _svn_environment, SvnKnowledgeError
+
+    monkeypatch.setenv('LC_ALL', 'C')
+    monkeypatch.setenv('LC_CTYPE', 'C')
+    monkeypatch.setenv('LANGUAGE', 'zh_CN')
+    monkeypatch.setattr('app.services.svn_knowledge.subprocess.run', lambda *a, **k: SimpleNamespace(stdout='C\nPOSIX\nen_US.utf8\n'))
+    environment = _svn_environment()
+    assert 'LC_ALL' not in environment
+    assert environment['LC_CTYPE'] == 'en_US.utf8'
+    assert environment['LC_MESSAGES'] == environment['LANGUAGE'] == 'C'
+    monkeypatch.setattr('app.services.svn_knowledge.subprocess.run', lambda *a, **k: SimpleNamespace(stdout='C\nPOSIX\n'))
+    with pytest.raises(SvnKnowledgeError, match='系统缺少 UTF-8 locale'):
+        _svn_environment()
+
+
+def test_svn_checkout_preserves_chinese_filenames(tmp_path: Path, monkeypatch) -> None:
+    import shutil
+    import subprocess
+    import pytest
+    from app.services.svn_knowledge import _svn_environment
+
+    if not shutil.which('svn') or not shutil.which('svnadmin'):
+        pytest.skip('requires svn and svnadmin')
+    repository = tmp_path / 'repository'
+    source = tmp_path / 'source'
+    source.mkdir()
+    filename = '公司报销制度（2020年）.pdf'
+    (source / filename).write_bytes(b'test content')
+    subprocess.run(['svnadmin', 'create', str(repository)], check=True, capture_output=True)
+    subprocess.run(['svn', 'import', str(source), repository.as_uri(), '-m', 'test'], env=_svn_environment(), check=True, capture_output=True)
+    monkeypatch.setenv('LC_ALL', 'C')
+    destination = tmp_path / 'checkout'
+    SvnClient(timeout_seconds=10).run(['checkout', repository.as_uri(), str(destination)], 'user', '')
+    assert (destination / filename).read_bytes() == b'test content'

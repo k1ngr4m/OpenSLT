@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "type": "fixed",
+      "text": "SVN 同步自动使用系统可用的 UTF-8 locale，修复中文文件名导致的 E000022 错误。"
+    },
+    {
+      "type": "fixed",
       "text": "SVN 同步失败时显示脱敏后的命令错误详情，便于定位路径、权限及编码问题。"
     },
     {
