@@ -523,7 +523,7 @@ onMounted(load)
         <el-step title="连接配置" description="填写 MySQL 与可选跳板机信息" />
         <el-step title="选择数据库" description="读取当前账号可见的业务数据库" />
       </el-steps>
-      <el-form :model="form" label-width="110px">
+      <el-form :model="form" label-position="left" label-width="var(--ui-field-label-width)">
         <el-row v-show="form.resource_type !== 'database' || databaseStep === 1" :gutter="16">
           <el-col :span="12"><el-form-item label="名称" required><el-input v-model="form.name" /></el-form-item></el-col>
           <el-col :span="12">
@@ -597,7 +597,7 @@ onMounted(load)
             </el-col>
             <el-col :span="12"><el-form-item label="启用 TLS"><el-switch v-model="form.database_tls_enabled" /></el-form-item></el-col>
             <el-col :span="16"><el-form-item label="数据库地址" required><el-input v-model="form.database_host" /></el-form-item></el-col>
-            <el-col :span="8"><el-form-item label="端口" label-width="90px" required><el-input-number v-model="form.database_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="8"><el-form-item label="端口" label-width="var(--ui-field-label-width)" required><el-input-number v-model="form.database_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
             <el-col :span="12"><el-form-item label="数据库用户" required><el-input v-model="form.database_username" /></el-form-item></el-col>
             <el-col :span="12"><el-form-item label="数据库密码"><el-input v-model="form.database_password" type="password" show-password :placeholder="editing && form.has_database_password ? '留空保持原密码' : ''" /></el-form-item></el-col>
           </template>
@@ -605,7 +605,7 @@ onMounted(load)
           <template v-if="form.resource_type !== 'database' || form.database_connection_mode === 'ssh_tunnel'">
             <el-col v-if="form.resource_type === 'database'" :span="24"><el-divider content-position="left">SSH 跳板机</el-divider></el-col>
             <el-col :span="16"><el-form-item :label="form.resource_type === 'database' ? '跳板机地址' : 'Linux 地址'" required><el-input v-model="form.host" /></el-form-item></el-col>
-            <el-col :span="8"><el-form-item label="SSH 端口" label-width="90px" required><el-input-number v-model="form.ssh_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="8"><el-form-item label="SSH 端口" label-width="var(--ui-field-label-width)" required><el-input-number v-model="form.ssh_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item></el-col>
             <el-col :span="12"><el-form-item label="SSH 用户名" required><el-input v-model="form.username" /></el-form-item></el-col>
             <el-col :span="12">
               <el-form-item label="认证方式">
@@ -631,11 +631,11 @@ onMounted(load)
             </el-col>
             <el-col :span="24">
               <div class="more-config-grid">
-                <el-form-item class="trade-ip-field" label="交易 IP" label-width="128px" required><el-input v-model="form.trade_ip" class="mono" /></el-form-item>
-                <el-form-item class="trade-tcp-field" label="交易 TCP 端口" label-width="128px" required><el-input-number v-model="form.trade_tcp_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item>
-                <el-form-item class="trade-udp-field" label="交易 UDP 端口" label-width="128px" required><el-input-number v-model="form.trade_udp_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item>
-                <el-form-item class="query-ip-field" label="查询 IP" label-width="128px" required><el-input v-model="form.query_ip" class="mono" /></el-form-item>
-                <el-form-item class="query-port-field" label="查询端口" label-width="128px" required><el-input-number v-model="form.query_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item>
+                <el-form-item class="trade-ip-field" label="交易 IP" label-width="var(--ui-field-label-width)" required><el-input v-model="form.trade_ip" class="mono" /></el-form-item>
+                <el-form-item class="trade-tcp-field" label="交易 TCP 端口" label-width="var(--ui-field-label-width)" required><el-input-number v-model="form.trade_tcp_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item>
+                <el-form-item class="trade-udp-field" label="交易 UDP 端口" label-width="var(--ui-field-label-width)" required><el-input-number v-model="form.trade_udp_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item>
+                <el-form-item class="query-ip-field" label="查询 IP" label-width="var(--ui-field-label-width)" required><el-input v-model="form.query_ip" class="mono" /></el-form-item>
+                <el-form-item class="query-port-field" label="查询端口" label-width="var(--ui-field-label-width)" required><el-input-number v-model="form.query_port" class="port-input" :min="1" :max="65535" style="width:100%" /></el-form-item>
               </div>
             </el-col>
             <el-col :span="24"><el-form-item label="远端路径"><el-input v-model="form.remote_path" /></el-form-item></el-col>
@@ -704,7 +704,7 @@ onMounted(load)
 .filter-count {
   margin-left: auto;
   color: var(--ui-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .resource-table {
@@ -712,7 +712,7 @@ onMounted(load)
 }
 
 .resource-table :deep(.mono) {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 :global(.resource-config-drawer) {
@@ -753,22 +753,15 @@ onMounted(load)
 
 :global(.resource-config-drawer .el-form-item) {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 18px;
 }
 
 :global(.resource-config-drawer .el-form-item__label) {
-  display: inline-flex;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: flex-end;
-  height: 32px;
-  margin: 0;
-  padding: 0 12px 0 0;
   color: var(--el-text-color-regular);
   font-size: 14px;
   font-weight: 400;
-  line-height: 32px;
 }
 
 :global(.resource-config-drawer .el-form-item__content) {
@@ -871,7 +864,7 @@ onMounted(load)
 .more-config-heading span {
   margin-top: 3px;
   color: var(--ui-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .more-config-grid {
@@ -935,7 +928,7 @@ onMounted(load)
 
 .database-connection-summary small {
   color: var(--ui-text-tertiary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .database-connection-summary strong {
@@ -1005,15 +998,6 @@ onMounted(load)
     padding: 16px;
   }
 
-  :global(.resource-config-drawer .el-form-item) {
-    display: block;
-  }
-
-  :global(.resource-config-drawer .el-form-item__label) {
-    justify-content: flex-start;
-    width: auto !important;
-  }
-
   .database-steps {
     padding: 0;
   }
@@ -1031,4 +1015,6 @@ onMounted(load)
     display: block;
   }
 }
+
+@media(max-width:767px) { :global(.resource-config-drawer .el-form .el-col) { flex: 0 0 100%; max-width: 100%; } }
 </style>

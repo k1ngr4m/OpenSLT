@@ -96,7 +96,7 @@
 .eyebrow {
   margin: 0;
   color: var(--ui-primary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.3;
 }
@@ -110,7 +110,7 @@
   border: 1px solid var(--ui-border);
   border-radius: 6px;
   color: var(--ui-text-secondary);
-  background: #f6f9f9;
+  background: var(--ui-surface-subtle);
   font-size: 12px;
   font-weight: 600;
 }
@@ -127,7 +127,7 @@
   padding: 11px 12px 10px;
   border: 1px solid var(--ui-border);
   border-radius: 8px;
-  background: linear-gradient(180deg, #f9fbfb 0%, #f2f7f7 100%);
+  background: var(--ui-surface-subtle);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .75);
   transition: border-color var(--ui-transition), box-shadow var(--ui-transition), transform var(--ui-transition);
 }
@@ -140,7 +140,7 @@
 
 .info-tile span {
   display: block;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -218,7 +218,7 @@
   margin: 4px 0 18px;
   border: 1px solid var(--ui-border);
   border-radius: 10px;
-  background: #f7fafa;
+  background: var(--ui-surface-subtle);
 }
 
 .info-list {
@@ -232,7 +232,7 @@
 .info-list dt {
   min-width: 0;
   padding: 8px 0;
-  border-top: 1px solid #e8eff0;
+  border-top: 1px solid var(--ui-border);
   color: var(--ui-text-secondary);
   font-weight: 650;
 }
@@ -241,7 +241,7 @@
   min-width: 0;
   margin: 0;
   padding: 8px 0;
-  border-top: 1px solid #e8eff0;
+  border-top: 1px solid var(--ui-border);
   color: var(--ui-text-primary);
   line-height: 1.45;
   word-break: break-word;
@@ -271,7 +271,7 @@
   gap: 12px;
   padding: 10px 12px;
   border-radius: 8px;
-  background: #f4f8f8;
+  background: var(--ui-surface-subtle);
   color: var(--ui-text-primary);
   font-size: 12px;
 }
@@ -329,6 +329,14 @@
   display: grid;
   gap: 8px;
 }
+
+.statistics-input-list :deep(.el-checkbox__label) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.statistics-input-copy { min-width: 0; }
+.statistics-input-copy small { white-space: normal; }
 
 .statistics-input-list :deep(.el-checkbox) {
   width: 100%;
@@ -656,7 +664,7 @@
   padding: 16px;
   margin-top: 14px;
   border-radius: 8px;
-  background: #f2f8f6;
+  background: var(--ui-surface-subtle);
 }
 
 .mono {
@@ -846,4 +854,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.order-runtime-config-actions,.order-runtime-config-tools{display:flex;align-items:center;gap:8px}.order-runtime-config-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.45fr);gap:14px}.order-runtime-config-field{display:grid;gap:6px}.order-runtime-config-field>span{color:var(--ui-text-secondary);font-size:12px;font-weight:650}.order-runtime-config-tools{justify-content:space-between;margin-top:12px;padding:10px 12px;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-surface-subtle)}.order-runtime-config-tools .muted{font-size:11px}.order-runtime-config-section>.el-alert{margin-top:10px}@media(max-width:767px){.order-runtime-config-form{grid-template-columns:1fr}.order-runtime-config-tools{align-items:flex-start;flex-direction:column}}
+.order-runtime-config-actions,.order-runtime-config-tools{display:flex;align-items:center;gap:8px}.order-runtime-config-form{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.45fr);gap:14px}.order-runtime-config-field{display:grid;gap:6px}.order-runtime-config-field>span{color:var(--ui-text-secondary);font-size:12px;font-weight:650}.order-runtime-config-tools{justify-content:space-between;margin-top:12px;padding:10px 12px;border:1px solid var(--ui-border);border-radius:7px;background:var(--ui-surface-subtle)}.order-runtime-config-tools .muted{font-size:12px}.order-runtime-config-section>.el-alert{margin-top:10px}@media(max-width:767px){.order-runtime-config-form{grid-template-columns:1fr}.order-runtime-config-tools{align-items:flex-start;flex-direction:column}}
+
+.statistics-config-form, .order-runtime-config-form { grid-template-columns: minmax(0, 1fr); }
+.statistics-config-field, .order-runtime-config-field.ui-field-row { display: grid; grid-template-columns: var(--ui-field-label-width) minmax(0,1fr); align-items: start; gap: 7px 12px; }
+.statistics-config-field > :first-child { grid-column: 1; grid-row: 1; padding-top: 7px; }
+.statistics-config-field > small { grid-column: 2; grid-row: 2; }
+.statistics-config-field > .statistics-input-list, .statistics-config-field > .empty-line, .statistics-config-field > .el-input-number { grid-column: 2; grid-row: 1; }
+.statistics-threshold-field { border: 0; padding: 0; background: transparent; }

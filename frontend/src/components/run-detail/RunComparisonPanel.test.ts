@@ -116,7 +116,7 @@ describe('RunComparisonPanel', () => {
 
   it('exposes compatibility and stale-state feedback accessibly', () => {
     expect(source).toContain('aria-labelledby="run-comparison-heading"')
-    expect(source).toContain('<fieldset v-if="canOperate"')
+    expect(source).toContain('role="group" aria-label="选择基线"')
     expect(source).toContain('aria-label="基线运行"')
     expect(source).toContain('aria-live="polite"')
     expect(source).toContain('comparison.target_metrics_stale')

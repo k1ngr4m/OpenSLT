@@ -93,6 +93,16 @@ function parserRunDetail(): RunDetail {
 }
 
 describe('useWorkflowTerminal', () => {
+  it('queues a command until the lazily mounted terminal connects', async () => {
+    const terminal = useWorkflowTerminal({ active: ref('detail'), manualStepSelection: ref(false), reload: vi.fn(), run: ref(runDetail()), runId: 11, selectedStep: computed(() => terminalStep), selectedStepId: ref(7) })
+    await terminal.runWorkflowStepInTerminal(terminalStep, 'start')
+    const sendWorkflowStepCommand = vi.fn().mockReturnValue(true)
+    terminal.slnicWorkflowTerminalPanel.value = { connected: true, sendWorkflowStepCommand } as any
+    terminal.handleWorkflowTerminalStatus('slnic', { status: 'connected' })
+    terminal.handleWorkflowTerminalStatus('slnic', { status: 'connected' })
+    expect(sendWorkflowStepCommand).toHaveBeenCalledExactlyOnceWith({ run_id: 11, step_id: 7, operation: 'start' })
+  })
+
   it('tells operators that the order terminal accepts direct input', () => {
     const terminal = useWorkflowTerminal({
       active: ref('detail'),

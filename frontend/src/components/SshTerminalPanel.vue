@@ -57,6 +57,7 @@ const lastError = ref('')
 const manualClose = ref(false)
 let terminalResizeObserver: ResizeObserver | null = null
 let resizeFrame = 0
+let lastSentSize = ''
 
 const connecting = computed(() => state.value === 'connecting')
 const connected = computed(() => state.value === 'connected')
@@ -73,14 +74,16 @@ function send(payload: Record<string, unknown>) {
 }
 
 function syncSize() {
-  if (!fitAddon.value || !terminalInstance.value) return
+  if (!props.active || !terminalHost.value?.getClientRects().length || !fitAddon.value || !terminalInstance.value) return
   fitAddon.value.fit()
-  send({ type: 'resize', cols: terminalInstance.value.cols, rows: terminalInstance.value.rows })
+  const { cols, rows } = terminalInstance.value
+  const size = `${cols}:${rows}`
+  if (size !== lastSentSize && send({ type: 'resize', cols, rows })) lastSentSize = size
 }
 
 function scheduleSyncSize() {
   cancelAnimationFrame(resizeFrame)
-  resizeFrame = requestAnimationFrame(syncSize)
+  if (props.active) resizeFrame = requestAnimationFrame(syncSize)
 }
 
 function setupTerminal() {
@@ -115,7 +118,7 @@ function setupTerminal() {
   instance.onData(data => { if (!props.readOnly) send({ type: 'input', data }) })
   terminalResizeObserver = new ResizeObserver(scheduleSyncSize)
   terminalResizeObserver.observe(terminalHost.value)
-  nextTick(() => { syncSize(); instance.focus() })
+  nextTick(() => { syncSize(); if (props.active) instance.focus() })
 }
 
 function websocketUrl() {
@@ -140,6 +143,7 @@ function connect() {
   statusMessage.value = '正在建立终端会话'
   terminalInstance.value?.clear()
   writeOutput('\x1b[90mConnecting to OpenSLT terminal...\x1b[0m\r\n')
+  lastSentSize = ''
   const current = new WebSocket(websocketUrl())
   socket.value = current
   current.onopen = () => {
@@ -156,7 +160,7 @@ function connect() {
       if (message.status === 'connected') {
         state.value = 'connected'
         syncSize()
-        terminalInstance.value?.focus()
+        if (props.active) terminalInstance.value?.focus()
       }
       if (message.status === 'closed') state.value = 'closed'
     } else if (message.type === 'output') {
@@ -304,5 +308,5 @@ defineExpose({
 </template>
 
 <style scoped>
-.ssh-terminal-panel{display:grid;gap:10px}.terminal-shell{overflow:hidden;border:1px solid #263a43;border-radius:8px;background:var(--ui-terminal);box-shadow:0 10px 26px rgba(13,41,46,.15)}.terminal-shell-bar{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid #263a43;background:#172730;color:#afc1c6;font-size:11px}.terminal-shell-info{display:flex;align-items:center;gap:8px}.terminal-dot{width:7px;height:7px;border-radius:50%;background:#c88a32}.terminal-dot.live{background:#50b88d;box-shadow:0 0 0 3px rgba(80,184,141,.13)}.terminal-meta{color:#728a92;font-family:"Cascadia Code",Consolas,monospace}.terminal-host{height:min(48vh,520px)}.terminal-host :deep(.xterm){height:100%;padding:16px 18px}.terminal-host :deep(.xterm-viewport){background:var(--ui-terminal)!important}.terminal-error{padding:10px 14px;border-top:1px solid #713845;background:#3a1e26;color:#f2a7b5;font-size:12px}.terminal-footnote{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ui-text-secondary);font-size:11px}.terminal-actions{display:flex;flex:none;align-items:center;gap:8px}.terminal-warning{display:flex;align-items:center;gap:7px;margin:0;color:var(--ui-text-secondary);font-size:11px}.terminal-warning :deep(svg){width:14px}.terminal-footnote strong{color:var(--ui-text-primary)}@media(max-width:767px){.terminal-meta{display:none}.terminal-host{height:50dvh}.terminal-host :deep(.xterm){padding:12px}.terminal-footnote{align-items:flex-start;flex-direction:column}}
+.ssh-terminal-panel{display:grid;gap:10px}.terminal-shell{overflow:hidden;border:1px solid #263a43;border-radius:8px;background:var(--ui-terminal);box-shadow:0 10px 26px rgba(13,41,46,.15)}.terminal-shell-bar{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;border-bottom:1px solid #263a43;background:#172730;color:#afc1c6;font-size:12px}.terminal-shell-info{display:flex;align-items:center;gap:8px}.terminal-dot{width:7px;height:7px;border-radius:50%;background:#c88a32}.terminal-dot.live{background:#50b88d;box-shadow:0 0 0 3px rgba(80,184,141,.13)}.terminal-meta{color:#728a92;font-family:"Cascadia Code",Consolas,monospace}.terminal-host{height:min(48vh,520px)}.terminal-host :deep(.xterm){height:100%;padding:16px 18px}.terminal-host :deep(.xterm-viewport){background:var(--ui-terminal)!important}.terminal-error{padding:10px 14px;border-top:1px solid #713845;background:#3a1e26;color:#f2a7b5;font-size:12px}.terminal-footnote{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ui-text-secondary);font-size:12px}.terminal-actions{display:flex;flex:none;align-items:center;gap:8px}.terminal-warning{display:flex;align-items:center;gap:7px;margin:0;color:var(--ui-text-secondary);font-size:12px}.terminal-warning :deep(svg){width:14px}.terminal-footnote strong{color:var(--ui-text-primary)}@media(max-width:767px){.terminal-meta{display:none}.terminal-host{height:50dvh}.terminal-host :deep(.xterm){padding:12px}.terminal-footnote{align-items:flex-start;flex-direction:column}}
 </style>

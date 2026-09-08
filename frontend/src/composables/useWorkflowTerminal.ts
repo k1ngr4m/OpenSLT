@@ -1,6 +1,6 @@
 import { computed, nextTick, ref, type ComputedRef, type Ref } from 'vue'
 import { ElMessage } from '@/ui/elementPlusServices'
-import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
+import type SshTerminalPanel from '@/components/SshTerminalPanel.vue'
 import type {
   JsonMap,
   RunDetail,
@@ -139,16 +139,17 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
     manualStepSelection.value = false
     selectedStepId.value = step.id
     active.value = 'detail'
+    await import('@/components/SshTerminalPanel.vue')
     await nextTick()
     const panel = panelForTerminalKind(kind)
     const title = titleForTerminalKind(kind)
-    if (!resourceForTerminalKind(kind) || !panel) {
+    if (!resourceForTerminalKind(kind)) {
       throw new Error(`未找到${title}，请检查运行资源配置`)
     }
-    if (!panel.connected) {
+    if (!panel?.connected) {
       queuedTerminalCommand.value = { stepId: step.id, operation, kind }
       terminalCommandPendingStepId.value = step.id
-      if (!panel.connecting) panel.connect()
+      if (panel && !panel.connecting) panel.connect()
       ElMessage.info(`${title}连接中，连接成功后会自动下发指令`)
       return
     }

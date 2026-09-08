@@ -343,6 +343,20 @@ describe('RunDetailView statistics behavior', () => {
     auth.canOperate = true
   })
 
+  it('mounts execution details only while expanded', async () => {
+    const { wrapper } = await mountRunDetail()
+    expect(wrapper.find('run-log-panel-stub').exists()).toBe(false)
+    expect(wrapper.find('run-workflow-strip-stub').exists()).toBe(false)
+    const details = wrapper.get('details.execution-details')
+    ;(details.element as HTMLDetailsElement).open = true
+    await details.trigger('toggle')
+    expect(wrapper.find('run-log-panel-stub').exists()).toBe(true)
+    ;(details.element as HTMLDetailsElement).open = false
+    await details.trigger('toggle')
+    expect(wrapper.find('run-log-panel-stub').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('blocks completion for an unsaved draft and for a saved stale analysis with visible reasons', async () => {
     const { wrapper, harness } = await mountRunDetail({ configDirty: true, configSaved: false, completionBlocked: true })
     expect(button(wrapper, '采用结果并继续').attributes('disabled')).toBeDefined()

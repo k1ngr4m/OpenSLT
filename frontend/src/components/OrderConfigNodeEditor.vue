@@ -83,19 +83,19 @@ function removeAttribute(index: number) {
     </header>
 
     <div v-if="!isGroup" class="leaf-fields">
-      <el-input
+      <label class="ui-field-row xml-value-field"><span>值</span><el-input
         :model-value="getAttribute(node, 'value')"
         :type="isSensitiveNode(node) && !revealSensitive ? 'password' : 'text'"
         class="value-input"
         placeholder="value"
         @update:model-value="value => { setAttribute(node, 'value', value); emit('changed') }"
-      />
-      <el-input
+      /></label>
+      <label class="ui-field-row xml-value-field"><span>默认值</span><el-input
         :model-value="getAttribute(node, 'default_value')"
         class="default-input"
         placeholder="default_value"
         @update:model-value="value => { setAttribute(node, 'default_value', value); emit('changed') }"
-      />
+      /></label>
       <el-button v-if="isSensitiveNode(node)" text @click="revealSensitive = !revealSensitive">{{ revealSensitive ? '隐藏' : '显示' }}</el-button>
     </div>
 
@@ -127,5 +127,9 @@ function removeAttribute(index: number) {
 </template>
 
 <style scoped>
-.xml-node{min-width:0}.xml-node.group{border-left:2px solid #d9e2ea;padding-left:10px}.node-header{display:flex;align-items:center;gap:8px;min-height:38px}.collapse-button,.attribute-toggle{border:0;background:transparent;color:#617080;cursor:pointer}.collapse-button{width:24px;height:24px;padding:0}.leaf-marker{width:8px;height:8px;margin:0 8px;border-radius:2px;background:#6fae9d}.node-heading{display:flex;align-items:baseline;gap:8px;min-width:160px;flex:1}.node-heading strong{font-size:13px;font-weight:600;color:#253341}.node-tag{color:#91a0ae;font-size:11px}.attribute-toggle{font-size:12px}.leaf-fields{display:grid;grid-template-columns:minmax(220px,1fr) minmax(160px,.7fr) auto;gap:8px;margin:2px 0 8px 32px}.attribute-editor{display:grid;gap:7px;margin:4px 0 10px 32px;padding:10px;background:#f5f8fa;border:1px solid #e3e9ef;border-radius:6px}.attribute-row{display:grid;grid-template-columns:150px minmax(180px,1fr) auto;gap:8px;align-items:center}.attribute-row:first-child{grid-template-columns:150px minmax(180px,1fr)}.attribute-row>span{font-size:12px;color:#687786}.attribute-name{font-size:12px}.node-children{display:grid;gap:4px;margin:2px 0 6px 8px}.child-row{display:grid;grid-template-columns:30px minmax(0,1fr);gap:3px}.child-actions{display:flex;flex-direction:column;padding-top:4px;opacity:.18;transition:opacity .2s}.child-row:hover>.child-actions,.child-actions:focus-within{opacity:1}.child-actions :deep(.el-button){margin:0;width:26px;height:24px}.xml-comment{margin:4px 0 6px 38px;color:#81909c;font-size:11px;white-space:pre-wrap}.mono{font-family:Cascadia Code,Consolas,monospace}
+.xml-node{min-width:0}.xml-node.group{border-left:2px solid #d9e2ea;padding-left:10px}.node-header{display:flex;align-items:center;gap:8px;min-height:38px}.collapse-button,.attribute-toggle{border:0;background:transparent;color:#617080;cursor:pointer}.collapse-button{width:24px;height:24px;padding:0}.leaf-marker{width:8px;height:8px;margin:0 8px;border-radius:2px;background:#6fae9d}.node-heading{display:flex;align-items:baseline;gap:8px;min-width:160px;flex:1}.node-heading strong{font-size:13px;font-weight:600;color:#253341}.node-tag{color:#91a0ae;font-size:12px}.attribute-toggle{font-size:12px}.leaf-fields{display:grid;grid-template-columns:minmax(220px,1fr) minmax(160px,.7fr) auto;gap:8px;margin:2px 0 8px 32px}.attribute-editor{display:grid;gap:7px;margin:4px 0 10px 32px;padding:10px;background:#f5f8fa;border:1px solid #e3e9ef;border-radius:6px}.attribute-row{display:grid;grid-template-columns:150px minmax(180px,1fr) auto;gap:8px;align-items:center}.attribute-row:first-child{grid-template-columns:150px minmax(180px,1fr)}.attribute-row>span{font-size:12px;color:#687786}.attribute-name{font-size:12px}.node-children{display:grid;gap:4px;margin:2px 0 6px 8px}.child-row{display:grid;grid-template-columns:30px minmax(0,1fr);gap:3px}.child-actions{display:flex;flex-direction:column;padding-top:4px;opacity:.18;transition:opacity .2s}.child-row:hover>.child-actions,.child-actions:focus-within{opacity:1}.child-actions :deep(.el-button){margin:0;width:26px;height:24px}.xml-comment{margin:4px 0 6px 38px;color:#81909c;font-size:12px;white-space:pre-wrap}.mono{font-family:Cascadia Code,Consolas,monospace}
+
+.leaf-fields { grid-template-columns: minmax(0,1fr); }
+.xml-value-field { --ui-field-label-width: 76px; }
+.attribute-row, .attribute-row:first-child { grid-template-columns: minmax(70px,.4fr) minmax(0,1fr) auto; }
 </style>

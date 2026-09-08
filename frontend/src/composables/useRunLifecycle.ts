@@ -44,6 +44,17 @@ export function useRunLifecycle(runId: number) {
   let latestSocketProgress: number | undefined
 
   function mergeLogs(items: RunLog[]) {
+    if (!items.length) return
+    let previousId = logs.value.at(-1)?.id ?? -1
+    const orderedAppend = items.every(item => {
+      const ordered = item.id > previousId
+      previousId = item.id
+      return ordered
+    })
+    if (orderedAppend) {
+      for (const item of items) logs.value.push(item)
+      return
+    }
     const merged = new Map(logs.value.map(item => [item.id, item]))
     for (const item of items) merged.set(item.id, item)
     logs.value = [...merged.values()].sort((left, right) => left.id - right.id)

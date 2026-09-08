@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft, Check, CircleCheck, Close, Download, EditPen, Refresh, RefreshRight, VideoPlay } from '@element-plus/icons-vue'
 import { api, errorMessage } from '@/api/client'
@@ -11,7 +11,7 @@ import RunComparisonPanel from '@/components/run-detail/RunComparisonPanel.vue'
 import RunWorkflowStrip from '@/components/run-detail/RunWorkflowStrip.vue'
 import WindowsEditcapCommand from '@/components/run-detail/WindowsEditcapCommand.vue'
 import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
-import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
+const SshTerminalPanel = defineAsyncComponent(() => import('@/components/SshTerminalPanel.vue'))
 import StatusBadge from '@/components/StatusBadge.vue'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
 import { TERMINAL_STEP_TYPES, useRunActions } from '@/composables/useRunActions'
@@ -41,6 +41,7 @@ const runId = Number(route.params.id)
 const { load, logs, run } = useRunLifecycle(runId)
 const active = ref('detail')
 const executionDetailsOpen = ref(false)
+const visitedTerminals = reactive(new Set<string>())
 const automaticallyStartedSteps = new Set<number>()
 const selectedStepId = ref<number | null>(null)
 const manualStepSelection = ref(false)
@@ -536,6 +537,8 @@ function resourceDisplayMeta(snapshot: CaptureSnapshot) {
   return parts.filter(Boolean).join(' · ')
 }
 
+watch(workflowTerminalKind, kind => { if (kind) visitedTerminals.add(kind) }, { immediate: true, flush: 'sync' })
+
 const currentTaskTitle = computed(() => {
   if (run.value?.status === 'awaiting_review') return '复核结果并生成报告'
   if (run.value?.status === 'completed') return '测速完成'
@@ -662,33 +665,32 @@ watch(
 
     <details class="execution-details" :open="executionDetailsOpen" @toggle="executionDetailsOpen = ($event.target as HTMLDetailsElement).open">
       <summary>执行详情 · {{ run.steps.length }} 个节点 · 日志与运行信息</summary>
-    <section class="summary card" aria-label="运行摘要">
-      <div><span class="muted">当前状态</span><p><StatusBadge :status="run.status" show-raw /></p></div>
-      <div><span class="muted">总体进度</span><el-progress :percentage="run.progress" :stroke-width="12" /></div>
-      <div><span class="muted">Trace ID</span><p class="mono trace">{{ run.trace_id }}</p></div>
-      <div><span class="muted">日志完整性</span><p>{{ run.logs_complete ? '完整' : '已降级，待补传' }}</p></div>
-    </section>
-
-    <el-alert v-if="run.error_message" :title="run.error_code || '运行异常'" :description="run.error_message" type="error" show-icon :closable="false" />
-
-    <RunWorkflowStrip
-      :steps="run.steps"
-      :selected-step-id="selectedStep?.id || null"
-      :current-step-id="currentStep?.id || null"
-      :manual-selection="manualStepSelection"
-      :log-counts="stepLogsCount"
-      @select="selectStep"
-      @follow-current="followCurrentStep"
-    />
-
-      <RunLogPanel
-        :logs="filteredLogs"
-        :total="logs.length"
-        :scope-label="logScopeLabel"
-        :scoped="logScope !== 'all'"
-        @refresh="load"
-        @show-all="showAllLogs"
-      />
+      <template v-if="executionDetailsOpen">
+        <section class="summary card" aria-label="运行摘要">
+          <div><span class="muted">当前状态</span><p><StatusBadge :status="run.status" show-raw /></p></div>
+          <div><span class="muted">总体进度</span><el-progress :percentage="run.progress" :stroke-width="12" /></div>
+          <div><span class="muted">Trace ID</span><p class="mono trace">{{ run.trace_id }}</p></div>
+          <div><span class="muted">日志完整性</span><p>{{ run.logs_complete ? '完整' : '已降级，待补传' }}</p></div>
+        </section>
+        <el-alert v-if="run.error_message" :title="run.error_code || '运行异常'" :description="run.error_message" type="error" show-icon :closable="false" />
+        <RunWorkflowStrip
+          :steps="run.steps"
+          :selected-step-id="selectedStep?.id || null"
+          :current-step-id="currentStep?.id || null"
+          :manual-selection="manualStepSelection"
+          :log-counts="stepLogsCount"
+          @select="selectStep"
+          @follow-current="followCurrentStep"
+        />
+        <RunLogPanel
+          :logs="filteredLogs"
+          :total="logs.length"
+          :scope-label="logScopeLabel"
+          :scoped="logScope !== 'all'"
+          @refresh="load"
+          @show-all="showAllLogs"
+        />
+      </template>
     </details>
 
     <div class="workbench">
@@ -762,8 +764,8 @@ watch(
                 <p v-if="statisticsCsvDirectory" class="muted mono">{{ statisticsCsvDirectory }}</p>
                 <fieldset class="statistics-config-form">
                   <legend>分析配置</legend>
-                  <fieldset class="statistics-config-field statistics-csv-field">
-                    <legend id="statistics-csv-input-label">CSV 输入</legend>
+                  <div class="statistics-config-field statistics-csv-field" role="group" aria-labelledby="statistics-csv-input-label">
+                    <span id="statistics-csv-input-label">CSV 输入</span>
                     <small id="statistics-csv-input-description">仅可选择当前节点前最近一次成功解析生成的 CSV。</small>
                     <el-checkbox-group
                       v-model="selectedRelativePaths"
@@ -781,7 +783,7 @@ watch(
                       </el-checkbox>
                     </el-checkbox-group>
                     <span v-if="!loadingStatisticsCsvFiles && !displayedStatisticsCsvFiles.length" class="empty-line">最近一次解析结果中暂无可统计的 CSV</span>
-                  </fieldset>
+                  </div>
                   <div class="statistics-config-field statistics-threshold-field">
                     <label for="statistics-max-latency-ns">最大延迟上限（ns）</label>
                     <small id="statistics-max-latency-description">{{ String(selectedConfig.engine || '').startsWith('batch_') ? '批量统计仅纳入小于上限的首单延迟或正间隔。' : '仅纳入不超过该正整数上限的有效延迟样本。' }}</small>
@@ -906,39 +908,39 @@ watch(
                   <el-tag v-if="workflowTerminalResource" type="success" effect="plain">{{ workflowTerminalResource.name }}</el-tag>
                 </div>
                 <SshTerminalPanel
-                  v-if="remResource"
+                  v-if="remResource && visitedTerminals.has('rem')"
                   v-show="workflowTerminalKind === 'rem'"
                   ref="remWorkflowTerminalPanel"
                   :resource-id="remResource.id"
                   :title="remResource.name"
                   :subtitle="remTerminalSubtitle"
-                  :active="workflowTerminalKind === 'rem'"
+                  :active="active === 'detail' && workflowTerminalKind === 'rem'"
                   :min-height="320"
                   @status="message => handleWorkflowTerminalStatus('rem', message)"
                   @error="message => handleWorkflowTerminalError('rem', message)"
                   @workflow-command="message => handleWorkflowTerminalCommand('rem', message)"
                 />
                 <SshTerminalPanel
-                  v-if="marketResource"
+                  v-if="marketResource && visitedTerminals.has('market')"
                   v-show="workflowTerminalKind === 'market'"
                   ref="marketWorkflowTerminalPanel"
                   :resource-id="marketResource.id"
                   :title="marketResource.name"
                   :subtitle="marketTerminalSubtitle"
-                  :active="workflowTerminalKind === 'market'"
+                  :active="active === 'detail' && workflowTerminalKind === 'market'"
                   :min-height="320"
                   @status="message => handleWorkflowTerminalStatus('market', message)"
                   @error="message => handleWorkflowTerminalError('market', message)"
                   @workflow-command="message => handleWorkflowTerminalCommand('market', message)"
                 />
                 <SshTerminalPanel
-                  v-if="slnicResource"
+                  v-if="slnicResource && visitedTerminals.has('slnic')"
                   v-show="workflowTerminalKind === 'slnic'"
                   ref="slnicWorkflowTerminalPanel"
                   :resource-id="slnicResource.id"
                   :title="slnicResource.name"
                   :subtitle="slnicTerminalSubtitle"
-                  :active="workflowTerminalKind === 'slnic'"
+                  :active="active === 'detail' && workflowTerminalKind === 'slnic'"
                   :min-height="320"
                   @status="message => handleWorkflowTerminalStatus('slnic', message)"
                   @error="message => handleWorkflowTerminalError('slnic', message)"
@@ -949,13 +951,13 @@ watch(
                   :command="String(selectedStep?.result_summary?.windows_editcap_command || '')"
                 />
                 <SshTerminalPanel
-                  v-if="orderResource"
+                  v-if="orderResource && visitedTerminals.has('order')"
                   v-show="workflowTerminalKind === 'order'"
                   ref="orderWorkflowTerminalPanel"
                   :resource-id="orderResource.id"
                   :title="orderResource.name"
                   :subtitle="orderTerminalSubtitle"
-                  :active="workflowTerminalKind === 'order'"
+                  :active="active === 'detail' && workflowTerminalKind === 'order'"
                   :auto-connect="Boolean(selectedStep?.result_summary?.process_started && selectedStep?.result_summary?.session_status === 'running')"
                   :socket-path="orderTerminalSocketPath"
                   :min-height="320"
@@ -963,13 +965,13 @@ watch(
                   @error="message => handleWorkflowTerminalError('order', message)"
                 />
                 <SshTerminalPanel
-                  v-if="parserResource"
+                  v-if="parserResource && visitedTerminals.has('parser')"
                   v-show="workflowTerminalKind === 'parser'"
                   ref="parserWorkflowTerminalPanel"
                   :resource-id="parserResource.id"
                   :title="parserResource.name"
                   :subtitle="parserTerminalSubtitle"
-                  :active="workflowTerminalKind === 'parser'"
+                  :active="active === 'detail' && workflowTerminalKind === 'parser'"
                   :min-height="320"
                   @status="message => handleWorkflowTerminalStatus('parser', message)"
                   @error="message => handleWorkflowTerminalError('parser', message)"
@@ -1102,7 +1104,7 @@ watch(
                 </div>
                 <template v-if="editingOrderConfig">
                   <div class="order-runtime-config-form">
-                    <label class="order-runtime-config-field">
+                    <label class="order-runtime-config-field ui-field-row">
                       <span>XML 配置</span>
                       <el-select
                         v-model="orderConfigDraft.xml_filename"
@@ -1113,7 +1115,7 @@ watch(
                         <el-option v-for="file in orderConfigFiles" :key="file.name" :label="file.name" :value="file.name" />
                       </el-select>
                     </label>
-                    <label class="order-runtime-config-field">
+                    <label class="order-runtime-config-field ui-field-row">
                       <span>网卡接口</span>
                       <el-input v-model="orderConfigDraft.network_interface" maxlength="15" placeholder="例如 p4p1" />
                     </label>
@@ -1246,7 +1248,7 @@ watch(
             </div>
             <section v-if="canEditVerdict" class="review-form" aria-label="人工复核">
               <h3>{{ run.verdict ? '更新复核结论' : '确认测速结论' }}</h3>
-      <el-form label-width="100px">
+      <el-form label-position="left" label-width="var(--ui-field-label-width)">
         <el-form-item label="最终结论">
           <el-radio-group v-model="verdict.final_result">
             <el-radio-button value="passed">通过</el-radio-button>

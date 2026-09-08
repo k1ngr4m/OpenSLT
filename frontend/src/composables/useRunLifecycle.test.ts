@@ -85,6 +85,20 @@ function mountLifecycle() {
 }
 
 describe('useRunLifecycle', () => {
+  it('appends without sorting and reconciles duplicate or out-of-order log IDs', async () => {
+    initialLogs = [runLog(1), runLog(2)]
+    const { lifecycle, wrapper } = mountLifecycle()
+    await flushPromises()
+    const initialArray = lifecycle.logs.value
+    FakeWebSocket.latest!.message({ type: 'log', data: runLog(3) })
+    expect(lifecycle.logs.value).toBe(initialArray)
+    FakeWebSocket.latest!.message({ type: 'log', data: { ...runLog(2), message: 'updated' } })
+    FakeWebSocket.latest!.message({ type: 'log', data: runLog(0) })
+    expect(lifecycle.logs.value.map(log => log.id)).toEqual([0, 1, 2, 3])
+    expect(lifecycle.logs.value[2].message).toBe('updated')
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.useFakeTimers()
     FakeWebSocket.instances = []

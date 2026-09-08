@@ -187,8 +187,8 @@ onMounted(loadComparison)
     <el-skeleton v-else-if="loading" :rows="6" animated />
 
     <template v-else-if="hasMetrics">
-      <fieldset v-if="canOperate" class="baseline-picker">
-        <legend>选择基线</legend>
+      <div v-if="canOperate" class="baseline-picker ui-field-row" role="group" aria-label="选择基线">
+        <span>选择基线</span>
         <div class="baseline-control">
           <el-select
             v-model="selectedBaselineId"
@@ -219,7 +219,7 @@ onMounted(loadComparison)
           匹配 {{ selectedCandidate.matched_metric_count }} / {{ selectedCandidate.metric_count }} 个指标；
           {{ candidateNote(selectedCandidate) }}
         </p>
-      </fieldset>
+      </div>
 
       <div v-if="comparison" class="comparison-content" aria-live="polite">
         <div class="snapshot-strip">
@@ -292,7 +292,11 @@ onMounted(loadComparison)
 </template>
 
 <style scoped>
-.comparison-panel{display:grid;gap:16px}.comparison-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.comparison-heading h3{margin:0;font-size:16px}.comparison-heading p{margin:5px 0 0;color:var(--ui-text-secondary);font-size:12px}.baseline-picker{display:grid;gap:9px;margin:0;padding:14px 16px;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:var(--ui-surface-subtle)}.baseline-picker legend{padding:0 6px;color:var(--ui-text-primary);font-size:12px;font-weight:700}.baseline-control{display:flex;align-items:center;gap:9px}.baseline-control :deep(.el-select){min-width:300px;flex:1}.candidate-option{display:flex;align-items:center;justify-content:space-between;gap:16px}.candidate-option span{font-family:"Cascadia Code",Consolas,monospace;font-size:11px}.candidate-option small{color:var(--ui-text-tertiary)}.candidate-note{margin:0;color:var(--ui-text-secondary);font-size:11px}.comparison-content{display:grid;gap:12px}.snapshot-strip{display:grid;grid-template-columns:1.2fr 1.2fr .7fr .8fr 1fr;overflow:hidden;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:var(--ui-border)}.snapshot-strip>div{display:grid;gap:5px;padding:12px 14px;background:var(--ui-surface)}.snapshot-strip>div+div{border-left:1px solid var(--ui-border)}.snapshot-strip span{color:var(--ui-text-tertiary);font-size:10px}.snapshot-strip strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.comparison-table-scroll{overflow-x:auto;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel)}.comparison-table{min-width:900px}.metric-identity strong,.metric-identity span{display:block}.metric-identity strong{font-size:12px}.metric-identity span{margin-top:4px;color:var(--ui-text-tertiary);font-size:10px}.metric-number{font-size:11px}.empty-guidance{max-width:480px;margin:0;color:var(--ui-text-secondary);font-size:12px;text-align:center}
+.comparison-panel{display:grid;gap:16px}.comparison-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.comparison-heading h3{margin:0;font-size:16px}.comparison-heading p{margin:5px 0 0;color:var(--ui-text-secondary);font-size:12px}.baseline-picker{display:grid;gap:9px;margin:0;padding:14px 16px;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:var(--ui-surface-subtle)}.baseline-picker legend{padding:0 6px;color:var(--ui-text-primary);font-size:12px;font-weight:700}.baseline-control{display:flex;align-items:center;gap:9px}.baseline-control :deep(.el-select){min-width:300px;flex:1}.candidate-option{display:flex;align-items:center;justify-content:space-between;gap:16px}.candidate-option span{font-family:"Cascadia Code",Consolas,monospace;font-size:12px}.candidate-option small{color:var(--ui-text-tertiary)}.candidate-note{margin:0;color:var(--ui-text-secondary);font-size:12px}.comparison-content{display:grid;gap:12px}.snapshot-strip{display:grid;grid-template-columns:1.2fr 1.2fr .7fr .8fr 1fr;overflow:hidden;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel);background:var(--ui-border)}.snapshot-strip>div{display:grid;gap:5px;padding:12px 14px;background:var(--ui-surface)}.snapshot-strip>div+div{border-left:1px solid var(--ui-border)}.snapshot-strip span{color:var(--ui-text-tertiary);font-size:12px}.snapshot-strip strong{overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.comparison-table-scroll{overflow-x:auto;border:1px solid var(--ui-border);border-radius:var(--ui-radius-panel)}.comparison-table{min-width:900px}.metric-identity strong,.metric-identity span{display:block}.metric-identity strong{font-size:12px}.metric-identity span{margin-top:4px;color:var(--ui-text-tertiary);font-size:12px}.metric-number{font-size:12px}.empty-guidance{max-width:480px;margin:0;color:var(--ui-text-secondary);font-size:12px;text-align:center}
 @media(max-width:1000px){.snapshot-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.snapshot-strip>div{border-bottom:1px solid var(--ui-border)}.snapshot-strip>div:nth-child(odd){border-left:0}.snapshot-strip>div:last-child{grid-column:1/-1;border-bottom:0;border-left:0}.baseline-control{align-items:stretch;flex-direction:column}.baseline-control :deep(.el-select){width:100%;min-width:0}}
 @media(max-width:600px){.comparison-heading{align-items:stretch;flex-direction:column}.snapshot-strip{grid-template-columns:1fr}.snapshot-strip>div+div{border-left:0}.snapshot-strip>div:last-child{grid-column:auto}.baseline-picker{padding:12px}}
+
+.baseline-picker.ui-field-row { display: grid; grid-template-columns: var(--ui-field-label-width) minmax(0, 1fr); gap: 8px 12px; }
+.baseline-picker.ui-field-row > span { margin: 0; }
+.baseline-picker.ui-field-row .candidate-note { grid-column: 2; }
 </style>

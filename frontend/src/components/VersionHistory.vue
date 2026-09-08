@@ -74,7 +74,7 @@ const displayReleaseHistory = releaseHistory.map(release => ({
 </template>
 
 <style scoped>
-.version-trigger{display:block;margin:0;padding:1px 0;border:0;background:transparent;color:var(--ui-text-secondary);font-size:10px;line-height:1;cursor:pointer;white-space:nowrap}
+.version-trigger{display:block;margin:0;padding:1px 0;border:0;background:transparent;color:var(--ui-text-secondary);font-size:12px;line-height:1;cursor:pointer;white-space:nowrap}
 .version-trigger:hover{color:var(--ui-primary)}
 .version-trigger:focus-visible{outline:2px solid var(--ui-primary);outline-offset:2px}
 :global(.version-history-dialog){display:flex;height:560px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);margin:max(16px,calc((100dvh - 560px)/2)) auto 0;overflow:hidden;flex-direction:column}
@@ -89,12 +89,12 @@ const displayReleaseHistory = releaseHistory.map(release => ({
 .release-heading>div{display:flex;min-width:0;align-items:center;gap:9px}
 .release-heading strong{font-size:15px;color:var(--ui-text-primary)}
 .release-heading>div>span:last-child{min-width:0;overflow:hidden;color:var(--ui-text-secondary);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-.release-meta{display:flex;flex:none;align-items:center;gap:10px;color:var(--ui-text-tertiary);font-size:11px;white-space:nowrap}
+.release-meta{display:flex;flex:none;align-items:center;gap:10px;color:var(--ui-text-tertiary);font-size:12px;white-space:nowrap}
 .release-chevron{transition:transform .18s ease}
 .release-entry[open] .release-chevron{transform:rotate(90deg)}
 .release-content{padding:0 2px 18px}
 .release-content ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .release-entry li{display:grid;grid-template-columns:38px minmax(0,1fr);align-items:start;gap:8px;color:var(--ui-text-secondary);font-size:12px;line-height:1.6}
-.change-type{color:var(--ui-text-tertiary);font-size:10px;font-weight:600}
+.change-type{color:var(--ui-text-tertiary);font-size:12px;font-weight:600}
 @media(max-width:480px){.release-heading{min-height:72px;align-items:flex-start;flex-direction:column;gap:5px}.release-heading>div{width:100%}.release-meta{width:100%;justify-content:space-between}.release-entry li{grid-template-columns:34px minmax(0,1fr)}}
 </style>

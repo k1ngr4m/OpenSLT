@@ -8,6 +8,8 @@ import { releaseDefines } from './release-metadata.config'
 const elementPlusComponentDirectories: Record<string, string> = {
   ElCheckboxGroup: 'checkbox',
   ElCollapseItem: 'collapse',
+  ElDropdownMenu: 'dropdown',
+  ElDropdownItem: 'dropdown',
   ElFormItem: 'form',
   ElMenuItem: 'menu',
   ElOption: 'select',
@@ -19,6 +21,7 @@ const elementPlusComponentDirectories: Record<string, string> = {
 }
 
 const additionalElementPlusStyles: Record<string, string[]> = {
+  ElFormItem: ['element-plus/theme-chalk/el-form-item.css'],
   ElRadioButton: ['element-plus/theme-chalk/el-radio-button.css'],
   ElRadioGroup: ['element-plus/theme-chalk/el-radio-group.css'],
 }
