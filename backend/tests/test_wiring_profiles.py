@@ -356,11 +356,6 @@ def test_successful_rem_ip_capture_refreshes_later_wiring_snapshot(
     ] == {"name": "", "ip_address": ""}
 
     assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
-    capture_step = created["steps"][0]
-    assert client.post(
-        f"/api/v1/runs/{run_id}/steps/{capture_step['id']}/start",
-        headers=admin_headers,
-    ).status_code == 200
 
     executed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
     wiring_snapshot = executed["steps"][1]["config_snapshot"]["wiring_snapshot"]
@@ -450,9 +445,6 @@ def test_run_wiring_interface_names_can_be_edited_until_confirmation(
     )
     assert invalid_ip.status_code == 422
 
-    assert client.post(
-        f"/api/v1/runs/{run_id}/steps/{step_id}/start", headers=admin_headers
-    ).status_code == 200
     waiting = client.put(
         endpoint,
         headers=admin_headers,
@@ -519,9 +511,6 @@ def test_resource_wiring_cannot_be_confirmed_until_names_and_ips_are_complete(
     run_id = created["id"]
     step_id = created["steps"][0]["id"]
     assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
-    assert client.post(
-        f"/api/v1/runs/{run_id}/steps/{step_id}/start", headers=admin_headers
-    ).status_code == 200
 
     response = client.post(
         f"/api/v1/runs/{run_id}/steps/{step_id}/confirm", headers=admin_headers

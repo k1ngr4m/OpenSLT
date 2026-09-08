@@ -70,3 +70,46 @@ def test_report_generation_structure_constraints(client, admin_headers):
     ])
     report_messages = {message for message in save([statistics, report]) if "报告生成节点" in message}
     assert report_messages == set()
+
+
+@pytest.mark.asyncio
+async def test_statistics_completion_waits_for_review_and_generates_report_once(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    from app.core.config import settings
+    from app.core.database import SessionLocal
+    from app.models import ResourceLock, RunStep, TestScenario as ScenarioModel, TestRun as RunModel
+    from app.services.orchestration import complete_workflow_step
+    from test_statistics_workflow import create_statistics_run
+
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    plan, scenario = create_plan_scenario(client, admin_headers)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        run.workflow_version_id = db.get(ScenarioModel, scenario["id"]).draft_workflow_version_id
+        run.config_snapshot = {"plan": plan, "scenario": scenario}
+        run.status = "awaiting_step_completion"
+        step.status = "waiting"
+        step.result_summary = {"statistics_results": [{"source_file": "latency.csv", "metrics": []}]}
+        report = RunStep(code="report", node_type="report_generation", name="生成报告", position=3, status="pending", config_snapshot={})
+        run.steps.append(report)
+        db.flush()
+        await complete_workflow_step(db, run, step.id, actor_id=1)
+        assert run.status == "awaiting_review"
+        assert report.status == "waiting"
+        assert not [item for item in run.artifacts if item.artifact_type.endswith("report")]
+        assert not db.query(ResourceLock).filter_by(run_id=run.id, released_at=None).count()
+        db.commit()
+        run_id = run.id
+    response = client.post(f"/api/v1/runs/{run_id}/verdict", headers=admin_headers, json={"final_result": "passed", "issue_description": "", "notes": "checked"})
+    assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        run = db.get(RunModel, run_id)
+        assert run.status == "completed"
+        report = next(item for item in run.steps if item.node_type == "report_generation")
+        assert report.status == "succeeded"
+        assert report.result_summary["report_version"] == 1
+        reports = [item for item in run.artifacts if item.artifact_type.endswith("report")]
+        assert len(reports) == 3
+        html = next(item for item in reports if item.artifact_type == "web_report")
+        assert "checked" in open(html.path, encoding="utf-8").read()

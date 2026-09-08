@@ -3468,6 +3468,12 @@ export interface components {
         /** StatisticsConfig */
         StatisticsConfig: {
             /**
+             * Engine
+             * @default remote
+             * @enum {string}
+             */
+            engine: "remote" | "ordinary" | "batch_first" | "batch_interval";
+            /**
              * Max Latency Ns
              * @default 999999999
              */
@@ -6505,7 +6511,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StatisticsRuntimeConfigRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

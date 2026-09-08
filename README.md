@@ -39,9 +39,43 @@ MySQL 连接 REM、模拟市场、发单工具、SLNIC、解析机及业务数�
 2. 测试人员创建测试方案和场景，绑定所需资源。
 3. 在工作流编辑器中配置节点、预览输入并发布工作流版本。
 4. 创建运行任务，确认接线和资源选择后启动测试。
-5. 平台按流程调用远端程序、发单工具、SLNIC、解析器和统计脚本。
+5. 平台自动连续采集配置；运行页自动连接并启动交互终端节点，现场操作完成后确认继续。
 6. 测试人员处理人工确认节点，必要时暂停、重试或取消任务。
-7. 完成结果复核并提交结论，生成和归档报告。
+7. 选择本次 CSV，点击“保存并分析”；采用结果后复核结论，一次生成并归档报告。
+
+运行详情默认显示当前任务，完整节点、日志和分析历史可展开查看。发单节点保留配置确认与
+发单指令，SSH 命令下发后的现场完成确认仍由测试人员处理。交互终端自动启动需要操作员
+保持运行详情页打开；服务器和数据库配置采集由后台持久化任务执行。
+
+### 内置统计
+
+在工作流的数据统计节点选择统计口径，新建节点默认使用内置普通延迟。旧节点仍使用原远端
+脚本，可在编辑工作流时切换到内置口径。内置代码随 OpenSLT 安装包分发，下载本次解析 CSV
+到平台临时目录执行，结束后清理临时文件；统计结果、输入来源、代码校验和及分析历史按原流程归档。
+
+| 口径 | 样本规则 |
+| --- | --- |
+| 普通延迟 | 沿用文件名对应的延迟列，保留 `0 ≤ 延迟 ≤ 上限` |
+| 批量首单延迟 | 仅支持 `rem_client_new_to_market_speed` CSV；以相邻行第 9 列 `msg2_ns` 的变化划分批次，取每批第一条记录的第 11 列延迟，保留 `0 ≤ 延迟 < 上限` |
+| 批内发单间隔 | 同一相邻批次内计算第 11 列相邻延迟之差，保留 `0 < 间隔 < 上限`；不按单条总延迟提前过滤 |
+
+普通统计支持 `rem_client_new_to_market_speed`、`rem_client_new_quote_to_market_speed`、
+`rem_client_action_to_market_speed`、`rem_client_action_quote_to_market_speed` 的第 11 列，以及
+`rem_market_accept_to_client_speed`、`rem_market_accept_quote_to_client_speed` 的第 12 列。
+列号从 1 开始，CSV 第一行为表头。异常行和负值会记录排除数量，批内间隔不会跨异常行拼接。
+
+三种口径均输出 ns，包含均值、最值、中位数、总体标准差和 0.1%～99.9% 分位数。
+分位数沿用原脚本的排序后 `values[floor(N × p)]` 口径，不做插值；过滤后无有效样本会明确报错。
+需要重复分析时修改 CSV 或上限后再次点击“保存并分析”；必须有与当前配置对应的成功结果才能完成统计。
+
+仓库命令行入口：
+
+```bash
+python tools/statistics_order.py rem_client_new_to_market_speed.csv 999999999 ordinary
+python tools/statistics_order.py rem_client_new_to_market_speed.csv 999999999 batch_first
+python tools/statistics_order.py rem_client_new_to_market_speed.csv 999999999 batch_interval
+```
+
 
 同一资源不会被多个运行任务同时占用。服务异常重启后，内置调度器会恢复可继续执行的
 持久化任务，并回收过期资源锁。

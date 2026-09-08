@@ -53,19 +53,11 @@ def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
     assert [item["node_type"] for item in created.json()["steps"]] == ["server_config", "wiring_confirmation"]
     assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
     ready = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
-    assert ready["status"] == "awaiting_step_start"
-    assert [item["status"] for item in ready["steps"]] == ["pending", "pending"]
-
+    assert ready["status"] == "awaiting_step_completion"
+    assert [item["status"] for item in ready["steps"]] == ["succeeded", "waiting"]
     first_step = ready["steps"][0]
-    assert client.post(
-        f"/api/v1/runs/{run_id}/steps/{first_step['id']}/start",
-        headers=admin_headers,
-    ).status_code == 200
-    executed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
-    assert executed["status"] == "awaiting_step_completion"
-    assert executed["steps"][0]["status"] == "waiting"
+    executed = ready
     assert executed["steps"][0]["result_summary"]["failed"] == 0
-    assert executed["steps"][1]["status"] == "pending"
     captures = client.get(
         f"/api/v1/runs/{run_id}/steps/{first_step['id']}/capture-snapshots",
         headers=admin_headers,
@@ -81,19 +73,7 @@ def test_complete_dynamic_workflow(client, admin_headers, monkeypatch):
     )
     assert empty_captures.status_code == 200
     assert empty_captures.json() == []
-    assert client.post(
-        f"/api/v1/runs/{run_id}/steps/{first_step['id']}/complete",
-        headers=admin_headers,
-    ).status_code == 200
-
-    second_ready = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
-    assert second_ready["status"] == "awaiting_step_start"
-    second_step = second_ready["steps"][1]
-    assert client.post(
-        f"/api/v1/runs/{run_id}/steps/{second_step['id']}/start",
-        headers=admin_headers,
-    ).status_code == 200
-    assert client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()["status"] == "awaiting_step_completion"
+    second_step = executed["steps"][1]
     confirmed = client.post(
         f"/api/v1/runs/{run_id}/steps/{second_step['id']}/complete",
         headers=admin_headers,
@@ -198,7 +178,7 @@ def test_resource_lock_queues_competing_run(client, admin_headers):
     assert "资源被占用" in queued["queue_reason"]
     client.post(f"/api/v1/runs/{first['id']}/cancel", headers=admin_headers)
     client.post(f"/api/v1/runs/{second['id']}/start", headers=admin_headers)
-    assert client.get(f"/api/v1/runs/{second['id']}", headers=admin_headers).json()["status"] == "awaiting_step_start"
+    assert client.get(f"/api/v1/runs/{second['id']}", headers=admin_headers).json()["status"] == "awaiting_step_completion"
 
 
 def test_sensitive_data_redaction():
@@ -209,3 +189,31 @@ def test_sensitive_data_redaction():
     assert "ey.secret.value" not in redacted
     assert "PRIVATE KEY-----raw" not in redacted
     assert redacted.count("[REDACTED]") >= 4
+
+
+def test_capture_chain_continues_after_manual_confirmation(client, admin_headers, monkeypatch):
+    async def fake_connect(**_options):
+        return FakeCaptureConnection()
+
+    monkeypatch.setattr(workflows.asyncssh, "connect", fake_connect)
+    resource = create_resource(client, admin_headers, "REM-continuous")
+    plan, scenario = create_plan_scenario(client, admin_headers, resource_ids=[resource["id"]])
+    capture = {"targets": [{"resource_type": "rem", "fields": ["cpu_model"]}]}
+    publish_workflow(client, admin_headers, scenario, [resource["id"]], [
+        node("first", "server_config", "采集一", capture),
+        node("second", "server_config", "采集二", capture),
+        node("wiring", "wiring_confirmation", "确认接线", {"diagram": "placeholder"}),
+        node("last", "server_config", "确认后采集", capture),
+    ])
+    created = client.post("/api/v1/runs", headers=admin_headers, json={
+        "plan_id": plan["id"], "scenario_id": scenario["id"], "resource_ids": [resource["id"]],
+    }).json()
+    run_id = created["id"]
+    assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
+    waiting = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert [step["status"] for step in waiting["steps"]] == ["succeeded", "succeeded", "waiting", "pending"]
+    step_id = waiting["steps"][2]["id"]
+    assert client.post(f"/api/v1/runs/{run_id}/steps/{step_id}/confirm", headers=admin_headers).status_code == 200
+    completed = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()
+    assert completed["status"] == "completed"
+    assert all(step["status"] == "succeeded" for step in completed["steps"])

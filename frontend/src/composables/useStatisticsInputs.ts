@@ -280,6 +280,25 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     await saveStatisticsConfig()
   }
 
+  async function saveAndAnalyzeStatistics() {
+    const step = currentStep.value
+    const maxLatencyNs = positiveInteger(statisticsMaxLatencyNsDraft.value)
+    if (!step || !canEditStatisticsConfig.value || !statisticsConfigReady.value || !maxLatencyNs || savingStatisticsInputs.value) return
+    savingStatisticsInputs.value = true
+    try {
+      await api.post(`/runs/${runId}/steps/${step.id}/analyze`, {
+        relative_paths: [...selectedRelativePaths.value],
+        max_latency_ns: maxLatencyNs,
+      })
+      ElMessage.success('配置已保存，分析已开始')
+      await reload()
+    } catch (error) {
+      ElMessage.error(errorMessage(error))
+    } finally {
+      savingStatisticsInputs.value = false
+    }
+  }
+
   async function refreshStatisticsCsvFiles() {
     const step = currentStep.value
     if (!step || !canSelectStatisticsInputs.value) {
@@ -395,6 +414,7 @@ export function useStatisticsInputs(options: StatisticsOptions) {
     loadingStatisticsAnalysisNo,
     saveStatisticsInputs,
     saveStatisticsConfig,
+    saveAndAnalyzeStatistics,
     savingStatisticsInputs,
     selectedRelativePaths,
     statisticsCsvDirectory,

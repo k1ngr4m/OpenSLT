@@ -1,6 +1,13 @@
 import type { ContractFilePreview, JsonMap, RunArtifact, RunMetric } from '@/types/run'
 import { formatBeijingDateTime, formatBeijingTime } from '@/utils/time'
 
+export const statisticsEngineText: Record<string, string> = {
+  ordinary: '内置 · 普通延迟',
+  batch_first: '内置 · 批量首单延迟',
+  batch_interval: '内置 · 批内发单间隔',
+  remote: '远端自定义脚本',
+}
+
 export const nodeTypeText: Record<string, string> = {
   server_config: '服务器配置',
   database_config: '数据库配置',

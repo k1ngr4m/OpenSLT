@@ -774,6 +774,7 @@ async def analyze_statistics_step(
     run_id: int,
     step_id: int,
     request: Request,
+    payload: typing.Optional[StatisticsRuntimeConfigRequest] = None,
     actor: User = Depends(operators),
     db: Session = Depends(get_db),
 ) -> TestRun:
@@ -783,7 +784,22 @@ async def analyze_statistics_step(
         step = next((item for item in run.steps if item.id == step_id), None)
         if not step or step.node_type != "data_statistics":
             raise WorkflowError("STATISTICS_NODE_REQUIRED", "当前节点不是数据统计节点", 409)
-        step = begin_workflow_step(db, run, step_id, reanalysis=True)
+        if payload is not None:
+            if not _statistics_config_editable(run, step):
+                raise WorkflowError("STATISTICS_CONFIG_NOT_ALLOWED", "当前数据统计节点不能修改分析配置", 409)
+            resource = db.scalar(select(Resource).where(
+                Resource.id.in_(run_resource_ids(run)), Resource.resource_type == "parser",
+            ))
+            if resource is None:
+                raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
+            await update_statistics_runtime_config(
+                db, run, step, resource, payload.relative_paths, payload.max_latency_ns, actor.id,
+            )
+        step = begin_workflow_step(
+            db, run, step_id,
+            reanalysis=run.status == "awaiting_step_completion",
+            retry=run.status == "awaiting_step_retry",
+        )
     except WorkflowError as exc:
         raise workflow_http_error(exc) from exc
     analysis_no = (step.result_summary or {}).get("statistics_active_analysis_no")
@@ -1331,7 +1347,19 @@ def submit_verdict(run_id: int, payload: VerdictWrite, request: Request, actor: 
     db.flush()
     if run.workflow_version_id:
         report_step = next((step for step in run.steps if step.node_type == "report_generation"), None)
+        if run.status == "awaiting_review":
+            if report_step and report_step.status == "waiting":
+                transition_step(report_step, "succeeded")
+                report_step.started_at = verdict.reviewed_at
+                report_step.finished_at = beijing_now()
+                report_step.progress = 100
+            transition_run(run, "completed", source="api", actor_id=actor.id, reason="verdict submitted")
+            run.progress = 100
+            run.finished_at = beijing_now()
+            release_locks(db, run.id, "completed")
         report_result = generate_reports(db, run, step=report_step, reason="verdict")
+        if report_step:
+            report_step.result_summary = report_result
     else:
         review = next(step for step in run.steps if step.code == "manual_review")
         transition_step(review, "succeeded"); review.progress = 100; review.started_at = review.started_at or verdict.reviewed_at; review.finished_at = verdict.reviewed_at; review.duration_ms = 0

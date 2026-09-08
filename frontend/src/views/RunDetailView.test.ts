@@ -10,7 +10,7 @@ const auth = vi.hoisted(() => ({ canOperate: true }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '9' } }) }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
 vi.mock('@/composables/useRunLifecycle', () => ({ useRunLifecycle: () => currentHarness.lifecycle }))
-vi.mock('@/composables/useRunActions', () => ({ useRunActions: () => currentHarness.runActions }))
+vi.mock('@/composables/useRunActions', async importOriginal => ({ ...await importOriginal<typeof import('@/composables/useRunActions')>(), useRunActions: () => currentHarness.runActions }))
 vi.mock('@/composables/useRunStepPresentation', () => ({ useRunStepPresentation: () => currentHarness.presentation }))
 vi.mock('@/composables/useStatisticsInputs', () => ({ useStatisticsInputs: () => currentHarness.statistics }))
 vi.mock('@/composables/useWiringInterfaceNames', () => ({ useWiringInterfaceNames: () => currentHarness.wiring }))
@@ -55,13 +55,12 @@ describe('RunDetailView node details', () => {
     expect(source).toContain('<h3>分析配置</h3>')
     expect(source).toContain('v-model="statisticsMaxLatencyNsDraft"')
     expect(source).toContain('最大延迟上限（ns）')
-    expect(source).toContain('@click="saveStatisticsConfig"')
+    expect(source).toContain('@click="saveAndAnalyzeStatistics"')
     expect(source).not.toContain('保存输入选择')
   })
 
   it('guides statistics operators from start through reanalysis before completion', () => {
-    expect(source).toContain("currentStep.node_type === 'data_statistics' ? '开始分析' : '开始'")
-    expect(source).toContain('@click="currentStep && reanalyzeStatistics(currentStep)"')
+    expect(source).toContain('@click="saveAndAnalyzeStatistics"')
     expect(source).toContain("statisticsCompletionStale ? '开始分析' : '再次分析'")
     expect(source).toContain('statisticsCompletionBlockedReason')
     expect(source).toContain('role="status"')
@@ -169,7 +168,7 @@ function createHarness(options: HarnessOptions = {}) {
     loadingStatisticsAnalysisNo: ref<number | null>(null),
     refreshStatisticsCsvFiles: vi.fn(),
     refreshStatisticsAnalyses,
-    saveStatisticsConfig: vi.fn(),
+    saveAndAnalyzeStatistics: vi.fn(),
     savingStatisticsInputs: ref(false),
     selectedRelativePaths: ref(['latency.csv']),
     statisticsAnalyses: ref(analyses),
@@ -346,36 +345,35 @@ describe('RunDetailView statistics behavior', () => {
 
   it('blocks completion for an unsaved draft and for a saved stale analysis with visible reasons', async () => {
     const { wrapper, harness } = await mountRunDetail({ configDirty: true, configSaved: false, completionBlocked: true })
-    expect(button(wrapper, '完成').attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).toContain('请先选择 CSV、填写正整数的最大延迟上限并保存分析配置')
+    expect(button(wrapper, '采用结果并继续').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('请选择 CSV、填写正整数上限，并点击保存并分析')
 
     harness.statistics.statisticsConfigDirty.value = false
     harness.statistics.statisticsConfigSaved.value = true
     harness.statistics.statisticsCompletionStale.value = true
     await nextTick()
-    expect(button(wrapper, '完成').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '采用结果并继续').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('当前分析配置尚无成功结果')
     wrapper.unmount()
   })
 
   it('saves the draft and starts reanalysis from the rendered controls', async () => {
     const { wrapper, harness } = await mountRunDetail({ configDirty: true, configSaved: false })
-    await button(wrapper, '保存分析配置').trigger('click')
-    expect(harness.statistics.saveStatisticsConfig).toHaveBeenCalledTimes(1)
+    await button(wrapper, '保存并分析').trigger('click')
+    expect(harness.statistics.saveAndAnalyzeStatistics).toHaveBeenCalledTimes(1)
 
     harness.statistics.statisticsConfigDirty.value = false
     harness.statistics.statisticsConfigSaved.value = true
     await nextTick()
     await button(wrapper, '再次分析').trigger('click')
-    expect(harness.runActions.reanalyzeStatistics).toHaveBeenCalledWith(harness.step)
+    expect(harness.statistics.saveAndAnalyzeStatistics).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
   it('disables completion and conflicting statistics controls while reanalysis is pending', async () => {
     const { wrapper } = await mountRunDetail({ reanalyzing: true, configDirty: true })
-    expect(button(wrapper, '完成').attributes('disabled')).toBeDefined()
-    expect(button(wrapper, '再次分析').attributes('disabled')).toBeDefined()
-    expect(button(wrapper, '保存分析配置').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '采用结果并继续').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '保存并分析').attributes('disabled')).toBeDefined()
     expect(wrapper.get('button[aria-label="刷新统计 CSV"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('.checkbox-group-stub').attributes('data-disabled')).toBe('true')
     expect(wrapper.get('.input-number-stub').attributes('disabled')).toBeDefined()
@@ -417,11 +415,11 @@ describe('RunDetailView statistics behavior', () => {
     wrapper.unmount()
   })
 
-  it('shows compatibility statistics results only for runs without the history structure', async () => {
+  it('shows the latest statistics directly and preserves legacy presentation', async () => {
     const result = { source_file: 'legacy.csv', sample_count: 1, metrics: [] }
     const modern = await mountRunDetail({ analyses: [], historyStructure: true, statisticsResults: [result] })
     expect(modern.wrapper.find('.statistics-legacy-results').exists()).toBe(false)
-    expect(modern.wrapper.text()).not.toContain('legacy.csv')
+    expect(modern.wrapper.text()).toContain('legacy.csv')
     modern.wrapper.unmount()
 
     const legacy = await mountRunDetail({ analyses: [], historyStructure: false, statisticsResults: [result] })
@@ -514,7 +512,7 @@ describe('RunDetailView statistics behavior', () => {
       completionBlocked: false,
     })
 
-    expect(button(wrapper, '完成').attributes('disabled')).toBeUndefined()
+    expect(button(wrapper, '采用结果并继续').attributes('disabled')).toBeUndefined()
     expect(wrapper.text()).not.toContain('完成已禁用')
     wrapper.unmount()
   })
@@ -528,9 +526,9 @@ describe('RunDetailView statistics behavior', () => {
       completionBlocked: true,
     })
 
-    expect(button(wrapper, '完成').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '采用结果并继续').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('完成已禁用')
-    expect(wrapper.text()).toContain('保存分析配置')
+    expect(wrapper.text()).toContain('保存并分析')
     wrapper.unmount()
   })
 
@@ -542,4 +540,29 @@ describe('RunDetailView statistics behavior', () => {
     expect(wrapper.find('#statistics-max-latency-ns').exists()).toBe(true)
     wrapper.unmount()
   })
+})
+
+
+it('automatically starts the next terminal once, and leaves visitors read-only', async () => {
+  const { wrapper, harness } = await mountRunDetail()
+  harness.lifecycle.run.value.steps[0].node_type = 'rem_startup'
+  harness.lifecycle.run.value.steps[0].status = 'pending'
+  harness.lifecycle.run.value.status = 'awaiting_step_start'
+  await flushPromises()
+  expect(harness.runActions.stepAction).toHaveBeenCalledTimes(1)
+  expect(harness.runActions.stepAction).toHaveBeenCalledWith(harness.lifecycle.run.value.steps[0], 'start')
+  harness.lifecycle.run.value = { ...harness.lifecycle.run.value }
+  await flushPromises()
+  expect(harness.runActions.stepAction).toHaveBeenCalledTimes(1)
+  expect(wrapper.get('details.execution-details').attributes('open')).toBeUndefined()
+  wrapper.unmount()
+  auth.canOperate = false
+  const visitor = await mountRunDetail()
+  visitor.harness.lifecycle.run.value.steps[0].node_type = 'rem_startup'
+  visitor.harness.lifecycle.run.value.steps[0].status = 'pending'
+  visitor.harness.lifecycle.run.value.status = 'awaiting_step_start'
+  await flushPromises()
+  expect(visitor.harness.runActions.stepAction).not.toHaveBeenCalled()
+  visitor.wrapper.unmount()
+  auth.canOperate = true
 })

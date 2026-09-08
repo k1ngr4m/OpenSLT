@@ -137,6 +137,7 @@ _RUN_TRANSITIONS: typing.Dict[str, typing.FrozenSet[str]] = {
     ),
     RunStatus.AWAITING_STEP_START.value: frozenset(
         {
+            RunStatus.AWAITING_REVIEW.value,
             RunStatus.RUNNING.value,
             RunStatus.AWAITING_STEP_COMPLETION.value,
             RunStatus.PAUSED.value,
@@ -154,6 +155,7 @@ _RUN_TRANSITIONS: typing.Dict[str, typing.FrozenSet[str]] = {
     ),
     RunStatus.AWAITING_STEP_COMPLETION.value: frozenset(
         {
+            RunStatus.AWAITING_REVIEW.value,
             RunStatus.AWAITING_STEP_START.value,
             RunStatus.RUNNING.value,
             RunStatus.AWAITING_STEP_RETRY.value,

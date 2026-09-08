@@ -433,9 +433,9 @@ def validate_structure(db: Session, scenario: TestScenario, version: ScenarioWor
             parser_resource = resources.get("parser")
             if not parser_resource or parser_resource.is_deleted or not parser_resource.is_enabled:
                 errors.append({**prefix, "field": "resource", "message": "数据统计需要已启用的解析工具资源"})
-            if not re.fullmatch(r"[A-Za-z0-9._-]+\.py", str(config.get("script_filename") or "")):
+            if config.get("engine", "remote") == "remote" and not re.fullmatch(r"[A-Za-z0-9._-]+\.py", str(config.get("script_filename") or "")):
                 errors.append({**prefix, "field": "script_filename", "message": "请选择有效的远端统计脚本"})
-            if not re.fullmatch(r"[0-9a-f]{64}", str(config.get("script_checksum") or "")):
+            if config.get("engine", "remote") == "remote" and not re.fullmatch(r"[0-9a-f]{64}", str(config.get("script_checksum") or "")):
                 errors.append({**prefix, "field": "script_checksum", "message": "请重新选择统计脚本以固化校验和"})
             if not isinstance(config.get("max_latency_ns"), int) or int(config.get("max_latency_ns") or 0) < 1:
                 errors.append({**prefix, "field": "max_latency_ns", "message": "异常大值上限必须为正整数"})

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import { cloneWorkflowValue, useStagedWorkflowNode } from '@/composables/useStagedWorkflowNode'
 import type { EditableWorkflowNode as WorkflowNode, WorkflowNodeType } from '@/types/api'
 import { resourceText } from '@/utils/status'
+import { statisticsEngineText } from '@/utils/runDetail'
 import { buildWiringSnapshot, wiringInterfaceNameDefaults } from '@/utils/wiring'
 import { parserXmlRole, type ParserXmlRole } from '@/utils/parserConfig'
 import { marketScriptSelectionStatus, moveMarketScriptSelection, toggleMarketScriptSelection } from '@/utils/marketScripts'
@@ -422,7 +423,7 @@ function nodeDescription(type: string) {
     slnic_stop_capture: '调用脚本结束抓包',
     slnic_merge_capture: '合并并转换为单一 pcapng 产物',
     parser_parse: '导出订单数据、上传抓包并执行解析工具',
-    data_statistics: '选择解析 CSV 并调用交易所统计脚本',
+    data_statistics: '选择解析 CSV，使用内置统计或远端脚本',
     report_generation: '汇总执行时已有的配置和测速结果，生成 HTML、Excel 与 PDF',
   }[type] || ''
 }
@@ -496,6 +497,7 @@ function defaultNode(type: string): WorkflowNode {
       node_type: type,
       name: '数据统计',
       config: {
+        engine: 'ordinary',
         script_filename: '',
         script_checksum: '',
         max_latency_ns: 999999999,
@@ -863,6 +865,7 @@ async function loadParserConfigs() {
 }
 
 async function loadStatisticsScripts() {
+  if (selectedNode.value?.config.engine && selectedNode.value.config.engine !== 'remote') return
   const resource = selectedResourceMap.value.parser
   if (!resource) { statisticsScripts.value = []; return }
   loadingStatisticsScripts.value = true
@@ -932,9 +935,18 @@ function selectStatisticsScript(filename: string) {
   markDirty()
 }
 
+function selectStatisticsEngine(engine: 'remote' | 'ordinary' | 'batch_first' | 'batch_interval') {
+  const node = selectedNode.value
+  if (!node || node.node_type !== 'data_statistics') return
+  node.config.engine = engine
+  markDirty()
+  if (engine === 'remote') void loadStatisticsScripts()
+}
+
 function ensureStatisticsScriptSelection() {
   const node = selectedNode.value
   if (!editable.value || !node || node.node_type !== 'data_statistics') return
+  if (node.config.engine && node.config.engine !== 'remote') return
   const script = statisticsScripts.value.find(item => item.name === node.config.script_filename && item.executable)
   if (!script || (node.config.script_checksum && node.config.script_checksum !== script.checksum)) {
     node.config.script_filename = ''
@@ -1185,7 +1197,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
           <template v-for="(node, index) in nodes" :key="node.node_key">
             <article :data-node-key="node.node_key" class="flow-node" :class="[{ selected: selectedKey === node.node_key }, nodeMeta(node.node_type).tone]" :draggable="editable" @dragstart="draggingKey = node.node_key" @dragover.prevent @drop="dropNode(index)" @click="selectNode(node.node_key)">
               <div class="node-icon"><el-icon><component :is="nodeMeta(node.node_type).icon" /></el-icon></div>
-              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'rem_startup'">{{ selectedResourceMap.rem?.name || '未绑定 REM 资源' }}</small><small v-else-if="node.node_type === 'market_startup'">{{ node.config.scripts?.length || 0 }} 个启动脚本</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="node.node_type === 'data_statistics'">{{ node.config.script_filename || '未选择统计脚本' }}</small><small v-else-if="node.node_type === 'report_generation'">HTML · Excel · PDF</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
+              <div class="node-copy"><span>{{ nodeMeta(node.node_type).label }}</span><strong>{{ node.name }}</strong><small v-if="node.node_type === 'server_config'">{{ node.config.targets?.length || 0 }} 台服务器</small><small v-else-if="node.node_type === 'database_config'">{{ node.config.keys?.length || 0 }} 个配置项</small><small v-else-if="node.node_type === 'wiring_confirmation'">需要人工确认</small><small v-else-if="node.node_type === 'rem_startup'">{{ selectedResourceMap.rem?.name || '未绑定 REM 资源' }}</small><small v-else-if="node.node_type === 'market_startup'">{{ node.config.scripts?.length || 0 }} 个启动脚本</small><small v-else-if="node.node_type === 'order_preparation'">{{ node.config.xml_filename || '未选择 XML' }}</small><small v-else-if="node.node_type === 'parser_parse'">{{ node.config.database_name || '未选择运行数据库' }}</small><small v-else-if="node.node_type === 'data_statistics'">{{ node.config.engine && node.config.engine !== 'remote' ? statisticsEngineText[String(node.config.engine)] : (node.config.script_filename || '未选择统计脚本') }}</small><small v-else-if="node.node_type === 'report_generation'">HTML · Excel · PDF</small><small v-else-if="slnicNodeTypes.has(node.node_type)">{{ selectedResourceMap.slnic?.name || '未绑定 SLNIC 资源' }}</small></div>
               <div v-if="editable" class="node-actions"><el-button text circle :icon="Top" :disabled="index === 0" aria-label="上移节点" @click.stop="moveNode(index, -1)" /><el-button text circle :icon="Bottom" :disabled="index === nodes.length - 1" aria-label="下移节点" @click.stop="moveNode(index, 1)" /><el-button text circle type="danger" :icon="Delete" aria-label="删除节点" @click.stop="removeNode(index)" /></div>
             </article>
             <div class="flow-link"><span></span><button v-if="editable" class="add-point" type="button" aria-label="在此处添加节点" @click="openPicker(index + 1)"><el-icon><Plus /></el-icon></button></div>
@@ -1399,7 +1411,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
           </template>
           <template v-else-if="selectedNode.node_type === 'data_statistics'">
             <label class="field required">
-              <span>交易所统计脚本</span>
+              <span>统计口径</span>
+              <el-select :model-value="selectedNode.config.engine || 'remote'" :disabled="!editable" @change="selectStatisticsEngine">
+                <el-option label="内置 · 普通延迟" value="ordinary" />
+                <el-option label="内置 · 批量首单延迟" value="batch_first" />
+                <el-option label="内置 · 批内发单间隔" value="batch_interval" />
+                <el-option label="远端自定义脚本" value="remote" />
+              </el-select>
+            </label>
+            <label v-if="!selectedNode.config.engine || selectedNode.config.engine === 'remote'" class="field required">
+              <span>远端统计脚本</span>
               <el-select v-model="selectedNode.config.script_filename" :loading="loadingStatisticsScripts" :disabled="!editable || !selectedResourceMap.parser" filterable @change="value => selectStatisticsScript(String(value || ''))">
                 <el-option v-for="script in statisticsScripts" :key="script.name" :label="script.executable ? script.name : `${script.name}（不可执行）`" :value="script.name" :disabled="!script.executable" />
               </el-select>
@@ -1407,14 +1428,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', protectBrowserL
             <label class="field required">
               <span>异常大值上限（ns）</span>
               <el-input-number v-model="selectedNode.config.max_latency_ns" :disabled="!editable" :min="1" :precision="0" controls-position="right" style="width:100%" @change="markDirty" />
-              <small>作为第三个命令行参数传给统计脚本，默认 999999999。</small>
+              <small>普通统计保留不超过上限的延迟；批量统计保留小于上限的首单延迟或正间隔，单位 ns。</small>
             </label>
             <div class="slnic-summary">
               <div><span>解析资源</span><strong>{{ selectedResourceMap.parser?.name || '未绑定解析资源' }}</strong></div>
-              <div><span>执行方式</span><strong>直接读取远端 CSV · JSON 输出</strong></div>
-              <div class="wide"><span>脚本目录</span><code>{{ selectedResourceMap.parser?.remote_path || '-' }}</code></div>
+              <div><span>执行方式</span><strong>{{ selectedNode.config.engine && selectedNode.config.engine !== 'remote' ? '下载本次 CSV，在平台内统计' : '远端脚本 · JSON 输出' }}</strong></div>
             </div>
             <el-alert title="运行到该节点后，在运行详情页选择前一个最近成功解析节点生成的 CSV。" type="info" :closable="false" show-icon />
+            <el-alert v-if="['batch_first', 'batch_interval'].includes(selectedNode.config.engine || '')" title="批量单使用 rem_client_new_to_market_speed CSV：第 9 列 msg2_ns 标识相邻批次，第 11 列为延迟。首单取每批首条延迟，批内间隔取同批相邻延迟之差。" type="info" :closable="false" show-icon />
           </template>
           <template v-else-if="selectedNode.node_type === 'report_generation'">
             <div class="section-label">自动汇总范围</div>

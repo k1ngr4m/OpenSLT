@@ -7,7 +7,7 @@ import type { RunArtifact, RunDetail, RunStep } from '@/types/run'
 const message = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 
 vi.mock('@/api/client', () => ({
-  api: { get: vi.fn(), put: vi.fn() },
+  api: { get: vi.fn(), put: vi.fn(), post: vi.fn() },
   errorMessage: (error: unknown) => String(error),
 }))
 vi.mock('@/ui/elementPlusServices', () => ({ ElMessage: message }))
@@ -404,4 +404,22 @@ describe('useStatisticsInputs', () => {
 
     expect(statistics.statisticsAnalysisDetails.value[1]).toMatchObject({ analysis: { analysis_no: 1, status: 'failed' } })
   })
+})
+
+
+it('saves the current draft and starts analysis in one request, without duplicate submission', async () => {
+  const { statistics, reload } = setup()
+  statistics.selectedRelativePaths.value = ['latency.csv']
+  statistics.statisticsMaxLatencyNsDraft.value = 1200
+  const pending = deferred<unknown>()
+  vi.mocked(api.post).mockReturnValue(pending.promise as ReturnType<typeof api.post>)
+  const first = statistics.saveAndAnalyzeStatistics()
+  await statistics.saveAndAnalyzeStatistics()
+  expect(api.post).toHaveBeenCalledTimes(1)
+  expect(api.post).toHaveBeenCalledWith('/runs/9/steps/32/analyze', { relative_paths: ['latency.csv'], max_latency_ns: 1200 })
+  expect(statistics.savingStatisticsInputs.value).toBe(true)
+  pending.resolve({ data: {} })
+  await first
+  expect(reload).toHaveBeenCalledTimes(1)
+  expect(statistics.savingStatisticsInputs.value).toBe(false)
 })

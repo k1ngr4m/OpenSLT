@@ -4837,6 +4837,17 @@
       "StatisticsConfig": {
         "additionalProperties": false,
         "properties": {
+          "engine": {
+            "default": "remote",
+            "enum": [
+              "remote",
+              "ordinary",
+              "batch_first",
+              "batch_interval"
+            ],
+            "title": "Engine",
+            "type": "string"
+          },
           "max_latency_ns": {
             "default": 999999999,
             "minimum": 1.0,
@@ -10475,6 +10486,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/StatisticsRuntimeConfigRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

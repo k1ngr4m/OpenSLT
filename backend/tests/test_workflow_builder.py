@@ -599,10 +599,7 @@ def test_pause_edits_same_visible_version_without_affecting_existing_run(client,
     run_id = existing.json()["id"]
     assert client.post(f"/api/v1/runs/{run_id}/start", headers=admin_headers).status_code == 200
     old_step = client.get(f"/api/v1/runs/{run_id}", headers=admin_headers).json()["steps"][0]
-    started = client.post(
-        f"/api/v1/runs/{run_id}/steps/{old_step['id']}/start", headers=admin_headers
-    )
-    assert started.status_code == 200, started.text
+    assert old_step["status"] == "waiting"
 
     reenabled = client.post(
         f"/api/v1/scenarios/{scenario['id']}/workflow/enable", headers=admin_headers
@@ -1085,10 +1082,6 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
     monkeypatch.setattr(workflow_capture.asyncssh, "connect", fake_connect)
     assert client.post(f"/api/v1/runs/{created['id']}/start", headers=admin_headers).status_code == 200
     step_id = created["steps"][0]["id"]
-    assert client.post(
-        f"/api/v1/runs/{created['id']}/steps/{step_id}/start",
-        headers=admin_headers,
-    ).status_code == 200
     failed = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
     assert failed["status"] == "awaiting_step_retry"
     assert failed["steps"][0]["result_summary"] == {"snapshot_ids": [1], "sources": 1, "failed": 1}
@@ -1096,11 +1089,7 @@ def test_capture_failure_saves_partial_results_and_retry_attempt(client, admin_h
     retried = client.post(f"/api/v1/runs/{created['id']}/retry", headers=admin_headers)
     assert retried.status_code == 200, retried.text
     waiting = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
-    assert waiting["status"] == "awaiting_step_completion"
-    assert client.post(
-        f"/api/v1/runs/{created['id']}/steps/{step_id}/complete",
-        headers=admin_headers,
-    ).status_code == 200
+    assert waiting["status"] == "completed"
     completed = client.get(f"/api/v1/runs/{created['id']}", headers=admin_headers).json()
     assert completed["status"] == "completed"
     assert completed["steps"][0]["retry_count"] == 1

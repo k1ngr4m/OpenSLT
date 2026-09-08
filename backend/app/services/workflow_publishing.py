@@ -79,6 +79,8 @@ async def validate_publish(
         if node.node_type == "data_statistics":
             resource = resources.get("parser")
             config = node_config_with_relations(node)
+            if config.get("engine", "remote") != "remote":
+                continue
             filename = str(config.get("script_filename") or "").strip()
             expected = str(config.get("script_checksum") or "").strip()
             if resource and filename and expected:

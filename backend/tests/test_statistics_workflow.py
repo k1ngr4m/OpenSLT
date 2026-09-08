@@ -717,7 +717,7 @@ async def test_statistics_completion_keeps_legacy_results_bypass(
         await complete_workflow_step(db, run, step.id, actor_id=1)
 
         assert step.status == "succeeded"
-        assert run.status == "completed"
+        assert run.status == "awaiting_review"
 
 
 @pytest.mark.asyncio
@@ -1740,3 +1740,86 @@ def test_statistics_script_list_endpoint(client, admin_headers, monkeypatch):
     )
     assert response.status_code == 200, response.text
     assert response.json()["files"][0]["checksum"] == "a" * 64
+
+
+@pytest.mark.asyncio
+async def test_builtin_execution_uses_packaged_code_and_preserves_analysis_history(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    import csv
+
+    monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+
+    def reject_remote_execution(_command):
+        raise AssertionError("内置统计不应执行远端脚本")
+
+    install_statistics_fakes(monkeypatch, reject_remote_execution)
+
+    async def reject_remote_script(*_args):
+        raise AssertionError("内置统计不应读取远端脚本")
+
+    monkeypatch.setattr(statistics_execution.statistics_script_service, "read", reject_remote_script)
+    with SessionLocal() as db:
+        run, _parser, step, artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        with Path(artifact.path).open("w", newline="") as output:
+            writer = csv.writer(output)
+            writer.writerow(["header"] * 11)
+            for timestamp, latency in [(1, 100), (1, 130), (2, 200), (2, 250)]:
+                writer.writerow([0] * 8 + [timestamp, 0, latency])
+        artifact.size = Path(artifact.path).stat().st_size
+        artifact.checksum = hashlib.sha256(Path(artifact.path).read_bytes()).hexdigest()
+        step.config_snapshot = {"engine": "batch_interval", "max_latency_ns": 1000}
+        select_legacy_inputs(step, artifact)
+        result = await execute_statistics_node(
+            db, run, step,
+            SimpleNamespace(node_type="data_statistics", config=step.config_snapshot),
+            {"parser": db.get(Resource, parser_data["id"])},
+        )
+        assert result["statistics_results"][0]["sample_count"] == 2
+        assert result["statistics_results"][0]["metrics"][0]["value"] == 40
+        assert result["statistics_script"]["filename"] == "builtin_batch_interval.py"
+        assert result["statistics_analyses"][0]["status"] == "succeeded"
+        assert db.scalar(select(Metric).where(Metric.run_id == run.id)).detail["script_filename"] == "builtin_batch_interval.py"
+        assert Path(db.get(Artifact, result["statistics_artifact_id"]).path).is_file()
+
+
+def test_save_and_analyze_atomically_captures_new_config_and_rejects_duplicate(
+    client, admin_headers, tmp_path, monkeypatch
+):
+    from app.api.routes import runs as run_routes
+
+    parser_data = create_parser_resource(client, admin_headers)
+    plan, scenario = create_plan_scenario(client, admin_headers)
+
+    async def fake_list(*_args):
+        return {"directory": "/tmp/parser", "files": [{
+            "relative_path": "latency.csv", "filename": "latency.csv", "source": "current_run",
+            "size": 12, "modified_at": "2026-09-08T10:00:00+08:00",
+        }]}
+
+    monkeypatch.setattr(statistics_execution, "list_statistics_csv_files", fake_list)
+    monkeypatch.setattr(run_routes, "schedule_task", lambda _task_id: None)
+    with SessionLocal() as db:
+        run, _parser, step, _artifact = create_statistics_run(db, plan["id"], scenario["id"], tmp_path)
+        run.workflow_version_id = db.get(ScenarioModel, scenario["id"]).draft_workflow_version_id
+        db.add(RunResource(run_id=run.id, resource_id=parser_data["id"], position=1))
+        db.commit()
+        run_id, step_id = run.id, step.id
+    url = f"/api/v1/runs/{run_id}/steps/{step_id}/analyze"
+    invalid = client.post(url, headers=admin_headers, json={"relative_paths": ["missing.csv"], "max_latency_ns": 100})
+    assert invalid.status_code == 409
+    response = client.post(url, headers=admin_headers, json={"relative_paths": ["latency.csv"], "max_latency_ns": 200})
+    assert response.status_code == 200, response.text
+    duplicate = client.post(url, headers=admin_headers, json={"relative_paths": ["latency.csv"], "max_latency_ns": 300})
+    assert duplicate.status_code == 409
+    with SessionLocal() as db:
+        step = db.get(RunStep, step_id)
+        assert step.config_snapshot["max_latency_ns"] == 200
+        history = step.result_summary["statistics_analyses"]
+        assert len(history) == 1
+        assert history[0]["config_revision"] == 1
+        assert history[0]["max_latency_ns"] == 200
+        assert history[0]["inputs"][0]["relative_path"] == "latency.csv"
+        assert db.query(DurableTask).filter_by(run_id=run_id).count() == 1

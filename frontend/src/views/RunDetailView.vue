@@ -14,7 +14,7 @@ import OrderConfigPanel from '@/components/OrderConfigPanel.vue'
 import SshTerminalPanel from '@/components/SshTerminalPanel.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import WiringTopologyDiagram from '@/components/WiringTopologyDiagram.vue'
-import { useRunActions } from '@/composables/useRunActions'
+import { TERMINAL_STEP_TYPES, useRunActions } from '@/composables/useRunActions'
 import { useRunLifecycle } from '@/composables/useRunLifecycle'
 import { useOrderActions } from '@/composables/useOrderActions'
 import { useOrderRuntimeConfig } from '@/composables/useOrderRuntimeConfig'
@@ -32,7 +32,7 @@ import type {
   LogScope,
   RunStep,
 } from '@/types/run'
-import { formatBytes, formatDate, formatTime, nodeTypeText, normalizeContractFile, presentRunMetric, sortArtifactsNewestFirst } from '@/utils/runDetail'
+import { formatBytes, formatDate, formatTime, nodeTypeText, normalizeContractFile, presentRunMetric, sortArtifactsNewestFirst, statisticsEngineText } from '@/utils/runDetail'
 import { businessText, resourceText } from '@/utils/status'
 
 const route = useRoute()
@@ -40,6 +40,8 @@ const auth = useAuthStore()
 const runId = Number(route.params.id)
 const { load, logs, run } = useRunLifecycle(runId)
 const active = ref('detail')
+const executionDetailsOpen = ref(false)
+const automaticallyStartedSteps = new Set<number>()
 const selectedStepId = ref<number | null>(null)
 const manualStepSelection = ref(false)
 const logScope = ref<LogScope>('all')
@@ -62,6 +64,9 @@ const canRegenerateReports = computed(() => Boolean(
 ))
 const metricRows = computed(() => (run.value?.metrics || []).map(presentRunMetric))
 const artifactsNewestFirst = computed(() => sortArtifactsNewestFirst(run.value?.artifacts || []))
+const latestReports = computed(() => ['pdf_report', 'excel_report', 'web_report']
+  .map(type => artifactsNewestFirst.value.find(item => item.artifact_type === type))
+  .filter(item => item !== undefined))
 const isTerminalRunStatus = computed(() => ['completed', 'cancelled', 'execution_failed', 'parse_failed', 'precheck_failed', 'timed_out'].includes(run.value?.status || ''))
 const currentStep = computed(() => findCurrentStep(run.value?.steps || []))
 const selectedStep = computed(() => {
@@ -159,14 +164,13 @@ const {
   cancel,
   download,
   openVerdict,
-  reanalyzeStatistics,
   reanalyzingStatisticsStepId,
   regenerateReports,
   regeneratingReports,
   stepAction,
   submitVerdict,
   verdict,
-  verdictDialog,
+  submittingVerdict,
 } = useRunActions({
   runId,
   reload: load,
@@ -222,7 +226,7 @@ const {
   loadingStatisticsAnalysisNo,
   refreshStatisticsCsvFiles,
   refreshStatisticsAnalyses,
-  saveStatisticsConfig,
+  saveAndAnalyzeStatistics,
   savingStatisticsInputs,
   selectedRelativePaths,
   statisticsAnalyses,
@@ -298,7 +302,7 @@ const statisticsCompletionBlockedReason = computed(() => {
   }
   if (!statisticsCompletionBlocked.value) return ''
   if (!statisticsConfigSaved.value) {
-    return '完成已禁用：请先选择 CSV、填写正整数的最大延迟上限并保存分析配置。'
+    return '完成已禁用：请选择 CSV、填写正整数上限，并点击保存并分析。'
   }
   if (statisticsCompletionStale.value) {
     return '完成已禁用：当前分析配置尚无成功结果，请先开始或再次执行分析。'
@@ -315,7 +319,7 @@ const statisticsConfigReadonlyMessage = computed(() => {
   if (statisticsConfigReadonlyReason.value === 'frozen') {
     return '节点已完成冻结；只读展示执行时保存的 CSV 与最大延迟上限。'
   }
-  return '选择 CSV 并设置最大延迟上限后统一保存；修改已保存配置后需要重新分析。'
+  return '选择 CSV 并设置上限，点击保存并分析；可调整参数后再次分析。'
 })
 const canSendParserActions = computed(() => Boolean(
   currentStep.value?.node_type === 'parser_parse'
@@ -532,6 +536,52 @@ function resourceDisplayMeta(snapshot: CaptureSnapshot) {
   return parts.filter(Boolean).join(' · ')
 }
 
+const currentTaskTitle = computed(() => {
+  if (run.value?.status === 'awaiting_review') return '复核结果并生成报告'
+  if (run.value?.status === 'completed') return '测速完成'
+  if (run.value?.status === 'draft') return '准备开始测速'
+  if (run.value?.status === 'resource_queue') return '等待执行资源'
+  return currentStep.value?.name || '测速进度'
+})
+const currentTaskHint = computed(() => {
+  if (run.value?.status === 'awaiting_review') return '核对样本、指标和历史对比，提交结论后生成报告。'
+  if (run.value?.status === 'completed') return '结果与报告已归档，可在下方下载。'
+  if (run.value?.status === 'awaiting_step_retry') return '当前操作失败。请检查错误，处理后重试；已完成的步骤会保留。'
+  if (run.value?.status === 'running') return currentStep.value?.node_type === 'data_statistics'
+    ? '正在分析，完成后可检查结果并进入复核。'
+    : '正在执行，完成后自动进入下一项任务。'
+  if (currentStep.value?.node_type === 'wiring_confirmation') return '核对现场接线，确认后自动继续。'
+  if (currentStep.value?.node_type === 'data_statistics') return '选择本次 CSV 并分析，结果满意后进入复核；需要时可调整参数再次分析。'
+  if (currentStep.value?.node_type === 'order_preparation') return '核对本次发单配置后启动工具，使用下方指令完成发单。'
+  if (run.value?.status === 'awaiting_step_completion') return '命令已下发。请确认程序或产物达到预期，再确认并继续。'
+  return '运行将自动推进；需要现场操作或结果判断时会在这里提示。'
+})
+const currentPhase = computed(() => {
+  if (['awaiting_review', 'completed'].includes(run.value?.status || '')) return 2
+  if (['parser_parse', 'data_statistics', 'report_generation'].includes(currentStep.value?.node_type || '')) return 2
+  if (['order_preparation', 'slnic_stop_capture', 'slnic_merge_capture'].includes(currentStep.value?.node_type || '')) return 1
+  return 0
+})
+watch(
+  () => `${run.value?.status}:${currentStep.value?.id}:${auth.canOperate}`,
+  async () => {
+    const step = currentStep.value
+    if (['awaiting_review', 'completed'].includes(run.value?.status || '')) {
+      active.value = 'metrics'
+      if (auth.canOperate) openVerdict(run.value?.verdict || null)
+    }
+    if (run.value?.status === 'awaiting_step_retry') {
+      executionDetailsOpen.value = true
+      followCurrentStep()
+    }
+    if (!auth.canOperate || run.value?.status !== 'awaiting_step_start' || !step
+      || !TERMINAL_STEP_TYPES.includes(step.node_type) || automaticallyStartedSteps.has(step.id)) return
+    automaticallyStartedSteps.add(step.id)
+    await stepAction(step, 'start')
+  },
+  { flush: 'post', immediate: true },
+)
+
 watch(run, syncSelectedStep)
 watch(
   [() => selectedStep.value?.id, selectedCaptureSignature],
@@ -561,24 +611,27 @@ watch(
         <div class="run-title-line"><h1 class="page-title mono">{{ run.run_number }}</h1><StatusBadge :status="run.status" show-raw /></div>
         <p class="muted">{{ businessText[run.business_code] }} · {{ run.config_snapshot?.plan?.name }} / {{ run.config_snapshot?.scenario?.name }}</p>
       </div>
-      <div v-if="auth.canOperate" class="toolbar">
+
+    </div>
+
+    <section class="current-task card" aria-label="当前任务" aria-live="polite">
+      <ol class="run-phases" aria-label="测速阶段">
+        <li v-for="(phase, index) in ['准备环境', '执行测速', '分析与复核']" :key="phase" :class="{ 'is-current': currentPhase === index, 'is-done': currentPhase > index }" :aria-current="currentPhase === index ? 'step' : undefined">{{ index + 1 }} · {{ phase }}</li>
+      </ol>
+      <h2>{{ currentTaskTitle }}</h2>
+      <p class="muted">{{ currentTaskHint }}</p>
+      <el-alert v-if="currentStep?.error_message" :title="currentStep.error_message" type="error" show-icon :closable="false" />
+      <el-button v-if="manualStepSelection" plain @click="followCurrentStep">回到当前任务</el-button>
+      <div v-if="auth.canOperate && selectedStep?.id === currentStep?.id" class="toolbar">
         <el-button v-if="canStart" type="primary" @click="action('start', '运行已就绪')">启动运行</el-button>
         <el-button
-          v-if="currentStep?.status === 'pending' && run.status === 'awaiting_step_start'"
+          v-if="currentStep?.status === 'pending' && currentStep.node_type !== 'data_statistics' && run.status === 'awaiting_step_start'"
           type="primary"
           :icon="VideoPlay"
           :loading="actingStepId === currentStep.id || terminalCommandPendingStepId === currentStep.id"
           :disabled="Boolean(exportingTable) || statisticsActionBlocked || wiringActionBlocked || orderConfigActionBlocked || orderConfigEditorVisible"
           @click="currentStep && stepAction(currentStep, 'start')"
-        >{{ currentStep.node_type === 'data_statistics' ? '开始分析' : '开始' }}</el-button>
-        <el-button
-          v-if="currentStep?.node_type === 'data_statistics' && currentStep.status === 'waiting' && run.status === 'awaiting_step_completion' && canEditStatisticsConfig"
-          type="warning"
-          :icon="Refresh"
-          :loading="reanalyzingStatisticsStepId === currentStep.id"
-          :disabled="!statisticsConfigSaved || savingStatisticsInputs || statisticsReanalysisPending"
-          @click="currentStep && reanalyzeStatistics(currentStep)"
-        >{{ statisticsCompletionStale ? '开始分析' : '再次分析' }}</el-button>
+        >{{ currentStep.node_type === 'order_preparation' ? '确认配置并启动发单工具' : '连接并开始' }}</el-button>
         <el-button
           v-if="canCompleteCurrent"
           type="success"
@@ -587,7 +640,7 @@ watch(
           :disabled="wiringActionBlocked || (currentStep?.node_type === 'data_statistics' && (statisticsCompletionBlocked || statisticsReanalysisPending))"
           :aria-describedby="currentStep?.node_type === 'data_statistics' && statisticsCompletionBlockedReason ? 'statistics-completion-blocked-reason' : undefined"
           @click="currentStep && stepAction(currentStep, currentStep.node_type === 'wiring_confirmation' ? 'confirm' : 'complete')"
-        >{{ currentStep.node_type === 'wiring_confirmation' ? '确认接线' : '完成' }}</el-button>
+        >{{ currentStep.node_type === 'wiring_confirmation' ? '确认接线并继续' : currentStep.node_type === 'data_statistics' ? '采用结果并继续' : '确认完成并继续' }}</el-button>
         <el-button
           v-if="currentStep?.status === 'failed' && run.status === 'awaiting_step_retry'"
           type="warning"
@@ -596,8 +649,8 @@ watch(
           :disabled="Boolean(exportingTable) || statisticsActionBlocked"
           @click="currentStep && stepAction(currentStep, 'retry')"
         >重试</el-button>
-        <el-button v-if="canEditVerdict" type="success" @click="openVerdict(run.verdict)">{{ run.verdict ? '更新人工结论' : '提交人工结论' }}</el-button>
-        <el-button v-if="!isTerminalRunStatus" type="danger" plain @click="cancel">取消</el-button>
+        <el-button v-if="canEditVerdict" type="success" @click="active = 'metrics'">{{ run.verdict ? '更新人工结论' : '复核结果并生成报告' }}</el-button>
+        <el-button v-if="!isTerminalRunStatus" type="danger" text @click="cancel">取消运行</el-button>
         <p
           v-if="statisticsCompletionBlockedReason"
           id="statistics-completion-blocked-reason"
@@ -605,8 +658,10 @@ watch(
           role="status"
         >{{ statisticsCompletionBlockedReason }}</p>
       </div>
-    </div>
+    </section>
 
+    <details class="execution-details" :open="executionDetailsOpen" @toggle="executionDetailsOpen = ($event.target as HTMLDetailsElement).open">
+      <summary>执行详情 · {{ run.steps.length }} 个节点 · 日志与运行信息</summary>
     <section class="summary card" aria-label="运行摘要">
       <div><span class="muted">当前状态</span><p><StatusBadge :status="run.status" show-raw /></p></div>
       <div><span class="muted">总体进度</span><el-progress :percentage="run.progress" :stroke-width="12" /></div>
@@ -626,12 +681,22 @@ watch(
       @follow-current="followCurrentStep"
     />
 
+      <RunLogPanel
+        :logs="filteredLogs"
+        :total="logs.length"
+        :scope-label="logScopeLabel"
+        :scoped="logScope !== 'all'"
+        @refresh="load"
+        @show-all="showAllLogs"
+      />
+    </details>
+
     <div class="workbench">
       <section class="card main-card">
         <el-tabs v-model="active">
-          <el-tab-pane label="节点详情" name="detail">
+          <el-tab-pane :label="manualStepSelection ? '执行记录' : '当前任务'" name="detail">
             <div v-if="selectedStep" class="node-detail">
-              <div class="node-title">
+              <div v-if="manualStepSelection" class="node-title">
                 <div class="node-title-main">
                   <p class="eyebrow">当前查看节点</p>
                   <h2>{{ selectedStep.position }}. {{ selectedStep.name }}</h2>
@@ -640,12 +705,15 @@ watch(
                 <StatusBadge :status="selectedStep.status" show-raw />
               </div>
 
+              <details class="node-metadata"><summary>节点状态与耗时</summary>
               <div class="detail-grid">
                 <div v-for="item in summaryRows" :key="item.label" class="info-tile">
                   <span class="muted">{{ item.label }}</span>
                   <strong :class="{ mono: item.mono }">{{ item.value || '-' }}</strong>
                 </div>
               </div>
+
+              </details>
 
               <section v-if="selectedStep.node_type === 'parser_parse'" class="detail-section parser-export-panel">
                 <div class="section-heading">
@@ -682,6 +750,7 @@ watch(
                 <div class="section-heading">
                   <div>
                     <h3>分析配置</h3>
+                    <p class="statistics-mode">{{ statisticsEngineText[String(selectedConfig.engine || 'remote')] }}</p>
                     <p class="muted">{{ statisticsConfigReadonlyMessage }}</p>
                   </div>
                   <div class="parser-export-actions">
@@ -695,7 +764,7 @@ watch(
                   <legend>分析配置</legend>
                   <fieldset class="statistics-config-field statistics-csv-field">
                     <legend id="statistics-csv-input-label">CSV 输入</legend>
-                    <small id="statistics-csv-input-description">仅可选择当前节点前最近一次成功解析生成的 CSV；统计脚本将直接读取远端文件。</small>
+                    <small id="statistics-csv-input-description">仅可选择当前节点前最近一次成功解析生成的 CSV。</small>
                     <el-checkbox-group
                       v-model="selectedRelativePaths"
                       class="statistics-input-list"
@@ -715,7 +784,7 @@ watch(
                   </fieldset>
                   <div class="statistics-config-field statistics-threshold-field">
                     <label for="statistics-max-latency-ns">最大延迟上限（ns）</label>
-                    <small id="statistics-max-latency-description">仅纳入不超过该正整数上限的有效延迟样本。</small>
+                    <small id="statistics-max-latency-description">{{ String(selectedConfig.engine || '').startsWith('batch_') ? '批量统计仅纳入小于上限的首单延迟或正间隔。' : '仅纳入不超过该正整数上限的有效延迟样本。' }}</small>
                     <el-input-number
                       id="statistics-max-latency-ns"
                       v-model="statisticsMaxLatencyNsDraft"
@@ -732,11 +801,39 @@ watch(
                 </fieldset>
                 <div v-if="auth.canOperate && canEditStatisticsConfig" class="statistics-selection-actions">
                   <span class="muted">已勾选 {{ selectedRelativePaths.length }} 个 CSV<span v-if="statisticsConfigDirty"> · 尚未保存</span></span>
-                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!statisticsConfigDirty || !statisticsConfigReady || statisticsReanalysisPending" @click="saveStatisticsConfig">保存分析配置</el-button>
+                  <el-button type="primary" :loading="savingStatisticsInputs" :disabled="!statisticsConfigReady || statisticsReanalysisPending" @click="saveAndAnalyzeStatistics">{{ currentStep?.status === 'pending' || statisticsConfigDirty ? '保存并分析' : statisticsCompletionStale ? '开始分析' : '再次分析' }}</el-button>
                 </div>
               </section>
 
-              <section v-if="selectedStep.node_type === 'data_statistics'" class="detail-section statistics-history-section" aria-labelledby="statistics-history-heading">
+                <div v-if="statisticsResults.length" class="statistics-results" :class="{ 'statistics-legacy-results': !selectedStatisticsHasHistoryStructure }">
+                  <div class="statistics-result-toolbar">
+                    <strong>统计结果</strong>
+                    <el-radio-group v-model="statisticsUnit" size="small">
+                      <el-radio-button value="ns">ns</el-radio-button>
+                      <el-radio-button value="us">us</el-radio-button>
+                    </el-radio-group>
+                  </div>
+                  <section v-for="result in statisticsResults" :key="String(result.source_path || result.source_file)" class="statistics-result-card">
+                    <div class="statistics-result-title">
+                      <div><strong>{{ result.source_path || result.source_file }}</strong><span class="muted">{{ result.sample_count }} 个有效样本</span></div>
+                      <el-tag effect="plain">{{ statisticsUnit }}</el-tag>
+                    </div>
+                    <div class="statistics-excluded">
+                      <span>超上限 {{ (result.excluded_counts as any)?.above_limit || 0 }}</span>
+                      <span>负数 {{ (result.excluded_counts as any)?.negative || 0 }}</span>
+                      <span>无效 {{ (result.excluded_counts as any)?.invalid || 0 }}</span>
+                    </div>
+                    <el-table :data="Array.isArray(result.metrics) ? result.metrics : []" size="small" border>
+                      <el-table-column prop="label" label="指标" />
+                      <el-table-column label="值">
+                        <template #default="scope"><strong>{{ displayStatisticsValue(scope.row.value) }}</strong> {{ statisticsUnit }}</template>
+                      </el-table-column>
+                    </el-table>
+                  </section>
+                </div>
+
+              <details v-if="selectedStep.node_type === 'data_statistics' && statisticsAnalyses.length" class="detail-section statistics-history-section" aria-labelledby="statistics-history-heading">
+                <summary>分析历史 · {{ statisticsAnalyses.length }} 次</summary>
                 <div class="section-heading">
                   <div>
                     <h3 id="statistics-history-heading">分析历史</h3>
@@ -798,7 +895,7 @@ watch(
                     </template>
                   </el-collapse-item>
                 </el-collapse>
-              </section>
+              </details>
 
               <section v-show="showWorkflowTerminal" class="detail-section workflow-terminal-section">
                 <div class="section-heading">
@@ -1035,6 +1132,7 @@ watch(
                 </template>
               </section>
 
+              <details class="node-metadata"><summary>配置、执行记录与产物</summary>
               <section class="detail-section">
                 <h3>节点配置</h3>
                 <dl class="info-list">
@@ -1089,32 +1187,6 @@ watch(
                   <span v-for="file in parserOutputFiles" :key="file">{{ file }}</span>
                 </div>
 
-                <div v-if="!selectedStatisticsHasHistoryStructure && statisticsResults.length" class="statistics-results statistics-legacy-results">
-                  <div class="statistics-result-toolbar">
-                    <strong>统计结果</strong>
-                    <el-radio-group v-model="statisticsUnit" size="small">
-                      <el-radio-button value="ns">ns</el-radio-button>
-                      <el-radio-button value="us">us</el-radio-button>
-                    </el-radio-group>
-                  </div>
-                  <section v-for="result in statisticsResults" :key="String(result.source_path || result.source_file)" class="statistics-result-card">
-                    <div class="statistics-result-title">
-                      <div><strong>{{ result.source_path || result.source_file }}</strong><span class="muted">{{ result.sample_count }} 个有效样本</span></div>
-                      <el-tag effect="plain">{{ statisticsUnit }}</el-tag>
-                    </div>
-                    <div class="statistics-excluded">
-                      <span>超上限 {{ (result.excluded_counts as any)?.above_limit || 0 }}</span>
-                      <span>负数 {{ (result.excluded_counts as any)?.negative || 0 }}</span>
-                      <span>无效 {{ (result.excluded_counts as any)?.invalid || 0 }}</span>
-                    </div>
-                    <el-table :data="Array.isArray(result.metrics) ? result.metrics : []" size="small" border>
-                      <el-table-column prop="label" label="指标" />
-                      <el-table-column label="值">
-                        <template #default="scope"><strong>{{ displayStatisticsValue(scope.row.value) }}</strong> {{ statisticsUnit }}</template>
-                      </el-table-column>
-                    </el-table>
-                  </section>
-                </div>
 
                 <div v-if="selectedArtifacts.length" class="artifact-links">
                   <template v-for="artifact in selectedArtifacts" :key="artifact.id">
@@ -1134,11 +1206,12 @@ watch(
                 </div>
 
               </section>
+              </details>
             </div>
             <el-empty v-else description="暂无节点详情" :image-size="80" />
           </el-tab-pane>
 
-          <el-tab-pane label="指标与结论" name="metrics">
+          <el-tab-pane label="结果与报告" name="metrics">
             <div class="metrics-table-scroll">
               <el-table :data="metricRows" empty-text="暂无指标" class="metrics-table">
                 <el-table-column label="指标" min-width="140">
@@ -1160,17 +1233,35 @@ watch(
               </el-table>
             </div>
             <div v-if="run.verdict" class="verdict"><h3>结论</h3><p>最终结论：{{ run.verdict.final_result || '待复核' }}</p><p>{{ run.verdict.issue_description }}</p><p class="muted">{{ run.verdict.notes }}</p></div>
-          </el-tab-pane>
-
-          <el-tab-pane label="运行对比" name="comparison">
+            <details class="review-comparison"><summary>与历史运行对比</summary>
             <RunComparisonPanel
+              v-if="run.metrics.length"
               :run-id="runId"
               :can-operate="auth.canOperate"
               :has-metrics="Boolean(run.metrics.length)"
             />
+            </details>
+            <div class="report-downloads">
+              <el-button v-for="artifact in latestReports" :key="artifact.id" :icon="Download" @click="download(artifact.id)">{{ artifact.name }}</el-button>
+            </div>
+            <section v-if="canEditVerdict" class="review-form" aria-label="人工复核">
+              <h3>{{ run.verdict ? '更新复核结论' : '确认测速结论' }}</h3>
+      <el-form label-width="100px">
+        <el-form-item label="最终结论">
+          <el-radio-group v-model="verdict.final_result">
+            <el-radio-button value="passed">通过</el-radio-button>
+            <el-radio-button value="conditional">有条件通过</el-radio-button>
+            <el-radio-button value="failed">不通过</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="问题说明"><el-input v-model="verdict.issue_description" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="verdict.notes" type="textarea" :rows="3" /></el-form-item>
+      </el-form>
+              <el-button type="primary" :loading="submittingVerdict" @click="submitVerdict">确认结论并生成报告</el-button>
+            </section>
           </el-tab-pane>
 
-          <el-tab-pane label="产物与报告" name="artifacts">
+          <el-tab-pane label="全部产物与历史报告" name="artifacts">
             <div v-if="canRegenerateReports" class="section-heading">
               <div><h3>报告版本</h3><p class="muted">重新生成会创建下一版本，历史文件保持不变。</p></div>
               <el-button :icon="Refresh" :loading="regeneratingReports" @click="regenerateReports">重新生成报告</el-button>
@@ -1188,31 +1279,8 @@ watch(
           </el-tab-pane>
         </el-tabs>
       </section>
-
-      <RunLogPanel
-        :logs="filteredLogs"
-        :total="logs.length"
-        :scope-label="logScopeLabel"
-        :scoped="logScope !== 'all'"
-        @refresh="load"
-        @show-all="showAllLogs"
-      />
     </div>
 
-    <el-dialog v-model="verdictDialog" :title="run.verdict ? '更新人工复核结论' : '提交人工复核结论'" width="600px">
-      <el-form label-width="100px">
-        <el-form-item label="最终结论">
-          <el-radio-group v-model="verdict.final_result">
-            <el-radio-button value="passed">通过</el-radio-button>
-            <el-radio-button value="conditional">有条件通过</el-radio-button>
-            <el-radio-button value="failed">不通过</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="问题说明"><el-input v-model="verdict.issue_description" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="verdict.notes" type="textarea" :rows="3" /></el-form-item>
-      </el-form>
-      <template #footer><el-button @click="verdictDialog = false">取消</el-button><el-button type="primary" @click="submitVerdict">提交并生成报告</el-button></template>
-    </el-dialog>
 
     <el-dialog
       v-model="orderConfigEditorVisible"

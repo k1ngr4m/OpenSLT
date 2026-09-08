@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import math
 import os
@@ -12,6 +13,7 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
+from tempfile import TemporaryDirectory
 
 import asyncssh
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
@@ -21,6 +23,7 @@ from sqlalchemy.orm import Session
 from typing_extensions import Literal
 
 from app.core.config import settings
+from app.builtin_statistics import build_output, script_detail as builtin_script_detail
 from app.core.time import beijing_now, from_unix_timestamp
 from app.models import Artifact, Metric, Resource, RunStep, ScenarioWorkflowNode, TestRun
 from app.services.statistics_scripts import StatisticsScriptError, statistics_script_service
@@ -318,6 +321,10 @@ def reserve_statistics_analysis(db: Session, run: TestRun, step: RunStep) -> int
     ) + 1
     now = beijing_now().isoformat()
     config = step.config_snapshot if isinstance(step.config_snapshot, dict) else {}
+    if config.get("engine", "remote") != "remote":
+        detail = builtin_script_detail(config["engine"])
+        config = {**config, "script_filename": detail["name"], "script_checksum": detail["checksum"]}
+        step.config_snapshot = config
     selection = summary.get("statistics_selection") or {}
     raw_inputs = selection.get("inputs") if isinstance(selection, dict) else []
     raw_inputs = raw_inputs if isinstance(raw_inputs, list) else []
@@ -1000,39 +1007,50 @@ async def execute_statistics_node(
             raise WorkflowError("PARSER_RESOURCE_REQUIRED", "运行资源缺少解析工具", 409)
         inputs = await _execution_inputs(db, run, step, resource)
         try:
-            script_detail = await statistics_script_service.read(resource, config.script_filename)
+            script_detail = (
+                await statistics_script_service.read(resource, config.script_filename)
+                if config.engine == "remote" else builtin_script_detail(config.engine)
+            )
         except StatisticsScriptError as exc:
             raise WorkflowError(exc.code, exc.message, exc.status_code) from exc
         script = {"filename": script_detail["name"], "checksum": script_detail["checksum"]}
         if not script_detail["executable"]:
             raise WorkflowError("STATISTICS_SCRIPT_NOT_EXECUTABLE", "统计脚本没有可执行权限", 409)
-        if script_detail["checksum"] != config.script_checksum:
+        if config.engine == "remote" and script_detail["checksum"] != config.script_checksum:
             raise WorkflowError("STATISTICS_SCRIPT_CHANGED", "统计脚本已发生变化，请重新发布工作流", 409)
         legacy_inputs = any("artifact" in item for item in inputs)
         remote_workdir = posixpath.normpath(resource.remote_path.strip()) if legacy_inputs else ""
-        connection = await asyncssh.connect(**_ssh_options(resource))
-        sftp = await connection.start_sftp_client()
-        if legacy_inputs:
+        if config.engine == "remote" or any("artifact" not in item for item in inputs):
+            connection = await asyncssh.connect(**_ssh_options(resource))
+            sftp = await connection.start_sftp_client()
+        if legacy_inputs and config.engine == "remote":
             await sftp.makedirs(remote_workdir, exist_ok=True)
         for source in inputs:
             artifact = source.get("artifact")
-            if artifact:
+            if artifact and config.engine == "remote":
                 remote_csv = posixpath.join(remote_workdir, artifact.name)
                 await _upload(sftp, remote_csv, Path(artifact.path))
             else:
-                remote_csv = str(source["absolute_path"])
+                remote_csv = str(source.get("absolute_path") or (artifact.path if artifact else ""))
             filename = str(source["filename"])
             source_path = str(source["source_path"])
-            command = " ".join(
-                (
-                    shlex.quote(str(script_detail["path"])),
-                    shlex.quote(remote_csv),
-                    str(config.max_latency_ns),
-                )
-            )
-            result = await connection.run(command, check=False, timeout=300)
-            stdout = str(result.stdout or "")
-            stderr = str(result.stderr or "")
+            if config.engine == "remote":
+                command = " ".join((shlex.quote(str(script_detail["path"])), shlex.quote(remote_csv), str(config.max_latency_ns)))
+                result = await connection.run(command, check=False, timeout=300)
+                stdout, stderr, exit_code = str(result.stdout or ""), str(result.stderr or ""), result.exit_status
+            else:
+                command = f"builtin:{config.engine} {source_path} {config.max_latency_ns}"
+                with TemporaryDirectory(prefix="openslt-statistics-") as directory:
+                    local_csv = Path(artifact.path) if artifact else Path(directory) / filename
+                    if not artifact:
+                        await sftp.get(remote_csv, str(local_csv))
+                    try:
+                        output = await asyncio.get_running_loop().run_in_executor(
+                            None, build_output, str(local_csv), config.max_latency_ns, config.engine,
+                        )
+                        stdout, stderr, exit_code = json.dumps(output, ensure_ascii=False), "", 0
+                    except (OSError, ValueError) as exc:
+                        stdout, stderr, exit_code = "", str(exc), 1
             attempt = {
                 "artifact_id": artifact.id if artifact else None,
                 "source_file": filename,
@@ -1040,16 +1058,16 @@ async def execute_statistics_node(
                 "size": source.get("size"),
                 "modified_at": source.get("modified_at"),
                 "command": command,
-                "exit_code": result.exit_status,
+                "exit_code": exit_code,
                 "stdout": stdout[-4000:],
                 "stderr": stderr[-4000:],
                 "status": "failed",
             }
             attempts.append(attempt)
-            if result.exit_status != 0:
+            if exit_code != 0:
                 raise WorkflowError(
                     "STATISTICS_SCRIPT_FAILED",
-                    f"统计 {source_path} 失败（退出码 {result.exit_status}）",
+                    f"统计 {source_path} 失败（退出码 {exit_code}）{': ' + stderr if config.engine != 'remote' else ''}",
                     409,
                 )
             if len(stdout.encode("utf-8")) > MAX_STATISTICS_OUTPUT_BYTES:
@@ -1102,6 +1120,7 @@ async def execute_statistics_node(
     result_summary = {
         **history_summary,
         "statistics_script": script,
+        "statistics_engine": config.engine,
         "max_latency_ns": config.max_latency_ns,
         "statistics_results": results,
         "statistics_artifact_id": result_artifact.id,

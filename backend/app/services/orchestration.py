@@ -47,6 +47,43 @@ STEPS = [
 ]
 
 TERMINAL_STATUSES = TERMINAL_RUN_STATUSES
+AUTOMATIC_CAPTURE_NODES = frozenset({"server_config", "database_config"})
+
+
+def advance_workflow(db: Session, run: TestRun) -> None:
+    """在同一事务中推进流程并持久化下一次采集任务。"""
+    from app.services.durable_tasks import enqueue_task, schedule_task
+
+    step = next((item for item in run.steps if item.status != "succeeded"), None)
+    if step is None and not any(item.node_type == "data_statistics" for item in run.steps):
+        transition_run(run, "completed")
+        run.progress = 100
+        run.finished_at = beijing_now()
+        release_locks(db, run.id, "completed")
+        append_log(db, run, "run.completed", "工作流运行完成")
+        return
+    if step is None or step.node_type == "report_generation":
+        if step is not None and step.status == "pending":
+            transition_step(step, "waiting")
+        transition_run(run, "awaiting_review")
+        release_locks(db, run.id, "awaiting_review")
+        append_log(db, run, "review.waiting", "执行结束，请复核结果并生成报告")
+        return
+    if run.status != "awaiting_step_start":
+        transition_run(run, "awaiting_step_start")
+    if step.node_type == "wiring_confirmation":
+        transition_step(step, "waiting")
+        step.started_at = beijing_now()
+        step.result_summary = {"confirmed": False}
+        transition_run(run, "awaiting_step_completion")
+        append_log(db, run, "wiring.waiting", "请核对接线，确认后自动继续", step=step)
+    elif step.node_type in AUTOMATIC_CAPTURE_NODES:
+        begin_workflow_step(db, run, step.id)
+        task = enqueue_task(
+            db, "start_workflow_step", {"run_id": run.id, "step_id": step.id},
+            f"workflow-step:{run.id}:{step.id}:retry:{step.retry_count}",
+        )
+        schedule_task(task.id)
 
 
 def _duration_ms(started_at: datetime, finished_at: datetime) -> int:
@@ -254,7 +291,8 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             run.queue_reason = None
             if run.steps:
                 transition_run(run, "awaiting_step_start")
-                append_log(db, run, "run.started", "工作流已启动，等待手动开始第一个节点")
+                append_log(db, run, "run.started", "工作流已启动，自动推进配置采集")
+                advance_workflow(db, run)
             else:
                 transition_run(run, "completed")
                 run.progress = 100
@@ -301,6 +339,8 @@ async def start_workflow_run(run_id: int, step_id: typing.Optional[int] = None) 
             transition_run(run, "awaiting_step_completion")
             run.progress = int((step.position - 1) * 100 / total)
             append_log(db, run, "workflow.step_executed", f"{step.name}执行结束，等待手动完成", step=step)
+            if step.node_type in AUTOMATIC_CAPTURE_NODES:
+                await complete_workflow_step(db, run, step.id, run.created_by)
             db.commit()
             broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
             return
@@ -462,16 +502,8 @@ async def complete_workflow_step(db: Session, run: TestRun, step_id: int, actor_
             "confirmed_at": now.isoformat(),
         }
     run.progress = int(step.position * 100 / max(1, len(run.steps)))
-    next_step = next((item for item in run.steps if item.status != "succeeded"), None)
-    if next_step:
-        transition_run(run, "awaiting_step_start")
-        append_log(db, run, "workflow.step_completed", f"{step.name}已完成", step=step)
-    else:
-        transition_run(run, "completed")
-        run.progress = 100
-        run.finished_at = now
-        release_locks(db, run.id, "completed")
-        append_log(db, run, "run.completed", "工作流运行完成", step=step)
+    append_log(db, run, "workflow.step_completed", f"{step.name}已完成", step=step)
+    advance_workflow(db, run)
     db.flush()
     broker.publish(run.id, {"type": "status", "status": run.status, "progress": run.progress})
 

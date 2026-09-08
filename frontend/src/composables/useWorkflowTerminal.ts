@@ -57,24 +57,24 @@ export function useWorkflowTerminal(options: WorkflowTerminalOptions) {
   )
   const workflowTerminalDescription = computed(() => {
     if (selectedStep.value?.node_type === 'order_preparation') {
-      return '点击顶部“开始”后，系统会在远端 tmux 中启动发单程序；确认程序就绪后可直接输入命令或使用下方动作按钮。终端支持刷新和重连。'
+      return '确认本次配置并启动工具后，系统会在远端 tmux 中启动发单程序；确认程序就绪后可直接输入命令或使用下方动作按钮。终端支持刷新和重连。'
     }
     if (selectedStep.value?.node_type === 'rem_startup') {
-      return '点击顶部“开始”后，配置的 REM 命令会在这个终端中逐行下发；查看输出并确认完成后再点击顶部“完成”。'
+      return '进入该节点后自动下发 REM 命令；查看输出，确认程序就绪后点击“确认完成并继续”。'
     }
     if (selectedStep.value?.node_type === 'market_startup') {
-      return '点击顶部“开始”后，已选择的模拟市场脚本会按顺序在这个终端中下发；查看输出并确认完成后再点击顶部“完成”。'
+      return '进入该节点后自动按顺序下发模拟市场脚本；查看输出，确认就绪后点击“确认完成并继续”。'
     }
     if (selectedStep.value?.node_type === 'slnic_stop_capture') {
-      return '点击顶部“开始”后，关闭抓包脚本会在这个终端中下发。'
+      return '进入该节点后自动下发关闭抓包脚本；确认抓包已停止后继续。'
     }
     if (selectedStep.value?.node_type === 'slnic_merge_capture') {
-      return '点击顶部“开始”后，Linux 合并命令会在这个终端中下发；随后复制页面生成的 Windows editcap 命令到本机执行，确认完成后再点击顶部“完成”。'
+      return '进入该节点后自动下发 Linux 合并命令；随后复制下方 Windows editcap 命令到本机执行，确认产物生成后继续。'
     }
     if (selectedStep.value?.node_type === 'parser_parse') {
-      return '点击顶部“开始”后，解析工具会在这个 SSH Shell 中启动；可直接输入或点击下方快捷指令，生成 CSV 后再点击顶部“完成”。'
+      return '进入该节点后自动启动解析工具；可直接输入或点击下方快捷指令，生成 CSV 后点击“确认完成并继续”。'
     }
-    return '点击顶部“开始”后，启动脚本会在这个终端中下发。'
+    return '进入该节点后自动下发启动脚本；确认程序就绪后继续。'
   })
   const remTerminalSubtitle = computed(() => terminalSubtitle('rem'))
   const marketTerminalSubtitle = computed(() => terminalSubtitle('market'))

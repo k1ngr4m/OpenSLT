@@ -38,11 +38,25 @@
 
 .workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 16px;
   margin-top: 16px;
 }
+
+.current-task { padding: 22px; margin-bottom: 16px; box-shadow: none; }
+.current-task h2 { margin: 20px 0 8px; font-size: 24px; }
+.current-task .toolbar { justify-content: flex-start; margin-top: 18px; }
+.run-phases { display: flex; gap: 24px; padding: 0; margin: 0; list-style: none; color: var(--ui-text-tertiary); }
+.run-phases .is-current { color: var(--ui-primary); font-weight: 700; }
+.run-phases .is-done { color: var(--ui-text-secondary); }
+.execution-details > summary, .node-metadata > summary, .review-comparison > summary { cursor: pointer; padding: 14px 0; color: var(--ui-text-secondary); font-weight: 600; }
+.execution-details > summary:focus-visible, .node-metadata > summary:focus-visible, .review-comparison > summary:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 3px; }
+.execution-details .log-panel { margin-top: 16px; }
+.review-form { border-top: 1px solid var(--ui-border); padding-top: 16px; max-width: 760px; }
+.report-downloads { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.report-downloads .el-button { margin-left: 0; }
+@media (max-width: 767px) { .run-phases { gap: 12px; font-size: 12px; } .current-task { padding: 16px; } }
 
 .main-card {
   min-width: 0;
@@ -656,7 +670,7 @@
   }
 
   .workbench {
-    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .detail-grid {
@@ -667,7 +681,7 @@
 
 @media (max-width: 1120px) {
   .workbench {
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .detail-grid {

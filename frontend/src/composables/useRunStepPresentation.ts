@@ -4,6 +4,7 @@ import { formatBytes, formatDate, formatDuration, formatValue, isJsonMap, nodeTy
 import { DEFAULT_REM_STARTUP_COMMANDS } from '@/utils/remCommands'
 import { defaultSlnicCommands } from '@/utils/slnicCommands'
 import { statusText } from '@/utils/status'
+import { statisticsEngineText } from '@/utils/runDetail'
 
 export function useRunStepPresentation(
   run: Ref<RunDetail | null>,
@@ -125,7 +126,8 @@ export function useRunStepPresentation(
     }
     if (step.node_type === 'data_statistics') {
       return [
-        { label: '统计脚本', value: stringValue(config.script_filename), mono: true },
+        { label: '统计口径', value: statisticsEngineText[String(config.engine || 'remote')] },
+        { label: '统计脚本', value: stringValue(config.script_filename, config.engine && config.engine !== 'remote' ? '随平台内置' : '-'), mono: true },
         { label: '异常大值上限', value: `${optionalNumber(config.max_latency_ns) ?? 999999999} ns` },
         { label: '输入来源', value: '运行详情页选择远端 CSV' },
       ]

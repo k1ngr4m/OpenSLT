@@ -252,6 +252,7 @@ class ParserConfig(WorkflowNodeConfig):
 
 
 class StatisticsConfig(WorkflowNodeConfig):
+    engine: Literal["remote", "ordinary", "batch_first", "batch_interval"] = "remote"
     # Kept for published workflow/run snapshot compatibility. Statistics inputs
     # are selected from the parser resource at run time and no longer use it.
     parser_node_key: str = ""

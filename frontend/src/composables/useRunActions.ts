@@ -4,6 +4,10 @@ import { api, errorMessage } from '@/api/client'
 import type { RunStep, RunVerdict, RunVerdictWrite } from '@/types/run'
 
 type StepOperation = 'start' | 'complete' | 'confirm' | 'retry'
+export const TERMINAL_STEP_TYPES = [
+  'rem_startup', 'market_startup', 'slnic_start_capture',
+  'slnic_stop_capture', 'slnic_merge_capture', 'parser_parse',
+]
 
 interface RunActionsOptions {
   runId: number
@@ -17,6 +21,7 @@ export function useRunActions(options: RunActionsOptions) {
   const actingStepId = ref<number | null>(null)
   const reanalyzingStatisticsStepId = ref<number | null>(null)
   const regeneratingReports = ref(false)
+  const submittingVerdict = ref(false)
   const verdictDialog = ref(false)
   const verdict = reactive<RunVerdictWrite>({
     final_result: 'passed',
@@ -50,16 +55,8 @@ export function useRunActions(options: RunActionsOptions) {
   async function stepAction(step: RunStep, operation: StepOperation) {
     actingStepId.value = step.id
     try {
-      const terminalNodeTypes = [
-        'rem_startup',
-        'market_startup',
-        'slnic_start_capture',
-        'slnic_stop_capture',
-        'slnic_merge_capture',
-        'parser_parse',
-      ]
       if (
-        terminalNodeTypes.includes(step.node_type)
+        TERMINAL_STEP_TYPES.includes(step.node_type)
         && (operation === 'start' || operation === 'retry')
       ) {
         await runTerminalStep(step, operation)
@@ -100,6 +97,8 @@ export function useRunActions(options: RunActionsOptions) {
   }
 
   async function submitVerdict() {
+    if (submittingVerdict.value) return
+    submittingVerdict.value = true
     try {
       await api.post(`/runs/${runId}/verdict`, verdict)
       ElMessage.success('结论和报告已生成')
@@ -107,6 +106,8 @@ export function useRunActions(options: RunActionsOptions) {
       await reload()
     } catch (error) {
       ElMessage.error(errorMessage(error))
+    } finally {
+      submittingVerdict.value = false
     }
   }
 
@@ -158,6 +159,7 @@ export function useRunActions(options: RunActionsOptions) {
     regeneratingReports,
     stepAction,
     submitVerdict,
+    submittingVerdict,
     verdict,
     verdictDialog,
   }
