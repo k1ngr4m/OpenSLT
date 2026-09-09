@@ -400,42 +400,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/model-providers/personal-llm": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Personal Llm */
-        get: operations["personal_llm_api_v1_model_providers_personal_llm_get"];
-        /** Save Personal Llm */
-        put: operations["save_personal_llm_api_v1_model_providers_personal_llm_put"];
-        post?: never;
-        /** Reset Personal Llm */
-        delete: operations["reset_personal_llm_api_v1_model_providers_personal_llm_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/model-providers/personal-llm/connection-test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Test Personal Llm */
-        post: operations["test_personal_llm_api_v1_model_providers_personal_llm_connection_test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/model-providers/{provider_id}": {
         parameters: {
             query?: never;
@@ -2604,12 +2568,39 @@ export interface components {
              */
             kind: "chat" | "embedding";
         };
+        /** ModelProviderCreate */
+        ModelProviderCreate: {
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url: string;
+            /**
+             * Embedding Dimensions
+             * @default 1024
+             */
+            embedding_dimensions: number;
+            /**
+             * Kind
+             * @default chat
+             * @enum {string}
+             */
+            kind: "chat" | "embedding";
+            /** Name */
+            name: string;
+        };
         /** ModelProviderOut */
         ModelProviderOut: {
             /** Allow Insecure Http */
             allow_insecure_http: boolean;
             /** Base Url */
             base_url: string;
+            /** Embedding Dimensions */
+            embedding_dimensions?: number | null;
             /** Has Api Key */
             has_api_key: boolean;
             /** Id */
@@ -2635,6 +2626,11 @@ export interface components {
             api_key?: string | null;
             /** Base Url */
             base_url: string;
+            /**
+             * Embedding Dimensions
+             * @default 1024
+             */
+            embedding_dimensions: number;
             /** Name */
             name: string;
         };
@@ -3657,6 +3653,11 @@ export interface components {
         };
         /** SmartCaseGenerationCreate */
         SmartCaseGenerationCreate: {
+            /**
+             * Additional Prompt
+             * @default
+             */
+            additional_prompt: string;
             /** Requirement Path */
             requirement_path: string;
         };
@@ -4150,47 +4151,6 @@ export interface components {
             role: "admin" | "tester" | "visitor";
             /** Username */
             username: string;
-        };
-        /** UserLlmConfigOut */
-        UserLlmConfigOut: {
-            /**
-             * Allow Insecure Http
-             * @default false
-             */
-            allow_insecure_http: boolean;
-            /**
-             * Base Url
-             * @default
-             */
-            base_url: string;
-            /** Configured */
-            configured: boolean;
-            /** Default Model */
-            default_model?: string | null;
-            /**
-             * Has Api Key
-             * @default false
-             */
-            has_api_key: boolean;
-            /**
-             * Model Id
-             * @default
-             */
-            model_id: string;
-        };
-        /** UserLlmConfigWrite */
-        UserLlmConfigWrite: {
-            /**
-             * Allow Insecure Http
-             * @default false
-             */
-            allow_insecure_http: boolean;
-            /** Api Key */
-            api_key?: string | null;
-            /** Base Url */
-            base_url: string;
-            /** Model Id */
-            model_id: string;
         };
         /** UserOut */
         UserOut: {
@@ -5076,7 +5036,9 @@ export interface operations {
     };
     providers_api_v1_model_providers_get: {
         parameters: {
-            query?: never;
+            query?: {
+                kind?: "chat" | "embedding";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5092,6 +5054,15 @@ export interface operations {
                     "application/json": components["schemas"]["ModelProviderOut"][];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     create_provider_api_v1_model_providers_post: {
@@ -5103,7 +5074,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ModelProviderWrite"];
+                "application/json": components["schemas"]["ModelProviderCreate"];
             };
         };
         responses: {
@@ -5245,97 +5216,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    personal_llm_api_v1_model_providers_personal_llm_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserLlmConfigOut"];
-                };
-            };
-        };
-    };
-    save_personal_llm_api_v1_model_providers_personal_llm_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserLlmConfigWrite"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UserLlmConfigOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reset_personal_llm_api_v1_model_providers_personal_llm_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    test_personal_llm_api_v1_model_providers_personal_llm_connection_test_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ModelConnectionTestOut"];
                 };
             };
         };

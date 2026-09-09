@@ -80,12 +80,16 @@ class CaseGenerationPrompt(Base):
 
 class ModelProvider(TimestampMixin, Base):
     __tablename__ = "t_model_providers"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_model_provider_user_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(128), unique=True)
+    # NULL denotes the shared Embedding configuration; chat providers always have an owner.
+    user_id: Mapped[typing.Optional[int]] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
     base_url: Mapped[str] = mapped_column(String(1024))
     encrypted_api_key: Mapped[typing.Union[str, None]] = mapped_column(Text)
     allow_insecure_http: Mapped[bool] = mapped_column(Boolean, default=False)
+    embedding_dimensions: Mapped[int] = mapped_column(Integer, default=1024, server_default="1024")
     models: Mapped[typing.List["AiModel"]] = relationship(
         back_populates="provider", cascade="all, delete-orphan"
     )
@@ -115,7 +119,15 @@ class ActiveAiModel(Base):
     )
 
 
+class UserChatModel(Base):
+    __tablename__ = "t_user_chat_models"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), primary_key=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("t_ai_models.id", ondelete="CASCADE"), unique=True)
+
+
 class UserLlmConfig(TimestampMixin, Base):
+    """Legacy configuration retained for migration rollback; no application reads or writes."""
     __tablename__ = "t_user_llm_configs"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), primary_key=True)

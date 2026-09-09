@@ -18,7 +18,7 @@ from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
 from app.core.time import beijing_now
-from app.models import CaseGenerationPrompt, DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User, UserLlmConfig
+from app.models import CaseGenerationPrompt, DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User
 from app.schemas import (
     CaseGenerationPromptWrite,
     KnowledgeSearchOut,
@@ -59,9 +59,9 @@ def _source(db: Session) -> typing.Optional[SvnKnowledgeSource]:
     return db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
 
 
-def _required_model(db: Session, kind: str):
+def _required_model(db: Session, kind: str, user_id: typing.Optional[int] = None):
     try:
-        return require_active_model(db, kind)
+        return require_active_model(db, kind, user_id)
     except ModelProviderError as exc:
         raise HTTPException(
             status_code=409,
@@ -321,9 +321,9 @@ async def search_knowledge(
     if source is None:
         raise HTTPException(status_code=409, detail={"code": "SVN_NOT_CONFIGURED", "message": "请先配置并同步知识源"})
     provider, model = _required_model(db, "embedding")
-    if not published_index_matches(source, provider.base_url, model.model_id):
+    if not published_index_matches(source, provider.base_url, model.model_id, provider.embedding_dimensions):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "当前配置没有匹配的成功索引，请先完成同步"})
-    client = EmbeddingClient(provider.base_url, model.model_id, decrypt_secret(provider.encrypted_api_key))
+    client = EmbeddingClient(provider.base_url, model.model_id, decrypt_secret(provider.encrypted_api_key), expected_dimensions=provider.embedding_dimensions)
     loop = asyncio.get_running_loop()
     try:
         vectors = await loop.run_in_executor(None, client.embed, [payload.query.strip()])
@@ -359,7 +359,7 @@ def requirements(
 ) -> typing.List[typing.Dict[str, typing.Any]]:
     source = _source(db)
     provider, model = _required_model(db, "embedding")
-    if source is None or not published_index_matches(source, provider.base_url, model.model_id):
+    if source is None or not published_index_matches(source, provider.base_url, model.model_id, provider.embedding_dimensions):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
     return list_indexed_requirements(query[:255])
 
@@ -374,11 +374,10 @@ def create_generation(
     source = _source(db)
     embedding_provider, embedding_model = _required_model(db, "embedding")
     if source is None or not published_index_matches(
-        source, embedding_provider.base_url, embedding_model.model_id
+        source, embedding_provider.base_url, embedding_model.model_id, embedding_provider.embedding_dimensions
     ):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
-    personal = db.get(UserLlmConfig, actor.id)
-    chat_provider, chat_model = (personal, personal) if personal else _required_model(db, "chat")
+    chat_provider, chat_model = _required_model(db, "chat", actor.id)
     requirement = next((item for item in list_indexed_requirements() if item["source_path"] == payload.requirement_path), None)
     if requirement is None:
         raise HTTPException(status_code=404, detail={"code": "REQUIREMENT_NOT_FOUND", "message": "需求不在当前知识索引中"})
@@ -388,7 +387,7 @@ def create_generation(
         requirement_no=requirement["requirement_no"],
         requirement_name=requirement["requirement_name"],
         llm_model=chat_model.model_id,
-        ai_model_id=None if personal else chat_model.id,
+        ai_model_id=chat_model.id,
         encrypted_llm_config=encrypt_secret(json.dumps({
             "base_url": chat_provider.base_url,
             "model": chat_model.model_id,
@@ -399,7 +398,7 @@ def create_generation(
     )
     db.add(item)
     db.flush()
-    task = enqueue_task(db, "smart_case_generate", {"generation_id": item.id}, "smart-case:%s:%s" % (item.id, uuid4().hex))
+    task = enqueue_task(db, "smart_case_generate", {"generation_id": item.id, "additional_prompt": payload.additional_prompt.strip()}, "smart-case:%s:%s" % (item.id, uuid4().hex))
     write_audit(db, "smart_cases.generation.create", "smart_case_generation", item.id, actor, request, detail={"task_id": task.id, "requirement_path": item.requirement_path, "revision": item.requirement_revision})
     db.commit()
     db.refresh(item)

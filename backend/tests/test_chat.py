@@ -14,21 +14,26 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.security import hash_password
-from app.models import ActiveAiModel, AiModel, ChatConversation, ChatMessage, ModelProvider, SvnKnowledgeSource, User
+from app.models import ActiveAiModel, AiModel, ChatConversation, ChatMessage, ModelProvider, SvnKnowledgeSource, User, UserChatModel
 from app.services.chat import active_generations, conversation_context, recover_interrupted_chats
 from app.services.llm import LlmClient, LlmError
 
 
-def models():
+def models(username="admin"):
     with SessionLocal() as db:
-        provider = ModelProvider(name="测试模型", base_url="http://model.invalid/v1", allow_insecure_http=True)
-        db.add(provider)
-        db.flush()
+        user = db.scalar(select(User).where(User.username == username))
         for kind in ("chat", "embedding"):
+            if kind == "embedding" and db.get(ActiveAiModel, "embedding"):
+                continue
+            provider = ModelProvider(user_id=user.id if kind == "chat" else None,
+                                     name="测试模型", base_url="http://model.invalid/v1", allow_insecure_http=True)
+            db.add(provider)
+            db.flush()
             model = AiModel(provider_id=provider.id, kind=kind, model_id="test-" + kind)
             db.add(model)
             db.flush()
-            db.add(ActiveAiModel(kind=kind, model_id=model.id))
+            db.add(UserChatModel(user_id=user.id, model_id=model.id) if kind == "chat"
+                   else ActiveAiModel(kind=kind, model_id=model.id))
         db.commit()
 
 
@@ -64,6 +69,7 @@ def test_chat_stream_history_isolation_and_log_privacy(client, admin_headers, mo
 
     monkeypatch.setattr(LlmClient, "stream", stream)
     tester = user_headers(client, "tester")
+    models("tester")
     visitor = user_headers(client, "visitor", "visitor")
     url = conversation(client, tester)
     first = events(client.post(url + "/messages", headers=tester, json={"content": "我的私人问题 password=secret"}))
@@ -110,6 +116,29 @@ def test_not_ready_validation_and_failed_answers_are_not_context(client, admin_h
     with SessionLocal() as db:
         context = conversation_context(db, int(url.rsplit("/", 1)[1]), "第二个问题")
         assert context == [{"role": "user", "content": "第二个问题"}]
+
+
+def test_switching_saved_model_applies_to_next_reply_and_preserves_history(client, admin_headers, monkeypatch):
+    from test_model_providers import _create_provider, _create_model
+
+    models()
+    received = []
+
+    async def stream(self, messages, max_tokens):
+        received.append((self.model, messages))
+        yield "回答"
+
+    monkeypatch.setattr(LlmClient, "stream", stream)
+    url = conversation(client, admin_headers)
+    events(client.post(url + "/messages", headers=admin_headers, json={"content": "第一个问题"}))
+    provider = _create_provider(client, admin_headers)
+    model = _create_model(client, admin_headers, provider["id"], "chat", "second-model")
+    assert client.post(f"/api/v1/model-providers/models/{model['id']}/activate", headers=admin_headers).status_code == 200
+    events(client.post(url + "/messages", headers=admin_headers, json={"content": "继续解释"}))
+    assert [item[0] for item in received] == ["test-chat", "second-model"]
+    assert [item["role"] for item in received[1][1]] == ["system", "user", "assistant", "user"]
+    history = client.get(url + "/messages", headers=admin_headers).json()
+    assert [item["model"] for item in history if item["role"] == "assistant"] == ["test-chat", "second-model"]
 
 
 def test_knowledge_uses_full_versioned_chunks_and_handles_no_evidence(client, admin_headers, monkeypatch, tmp_path):
@@ -176,6 +205,7 @@ def test_cancel_closes_generation_and_releases_capacity(client, admin_headers, m
         assert client.post(url + "/messages", headers=admin_headers, json={"content": "重复"}).status_code == 409
         assert client.delete(url, headers=admin_headers).status_code == 409
         other = user_headers(client, "second")
+        models("second")
         other_url = conversation(client, other)
         monkeypatch.setattr(settings, "chat_max_concurrent", 1)
         assert client.post(other_url + "/messages", headers=other, json={"content": "超额"}).status_code == 429

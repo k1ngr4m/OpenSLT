@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from openpyxl import load_workbook
 from sqlalchemy import select
 
@@ -51,6 +53,8 @@ def _add_model(client, headers, kind, base_url, model_id, api_key=None):
         headers=headers,
         json={
             "name": "%s-provider" % kind,
+            "kind": kind,
+            **({"embedding_dimensions": 2} if kind == "embedding" else {}),
             "base_url": base_url,
             "api_key": api_key,
             "allow_insecure_http": base_url.startswith("http://"),
@@ -199,6 +203,8 @@ def test_connection_test_checks_repository_and_paths_without_listing() -> None:
 
 
 def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_path: Path, monkeypatch) -> None:
+    from app.services.svn_knowledge import published_index_matches
+
     monkeypatch.setattr(settings, "knowledge_root", tmp_path)
     working_copy = tmp_path / "wc"
     (working_copy / ".svn").mkdir(parents=True)
@@ -218,11 +224,12 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
     assert second["revisions"] == {"docs/tests": "42"}
 
     class FakeEmbedding:
+        expected_dimensions = 2
         base_url = "http://embedding.example/v1"
         model = "bge-m3"
 
         def embed(self, texts):
-            return [[1.0, 0.0] for _ in texts]
+            return [[1.0] + [0.0] * (self.expected_dimensions - 1) for _ in texts]
 
     dimensions = _publish_vector_index(first, {}, {"docs/tests": working_copy}, FakeEmbedding())
     results = search_vector_index("first", [1.0, 0.0], 5)
@@ -231,9 +238,20 @@ def test_manifest_is_incremental_excludes_svn_and_keeps_source_revisions(tmp_pat
     assert results[0]["revision"] == "41"
     requirements = list_indexed_requirements("登录")
     assert requirements[0]["requirement_name"] == "登录"
+    source = SvnKnowledgeSource(repository_url="http://svn.example/repo", include_paths=["docs/tests"])
+    embedding = FakeEmbedding()
+    assert published_index_matches(source, embedding.base_url, embedding.model, 2)
+    assert not published_index_matches(source, embedding.base_url, embedding.model, 3)
+    embedding.expected_dimensions = 3
+    assert _publish_vector_index(second, first, {"docs/tests": working_copy}, embedding) == 3
+    assert published_index_matches(source, embedding.base_url, embedding.model, 3)
+    assert search_vector_index("first", [1.0, 0.0, 0.0], 5)[0]["revision"] == "42"
 
 
-def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers, tmp_path: Path, monkeypatch) -> None:
+@pytest.mark.parametrize("additional_prompt", [None, "   ", "  重点覆盖权限校验\n注意 {{references}} 边界值  "])
+def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers, tmp_path: Path, monkeypatch, additional_prompt) -> None:
+    from app.services.durable_tasks import _execute_payload
+
     monkeypatch.setattr(settings, "knowledge_root", tmp_path)
     embedding_model, chat_model = _configure_models(client, admin_headers)
     assert client.put("/api/v1/smart-cases/knowledge-source", headers=admin_headers, json=_payload(include_paths=["docs/测试文档"])).status_code == 200
@@ -244,6 +262,7 @@ def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers,
     manifest, _ = _build_manifest("http://svn.intranet.example/svn/knowledge", {"docs/测试文档": "51"}, {"docs/测试文档": working_copy}, {})
 
     class FakeEmbedding:
+        expected_dimensions = 2
         base_url = "http://embedding.intranet.example/v1"
         model = "bge-m3"
         def embed(self, texts):
@@ -259,15 +278,38 @@ def test_generation_is_queued_from_an_indexed_requirement(client, admin_headers,
         db.close()
     listed = client.get("/api/v1/smart-cases/requirements?query=REQ-1024", headers=admin_headers)
     assert listed.status_code == 200 and listed.json()[0]["requirement_no"] == "REQ-1024"
-    created = client.post("/api/v1/smart-cases/generations", headers=admin_headers, json={"requirement_path": listed.json()[0]["source_path"]})
+    payload = {"requirement_path": listed.json()[0]["source_path"]}
+    if additional_prompt is not None:
+        payload["additional_prompt"] = additional_prompt
+    assert client.post("/api/v1/smart-cases/generations", headers=admin_headers, json={**payload, "additional_prompt": "字" * 4001}).status_code == 422
+    created = client.post("/api/v1/smart-cases/generations", headers=admin_headers, json=payload)
     assert created.status_code == 202 and created.json()["status"] == "queued"
     db = SessionLocal()
     try:
         task = db.scalar(select(DurableTask).where(DurableTask.task_type == "smart_case_generate"))
         generation = db.scalar(select(SmartCaseGeneration))
-        assert task.payload == {"generation_id": generation.id}
+        notes = (additional_prompt or "").strip()
+        assert task.payload == {"generation_id": generation.id, "additional_prompt": notes}
         assert generation.ai_model_id == chat_model["id"]
         assert "用户输入" not in json.dumps(task.payload, ensure_ascii=False)
+        if additional_prompt is None:
+            # Older queued tasks do not contain the optional field.
+            task.payload = {"generation_id": generation.id}
+            db.commit()
+
+        messages = []
+        monkeypatch.setattr(settings, "artifact_root", tmp_path / "artifacts")
+        monkeypatch.setattr("app.services.smart_case_generation.EmbeddingClient.embed", lambda *args: [[1.0, 0.0]])
+        monkeypatch.setattr("app.services.llm.LlmClient.complete", lambda self, value: messages.extend(value) or '{"cases":[{"title":"登录成功","steps":["登录"],"expected_results":["进入首页"]}]}')
+        asyncio.run(_execute_payload(task))
+        prompt = messages[1]["content"]
+        assert "用户输入正确账号密码后进入首页" in prompt
+        if notes:
+            assert prompt.endswith("用户补充提示词（本次生成需注意的事项）：\n" + notes)
+        else:
+            assert "用户补充提示词" not in prompt
+        db.refresh(generation)
+        assert generation.status == "succeeded"
     finally:
         db.close()
 
@@ -526,6 +568,7 @@ def test_cancel_index_keeps_published_snapshot(tmp_path: Path, monkeypatch) -> N
     document = working / 'test.md'
     document.write_text('original')
     class Embedding:
+        expected_dimensions = 2
         base_url = 'https://example.com/v1'
         model = 'test'
         def embed(self, texts):

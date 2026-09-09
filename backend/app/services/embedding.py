@@ -31,12 +31,13 @@ class _RejectRedirects(HTTPRedirectHandler):
 
 
 class EmbeddingClient:
-    def __init__(self, base_url: str, model: str, api_key: typing.Optional[str], timeout_seconds: int = 60) -> None:
+    def __init__(self, base_url: str, model: str, api_key: typing.Optional[str], timeout_seconds: int = 60, *, expected_dimensions: typing.Optional[int] = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.endpoint = self.base_url if self.base_url.endswith("/embeddings") else self.base_url + "/embeddings"
         self.model = model
         self.api_key = api_key
         self.timeout_seconds = timeout_seconds
+        self.expected_dimensions = expected_dimensions
         self.opener = build_opener(_RejectRedirects())
 
     def embed(self, texts: typing.Sequence[str]) -> typing.List[typing.List[float]]:
@@ -84,8 +85,7 @@ class EmbeddingClient:
         except httpx.HTTPError as exc:
             raise EmbeddingError("Embedding 服务不可达或请求超时") from exc
 
-    @staticmethod
-    def _parse_response(raw: bytes, count: int) -> typing.List[typing.List[float]]:
+    def _parse_response(self, raw: bytes, count: int) -> typing.List[typing.List[float]]:
         try:
             payload = json.loads(raw.decode("utf-8"))
             rows = sorted(payload["data"], key=lambda item: int(item["index"]))
@@ -97,6 +97,8 @@ class EmbeddingClient:
         dimensions = len(vectors[0])
         if any(len(vector) != dimensions or any(not math.isfinite(value) for value in vector) for vector in vectors):
             raise EmbeddingError("Embedding 服务返回了非法向量")
+        if self.expected_dimensions is not None and dimensions != self.expected_dimensions:
+            raise EmbeddingError("Embedding 实际返回 %s 维，与配置的 %s 维不一致，请自动检测并保存正确维度后重新同步" % (dimensions, self.expected_dimensions))
         return vectors
 
 

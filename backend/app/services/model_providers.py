@@ -9,7 +9,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import ActiveAiModel, AiModel, ModelProvider
+from app.models import ActiveAiModel, AiModel, ModelProvider, UserChatModel
 
 
 MODEL_KINDS = frozenset({"chat", "embedding"})
@@ -71,18 +71,23 @@ def list_provider_models(
 def active_model(
     db: Session,
     kind: str,
+    user_id: typing.Optional[int] = None,
 ) -> typing.Optional[typing.Tuple[ModelProvider, AiModel]]:
-    row = db.execute(
-        select(ModelProvider, AiModel)
-        .join(AiModel, AiModel.provider_id == ModelProvider.id)
-        .join(ActiveAiModel, ActiveAiModel.model_id == AiModel.id)
-        .where(ActiveAiModel.kind == kind, AiModel.kind == kind)
-    ).first()
+    query = select(ModelProvider, AiModel).join(AiModel, AiModel.provider_id == ModelProvider.id)
+    if kind == "chat":
+        if user_id is None:
+            return None
+        query = query.join(UserChatModel, UserChatModel.model_id == AiModel.id).where(
+            UserChatModel.user_id == user_id, ModelProvider.user_id == user_id, AiModel.kind == "chat")
+    else:
+        query = query.join(ActiveAiModel, ActiveAiModel.model_id == AiModel.id).where(
+            ActiveAiModel.kind == kind, AiModel.kind == kind, ModelProvider.user_id.is_(None))
+    row = db.execute(query).first()
     return (row[0], row[1]) if row else None
 
 
-def require_active_model(db: Session, kind: str) -> typing.Tuple[ModelProvider, AiModel]:
-    result = active_model(db, kind)
+def require_active_model(db: Session, kind: str, user_id: typing.Optional[int] = None) -> typing.Tuple[ModelProvider, AiModel]:
+    result = active_model(db, kind, user_id)
     if result is None:
         label = "对话" if kind == "chat" else "Embedding"
         raise ModelProviderError("尚未配置当前%s模型" % label)

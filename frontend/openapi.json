@@ -2050,6 +2050,61 @@
         "title": "ModelDiscoveryRequest",
         "type": "object"
       },
+      "ModelProviderCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "embedding_dimensions": {
+            "default": 1024,
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Embedding Dimensions",
+            "type": "integer"
+          },
+          "kind": {
+            "default": "chat",
+            "enum": [
+              "chat",
+              "embedding"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "base_url"
+        ],
+        "title": "ModelProviderCreate",
+        "type": "object"
+      },
       "ModelProviderOut": {
         "properties": {
           "allow_insecure_http": {
@@ -2059,6 +2114,17 @@
           "base_url": {
             "title": "Base Url",
             "type": "string"
+          },
+          "embedding_dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Dimensions"
           },
           "has_api_key": {
             "title": "Has Api Key",
@@ -2097,6 +2163,7 @@
         "type": "object"
       },
       "ModelProviderWrite": {
+        "additionalProperties": false,
         "properties": {
           "allow_insecure_http": {
             "default": false,
@@ -2119,6 +2186,13 @@
             "minLength": 1,
             "title": "Base Url",
             "type": "string"
+          },
+          "embedding_dimensions": {
+            "default": 1024,
+            "maximum": 2147483647.0,
+            "minimum": 1.0,
+            "title": "Embedding Dimensions",
+            "type": "integer"
           },
           "name": {
             "maxLength": 128,
@@ -4870,6 +4944,12 @@
       },
       "SmartCaseGenerationCreate": {
         "properties": {
+          "additional_prompt": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Additional Prompt",
+            "type": "string"
+          },
           "requirement_path": {
             "maxLength": 1024,
             "minLength": 1,
@@ -6157,90 +6237,6 @@
           "password"
         ],
         "title": "UserCreate",
-        "type": "object"
-      },
-      "UserLlmConfigOut": {
-        "properties": {
-          "allow_insecure_http": {
-            "default": false,
-            "title": "Allow Insecure Http",
-            "type": "boolean"
-          },
-          "base_url": {
-            "default": "",
-            "title": "Base Url",
-            "type": "string"
-          },
-          "configured": {
-            "title": "Configured",
-            "type": "boolean"
-          },
-          "default_model": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Model"
-          },
-          "has_api_key": {
-            "default": false,
-            "title": "Has Api Key",
-            "type": "boolean"
-          },
-          "model_id": {
-            "default": "",
-            "title": "Model Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "configured"
-        ],
-        "title": "UserLlmConfigOut",
-        "type": "object"
-      },
-      "UserLlmConfigWrite": {
-        "additionalProperties": false,
-        "properties": {
-          "allow_insecure_http": {
-            "default": false,
-            "title": "Allow Insecure Http",
-            "type": "boolean"
-          },
-          "api_key": {
-            "anyOf": [
-              {
-                "maxLength": 4096,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Api Key"
-          },
-          "base_url": {
-            "maxLength": 1024,
-            "minLength": 1,
-            "title": "Base Url",
-            "type": "string"
-          },
-          "model_id": {
-            "maxLength": 160,
-            "minLength": 1,
-            "title": "Model Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "base_url",
-          "model_id"
-        ],
-        "title": "UserLlmConfigWrite",
         "type": "object"
       },
       "UserOut": {
@@ -8241,6 +8237,22 @@
     "/api/v1/model-providers": {
       "get": {
         "operationId": "providers_api_v1_model_providers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "chat",
+              "enum": [
+                "chat",
+                "embedding"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -8255,6 +8267,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -8270,7 +8292,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ModelProviderWrite"
+                "$ref": "#/components/schemas/ModelProviderCreate"
               }
             }
           },
@@ -8481,107 +8503,6 @@
           }
         ],
         "summary": "Test Model"
-      }
-    },
-    "/api/v1/model-providers/personal-llm": {
-      "delete": {
-        "operationId": "reset_personal_llm_api_v1_model_providers_personal_llm_delete",
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Reset Personal Llm"
-      },
-      "get": {
-        "operationId": "personal_llm_api_v1_model_providers_personal_llm_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserLlmConfigOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Personal Llm"
-      },
-      "put": {
-        "operationId": "save_personal_llm_api_v1_model_providers_personal_llm_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UserLlmConfigWrite"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserLlmConfigOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Save Personal Llm"
-      }
-    },
-    "/api/v1/model-providers/personal-llm/connection-test": {
-      "post": {
-        "operationId": "test_personal_llm_api_v1_model_providers_personal_llm_connection_test_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelConnectionTestOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Test Personal Llm"
       }
     },
     "/api/v1/model-providers/{provider_id}": {

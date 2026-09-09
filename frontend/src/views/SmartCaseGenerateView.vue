@@ -7,7 +7,6 @@ import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/time'
 import type { components } from '@/types/api.generated'
-import PersonalLlmDialog from '@/components/PersonalLlmDialog.vue'
 
 interface Requirement { source_path: string; revision: string; requirement_no: string | null; requirement_name: string }
 interface Generation { id: number; requirement_path: string; requirement_revision: string; requirement_no: string | null; requirement_name: string; status: string; llm_model: string; case_count: number; error: string | null; download_ready: boolean; created_at: string }
@@ -16,7 +15,6 @@ const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const generating = ref(false)
-const llmVisible = ref(false)
 const downloading = ref<number | null>(null)
 const previewVisible = ref(false)
 const previewLoading = ref(false)
@@ -27,6 +25,7 @@ const query = ref('')
 const requirements = ref<Requirement[]>([])
 const generations = ref<Generation[]>([])
 const selectedPath = ref('')
+const additionalPrompt = ref('')
 let timer: ReturnType<typeof setInterval> | undefined
 
 const selected = computed(() => requirements.value.find(item => item.source_path === selectedPath.value))
@@ -57,7 +56,11 @@ async function generate() {
   if (!selected.value) return
   generating.value = true
   try {
-    await api.post('/smart-cases/generations', { requirement_path: selected.value.source_path })
+    const payload: components['schemas']['SmartCaseGenerationCreate'] = {
+      requirement_path: selected.value.source_path,
+      additional_prompt: additionalPrompt.value.trim(),
+    }
+    await api.post('/smart-cases/generations', payload)
     ElMessage.success('生成任务已提交，完成后可预览或下载 Excel 草稿')
     await load(false)
   } catch (error) { ElMessage.error(errorMessage(error)) }
@@ -105,7 +108,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
   <div v-loading="loading" class="page smart-generate-page">
     <header class="page-header">
       <div><span class="page-kicker">知识驱动测试设计</span><h1 class="page-title">智能用例</h1><p class="muted">从最近一次 SVN 成功索引中选择需求，生成可追溯的人工执行 Excel 用例草稿</p></div>
-      <div><el-button :icon="Setting" @click="llmVisible = true">我的 LLM</el-button><el-button v-if="auth.isAdmin" :icon="Setting" @click="router.push('/smart-cases/settings')">知识源配置</el-button></div>
+      <div><el-button :icon="Setting" @click="router.push('/models')">模型管理</el-button><el-button v-if="auth.isAdmin" :icon="Setting" @click="router.push('/smart-cases/settings')">知识源配置</el-button></div>
     </header>
 
     <div class="generate-grid">
@@ -126,6 +129,11 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
         <template v-if="selected">
           <dl><div><dt>需求编号</dt><dd>{{ selected.requirement_no || '未从文件名识别' }}</dd></div><div><dt>需求名称</dt><dd>{{ selected.requirement_name }}</dd></div><div><dt>知识版本</dt><dd>r{{ selected.revision }}</dd></div><div><dt>SVN 来源</dt><dd>{{ selected.source_path }}</dd></div></dl>
           <el-alert type="info" :closable="false" show-icon title="系统会检索相关知识作为参考；输出为草稿，执行前必须人工复核。" />
+          <div class="additional-prompt">
+            <label for="additional-prompt">补充提示词（选填）</label>
+            <el-input id="additional-prompt" v-model="additionalPrompt" type="textarea" :rows="4" :maxlength="4000" show-word-limit :disabled="generating" aria-describedby="additional-prompt-help" placeholder="例如：重点覆盖权限校验、异常处理和边界条件；注明需要关注的业务规则。" />
+            <p id="additional-prompt-help" class="muted">填写本次生成需要注意的点或事项，将随需求和参考资料一起发送给 LLM。</p>
+          </div>
           <el-button class="generate-button" type="primary" size="large" :icon="MagicStick" :loading="generating" @click="generate">生成 Excel 用例草稿</el-button>
         </template>
         <el-empty v-else description="请先从左侧选择一个需求" :image-size="72" />
@@ -174,11 +182,11 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       </div>
       <template #footer><el-button @click="previewVisible = false">关闭</el-button><el-button v-if="previewItem" type="primary" :icon="Download" :loading="downloading === previewItem.id" :disabled="!previewItem.download_ready" @click="download(previewItem)">下载 Excel</el-button></template>
     </el-dialog>
-    <PersonalLlmDialog v-if="llmVisible" @close="llmVisible = false" />
   </div>
 </template>
 
 <style scoped>
+.additional-prompt{margin-top:18px}.additional-prompt label{display:block;margin-bottom:8px;font-size:13px}.additional-prompt p{margin:8px 0 0;font-size:12px}
 .generation-actions{display:flex;align-items:center;gap:4px;white-space:nowrap}.generation-actions>span{display:inline-flex}
 .case-preview-body{min-height:180px}.case-preview-table{margin-top:14px}.case-preview-table :deep(.cell){white-space:pre-wrap;overflow-wrap:anywhere}.case-preview-table :deep(td){vertical-align:top}.case-preview-table ul,.case-preview-table ol{margin:0;padding-left:20px}.case-preview-table li+li{margin-top:6px}.case-preview-sources{margin-top:14px;overflow-wrap:anywhere}.case-preview-sources summary{cursor:pointer}
 .smart-generate-page{max-width:1500px}.generate-grid{display:grid;grid-template-columns:minmax(480px,1.25fr) minmax(320px,.75fr);gap:14px}.requirement-card,.action-card,.history-card{padding:20px}.history-card{margin-top:14px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.section-heading h2{margin:3px 0 0;font-size:18px}.requirement-list{display:grid;max-height:440px;margin-top:12px;overflow:auto;border-top:1px solid var(--ui-border)}.requirement-item{display:flex;align-items:flex-start;gap:10px;padding:13px 8px;border-bottom:1px solid var(--ui-border);cursor:pointer}.requirement-item:hover,.requirement-item.selected{background:var(--ui-primary-soft)}.requirement-item input{margin-top:3px;accent-color:var(--ui-primary)}.requirement-item span,.requirement-item strong,.requirement-item small{display:block;min-width:0}.requirement-item strong{font-size:13px}.requirement-item small{margin-top:5px;color:var(--ui-text-secondary);font-size:12px;overflow-wrap:anywhere}.action-card dl{display:grid;margin:0 0 16px}.action-card dl div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px;padding:10px 0;border-bottom:1px solid var(--ui-border)}.action-card dt{color:var(--ui-text-secondary);font-size:12px}.action-card dd{margin:0;overflow-wrap:anywhere;font-size:12px}.generate-button{width:100%;margin-top:18px}@media(max-width:900px){.generate-grid{grid-template-columns:1fr}}@media(max-width:640px){.requirement-card,.action-card,.history-card{padding:15px}.action-card dl div{grid-template-columns:1fr;gap:3px}}

@@ -1,7 +1,10 @@
+import pytest
+
 from app.services.llm import generate_cases, DEFAULT_SYSTEM_PROMPT
 
 
-def test_prompt_configuration_validates_persists_and_renders(client, admin_headers):
+@pytest.mark.parametrize('notes', ['', '   ', '重点覆盖权限校验\n保留 {{requirement_name}} 原文'])
+def test_prompt_configuration_validates_persists_and_renders(client, admin_headers, notes):
     path = '/api/v1/smart-cases/generation-prompt'
     assert client.get(path).status_code == 401
     defaults = client.get(path, headers=admin_headers).json()
@@ -18,6 +21,10 @@ def test_prompt_configuration_validates_persists_and_renders(client, admin_heade
             assert '需求 登录需求' in messages[1]['content']
             assert '来源：req.md（r1）\n正文 {{requirement_name}}' in messages[1]['content']
             assert '输出 {"cases":[]}' in messages[1]['content']
+            if notes.strip():
+                assert messages[1]['content'].endswith('用户补充提示词（本次生成需注意的事项）：\n' + notes)
+            else:
+                assert '用户补充提示词' not in messages[1]['content']
             return '{"cases":[{"title":"登录","steps":["提交"],"expected_results":["成功"]}]}'
-    assert generate_cases(Model(), {'requirement_name': '登录需求'}, [{'source_path': 'req.md', 'revision': '1', 'content': '正文 {{requirement_name}}'}], saved['system_prompt'], saved['user_prompt'])[0]['title'] == '登录'
+    assert generate_cases(Model(), {'requirement_name': '登录需求'}, [{'source_path': 'req.md', 'revision': '1', 'content': '正文 {{requirement_name}}'}], saved['system_prompt'], saved['user_prompt'], additional_prompt=notes)[0]['title'] == '登录'
     assert client.put(path, headers=admin_headers, json={'system_prompt': defaults['default_system_prompt'], 'user_prompt': defaults['default_user_prompt']}).status_code == 200

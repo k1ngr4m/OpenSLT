@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from datetime import datetime
 
 import sqlalchemy as sa
 import pytest
@@ -67,7 +68,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 39
+    assert len(model_table_names) == 40
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -111,7 +112,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0015"
+        ).scalar_one() == "0017"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -290,7 +291,7 @@ def test_model_management_migration_preserves_existing_configuration(tmp_path: P
         )
         connection.commit()
 
-    _alembic(database_path, "upgrade", "head")
+    _alembic(database_path, "upgrade", "0012")
     with sqlite3.connect(database_path) as connection:
         assert connection.execute(
             "SELECT kind, model_id FROM t_ai_models ORDER BY kind"
@@ -333,7 +334,7 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0015"
+        ).scalar_one() == "0017"
     engine.dispose()
 
 
@@ -388,13 +389,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 40
+    assert len(created_tables) == 41
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 39
-    assert sql.count("CHARSET=utf8mb4") == 39
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 39
+    assert sql.count("ENGINE=InnoDB") == 40
+    assert sql.count("CHARSET=utf8mb4") == 40
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 40
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert "model_id VARCHAR(160) NOT NULL" in sql
@@ -426,6 +427,8 @@ def test_expected_migration_revisions_remain() -> None:
         "0012_model_management.py",
         "0013_case_generation_prompts.py",
         "0015_chat.py",
+        "0016_account_models.py",
+        "0017_embedding_dimensions.py",
         "0014_user_llm_configs.py",
     }
 
@@ -436,7 +439,61 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0015 (head)"
+    assert completed.stdout.strip() == "0017 (head)"
+
+
+@pytest.mark.parametrize("admin_personal", [False, True])
+def test_account_models_migrate_credentials_and_preserve_model_ids(tmp_path: Path, admin_personal: bool) -> None:
+    database_path = tmp_path / "account-models.sqlite3"
+    _alembic(database_path, "upgrade", "0015")
+    engine = sa.create_engine(_database_url(database_path))
+    metadata = sa.MetaData()
+    metadata.reflect(engine)
+    timestamp = datetime(2026, 9, 9)
+    with engine.begin() as connection:
+        connection.execute(metadata.tables['t_users'].insert(), [
+            dict(id=i, username='user%s' % i, display_name='', password_hash='hash', role=role,
+                 is_active=True, created_at=timestamp, updated_at=timestamp)
+            for i, role in [(1, 'admin'), (2, 'tester'), (3, 'admin')]
+        ])
+        connection.execute(metadata.tables['t_model_providers'].insert(), dict(
+            id=1, name='共享服务', base_url='https://shared.example/v1', encrypted_api_key='shared-ciphertext',
+            allow_insecure_http=False, created_at=timestamp, updated_at=timestamp))
+        connection.execute(metadata.tables['t_ai_models'].insert(), [dict(
+            id=i, provider_id=1, kind=kind, model_id=kind + '-model', created_at=timestamp, updated_at=timestamp)
+            for i, kind in [(1, 'chat'), (2, 'embedding')]])
+        connection.execute(metadata.tables['t_active_ai_models'].insert(), [dict(kind='chat', model_id=1), dict(kind='embedding', model_id=2)])
+        connection.execute(metadata.tables['t_svn_knowledge_sources'].insert(), dict(
+            repository_url='https://svn.example/repo', repository_urls='["https://svn.example/repo"]',
+            username='', encrypted_password='', embedding_dimensions=768, include_paths='[]',
+            sync_interval_minutes=30, enabled=True, allow_insecure_http=False, sync_status='succeeded',
+            last_revisions='{}', file_count=1, failed_file_count=0, last_changes='{}',
+            created_at=timestamp, updated_at=timestamp))
+        connection.execute(metadata.tables['t_user_llm_configs'].insert(), [dict(
+            user_id=i, base_url='https://personal%s.example/v1' % i, model_id='personal-%s' % i,
+            encrypted_api_key='ciphertext-%s' % i, allow_insecure_http=False, created_at=timestamp, updated_at=timestamp)
+            for i in ([1, 2] if admin_personal else [2])])
+    engine.dispose()
+
+    _alembic(database_path, "upgrade", "head")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute('SELECT kind, model_id FROM t_active_ai_models').fetchall() == [('embedding', 2)]
+        assert connection.execute('SELECT user_id, encrypted_api_key FROM t_model_providers WHERE id=1').fetchone() == (None, 'shared-ciphertext')
+        assert connection.execute('SELECT embedding_dimensions FROM t_model_providers WHERE id=1').fetchone() == (768,)
+        assert connection.execute('SELECT DISTINCT embedding_dimensions FROM t_model_providers WHERE user_id IS NOT NULL').fetchall() == [(1024,)]
+        assert connection.execute('SELECT p.user_id FROM t_ai_models m JOIN t_model_providers p ON p.id=m.provider_id WHERE m.id=1').fetchone() == (1,)
+        selected = connection.execute(
+            'SELECT s.user_id, m.model_id, p.user_id, p.encrypted_api_key FROM t_user_chat_models s '
+            'JOIN t_ai_models m ON m.id=s.model_id JOIN t_model_providers p ON p.id=m.provider_id ORDER BY s.user_id'
+        ).fetchall()
+        assert selected == [(1, 'personal-1' if admin_personal else 'chat-model', 1,
+                              'ciphertext-1' if admin_personal else 'shared-ciphertext'),
+                            (2, 'personal-2', 2, 'ciphertext-2')]
+    _alembic(database_path, "downgrade", "0015")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute('SELECT user_id, encrypted_api_key FROM t_user_llm_configs ORDER BY user_id').fetchall() == [
+            (1, 'ciphertext-1' if admin_personal else 'shared-ciphertext'), (2, 'ciphertext-2')]
+        assert connection.execute('SELECT id FROM t_ai_models WHERE id IN (1,2) ORDER BY id').fetchall() == [(1,), (2,)]
 
 
 def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monkeypatch) -> None:
@@ -453,7 +510,7 @@ def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monk
     )
     command.upgrade(Config(str(REPOSITORY_ROOT / "alembic.ini")), "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0015",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0017",)
 
 
 def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -> None:
@@ -470,7 +527,7 @@ def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -
     _alembic(database_path, "upgrade", "head")
     _alembic(database_path, "upgrade", "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0015",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0017",)
         assert connection.execute("SELECT * FROM t_case_generation_prompts").fetchall() == [
             (1, "saved system", "saved user")
         ]

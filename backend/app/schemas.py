@@ -120,27 +120,16 @@ class SvnConnectionTestOut(BaseModel):
 
 
 class ModelProviderWrite(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     name: str = Field(min_length=1, max_length=128)
     base_url: str = Field(min_length=1, max_length=1024)
     api_key: typing.Union[str, None] = None
     allow_insecure_http: bool = False
+    embedding_dimensions: int = Field(default=1024, ge=1, le=2147483647, strict=True)
 
 
-class UserLlmConfigWrite(BaseModel):
-    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
-    base_url: str = Field(min_length=1, max_length=1024)
-    model_id: str = Field(min_length=1, max_length=160)
-    api_key: typing.Optional[str] = Field(default=None, max_length=4096)
-    allow_insecure_http: bool = False
-
-
-class UserLlmConfigOut(BaseModel):
-    configured: bool
-    base_url: str = ""
-    model_id: str = ""
-    has_api_key: bool = False
-    allow_insecure_http: bool = False
-    default_model: typing.Optional[str] = None
+class ModelProviderCreate(ModelProviderWrite):
+    kind: Literal["chat", "embedding"] = "chat"
 
 
 class AiModelCreate(BaseModel):
@@ -162,6 +151,7 @@ class ModelProviderOut(BaseModel):
     base_url: str
     has_api_key: bool
     allow_insecure_http: bool
+    embedding_dimensions: typing.Optional[int] = None
     models: typing.List[AiModelOut] = Field(default_factory=list)
     updated_at: datetime
 
@@ -232,6 +222,7 @@ class IndexedRequirementOut(BaseModel):
 
 class SmartCaseGenerationCreate(BaseModel):
     requirement_path: str = Field(min_length=1, max_length=1024)
+    additional_prompt: str = Field(default="", max_length=4000)
 
 
 class SmartCaseGenerationOut(BaseModel):

@@ -13,7 +13,7 @@ from app.core.database import SessionLocal
 from app.core.logging import logger, redact
 from app.core.security import decrypt_secret
 from app.core.time import beijing_now
-from app.models import ChatConversation, ChatMessage, SvnKnowledgeSource, UserLlmConfig
+from app.models import ChatConversation, ChatMessage, SvnKnowledgeSource
 from app.schemas import ChatMessageOut, ChatStatusOut
 from app.services.embedding import EmbeddingClient, EmbeddingError
 from app.services.llm import LlmClient, LlmError
@@ -34,31 +34,28 @@ MAX_OUTPUT_CHARS = 12000
 
 
 def chat_status(db: Session, user_id: typing.Optional[int] = None) -> ChatStatusOut:
-    personal = db.get(UserLlmConfig, user_id) if user_id is not None else None
-    chat = active_model(db, "chat")
+    chat = active_model(db, "chat", user_id)
     embedding = active_model(db, "embedding")
     source = db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
-    general_error = None if personal or chat else "请在我的 LLM 配置中设置对话模型，或联系管理员配置系统默认模型"
+    general_error = None if chat else "请在模型管理的对话分类中配置并启用当前账户的模型"
     knowledge_error = general_error
     if not knowledge_error:
         if not embedding:
             knowledge_error = "请联系管理员配置当前 Embedding 模型"
         elif source is None:
             knowledge_error = "请联系管理员配置并同步 SVN 知识源"
-        elif not published_index_matches(source, embedding[0].base_url, embedding[1].model_id):
+        elif not published_index_matches(source, embedding[0].base_url, embedding[1].model_id, embedding[0].embedding_dimensions):
             knowledge_error = "知识索引尚未就绪或已过期，请联系管理员完成同步"
-    return ChatStatusOut(model=personal.model_id if personal else chat[1].model_id if chat else None, general_ready=not general_error,
+    return ChatStatusOut(model=chat[1].model_id if chat else None, general_ready=not general_error,
                          knowledge_ready=not knowledge_error, general_error=general_error,
                          knowledge_error=knowledge_error)
 
 
 def model_client(db: Session, kind: str, user_id: typing.Optional[int] = None):
-    personal = db.get(UserLlmConfig, user_id) if kind == "chat" and user_id is not None else None
-    if personal:
-        return LlmClient(personal.base_url, personal.model_id, decrypt_secret(personal.encrypted_api_key))
-    provider, model = require_active_model(db, kind)
+    provider, model = require_active_model(db, kind, user_id)
     cls = LlmClient if kind == "chat" else EmbeddingClient
-    return cls(provider.base_url, model.model_id, decrypt_secret(provider.encrypted_api_key))
+    options = {} if kind == "chat" else {"expected_dimensions": provider.embedding_dimensions}
+    return cls(provider.base_url, model.model_id, decrypt_secret(provider.encrypted_api_key), **options)
 
 
 def conversation_context(db: Session, conversation_id: int, content: str) -> typing.List[typing.Dict[str, str]]:

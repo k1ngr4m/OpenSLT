@@ -87,7 +87,7 @@ def build_workbook(path: Path, generation: SmartCaseGeneration, cases: typing.Se
         temporary.unlink(missing_ok=True)
 
 
-def execute_smart_case_generation(generation_id: int) -> None:
+def execute_smart_case_generation(generation_id: int, additional_prompt: str = "") -> None:
     db = SessionLocal()
     try:
         generation = db.get(SmartCaseGeneration, generation_id)
@@ -102,7 +102,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
         else:
             chat_model = db.get(AiModel, generation.ai_model_id) if generation.ai_model_id else None
             if chat_model is None or chat_model.kind != "chat":
-                chat_provider, chat_model = require_active_model(db, "chat")
+                chat_provider, chat_model = require_active_model(db, "chat", generation.created_by)
             else:
                 chat_provider = db.get(ModelProvider, chat_model.provider_id)
                 if chat_provider is None:
@@ -110,7 +110,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
             llm = LlmClient(chat_provider.base_url, chat_model.model_id, decrypt_secret(chat_provider.encrypted_api_key))
         if (
             not published_index_matches(
-                source, embedding_provider.base_url, embedding_model.model_id
+                source, embedding_provider.base_url, embedding_model.model_id, embedding_provider.embedding_dimensions
             )
             or dict(generation.index_revisions) != dict(source.last_revisions)
         ):
@@ -126,6 +126,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
             embedding_provider.base_url,
             embedding_model.model_id,
             decrypt_secret(embedding_provider.encrypted_api_key),
+            expected_dimensions=embedding_provider.embedding_dimensions,
         )
         vector = embedding.embed([query])[0]
         hits = search_vector_index(query, vector, 8)
@@ -142,6 +143,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
             llm,
             {"requirement_no": generation.requirement_no or "", "requirement_name": generation.requirement_name, "source_path": generation.requirement_path, "revision": generation.requirement_revision},
             references,
+            additional_prompt=additional_prompt,
             **({"system_prompt": prompt_config.system_prompt, "user_prompt": prompt_config.user_prompt} if prompt_config else {}),
         )
         path = settings.artifact_root / "smart-cases" / ("generation-%s.xlsx" % generation.id)

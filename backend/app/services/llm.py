@@ -181,12 +181,14 @@ DEFAULT_USER_PROMPT = (
 PROMPT_VARIABLES = {"requirement_no", "requirement_name", "source_path", "revision", "references"}
 
 
-def generate_cases(client: LlmClient, requirement: typing.Mapping[str, str], references: typing.Sequence[typing.Mapping[str, str]], system_prompt: str = DEFAULT_SYSTEM_PROMPT, user_prompt: str = DEFAULT_USER_PROMPT) -> typing.List[typing.Dict[str, typing.Any]]:
+def generate_cases(client: LlmClient, requirement: typing.Mapping[str, str], references: typing.Sequence[typing.Mapping[str, str]], system_prompt: str = DEFAULT_SYSTEM_PROMPT, user_prompt: str = DEFAULT_USER_PROMPT, additional_prompt: str = "") -> typing.List[typing.Dict[str, typing.Any]]:
     values = {key: requirement.get(key, "") for key in PROMPT_VARIABLES}
     values["requirement_no"] = requirement.get("requirement_no") or "未识别"
     values["references"] = "\n\n".join("来源：%s（r%s）\n%s" % (item["source_path"], item["revision"], item["content"]) for item in references)
     # Substitute once so braces inside source documents remain literal content.
     prompt = re.sub(r"\{\{(\w+)\}\}", lambda match: values[match.group(1)], user_prompt)
+    if additional_prompt.strip():
+        prompt += "\n\n用户补充提示词（本次生成需注意的事项）：\n" + additional_prompt.strip()
     return parse_cases(client.complete([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},

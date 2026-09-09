@@ -5,14 +5,34 @@ import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 import SmartCaseGenerateView from './SmartCaseGenerateView.vue'
 
-const { get } = vi.hoisted(() => ({ get: vi.fn() }))
-vi.mock('@/api/client', () => ({ api: { get }, errorMessage: () => '预览加载失败' }))
+const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+vi.mock('@/api/client', () => ({ api: { get, post }, errorMessage: () => '预览加载失败' }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAdmin: false }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 
 const source = readFileSync(resolve(process.cwd(), 'src/views/SmartCaseGenerateView.vue'), 'utf8')
 
 describe('SmartCaseGenerateView', () => {
+  it.each(['', '   ', '  重点覆盖权限校验\n注意 {{references}} 边界值  '])('submits optional notes with the selected requirement: %j', async (notes) => {
+    const requirement = { source_path: '需求/登录.md', revision: '51', requirement_no: '1024', requirement_name: '登录' }
+    get.mockImplementation((path: string) => Promise.resolve({ data: path.endsWith('/requirements') ? [requirement] : [] }))
+    post.mockResolvedValue({ data: {} })
+    const wrapper = mount(SmartCaseGenerateView, { global: { plugins: [ElementPlus] } })
+    try {
+      await flushPromises()
+      await wrapper.get('input[type="radio"]').setValue()
+      const input = wrapper.get('textarea#additional-prompt')
+      expect(wrapper.get('label[for="additional-prompt"]').text()).toBe('补充提示词（选填）')
+      expect(input.attributes('maxlength')).toBe('4000')
+      await input.setValue(notes)
+      await wrapper.get('.generate-button').trigger('click')
+      await flushPromises()
+      expect(post).toHaveBeenCalledWith('/smart-cases/generations', { requirement_path: requirement.source_path, additional_prompt: notes.trim() })
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('selects an indexed requirement and generates a downloadable Excel draft', () => {
     expect(source).toContain('/smart-cases/requirements')
     expect(source).toContain('type="radio"')

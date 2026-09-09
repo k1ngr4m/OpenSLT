@@ -403,6 +403,7 @@ def published_index_matches(
     source: SvnKnowledgeSource,
     embedding_base_url: str,
     embedding_model: str,
+    embedding_dimensions: typing.Optional[int] = None,
 ) -> bool:
     path = settings.knowledge_root / "published" / "svn-index.sqlite3"
     manifest = _load_manifest(path)
@@ -412,6 +413,7 @@ def published_index_matches(
         connection = sqlite3.connect(str(path))
         try:
             metadata = dict(connection.execute("SELECT key, value FROM metadata WHERE key IN ('embedding_model', 'embedding_base_url')"))
+            dimensions = connection.execute("SELECT dimensions FROM chunks LIMIT 1").fetchone()
         finally:
             connection.close()
     except sqlite3.Error:
@@ -422,6 +424,7 @@ def published_index_matches(
         and set(manifest.get("revisions", {})) == {item[2] for item in _svn_targets(repository_urls, source.include_paths)}
         and metadata.get("embedding_model") == embedding_model
         and metadata.get("embedding_base_url") == embedding_base_url
+        and (embedding_dimensions is None or dimensions == (embedding_dimensions,))
     )
 
 
@@ -591,11 +594,13 @@ def _publish_vector_index(
             )
             old_model = connection.execute("SELECT value FROM metadata WHERE key = 'embedding_model'").fetchone()
             old_base_url = connection.execute("SELECT value FROM metadata WHERE key = 'embedding_base_url'").fetchone()
+            old_dimensions = connection.execute("SELECT dimensions FROM chunks LIMIT 1").fetchone()
             model_changed = (
                 not old_model
                 or old_model[0] != embedding.model
                 or not old_base_url
                 or old_base_url[0] != embedding.base_url
+                or (embedding.expected_dimensions is not None and old_dimensions != (embedding.expected_dimensions,))
                 or _manifest_repository_urls(previous) != _manifest_repository_urls(manifest)
             )
             previous_files = previous.get("files", {}) if not model_changed else {}
@@ -809,6 +814,7 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None, 
         embedding_base_url = embedding_provider.base_url
         embedding_model = embedding.model_id
         embedding_api_key = decrypt_secret(embedding_provider.encrypted_api_key)
+        embedding_dimensions = embedding_provider.embedding_dimensions
         include_paths = list(source.include_paths)
         source.sync_status = "running"
         source.last_attempt_at = beijing_now()
@@ -843,7 +849,7 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None, 
             manifest,
             previous,
             working_copies,
-            EmbeddingClient(embedding_base_url, embedding_model, embedding_api_key),
+            EmbeddingClient(embedding_base_url, embedding_model, embedding_api_key, expected_dimensions=embedding_dimensions),
             check_cancelled,
         )
     except Exception as exc:

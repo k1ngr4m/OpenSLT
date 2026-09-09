@@ -7,11 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import admin_only, get_current_user
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
-from app.models import ActiveAiModel, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User, UserLlmConfig
+from app.models import ActiveAiModel, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User, UserChatModel
 from app.schemas import (
     AiModelCreate,
     AiModelOut,
@@ -20,13 +20,12 @@ from app.schemas import (
     ModelDiscoveryRequest,
     ModelProviderOut,
     ModelProviderWrite,
-    UserLlmConfigOut,
-    UserLlmConfigWrite,
+    ModelProviderCreate,
 )
 from app.services.audit import write_audit
 from app.services.embedding import test_embedding_connection
 from app.services.llm import test_llm_connection
-from app.services.model_providers import active_model, list_provider_models, normalize_provider_base_url
+from app.services.model_providers import list_provider_models, normalize_provider_base_url
 from app.services.svn_knowledge import active_svn_task
 
 
@@ -38,26 +37,44 @@ def _error(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
 
 
-def _provider(db: Session, provider_id: int) -> ModelProvider:
+def _provider(db: Session, provider_id: int, actor: User) -> ModelProvider:
     provider = db.scalar(
         select(ModelProvider)
         .where(ModelProvider.id == provider_id)
         .options(selectinload(ModelProvider.models))
     )
-    if provider is None:
+    if provider is None or (provider.user_id != actor.id and not (provider.user_id is None and actor.role == "admin")):
         raise _error(404, "MODEL_PROVIDER_NOT_FOUND", "模型提供商不存在")
     return provider
 
 
-def _model(db: Session, model_id: int) -> AiModel:
+def _model(db: Session, model_id: int, actor: User) -> AiModel:
     model = db.get(AiModel, model_id)
     if model is None:
         raise _error(404, "AI_MODEL_NOT_FOUND", "模型不存在")
+    _provider(db, model.provider_id, actor)
     return model
 
 
-def _active_ids(db: Session) -> typing.Set[int]:
-    return set(db.scalars(select(ActiveAiModel.model_id)).all())
+def _active_ids(db: Session, actor: User) -> typing.Set[int]:
+    ids = set(db.scalars(select(UserChatModel.model_id).where(UserChatModel.user_id == actor.id)).all())
+    if actor.role == "admin":
+        ids.update(db.scalars(select(ActiveAiModel.model_id).where(ActiveAiModel.kind == "embedding")).all())
+    return ids
+
+
+def _scope(kind: str, actor: User):
+    if kind == "embedding":
+        if actor.role != "admin":
+            raise _error(403, "FORBIDDEN", "仅系统管理员可配置 Embedding 模型")
+        return ModelProvider.user_id.is_(None)
+    return ModelProvider.user_id == actor.id
+
+
+def _check_kind(provider: ModelProvider, kind: str, actor: User) -> None:
+    _scope(kind, actor)
+    if (kind == "embedding") != (provider.user_id is None):
+        raise _error(422, "MODEL_KIND_MISMATCH", "请在对应分类下添加或获取模型")
 
 
 def _out(provider: ModelProvider, active_ids: typing.Set[int]) -> ModelProviderOut:
@@ -67,6 +84,7 @@ def _out(provider: ModelProvider, active_ids: typing.Set[int]) -> ModelProviderO
         base_url=provider.base_url,
         has_api_key=bool(provider.encrypted_api_key),
         allow_insecure_http=provider.allow_insecure_http,
+        embedding_dimensions=provider.embedding_dimensions if provider.user_id is None else None,
         models=[
             AiModelOut(
                 id=model.id,
@@ -99,90 +117,26 @@ def _mark_index_stale(db: Session) -> None:
         source.sync_status = "stale"
 
 
-def _personal_out(db: Session, actor: User) -> UserLlmConfigOut:
-    config = db.get(UserLlmConfig, actor.id)
-    default = active_model(db, "chat")
-    return UserLlmConfigOut(
-        configured=config is not None,
-        base_url=config.base_url if config else "",
-        model_id=config.model_id if config else "",
-        has_api_key=bool(config and config.encrypted_api_key),
-        allow_insecure_http=config.allow_insecure_http if config else False,
-        default_model=default[1].model_id if default else None,
-    )
-
-
-@router.get("/personal-llm", response_model=UserLlmConfigOut)
-def personal_llm(actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserLlmConfigOut:
-    return _personal_out(db, actor)
-
-
-@router.put("/personal-llm", response_model=UserLlmConfigOut)
-def save_personal_llm(payload: UserLlmConfigWrite, request: Request,
-                      actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserLlmConfigOut:
-    try:
-        base_url = normalize_provider_base_url(payload.base_url, payload.allow_insecure_http)
-    except ValueError as exc:
-        raise _error(422, "INVALID_MODEL_PROVIDER", str(exc)) from exc
-    config = db.get(UserLlmConfig, actor.id)
-    if config is None:
-        config = UserLlmConfig(user_id=actor.id)
-        db.add(config)
-    if payload.api_key:
-        config.encrypted_api_key = encrypt_secret(payload.api_key)
-    elif config.base_url != base_url:
-        config.encrypted_api_key = None
-    config.base_url = base_url
-    config.model_id = payload.model_id
-    config.allow_insecure_http = payload.allow_insecure_http
-    write_audit(db, "personal_llm.save", "user_llm_config", actor.id, actor, request)
-    db.commit()
-    return _personal_out(db, actor)
-
-
-@router.delete("/personal-llm", status_code=204)
-def reset_personal_llm(request: Request, actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
-    config = db.get(UserLlmConfig, actor.id)
-    if config:
-        db.delete(config)
-        write_audit(db, "personal_llm.reset", "user_llm_config", actor.id, actor, request)
-        db.commit()
-    return Response(status_code=204)
-
-
-@router.post("/personal-llm/connection-test", response_model=ModelConnectionTestOut)
-async def test_personal_llm(actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ModelConnectionTestOut:
-    config = db.get(UserLlmConfig, actor.id)
-    if config is None:
-        raise _error(409, "PERSONAL_LLM_NOT_CONFIGURED", "请先保存个人 LLM 配置")
-    try:
-        await asyncio.get_running_loop().run_in_executor(
-            None, test_llm_connection, config.base_url, config.model_id, decrypt_secret(config.encrypted_api_key),
-        )
-    except Exception as exc:
-        raise _error(502, "MODEL_CONNECTION_FAILED", str(redact(str(exc)))) from exc
-    return ModelConnectionTestOut(kind="chat", model_id=config.model_id)
-
-
 @router.get("", response_model=typing.List[ModelProviderOut])
 def providers(
-    _: User = Depends(admin_only),
+    kind: typing.Literal["chat", "embedding"] = "chat",
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> typing.List[ModelProviderOut]:
     items = list(
-        db.scalars(select(ModelProvider).options(selectinload(ModelProvider.models)).order_by(ModelProvider.id)).all()
+        db.scalars(select(ModelProvider).where(_scope(kind, actor)).options(selectinload(ModelProvider.models)).order_by(ModelProvider.id)).all()
     )
-    active_ids = _active_ids(db)
+    active_ids = _active_ids(db, actor)
     return [_out(item, active_ids) for item in items]
 
 
 @router.get("/models", response_model=typing.List[AiModelOut])
 def models_by_kind(
     kind: typing.Literal["chat", "embedding"],
-    _: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> typing.List[AiModelOut]:
-    active_ids = _active_ids(db)
+    active_ids = _active_ids(db, actor)
     return [
         AiModelOut(
             id=model.id,
@@ -192,30 +146,33 @@ def models_by_kind(
             is_active=model.id in active_ids,
         )
         for model in db.scalars(
-            select(AiModel).where(AiModel.kind == kind).order_by(AiModel.provider_id, AiModel.model_id)
+            select(AiModel).join(ModelProvider).where(AiModel.kind == kind, _scope(kind, actor)).order_by(AiModel.provider_id, AiModel.model_id)
         ).all()
     ]
 
 
 @router.post("", response_model=ModelProviderOut, status_code=201)
 def create_provider(
-    payload: ModelProviderWrite,
+    payload: ModelProviderCreate,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ModelProviderOut:
+    scope = _scope(payload.kind, actor)
     name = payload.name.strip()
-    if db.scalar(select(ModelProvider.id).where(ModelProvider.name == name)) is not None:
+    if db.scalar(select(ModelProvider.id).where(scope, ModelProvider.name == name)) is not None:
         raise _error(409, "MODEL_PROVIDER_EXISTS", "模型提供商名称已存在")
     try:
         base_url = normalize_provider_base_url(payload.base_url, payload.allow_insecure_http)
     except ValueError as exc:
         raise _error(422, "INVALID_MODEL_PROVIDER", str(exc)) from exc
     provider = ModelProvider(
+        user_id=actor.id if payload.kind == "chat" else None,
         name=name,
         base_url=base_url,
         encrypted_api_key=encrypt_secret(payload.api_key),
         allow_insecure_http=payload.allow_insecure_http,
+        embedding_dimensions=payload.embedding_dimensions if payload.kind == "embedding" else 1024,
     )
     db.add(provider)
     db.flush()
@@ -230,13 +187,13 @@ def update_provider(
     provider_id: int,
     payload: ModelProviderWrite,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ModelProviderOut:
-    provider = _provider(db, provider_id)
+    provider = _provider(db, provider_id, actor)
     name = payload.name.strip()
     duplicate = db.scalar(
-        select(ModelProvider.id).where(ModelProvider.name == name, ModelProvider.id != provider.id)
+        select(ModelProvider.id).where(ModelProvider.user_id == provider.user_id, ModelProvider.name == name, ModelProvider.id != provider.id)
     )
     if duplicate is not None:
         raise _error(409, "MODEL_PROVIDER_EXISTS", "模型提供商名称已存在")
@@ -244,12 +201,14 @@ def update_provider(
         base_url = normalize_provider_base_url(payload.base_url, payload.allow_insecure_http)
     except ValueError as exc:
         raise _error(422, "INVALID_MODEL_PROVIDER", str(exc)) from exc
-    active_ids = _active_ids(db)
+    active_ids = _active_ids(db, actor)
     active_embedding = any(model.id in active_ids and model.kind == "embedding" for model in provider.models)
+    dimensions = payload.embedding_dimensions if provider.user_id is None and "embedding_dimensions" in payload.model_fields_set else provider.embedding_dimensions
     connection_changed = (
         provider.base_url != base_url
         or provider.allow_insecure_http != payload.allow_insecure_http
         or bool(payload.api_key)
+        or provider.embedding_dimensions != dimensions
     )
     if connection_changed and active_embedding and active_svn_task(db):
         raise _error(409, "SVN_SYNC_RUNNING", "同步任务运行期间不能修改当前 Embedding 提供商")
@@ -262,6 +221,7 @@ def update_provider(
         provider.encrypted_api_key = encrypt_secret(payload.api_key)
     provider.base_url = base_url
     provider.allow_insecure_http = payload.allow_insecure_http
+    provider.embedding_dimensions = dimensions
     if connection_changed and active_embedding:
         _mark_index_stale(db)
     write_audit(db, "model_provider.update", "model_provider", provider.id, actor, request)
@@ -274,12 +234,12 @@ def update_provider(
 def delete_provider(
     provider_id: int,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    provider = _provider(db, provider_id)
+    provider = _provider(db, provider_id, actor)
     model_ids = [model.id for model in provider.models]
-    if _active_ids(db).intersection(model_ids):
+    if _active_ids(db, actor).intersection(model_ids):
         raise _error(409, "ACTIVE_MODEL_IN_USE", "提供商包含当前模型，请先切换当前模型")
     if _has_running_generation(db, model_ids):
         raise _error(409, "GENERATION_RUNNING", "提供商仍被运行中的用例生成任务使用")
@@ -292,11 +252,12 @@ def delete_provider(
 @router.post("/{provider_id}/models/discover", response_model=ModelDiscoveryOut)
 async def discover_models(
     provider_id: int,
-    _: ModelDiscoveryRequest,
-    __: User = Depends(admin_only),
+    payload: ModelDiscoveryRequest,
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ModelDiscoveryOut:
-    provider = _provider(db, provider_id)
+    provider = _provider(db, provider_id, actor)
+    _check_kind(provider, payload.kind, actor)
     loop = asyncio.get_running_loop()
     try:
         model_ids = await loop.run_in_executor(
@@ -315,10 +276,11 @@ def create_model(
     provider_id: int,
     payload: AiModelCreate,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiModelOut:
-    provider = _provider(db, provider_id)
+    provider = _provider(db, provider_id, actor)
+    _check_kind(provider, payload.kind, actor)
     model_name = payload.model_id.strip()
     if not model_name:
         raise _error(422, "INVALID_MODEL", "模型 ID 不能为空")
@@ -344,16 +306,16 @@ def create_model(
 def activate_model(
     model_id: int,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> AiModelOut:
-    model = _model(db, model_id)
-    selection = db.get(ActiveAiModel, model.kind)
+    model = _model(db, model_id, actor)
+    selection = db.get(UserChatModel, actor.id) if model.kind == "chat" else db.get(ActiveAiModel, model.kind)
     changed = selection is None or selection.model_id != model.id
     if changed and model.kind == "embedding" and active_svn_task(db):
         raise _error(409, "SVN_SYNC_RUNNING", "同步任务运行期间不能切换当前 Embedding 模型")
     if selection is None:
-        db.add(ActiveAiModel(kind=model.kind, model_id=model.id))
+        db.add(UserChatModel(user_id=actor.id, model_id=model.id) if model.kind == "chat" else ActiveAiModel(kind=model.kind, model_id=model.id))
     else:
         selection.model_id = model.id
     if changed and model.kind == "embedding":
@@ -373,10 +335,10 @@ def activate_model(
 async def test_model(
     model_id: int,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ModelConnectionTestOut:
-    model = _model(db, model_id)
+    model = _model(db, model_id, actor)
     provider = db.get(ModelProvider, model.provider_id)
     api_key = decrypt_secret(provider.encrypted_api_key) if provider else None
     loop = asyncio.get_running_loop()
@@ -407,11 +369,11 @@ async def test_model(
 def delete_model(
     model_id: int,
     request: Request,
-    actor: User = Depends(admin_only),
+    actor: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    model = _model(db, model_id)
-    if db.scalar(select(ActiveAiModel.kind).where(ActiveAiModel.model_id == model.id)) is not None:
+    model = _model(db, model_id, actor)
+    if model.id in _active_ids(db, actor):
         raise _error(409, "ACTIVE_MODEL_IN_USE", "当前模型不能删除，请先切换")
     if _has_running_generation(db, [model.id]):
         raise _error(409, "GENERATION_RUNNING", "模型仍被运行中的用例生成任务使用")

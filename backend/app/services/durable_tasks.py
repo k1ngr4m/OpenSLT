@@ -199,7 +199,7 @@ async def _execute_payload(task: DurableTask) -> None:
         from app.services.smart_case_generation import execute_smart_case_generation
 
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, execute_smart_case_generation, int(task.payload["generation_id"]))
+        await loop.run_in_executor(None, execute_smart_case_generation, int(task.payload["generation_id"]), task.payload.get("additional_prompt", ""))
     elif task.task_type == "svn_sync":
         from app.services.svn_knowledge import execute_svn_sync
 
