@@ -71,6 +71,9 @@ async function mountLayout(path: string, role: User['role']) {
         ElTooltip: ElTooltipStub,
         ElButton: ElButtonStub,
         ElIcon: ElIconStub,
+        ElDropdown: { template: '<div><slot /><slot name="dropdown" /></div>' },
+        ElDropdownMenu: { template: '<ul><slot /></ul>' },
+        ElDropdownItem: { template: '<li><slot /></li>' },
         VersionHistory: true,
       },
     },
@@ -100,6 +103,13 @@ describe('ShellLayout navigation', () => {
     expect(wrapper.get('.management-center').classes()).not.toContain('is-active')
     expect(wrapper.find('.beijing-time').exists()).toBe(false)
     expect(wrapper.get('.topbar-end').element.lastElementChild?.tagName).toBe('VERSION-HISTORY-STUB')
+    const account = wrapper.get('.topbar-end .account-menu')
+    expect(account.get('.account-name').text()).toBe('admin')
+    expect(account.find('.account-avatar').exists()).toBe(true)
+    expect(account.element.previousElementSibling?.querySelector('.management-center')).not.toBeNull()
+    expect(account.element.nextElementSibling?.tagName).toBe('VERSION-HISTORY-STUB')
+    expect(account.text()).toContain('退出登录')
+    expect(wrapper.find('.sidebar .account-copy').exists()).toBe(false)
     wrapper.unmount()
   })
 

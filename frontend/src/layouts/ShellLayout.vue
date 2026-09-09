@@ -25,6 +25,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const llmVisible = ref(false)
+const accountName = computed(() => auth.user?.display_name || auth.user?.username || '')
 const isCompact = ref(false)
 const isMobile = ref(false)
 const mobileNavOpen = ref(false)
@@ -168,17 +169,6 @@ onBeforeUnmount(() => {
         </el-menu>
       </nav>
 
-      <div class="sidebar-foot">
-        <div v-show="!collapsed || isMobile" class="account-copy">
-          <strong>{{ auth.user?.display_name || auth.user?.username }}</strong>
-          <small>{{ roleText[auth.user?.role || ''] || auth.user?.role }}</small>
-        </div>
-        <el-tooltip content="退出登录" placement="top">
-          <el-button text circle aria-label="退出登录" @click="logout">
-            <el-icon><SwitchButton /></el-icon>
-          </el-button>
-        </el-tooltip>
-      </div>
     </aside>
 
     <button
@@ -226,6 +216,13 @@ onBeforeUnmount(() => {
               <el-icon><Setting /></el-icon>
             </el-button>
           </el-tooltip>
+          <el-dropdown class="account-menu" trigger="click" @command="logout">
+            <button type="button" class="account-trigger" :aria-label="`用户菜单：${accountName}`" :title="`${accountName} · ${roleText[auth.user?.role || ''] || auth.user?.role || ''}`">
+              <span class="account-avatar" aria-hidden="true"><el-icon><User /></el-icon></span>
+              <span class="account-name">{{ accountName }}</span>
+            </button>
+            <template #dropdown><el-dropdown-menu><el-dropdown-item command="logout" :icon="SwitchButton">退出登录</el-dropdown-item></el-dropdown-menu></template>
+          </el-dropdown>
           <VersionHistory />
         </div>
       </header>
@@ -244,10 +241,10 @@ onBeforeUnmount(() => {
 .brand{display:flex;flex:0 0 64px;align-items:center;gap:11px;padding:0 16px;border-bottom:1px solid var(--ui-border)}
 .brand-mark{display:grid;flex:0 0 34px;width:34px;height:34px;place-items:center;overflow:hidden;border:1px solid rgba(153,236,220,.24);border-radius:8px;background:var(--ui-surface);box-shadow:inset 0 1px 0 rgba(255,255,255,.2)}
 .brand-mark img{display:block;width:100%;height:100%;object-fit:cover}
-.brand-copy,.account-copy{min-width:0}
-.brand-copy strong,.brand-copy small,.account-copy strong,.account-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand-copy{min-width:0}
+.brand-copy strong,.brand-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brand-copy strong{color:var(--ui-text-primary);font-size:15px;font-weight:650;letter-spacing:-.02em}
-.brand-copy small,.account-copy small{margin-top:2px;color:var(--ui-text-secondary);font-size:12px}
+.brand-copy small{margin-top:2px;color:var(--ui-text-secondary);font-size:12px}
 .sidebar-nav{min-height:0;flex:1;overflow:auto}
 .nav{padding:10px 8px 18px;border:0;background:transparent;--el-menu-bg-color:transparent;--el-menu-text-color:var(--ui-text-secondary);--el-menu-hover-bg-color:var(--ui-sidebar-hover);--el-menu-active-color:var(--ui-primary)}
 .nav-label{padding:13px 10px 6px;color:var(--ui-text-secondary);font-size:12px;font-weight:600;letter-spacing:.12em}
@@ -257,10 +254,10 @@ onBeforeUnmount(() => {
 .nav :deep(.el-menu-item.is-active::before){opacity:1;transform:scaleY(1)}
 .nav :deep(.el-icon){font-size:17px}
 .sidebar.is-collapsed .nav{padding-inline:5px}
-.sidebar-foot{display:flex;min-height:66px;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-top:1px solid var(--ui-border)}
-.account-copy strong{color:var(--ui-text-primary);font-size:12px;font-weight:600}
-.sidebar-foot :deep(.el-button){flex:0 0 auto;color:var(--ui-text-secondary)}
-.sidebar-foot :deep(.el-button:hover){color:var(--ui-primary);background:rgba(255,255,255,.08)}
+.account-trigger{display:flex;align-items:center;gap:8px;padding:2px 0;border:0;background:transparent;color:var(--ui-text-primary);font:inherit;cursor:pointer}
+.account-trigger:focus-visible{outline:2px solid var(--ui-primary);outline-offset:4px;border-radius:4px}
+.account-avatar{display:grid;flex:0 0 28px;width:28px;height:28px;place-items:center;border-radius:50%;background:var(--ui-primary-soft);color:var(--ui-primary);font-size:17px}
+.account-name{max-width:128px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600}
 .workspace{display:flex;min-width:0;flex:1;flex-direction:column}
 .topbar{position:sticky;z-index:20;top:0;display:grid;grid-template-columns:minmax(40px,1fr) auto minmax(40px,1fr);flex:0 0 52px;align-items:center;gap:16px;height:52px;padding:0 24px;border-bottom:1px solid var(--ui-border);background:var(--ui-surface);}
 .topbar-start{display:flex;align-items:center;justify-self:start}
@@ -283,5 +280,6 @@ onBeforeUnmount(() => {
 .main{min-width:0;flex:1;outline:none}
 .nav-scrim{position:fixed;z-index:25;inset:0;border:0;background:rgba(5,25,29,.5)}
 @media(max-width:1199px){.topbar{padding-inline:16px}}
+@media(max-width:767px){.topbar{grid-template-columns:auto minmax(0,1fr) auto}.account-trigger{gap:5px}.account-name{max-width:56px}}
 @media(max-width:767px){.sidebar{position:fixed;z-index:30;left:0;transform:translateX(-100%);box-shadow:var(--ui-shadow)}.sidebar.is-mobile-open{transform:translateX(0)}.topbar{gap:6px;padding-inline:8px}.section-nav{gap:2px}.section-nav-item{min-width:38px;padding-inline:9px}.section-nav-item::after{right:8px;left:8px}.section-nav-label{display:none}.topbar-end{gap:6px}}
 </style>
