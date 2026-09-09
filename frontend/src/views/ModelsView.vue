@@ -234,7 +234,7 @@ watch(kind, () => {
         <div class="list-heading"><strong>{{ kind === 'chat' ? '对话模型提供商' : 'Embedding 提供商' }}</strong><el-button text type="primary" :icon="Plus" :disabled="saving || testingId !== null" @click="editProvider(null)">新增</el-button></div>
         <button v-for="provider in providers" :key="provider.id" type="button" class="provider-item" :disabled="saving || testingId !== null" :class="{ active: provider.id === selectedId }" @click="editProvider(provider)">
           <span><strong>{{ provider.name }}</strong><small>{{ provider.base_url }}</small></span>
-          <el-tag size="small" effect="plain">{{ provider.models.filter(item => item.kind === kind).length }}</el-tag>
+          <el-tag class="provider-count" size="small" effect="plain" title="已配置模型数量">{{ provider.models.filter(item => item.kind === kind).length }}</el-tag>
         </button>
         <el-empty v-if="!providers.length" description="暂无提供商" :image-size="58" />
       </aside>
@@ -287,6 +287,23 @@ watch(kind, () => {
 </template>
 
 <style scoped>
+.provider-item .provider-count {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ui-primary-soft);
+  color: var(--ui-primary);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.provider-item.active .provider-count { background: var(--ui-primary); color: #fff; }
 .discovery-search { margin-bottom: 12px; }
 .embedding-dimensions { width: 100%; }
 .dimension-controls { display: flex; flex-wrap: wrap; gap: 10px; }
