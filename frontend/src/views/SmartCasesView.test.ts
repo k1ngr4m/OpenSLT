@@ -6,7 +6,7 @@ const source = readFileSync(resolve(process.cwd(), 'src/views/SmartCasesView.vue
 
 describe('SmartCasesView SVN knowledge source', () => {
   it('keeps credentials write-only and exposes the required safety controls', () => {
-    expect(source).toContain('留空表示不修改')
+    expect(source).toContain("source?.has_password ? '********'")
     expect(source).toContain('HTTP 明文传输风险')
     expect(source).toContain('允许索引的相对路径')
     expect(source).toContain('添加仓库 URL')

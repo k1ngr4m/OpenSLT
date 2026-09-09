@@ -155,6 +155,37 @@ async function cancelSync() {
   finally { cancelling.value = false }
 }
 
+const promptVisible = ref(false)
+const promptLoading = ref(false)
+const promptSaving = ref(false)
+const promptReady = ref(false)
+const promptForm = reactive({ system_prompt: '', user_prompt: '' })
+const promptDefaults = reactive({ system_prompt: '', user_prompt: '' })
+const promptVariables = ['requirement_no', 'requirement_name', 'source_path', 'revision', 'references']
+
+async function openPrompt() {
+  promptVisible.value = true
+  promptReady.value = false
+  promptLoading.value = true
+  try {
+    const { data } = await api.get('/smart-cases/generation-prompt')
+    Object.assign(promptForm, { system_prompt: data.system_prompt, user_prompt: data.user_prompt })
+    Object.assign(promptDefaults, { system_prompt: data.default_system_prompt, user_prompt: data.default_user_prompt })
+    promptReady.value = true
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+  finally { promptLoading.value = false }
+}
+
+async function savePrompt() {
+  promptSaving.value = true
+  try {
+    await api.put('/smart-cases/generation-prompt', promptForm)
+    ElMessage.success('用例生成提示词已保存')
+    promptVisible.value = false
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+  finally { promptSaving.value = false }
+}
+
 async function searchKnowledge() {
   if (!searchQuery.value.trim()) return
   searching.value = true
@@ -176,6 +207,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     <header class="page-header">
       <div><span class="page-kicker">管理员配置</span><h1 class="page-title">知识源管理</h1><p class="muted">配置 SVN 知识源、同步范围与索引状态</p></div>
       <div v-if="auth.isAdmin" class="sync-actions">
+      <el-button @click="openPrompt">用例提示词</el-button>
       <el-button v-if="isBusy" :loading="cancelling || status?.status === 'cancelling'" @click="cancelSync">{{ status?.status === 'cancelling' ? '正在取消' : '取消同步' }}</el-button>
       <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!source?.configured || isBusy || !status?.client_ready" @click="syncNow">立即同步</el-button>
       </div>
@@ -235,6 +267,13 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <div v-if="searchResults.length" class="search-results" aria-live="polite"><article v-for="item in searchResults" :key="`${item.source_path}:${item.snippet}`"><div><code>{{ item.source_path }}</code><el-tag size="small" effect="plain">r{{ item.revision }}</el-tag><span>{{ item.score.toFixed(3) }}</span></div><p>{{ item.snippet }}</p></article></div>
       <el-empty v-else description="同步成功后，可用真实查询验证 embedding 与关键词混合检索结果" :image-size="72" />
     </section>
+    <el-dialog v-model="promptVisible" title="用例生成提示词" width="min(860px, 94vw)" :close-on-click-modal="false">
+      <el-form v-loading="promptLoading" label-position="left" label-width="var(--ui-field-label-width)" :disabled="!promptReady || promptSaving" @submit.prevent="savePrompt">
+        <el-form-item label="System 提示词" required><el-input v-model="promptForm.system_prompt" type="textarea" :rows="4" :maxlength="20000" /></el-form-item>
+        <el-form-item label="User 提示词" required><el-input v-model="promptForm.user_prompt" type="textarea" :rows="12" :maxlength="30000" /><p class="field-help">支持变量：<code v-for="variable in promptVariables" :key="variable" v-text="'{{' + variable + '}} '" />。references 为必填变量，用于插入需求正文与检索资料。请保留默认提示词中的 JSON 输出结构。</p></el-form-item>
+      </el-form>
+      <template #footer><el-button :disabled="!promptReady || promptSaving" @click="Object.assign(promptForm, promptDefaults)">恢复默认</el-button><el-button :disabled="promptSaving" @click="promptVisible = false">取消</el-button><el-button type="primary" :disabled="!promptReady" :loading="promptSaving" @click="savePrompt">保存提示词</el-button></template>
+    </el-dialog>
   </div>
 </template>
 

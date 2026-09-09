@@ -1239,3 +1239,8 @@ class AuditOut(ORMModel):
     trace_id: str
     detail: typing.Dict[str, Any]
     created_at: datetime
+
+
+class CaseGenerationPromptWrite(BaseModel):
+    system_prompt: str = Field(min_length=1, max_length=20000)
+    user_prompt: str = Field(min_length=1, max_length=30000)

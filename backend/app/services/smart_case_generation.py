@@ -16,7 +16,7 @@ from app.core.database import SessionLocal
 from app.core.logging import redact
 from app.core.security import decrypt_secret
 from app.core.time import beijing_now
-from app.models import AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource
+from app.models import CaseGenerationPrompt, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource
 from app.services.embedding import EmbeddingClient
 from app.services.llm import LlmClient, generate_cases
 from app.services.model_providers import require_active_model
@@ -132,6 +132,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
             seen.add(hit["source_path"])
             references.append({"source_path": hit["source_path"], "revision": hit["revision"], "content": hit["snippet"][:1500]})
         generation.referenced_sources = [{"source_path": item["source_path"], "revision": item["revision"]} for item in references]
+        prompt_config = db.get(CaseGenerationPrompt, 1)
         cases = generate_cases(
             LlmClient(
                 chat_provider.base_url,
@@ -140,6 +141,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
             ),
             {"requirement_no": generation.requirement_no or "", "requirement_name": generation.requirement_name, "source_path": generation.requirement_path, "revision": generation.requirement_revision},
             references,
+            **({"system_prompt": prompt_config.system_prompt, "user_prompt": prompt_config.user_prompt} if prompt_config else {}),
         )
         path = settings.artifact_root / "smart-cases" / ("generation-%s.xlsx" % generation.id)
         build_workbook(path, generation, cases)

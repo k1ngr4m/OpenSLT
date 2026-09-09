@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import typing
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
@@ -100,15 +101,23 @@ def parse_cases(raw: str) -> typing.List[typing.Dict[str, typing.Any]]:
     return result
 
 
-def generate_cases(client: LlmClient, requirement: typing.Mapping[str, str], references: typing.Sequence[typing.Mapping[str, str]]) -> typing.List[typing.Dict[str, typing.Any]]:
-    context = "\n\n".join("来源：%s（r%s）\n%s" % (item["source_path"], item["revision"], item["content"]) for item in references)
-    prompt = (
-        "需求编号：%s\n需求名称：%s\n需求来源：%s（r%s）\n\n参考资料：\n%s\n\n"
-        "请生成可由人工执行的系统测试用例草稿。只返回 JSON：{\"cases\":[{\"title\":\"\",\"preconditions\":[],\"steps\":[],\"expected_results\":[],\"case_type\":\"功能\",\"priority\":\"中\"}]}。"
-        "步骤与预期结果必须一一对应，覆盖正常、异常和边界场景，不要虚构资料中不存在的具体值。"
-    ) % (requirement.get("requirement_no") or "未识别", requirement["requirement_name"], requirement["source_path"], requirement["revision"], context)
+DEFAULT_SYSTEM_PROMPT = "你是资深系统测试工程师，输出严格 JSON，不输出 Markdown。"
+DEFAULT_USER_PROMPT = (
+    "需求编号：{{requirement_no}}\n需求名称：{{requirement_name}}\n需求来源：{{source_path}}（r{{revision}}）\n\n参考资料：\n{{references}}\n\n"
+    '请生成可由人工执行的系统测试用例草稿。只返回 JSON：{"cases":[{"title":"","preconditions":[],"steps":[],"expected_results":[],"case_type":"功能","priority":"中"}]}。'
+    "步骤与预期结果必须一一对应，覆盖正常、异常和边界场景，不要虚构资料中不存在的具体值。"
+)
+PROMPT_VARIABLES = {"requirement_no", "requirement_name", "source_path", "revision", "references"}
+
+
+def generate_cases(client: LlmClient, requirement: typing.Mapping[str, str], references: typing.Sequence[typing.Mapping[str, str]], system_prompt: str = DEFAULT_SYSTEM_PROMPT, user_prompt: str = DEFAULT_USER_PROMPT) -> typing.List[typing.Dict[str, typing.Any]]:
+    values = {key: requirement.get(key, "") for key in PROMPT_VARIABLES}
+    values["requirement_no"] = requirement.get("requirement_no") or "未识别"
+    values["references"] = "\n\n".join("来源：%s（r%s）\n%s" % (item["source_path"], item["revision"], item["content"]) for item in references)
+    # Substitute once so braces inside source documents remain literal content.
+    prompt = re.sub(r"\{\{(\w+)\}\}", lambda match: values[match.group(1)], user_prompt)
     return parse_cases(client.complete([
-        {"role": "system", "content": "你是资深系统测试工程师，输出严格 JSON，不输出 Markdown。"},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]))
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 import typing
 from pathlib import Path
 from uuid import uuid4
@@ -16,8 +17,9 @@ from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
 from app.core.time import beijing_now
-from app.models import DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User
+from app.models import CaseGenerationPrompt, DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User
 from app.schemas import (
+    CaseGenerationPromptWrite,
     KnowledgeSearchOut,
     KnowledgeSearchRequest,
     IndexedRequirementOut,
@@ -198,6 +200,37 @@ async def connection_test(
     write_audit(db, "smart_cases.svn_connection.test", "svn_knowledge_source", source.id if source else None, actor, request, detail={"repository_urls": repository_urls, "include_paths": include_paths})
     db.commit()
     return result
+
+
+@router.get("/generation-prompt")
+def get_generation_prompt(_: User = Depends(admin_only), db: Session = Depends(get_db)) -> dict:
+    from app.services.llm import DEFAULT_SYSTEM_PROMPT, DEFAULT_USER_PROMPT
+
+    saved = db.get(CaseGenerationPrompt, 1)
+    return {
+        "system_prompt": saved.system_prompt if saved else DEFAULT_SYSTEM_PROMPT,
+        "user_prompt": saved.user_prompt if saved else DEFAULT_USER_PROMPT,
+        "default_system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "default_user_prompt": DEFAULT_USER_PROMPT,
+    }
+
+
+@router.put("/generation-prompt")
+def save_generation_prompt(payload: CaseGenerationPromptWrite, request: Request, actor: User = Depends(admin_only), db: Session = Depends(get_db)) -> dict:
+    from app.services.llm import PROMPT_VARIABLES
+
+    variables = set(re.findall(r"\{\{(.*?)\}\}", payload.user_prompt, flags=re.S))
+    if not payload.system_prompt.strip() or not payload.user_prompt.strip() or variables - PROMPT_VARIABLES or "references" not in variables:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_GENERATION_PROMPT", "message": "提示词不能为空，User 提示词须包含 {{references}}，且只能使用支持的变量"})
+    saved = db.get(CaseGenerationPrompt, 1)
+    if saved is None:
+        saved = CaseGenerationPrompt(id=1)
+        db.add(saved)
+    saved.system_prompt = payload.system_prompt
+    saved.user_prompt = payload.user_prompt
+    write_audit(db, "smart_cases.generation_prompt.update", "case_generation_prompt", 1, actor, request)
+    db.commit()
+    return {"system_prompt": saved.system_prompt, "user_prompt": saved.user_prompt}
 
 
 @router.post("/knowledge-source/sync", response_model=SvnSyncTaskOut, status_code=202)

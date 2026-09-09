@@ -66,6 +66,7 @@ async function mountResources(role: User['role']) {
       directives: { loading: () => {} },
       stubs: {
         ElButton: ElButtonStub,
+        ElTooltip: { template: '<span><slot /></span>' },
         ElTable: ElTableStub,
         ElTableColumn: ElTableColumnStub,
         ElAlert: true,
@@ -109,7 +110,7 @@ describe('ResourcesView resource copy', () => {
       expect(buttonLabels).not.toContain('编辑')
       expect(buttonLabels).not.toContain('删除')
     }
-    const copyButton = wrapper.findAll('button').find(button => button.text() === '复制')
+    const copyButton = wrapper.findAll('button').find(button => button.attributes('aria-label') === '复制')
     expect(copyButton).toBeDefined()
     await copyButton!.trigger('click')
     await flushPromises()
@@ -125,7 +126,7 @@ describe('ResourcesView resource copy', () => {
     const wrapper = await mountResources('visitor')
     await flushPromises()
 
-    const copyButton = wrapper.findAll('button').find(button => button.text() === '复制')
+    const copyButton = wrapper.findAll('button').find(button => button.attributes('aria-label') === '复制')
     await copyButton!.trigger('click')
     await flushPromises()
 

@@ -70,6 +70,14 @@ class SvnKnowledgeSource(TimestampMixin, Base):
     last_error: Mapped[typing.Union[str, None]] = mapped_column(Text)
 
 
+class CaseGenerationPrompt(Base):
+    __tablename__ = "t_case_generation_prompts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    system_prompt: Mapped[str] = mapped_column(Text)
+    user_prompt: Mapped[str] = mapped_column(Text)
+
+
 class ModelProvider(TimestampMixin, Base):
     __tablename__ = "t_model_providers"
 
