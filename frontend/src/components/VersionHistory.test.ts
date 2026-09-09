@@ -26,7 +26,7 @@ describe('VersionHistory', () => {
       },
     })
 
-    expect(wrapper.get('.version-trigger').text()).toBe('v0.2.2')
+    expect(wrapper.get('.version-trigger').text()).toBe('v0.2.3')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 
     await wrapper.get('.version-trigger').trigger('click')
@@ -36,19 +36,23 @@ describe('VersionHistory', () => {
     expect(dialog.text()).toContain('版本更新说明')
     expect(dialog.attributes('data-width')).toBe('640px')
     expect(dialog.text()).toContain('当前版本')
-    expect(dialog.text()).toContain('2026-08-06')
+    expect(dialog.text()).toContain('2026-09-09')
+    expect(dialog.text().indexOf('v0.2.3')).toBeLessThan(dialog.text().indexOf('v0.2.2'))
     expect(dialog.text().indexOf('v0.2.2')).toBeLessThan(dialog.text().indexOf('v0.2.1'))
     expect(dialog.text().indexOf('v0.2.1')).toBeLessThan(dialog.text().indexOf('v0.2.0'))
 
     const releaseEntries = dialog.findAll('.release-entry')
-    expect(releaseEntries).toHaveLength(4)
+    expect(releaseEntries).toHaveLength(5)
     expect(releaseEntries[0].attributes('open')).toBe('')
     expect(releaseEntries[1].attributes('open')).toBeUndefined()
     expect(releaseEntries[2].attributes('open')).toBeUndefined()
     expect(releaseEntries[3].attributes('open')).toBeUndefined()
 
-    const currentReleaseChanges = releaseEntries[0].findAll('li')
-    expect(currentReleaseChanges.map(change => change.get('.change-type').text())).toEqual([
+    expect(releaseEntries[4].attributes('open')).toBeUndefined()
+    expect(releaseEntries[0].findAll('li')).toHaveLength(28)
+
+    const previousReleaseChanges = releaseEntries[1].findAll('li')
+    expect(previousReleaseChanges.map(change => change.get('.change-type').text())).toEqual([
       '新增',
       '新增',
       '新增',
@@ -63,7 +67,7 @@ describe('VersionHistory', () => {
       '修复',
       '修复',
     ])
-    expect(currentReleaseChanges.map(change => change.findAll('span')[1].text())).toEqual([
+    expect(previousReleaseChanges.map(change => change.findAll('span')[1].text())).toEqual([
       '发单节点 SSH 终端支持直接输入命令，并新增撤销报价动作 cxl_quote。',
       '资源管理列表支持由所有已登录用户复制资源，并保留服务端加密凭据。',
       '运行流转到发单节点后可切换或编辑 XML 配置并修改网卡接口。',

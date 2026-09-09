@@ -67,7 +67,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 35
+    assert len(model_table_names) == 36
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -111,7 +111,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0012"
+        ).scalar_one() == "0013"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -333,7 +333,7 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0012"
+        ).scalar_one() == "0013"
     engine.dispose()
 
 
@@ -363,6 +363,7 @@ def test_model_management_migration_resumes_after_provider_table_creation(
     assert model_columns["model_id"]["type"].length == 160
     engine.dispose()
 
+    _alembic(database_path, "downgrade", "0012")
     with sqlite3.connect(database_path) as connection:
         connection.execute(
             f"UPDATE {VERSION_TABLE} SET version_num = '0011' WHERE version_num = '0012'"
@@ -387,13 +388,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 36
+    assert len(created_tables) == 37
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 35
-    assert sql.count("CHARSET=utf8mb4") == 35
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 35
+    assert sql.count("ENGINE=InnoDB") == 36
+    assert sql.count("CHARSET=utf8mb4") == 36
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 36
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert "model_id VARCHAR(160) NOT NULL" in sql
@@ -423,6 +424,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0010_svn_knowledge_source.py",
         "0011_multiple_svn_repositories.py",
         "0012_model_management.py",
+        "0013_case_generation_prompts.py",
     }
 
     completed = subprocess.run(
@@ -432,4 +434,4 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0012 (head)"
+    assert completed.stdout.strip() == "0013 (head)"

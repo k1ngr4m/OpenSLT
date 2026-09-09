@@ -3,8 +3,8 @@ import { appVersion, releaseHistory } from './releaseMetadata'
 
 describe('release metadata', () => {
   it('exposes the canonical version and newest-first release history', () => {
-    expect(appVersion).toBe('0.2.2')
-    expect(releaseHistory.map(release => release.version)).toEqual(['0.2.2', '0.2.1', '0.2.0', '0.1.0'])
-    expect(releaseHistory[3].date).toBe('2026-07-29')
+    expect(appVersion).toBe('0.2.3')
+    expect(releaseHistory.map(release => release.version)).toEqual(['0.2.3', '0.2.2', '0.2.1', '0.2.0', '0.1.0'])
+    expect(releaseHistory[4].date).toBe('2026-07-29')
   })
 })
