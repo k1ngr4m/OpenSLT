@@ -254,3 +254,10 @@ def test_canonical_environment_permissions_are_restricted() -> None:
     assert 'CANONICAL_ENV_FILE="/etc/openslt/openslt.env"' in helper
     assert "install -o root -g openslt -m 0640" in helper
     assert 'chmod 0640 "$CANONICAL_ENV_FILE"' in helper
+
+
+def test_service_and_migrations_use_the_same_persistent_knowledge_directory() -> None:
+    service = (REPOSITORY_ROOT / 'deploy/systemd/openslt-api.service').read_text(encoding='utf-8')
+    assert 'Environment=KNOWLEDGE_ROOT=/var/lib/openslt/knowledge' in service.splitlines()
+    for name in ('install-offline.sh', 'start-production.sh'):
+        assert '"KNOWLEDGE_ROOT": "/var/lib/openslt/knowledge"' in _script(name)

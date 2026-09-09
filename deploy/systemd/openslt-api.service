@@ -10,6 +10,7 @@ EnvironmentFile=/etc/openslt/openslt.env
 Environment=ENVIRONMENT=production
 Environment=TZ=Asia/Shanghai
 Environment=ARTIFACT_ROOT=/var/lib/openslt/artifacts
+Environment=KNOWLEDGE_ROOT=/var/lib/openslt/knowledge
 Environment=LOG_DIR=/var/log/openslt
 Environment=LOG_LEVEL=INFO
 Environment=APP_LOG_RETENTION_DAYS=90

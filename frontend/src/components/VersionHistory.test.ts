@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import VersionHistory from './VersionHistory.vue'
+import { appVersion, releaseHistory } from '@/releaseMetadata'
 
 
 const ElDialogStub = {
@@ -26,7 +27,7 @@ describe('VersionHistory', () => {
       },
     })
 
-    expect(wrapper.get('.version-trigger').text()).toBe('v0.2.3')
+    expect(wrapper.get('.version-trigger').text()).toBe(`v${appVersion}`)
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
 
     await wrapper.get('.version-trigger').trigger('click')
@@ -36,51 +37,19 @@ describe('VersionHistory', () => {
     expect(dialog.text()).toContain('版本更新说明')
     expect(dialog.attributes('data-width')).toBe('640px')
     expect(dialog.text()).toContain('当前版本')
-    expect(dialog.text()).toContain('2026-09-09')
-    expect(dialog.text().indexOf('v0.2.3')).toBeLessThan(dialog.text().indexOf('v0.2.2'))
-    expect(dialog.text().indexOf('v0.2.2')).toBeLessThan(dialog.text().indexOf('v0.2.1'))
-    expect(dialog.text().indexOf('v0.2.1')).toBeLessThan(dialog.text().indexOf('v0.2.0'))
-
+    expect(dialog.text()).toContain(releaseHistory[0].date!)
     const releaseEntries = dialog.findAll('.release-entry')
-    expect(releaseEntries).toHaveLength(5)
-    expect(releaseEntries[0].attributes('open')).toBe('')
-    expect(releaseEntries[1].attributes('open')).toBeUndefined()
-    expect(releaseEntries[2].attributes('open')).toBeUndefined()
-    expect(releaseEntries[3].attributes('open')).toBeUndefined()
-
-    expect(releaseEntries[4].attributes('open')).toBeUndefined()
-    expect(releaseEntries[0].findAll('li')).toHaveLength(28)
-
-    const previousReleaseChanges = releaseEntries[1].findAll('li')
-    expect(previousReleaseChanges.map(change => change.get('.change-type').text())).toEqual([
-      '新增',
-      '新增',
-      '新增',
-      '变更',
-      '变更',
-      '变更',
-      '变更',
-      '变更',
-      '变更',
-      '变更',
-      '修复',
-      '修复',
-      '修复',
-    ])
-    expect(previousReleaseChanges.map(change => change.findAll('span')[1].text())).toEqual([
-      '发单节点 SSH 终端支持直接输入命令，并新增撤销报价动作 cxl_quote。',
-      '资源管理列表支持由所有已登录用户复制资源，并保留服务端加密凭据。',
-      '运行流转到发单节点后可切换或编辑 XML 配置并修改网卡接口。',
-      '数据解析和统计节点改为直接使用解析工具配置的远端目录，不再为新运行创建 .openslt-runs 子目录。',
-      '运行详情不再展示运行配置快照摘要。',
-      '数据解析节点改为通过运行详情中的 SSH 终端启动解析工具，并支持配置和下发解析指令。',
-      '版本更新说明改为固定尺寸，并默认收起历史版本。',
-      '日志中心不再采集和展示平台数据库及资源数据库 SQL 日志。',
-      '资源新增与编辑抽屉改为紧凑双列表单布局。',
-      '合并 pcapng 节点改为在 SLNIC 生成 pcap 后，由操作员在本机 Windows 使用 editcap 转换并归档产物。',
-      '修复在工作流节点之间添加节点后，新节点暂时显示在流程末尾的问题。',
-      '运行详情采用 WebSocket 实时更新，并在断线时增量补齐状态和日志，避免持续重复请求。',
-      '接线确认按 REM 实际采集的 180 段和 51 段网卡名称及 IP 展示，并支持确认前补录。',
-    ])
+    expect(releaseEntries).toHaveLength(releaseHistory.length)
+    const labels = { added: '新增', changed: '变更', fixed: '修复', removed: '移除', security: '安全' }
+    releaseHistory.forEach((release, index) => {
+      const entry = releaseEntries[index]!
+      expect(entry.get('summary').text()).toContain(`v${release.version}`)
+      expect(entry.attributes('open')).toBe(index === 0 ? '' : undefined)
+      const changes = entry.findAll('li')
+      const typeOrder = Object.keys(labels)
+      const orderedChanges = [...release.changes].sort((a, b) => typeOrder.indexOf(a.type) - typeOrder.indexOf(b.type))
+      expect(changes.map(change => change.get('.change-type').text())).toEqual(orderedChanges.map(change => labels[change.type]))
+      expect(changes.map(change => change.findAll('span')[1]!.text())).toEqual(orderedChanges.map(change => change.text))
+    })
   })
 })

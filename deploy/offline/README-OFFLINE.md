@@ -1,1061 +1,762 @@
-# OpenSLT RHEL 7.9 离线部署与运维手册
+# OpenSLT 离线部署与运维手册
 
-本文用于在完全无法访问互联网的 RHEL 7.9 x86_64 内网服务器上部署、升级、备份和
-恢复 OpenSLT。命令与当前离线脚本保持一致，数据库兼容基线为 MariaDB 5.5.68。
+本文对应 **0.2.4** 发布，面向外网制包人员、内网部署人员和数据库管理员。
+所有安装命令以仓库 `deploy/offline/` 中的脚本为准；应用版本唯一来源为根目录
+`VERSION`，变更记录为 `RELEASES.json`。
 
-> `existing` 是默认且最安全的数据库模式：它不会安装、修改、启停或清理 MariaDB，
-> 也不会使用 root 账号管理数据库。但是，安装和启动仍会执行 Alembic 迁移，创建或
-> 升级 OpenSLT 自有表。
+**已有系统升级请直接阅读第 9 节，并先完成第 10 节备份。** 首次部署按第 1～8 节执行。
+GitHub 自动提供的源码 ZIP/tar.gz 不包含 RPM、Python wheelhouse 或运行时，不能当作
+离线安装包。真正可直接部署的包由外网 RHEL 制包机生成。
 
-> `initialize` 会处理 MariaDB root 密码、删除匿名用户和远程 root、删除测试库。
-> 只有确认数据库实例由 OpenSLT 独占时才能使用。
+## 1. 部署范围与准备事项
 
-## 1. 适用环境与边界
+### 1.1 主机分工
 
-| 项目 | 要求 |
+| 主机 | 环境与职责 |
 | --- | --- |
-| 外网制包机 | RHEL 7.9、x86_64、glibc 2.17、可访问 yum/PyPI |
-| 内网目标机 | RHEL 7.9、x86_64、glibc 2.17、systemd |
-| Python | 3.8+；默认路径 `/opt/rh/rh-python38/root/usr/bin/python3.8` |
-| 前端构建 | 普通包使用 Node.js 20+/npm 10+ 构建机；内网开发包可使用 `--bundle-node` |
-| Web 服务 | Nginx，默认对外端口 `7777` |
-| API 服务 | 单个 Uvicorn 进程，仅监听 `127.0.0.1:4396` |
-| 数据库 | MariaDB 5.5.68+ 或 MySQL 5.5.3+；重点验证 MariaDB 5.5.68 和 MySQL 8 |
+| 外网开发/验证机 | Python 3.8+，Node.js 20+、npm 10+；运行测试及构建前端，可以是 macOS 或 Linux |
+| 外网制包机 | RHEL 7.9 x86_64、glibc 2.17；具有可用的 RHEL RPM 源和 Python 包源，负责生成目标平台依赖 |
+| 内网应用机 | RHEL 7.9 x86_64、systemd；安装时使用 root，运行服务使用 `openslt` 系统账号 |
+| 数据库服务器 | MariaDB 5.5.68+ 或 MySQL 5.5.3+，InnoDB、utf8mb4；项目兼容性测试重点覆盖 MariaDB 5.5.68 与 MySQL 8 |
+| 内网模型服务器（按需） | 提供应用机可达的 OpenAI-compatible 对话或 Embedding 接口；模型服务和权重需要另外部署 |
 
-本文不宣称离线包支持 RHEL 8/9、CentOS、ARM、容器平台或其他未经验证的系统。
-RHEL 7.9 上通常不能直接运行官方 Node.js 20 Linux 发行包。普通生产包应在兼容的
-外网主机上构建前端；需要内网前端开发时，可由制包脚本下载并验证
-`linux-x64-glibc-217` 社区构建及 npm 依赖缓存。
+普通生产运行只需要已构建的前端，**不要求内网有 Node.js**。需要内网修改前端时才添加
+`--bundle-node`。需要随包提供 Python 时添加 `--bundle-python`。
 
-不要在内网服务器运行仓库根目录的 `start-web.sh` 或
-`deploy/scripts/install.sh`。它们面向开发或在线环境，可能访问 PyPI 和 npm registry。
+正式制包脚本拒绝在 macOS、ARM 和非 7.9 系统上执行，不应通过修改平台检查交付其他
+架构的二进制依赖。本文未验证 RHEL 8/9 或其他发行版。
 
-## 2. 部署流程
+### 1.2 拓扑与网络
 
-```mermaid
-flowchart LR
-    Build["构建 frontend/dist，或选择 --bundle-node"] --> Sync["同步源码到外网 RHEL 7.9"]
-    Sync --> Package["收集 RPM、wheel 并生成离线包"]
-    Package --> Verify1["校验 tar.gz 和 sha256"]
-    Verify1 --> Transfer["通过受控介质传入内网"]
-    Transfer --> Configure["选择数据库模式并运行 configure.sh"]
-    Configure --> Start["start.sh 安装、迁移并启动"]
-    Start --> Accept["健康、功能与重启验收"]
+```text
+浏览器 → Nginx :7777 → 本机 Uvicorn 127.0.0.1:4396
+                         ├─ MySQL/MariaDB
+                         ├─ 文件产物、持久化密钥、知识库文件及索引
+                         ├─ SSH/SFTP → 业务资源、抓包机、解析机
+                         └─ HTTP(S) → 内网 SVN、对话模型、Embedding 服务
 ```
 
-后续示例统一使用以下版本变量。每次打开新终端时重新定义：
+| 发起方 | 目标 | 默认端口 | 用途 |
+| --- | --- | --- | --- |
+| 用户浏览器 | 应用机 | TCP 7777 | 页面、API、流式聊天、WebSocket |
+| Nginx | 本机 API | TCP 4396，仅回环地址 | 反向代理 |
+| 应用机 | 应用数据库、业务数据库 | TCP 3306 或实际端口 | 数据与迁移 |
+| 应用机 | REM、市场、发单、SLNIC、解析机、SSH 跳板 | TCP 22 或实际端口 | SSH/SFTP |
+| 应用机 | SVN、对话模型、Embedding | 服务实际 HTTP(S) 端口 | 同步知识与模型请求 |
+
+离线指运行、安装和更新依赖时不需要互联网；模型功能仍需要可达的模型服务。
+API 进程内包含任务调度和聊天取消状态，保持安装模板的**单个 Uvicorn worker**。
+不要直接增加 `--workers` 或部署多个共同操作同一数据库的调度实例。
+
+部署前记录系统架构、解释器路径、数据库模式、端口、目录空间、备份位置与负责人。
+空间按 RPM/wheel 缓存、解压包、应用、上传文档、抓包产物和备份实际大小预留，项目没有
+统一的容量上限或自动清理全部产物的策略。确认主机时钟和单位时间同步策略正常。
+
+## 2. 外网准备源码与依赖
+
+### 2.1 使用发布源码
+
+在外网下载指定 tag 的完整源码，或在已有仓库中检出发布 tag：
 
 ```bash
-VERSION="$(<VERSION)"
-PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
-PYTHON=/opt/rh/rh-python38/root/usr/bin/python3.8
+git clone --branch 0.2.4 --depth 1 https://github.com/k1ngr4m/OpenSLT.git
+cd OpenSLT
+APP_VERSION="$(cat VERSION)"
+python3 tools/release_metadata.py
 ```
 
-`VERSION` 是项目唯一版本源，必须使用不带 `v` 前缀的 `MAJOR.MINOR.PATCH` 格式。
-`RELEASES.json` 保存当前和历史更新说明。正式制包前执行
-`"${PYTHON}" tools/release_metadata.py`；脚本会拒绝缺失、重复、乱序或与 `VERSION`
-不一致的发布记录。`--version` 仅用于断言传入值与项目版本相同，不能覆盖项目版本。
+版本校验应输出 `Release metadata is valid for OpenSLT 0.2.4`。`--version` 制包参数
+只能断言版本与 `VERSION` 相同，不能覆盖应用版本。不要只替换前端产物而保留旧后端。
 
-## 3. 上线前检查清单
+制包脚本复制当前工作树，制包前移除部署凭据、业务数据及与发布无关的本地文件。
+不要把实际 `.env`、密钥或用户上传资料放入源码交付目录。
 
-### 3.1 外网制包机
+### 2.2 常规测试与前端构建
 
-在 RHEL 7.9 制包机上检查：
-
-```bash
-cat /etc/os-release
-uname -m
-uname -r
-getconf GNU_LIBC_VERSION
-"${PYTHON}" --version
-yum repolist enabled
-```
-
-预期至少满足：
-
-- `VERSION_ID="7.9"`、`x86_64`、glibc 2.17。
-- Python 可执行且版本不低于 3.8。
-- RHEL 7 基础仓库可用，并能取得离线清单中的系统依赖。
-- 能访问 PyPI；制包过程需要生成完整 Python wheelhouse。
-- 使用 `--bundle-node` 时，还能访问 Node unofficial-builds 及 lock 文件引用的 npm
-  registry；单位镜像或预下载文件按第 5.3 节配置。
-- 仓库工作树是准备发布的版本；普通包还要求 `frontend/dist` 与前端源码一致。
-
-一键脚本缺少 `repotrack` 或 `createrepo` 时会通过 yum 安装 `yum-utils` 和
-`createrepo`，这一步需要 root 权限和可用的软件源。
-
-### 3.2 内网目标机
-
-提前确认：
-
-- 主机时间、时区和 NTP 策略正确。
-- 安装目录、日志、产物、数据库和备份空间充足。
-- 内网用户可以访问计划使用的 `FRONTEND_PORT`。
-- OpenSLT 主机可以连接所需 SSH、SFTP 和业务数据库地址。
-- 已决定数据库采用 `existing`、`provision` 还是 `initialize`。
-- `existing` 模式下，数据库地址、账号和密码已经准备完毕。
-- 已明确数据库、配置、密钥和产物的备份责任人与保存位置。
-
-## 4. 准备前端
-
-### 4.1 普通生产包
-
-在支持 Node.js 20+ 和 npm 10+ 的外网开发机上，从准备发布的源码执行：
+在外网开发/验证机项目根目录执行；以下 `.venv` 是构建环境，不是生产目录：
 
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[test]'
+.venv/bin/python -m pytest
 npm --prefix frontend ci --no-audit --no-fund
-npm --prefix frontend run test
+npm --prefix frontend test
 npm --prefix frontend run build
-```
-
-确认产物存在：
-
-```bash
 test -f frontend/dist/index.html
 ```
 
-将完整项目源码和当前 `frontend/dist` 同步到外网 RHEL 7.9 制包机。不要只替换
-`dist`，也不要复用其他提交生成的旧前端。制包脚本会比较前端源码和
-`frontend/dist/index.html` 的修改时间，发现产物过旧时拒绝制包。
+将同一份源码和 `frontend/dist` 一起交给外网 RHEL 制包机。保留文件时间，或在制包机
+重新构建；脚本发现源码、版本记录比 `dist/index.html` 新时会拒绝使用旧产物。
 
-### 4.2 内网前端开发包
+### 2.3 RHEL 制包机检查
 
-如果内网机需要直接修改 Vue、TypeScript 或 CSS，可跳过预构建 `frontend/dist`，在
-制包命令中使用 `--bundle-node`。该模式会在 RHEL 7.9 制包机上：
-
-1. 下载固定版本的 `node-v20.20.2-linux-x64-glibc-217.tar.gz` 和
-   `SHASUMS256.txt`。
-2. 精确匹配文件名并校验 SHA-256，解压后实际运行 `node` 和 `npm`。
-3. 从空缓存执行 `npm ci`，收集当前 `package-lock.json` 的全部依赖。
-4. 删除 `node_modules`，再执行 `npm ci --offline` 验证断网回装。
-5. 执行前端测试和生产构建，并把 Node、npm、来源、归档摘要及 lock 文件摘要写入
-   `node-runtime/METADATA`。
-
-> `linux-x64-glibc-217` 来自
-> [Node.js unofficial-builds](https://unofficial-builds.nodejs.org/)，属于实验性社区构建，
-> 不是 Node.js 官方发布二进制，也不提供与官方发行包相同的支持承诺。正式交付前必须
-> 在与生产一致的 RHEL 7.9 测试机验证。
-
-## 5. 在外网生成离线包
-
-### 5.1 一键制包
-
-进入外网 RHEL 7.9 制包机的项目根目录：
+在外网 RHEL 制包机的源码根目录执行：
 
 ```bash
+PYTHON=/opt/rh/rh-python38/root/usr/bin/python3.8
+cat /etc/os-release
+uname -m
+getconf GNU_LIBC_VERSION
+"$PYTHON" --version
+yum repolist enabled
+"$PYTHON" tools/release_metadata.py
+```
+
+预期为 RHEL 7.9、`x86_64`、glibc 2.17，Python 不低于 3.8。制包与部署尽量使用相同
+Python 主次版本，避免二进制 wheel 不匹配。Python 解释器需事先准备，默认 RPM 清单
+不负责取得 RHSCL Python RPM。
+
+`make-offline-package.sh` 在缺少 `repotrack`、`createrepo` 时会通过 yum 安装
+`yum-utils` 与 `createrepo`，需要 root。RPM 源需能取得
+[系统依赖清单](rpm-packages-rhel7.txt)中的全部包，包括：
+
+- Nginx、curl、SELinux 管理工具；
+- MariaDB 客户端、服务端和库，以及 libaio、numactl-libs；
+- Subversion；
+- LibreOffice Headless、Writer、Calc，用于旧版 `.doc`、`.xls` 文档转换。
+
+## 3. 生成离线安装包
+
+### 3.1 普通生产包
+
+在外网 RHEL 制包机的项目根目录执行，前端必须已完成第 2.2 节的测试和构建：
+
+```bash
+PYTHON=/opt/rh/rh-python38/root/usr/bin/python3.8
+APP_VERSION="$(cat VERSION)"
 chmod +x deploy/offline/*.sh
 deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
+  --python "$PYTHON" \
+  --version "$APP_VERSION" \
   --cache-dir /var/cache/openslt/packaging \
-  --bundle-python \
-  --bundle-node
-```
-
-脚本会依次：
-
-1. 收集 Nginx、curl、MariaDB 及其 RHEL 7 RPM 依赖闭包。
-2. 构建 OpenSLT wheel 和全部 Python 依赖的 wheelhouse。
-3. 在新虚拟环境中使用 `--no-index` 回装 wheelhouse。
-4. 执行 `pip check` 和后端测试。
-5. 使用 `--bundle-node` 时，校验 Node、生成 npm 缓存并完成断网回装和前端构建。
-6. 复制应用、前端产物、RPM、安装脚本、发布说明和文档。
-7. 生成包内 `SHA256SUMS`、压缩包和压缩包校验文件。
-
-默认输出到项目根目录的 `release/`：
-
-```text
-release/openslt-offline-rhel7-x86_64-${VERSION}.tar.gz
-release/openslt-offline-rhel7-x86_64-${VERSION}.tar.gz.sha256
-```
-
-可以使用 `--output /指定目录` 修改输出目录。`--cache-dir` 会复用 RPM、Node.js 归档、
-npm lock 缓存和 pip 缓存，适合在同一台外网制包机上连续制包；脚本仍会校验 Node
-SHA、执行 `npm ci --offline`、Python wheelhouse 回装和测试。仓库镜像、RPM 清单或
-Node 来源变化后，使用 `--refresh-cache` 重新收集：
-
-```bash
-deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
-  --cache-dir /var/cache/openslt/packaging \
-  --refresh-cache \
-  --bundle-python \
-  --bundle-node
-```
-
-`--skip-python-tests` 会跳过 Python wheelhouse 回装校验和后端测试，但仍会构建
-Python wheelhouse；适合 Python 测试过慢时生成临时诊断包。`--skip-frontend-tests`
-会在带 Node 的制包流程中跳过前端测试。`--skip-tests` 保留为兼容参数，等价于同时
-跳过 Python 和前端测试；带 Node 的包仍必须通过 `npm ci --offline` 和生产构建验证。
-这些跳过测试的选项只应用于临时诊断包，不应作为正式交付包。
-
-不需要在内网修改前端时，可以不传 `--bundle-node`，但必须提前按第 4.1 节生成当前
-`frontend/dist`。
-
-### 5.2 目标机没有 Python
-
-如果目标机没有 Python 3.8+，或无法保证默认路径存在，在制包时增加：
-
-```bash
-deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
   --bundle-python
 ```
 
-该选项只打包制包机现有的 `/opt/rh/rh-python38`。因此：
+`--bundle-python` 仅打包制包机已有的 `/opt/rh/rh-python38`，`--python` 必须指向该目录
+中的解释器。目标机已有相同且可用的 Python 时可省略此选项，安装时显式指定路径。
+它不会替换操作系统的 `/usr/bin/python`。
 
-- `--python` 必须指向该目录内的解释器。
-- 内网配置时会安装到 `/opt/rh/rh-python38`，不会替换系统 `/usr/bin/python`。
-- 目标机已有可用 Python 时不会覆盖它。
-- 自定义目录中的其他 Python 发行版不能使用此引导方式。
+### 3.2 带内网前端构建能力的包
 
-制包机和目标机直接使用预装 Python 时，建议使用相同主次版本，以降低二进制 wheel
-兼容风险。
-
-### 5.3 Node 版本、镜像与预下载文件
-
-默认 Node 版本固定为 `20.20.2`，不会在每次制包时静默选择新版本。升级前应先在
-RHEL 7.9 测试机验证，新版本必须是带 `linux-x64-glibc-217` 产物的完整 Node 20
-版本：
+需要在内网编辑 Vue、TypeScript 或 CSS 时执行：
 
 ```bash
 deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
-  --bundle-node \
-  --node-version 20.20.2
-```
-
-通过单位镜像下载时，镜像目录结构必须保留 `v版本/SHASUMS256.txt` 和归档文件：
-
-```bash
-deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
-  --bundle-node \
-  --node-base-url 'https://mirror.example.internal/node-unofficial/release'
-```
-
-也可以传入预下载的两个文件。两者必须同时提供，归档内容仍按清单校验，不能通过改名
-绕过：
-
-```bash
-deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
-  --bundle-node \
-  --node-archive /safe/node-v20.20.2-linux-x64-glibc-217.tar.gz \
-  --node-shasums /safe/SHASUMS256.txt
-```
-
-### 5.4 Nginx 仓库
-
-如果已启用仓库没有 `nginx`，脚本会临时启用 nginx.org 的 RHEL 7 官方仓库，结束时
-删除临时 repo 文件，不修改原有仓库配置。
-
-如果制包机只能访问单位镜像，指定镜像地址。地址中的 `$basearch` 必须使用单引号，
-避免被当前 Shell 提前展开：
-
-```bash
-deploy/offline/make-offline-package.sh \
-  --python "${PYTHON}" \
-  --version "${VERSION}" \
-  --nginx-repo-url 'http://yum.example.internal/nginx/rhel/7/$basearch/'
-```
-
-出现 `nginx is still unavailable` 时，先验证仓库地址和元数据，不要使用示例域名：
-
-```bash
-curl -I 'http://实际镜像地址/nginx/rhel/7/x86_64/'
-```
-
-### 5.5 分步制包
-
-一键脚本失败时，可以分步定位问题：
-
-```bash
-deploy/offline/collect-rpms-rhel7.sh \
-  --output /tmp/openslt-rpms
-
-deploy/offline/build-offline-bundle.sh \
-  --python "${PYTHON}" \
-  --rpm-dir /tmp/openslt-rpms \
-  --version "${VERSION}" \
+  --python "$PYTHON" \
+  --version "$APP_VERSION" \
   --cache-dir /var/cache/openslt/packaging \
+  --bundle-python \
   --bundle-node
 ```
 
-如需自定义 RPM 清单，复制 `deploy/offline/rpm-packages-rhel7.txt` 后通过
-`--package-file` 传入收集脚本，不要直接修改默认清单。`repotrack` 的结果取决于制包
-时启用的软件源，正式发布前应在关闭所有外部仓库的干净 RHEL 7.9 测试机上验证 RPM
-能够完整安装。
+此模式会在制包机构建前端，因此不要求事先存在 `frontend/dist`。脚本固定使用
+Node.js `20.20.2` 的 `linux-x64-glibc-217` 社区构建，校验发布方 SHA-256，并实际运行
+Node/npm。它来自 [Node.js unofficial-builds](https://unofficial-builds.nodejs.org/)，
+不能当作 Node.js 官方 Linux 二进制。需在目标同款 RHEL 环境验证。
 
-默认 RPM 清单包含智能用例知识同步所需的 `subversion`，以及解析旧版 `.doc`、
-`.xls` 所需的 `libreoffice-headless`、`libreoffice-writer`、`libreoffice-calc` 及依赖。
-旧版文件在独立临时目录中转换后索引，不修改 SVN 原文件；转换超时、损坏或加密的文件
-会计入同步失败文件数。升级现有部署时也需要安装这些 RPM，然后重新同步知识源。
-安装后必须确认：
+脚本从 lock 文件收集 npm 缓存，再执行 `npm ci --offline`、前端测试和生产构建。
+已有缓存也必须重新通过离线安装验证；结果与 `package-lock.json` 摘要绑定。
+
+### 3.3 执行内容、缓存与镜像
+
+一键脚本依次收集 RPM 依赖、创建 Python wheelhouse、在独立虚拟环境中执行
+`pip install --no-index`、`pip check` 和后端测试，最后复制安装材料并生成校验文件。
+带 Node 模式还会完成上述前端校验。任何步骤失败，都不能将中间材料当作交付包。
+
+| 参数 | 作用 |
+| --- | --- |
+| `--output DIR` | 更改输出目录，默认源码根目录 `release/` |
+| `--cache-dir DIR` | 复用 RPM、Node、npm、pip 缓存；必须位于项目目录之外 |
+| `--refresh-cache` | 清除指定缓存目录后重建；只传专用制包缓存目录 |
+| `--nginx-repo-url URL` | 指定 Nginx RHEL 7 镜像地址 |
+| `--node-version VER` | 选择有 glibc-217 产物的完整 Node 20 版本 |
+| `--node-base-url URL` | Node 下载镜像，保留 `v版本/` 目录结构 |
+| `--node-archive FILE --node-shasums FILE` | 成对提供预下载 Node tar.gz 和 SHA 清单，仍校验文件名与摘要 |
+| `--skip-python-tests` | 跳过 Python 离线回装验证和 pytest，仅用于诊断 |
+| `--skip-frontend-tests` | 带 Node 制包时跳过前端测试，仅用于诊断 |
+| `--skip-tests` | 同时跳过两类测试，仅用于诊断 |
+
+正式发布不使用跳过测试参数。`--refresh-cache` 会删除整个指定目录，不要指向共享
+数据目录。Node 下载配置需与 `--bundle-node` 同时使用。
+
+Nginx 在现有软件源中不可用时，脚本临时添加 nginx.org RHEL 7 源并在退出时移除。
+使用单位镜像时将示例地址替换为实际地址，并保留 `$basearch` 的单引号保护：
 
 ```bash
-svn --version --quiet
-libreoffice --headless --version
+deploy/offline/make-offline-package.sh \
+  --python "$PYTHON" --version "$APP_VERSION" --bundle-python \
+  --nginx-repo-url 'https://yum.example.internal/nginx/rhel/7/$basearch/'
 ```
 
-## 6. 校验与传输
-
-在外网制包机检查输出：
+分步排查可使用：
 
 ```bash
-ls -lh \
-  "release/${PACKAGE}.tar.gz" \
-  "release/${PACKAGE}.tar.gz.sha256"
-
-cd release
-sha256sum -c "${PACKAGE}.tar.gz.sha256"
-cd ..
+deploy/offline/collect-rpms-rhel7.sh --output /var/tmp/openslt-rpms
+deploy/offline/build-offline-bundle.sh \
+  --python "$PYTHON" --version "$APP_VERSION" \
+  --rpm-dir /var/tmp/openslt-rpms --bundle-python
 ```
 
-带 `--bundle-node` 的包还应确认以下条目存在：
+自定义 RPM 清单通过收集脚本 `--package-file FILE` 传入；不能遗漏文档转换依赖后仍
+宣称支持旧 Office 格式。软件源能否提供完整 RPM 闭包，以制包和断网安装实测为准。
 
-```bash
-tar -tzf "release/${PACKAGE}.tar.gz" | grep -E \
-  '/(node-runtime/METADATA|npm-cache/_cacache/|build-frontend.sh)$'
+## 4. 交付、校验与解压
+
+输出文件为：
+
+```text
+release/openslt-offline-rhel7-x86_64-0.2.4.tar.gz
+release/openslt-offline-rhel7-x86_64-0.2.4.tar.gz.sha256
 ```
 
-将 `.tar.gz` 和对应 `.tar.gz.sha256` 一起通过受控介质传入内网。不要重新打包或修改
-其中任何文件。
+包内结构如下，可选运行时仅在使用相应选项时存在：
 
-在内网存放目录重新定义变量并校验：
+```text
+openslt-offline-rhel7-x86_64-0.2.4/
+├── VERSION、RELEASES.json、README-OFFLINE.md、SHA256SUMS
+├── configure.sh、install.sh、start.sh、deployment-config.sh
+├── openslt.env.example、build-frontend.sh
+├── app/                 源码、迁移、部署模板、frontend/dist
+├── wheelhouse/          应用 wheel 与 Python 依赖
+├── python-packages.txt  验证环境依赖清单
+├── rpms/                packages/、keys/、requested-packages.txt
+├── python-runtime/      可选 rh-python38
+├── node-runtime/        可选 Node/npm 及 METADATA
+└── npm-cache/           可选离线 npm 缓存
+```
+
+在外网 `release/` 目录和内网接收目录各校验一次，传输压缩包及其 `.sha256` 两个文件：
 
 ```bash
-VERSION=0.2.2
-PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
-
-sha256sum -c "${PACKAGE}.tar.gz.sha256"
-tar -xzf "${PACKAGE}.tar.gz"
-cd "${PACKAGE}"
+PACKAGE=openslt-offline-rhel7-x86_64-0.2.4
+sha256sum -c "$PACKAGE.tar.gz.sha256"
+tar -xzf "$PACKAGE.tar.gz"
+cd "$PACKAGE"
 sha256sum -c SHA256SUMS
-chmod +x configure.sh install.sh start.sh build-frontend.sh
+cat VERSION
 ```
 
-`configure.sh`、`install.sh` 和 `start.sh` 也会在执行时校验包内文件。校验失败必须停止
-部署并重新获取介质，不能忽略或重新生成校验文件。
+任何校验失败都应重新获取介质，不能在内网重写 `SHA256SUMS` 绕过检查。保留原始包，
+部署后不要在解压包内修改配置或源码；生产配置写入 `/etc/openslt/openslt.env`。
+在全新隔离 RHEL 测试机关闭外部仓库后完成第 5～8 节验收，才能认定该包可离线部署。
 
-## 7. 选择数据库模式
+## 5. 选择数据库模式
 
-| 模式 | 适用场景 | 会执行的操作 | 不会执行的操作 |
-| --- | --- | --- | --- |
-| `existing`（默认） | 使用运维已管理的本地或远程数据库 | 校验 env；安装非数据库 RPM；执行 Alembic；必要时由应用账号尝试建库 | 不安装 MariaDB RPM，不写 `my.cnf`，不启停 MariaDB，不使用 root，不创建账号，不做安全清理 |
-| `provision` | 本机 MariaDB 由 OpenSLT 使用，但需保留现有安全策略 | 安装并启动 MariaDB；写入 InnoDB/utf8mb4 配置；创建应用库和账号；生成数据库密码 | 不修改 root 密码，不删除匿名用户、远程 root 或测试库 |
-| `initialize` | OpenSLT 独占的全新本机 MariaDB | 包含 `provision` 的全部操作；处理空 root 密码；删除匿名用户、远程 root 和测试库 | 不保留被清理的 MariaDB 默认对象 |
+| 模式 | 用途及实际影响 |
+| --- | --- |
+| `existing`（默认） | 使用已管理的本地或远程数据库；跳过 MariaDB RPM、实例配置、root 操作和服务启停，但仍对 OpenSLT 数据库执行应用迁移 |
+| `provision` | 配置本机 MariaDB：安装 RPM，写入 InnoDB/utf8mb4 参数并重启服务；env 不存在时创建应用库和账号；不清理 root、匿名用户或测试库 |
+| `initialize` | 在 `provision` 基础上处理空 root 密码，删除匿名用户、非 localhost root 及测试库；仅用于允许这些操作的独占新实例 |
 
-选择结果保存到 `/etc/openslt/database-mode`，后续 `start.sh` 默认沿用。文件不存在时
-按 `existing` 处理。也可以通过 `--database-mode MODE` 显式覆盖本次执行。
+`existing` 不等于“数据库只读”。建表、索引及字段变更由 Alembic 执行，需要目标库内
+DDL 和 DML 权限。应用默认允许尝试创建不存在的数据库；由 DBA 预建数据库时，建议
+在 env 中设置 `AUTO_CREATE_DATABASE=false`，避免依赖全局建库权限。
 
-### 7.1 existing：使用现有数据库
+`configure.sh` 将模式写入 `/etc/openslt/database-mode`。`start.sh` 和 `install.sh`
+默认读取它，文件不存在才回退到 `existing`。再次执行 `configure.sh` 时需重新明确
+传入原模式，因为它自身默认使用 `existing`。
 
-推荐由 DBA 预先创建库和最小权限账号：
+### 5.1 existing：准备数据库
+
+由 DBA 在指定实例中执行，替换主机地址与密码；不要重复创建已有账号：
 
 ```sql
-CREATE DATABASE openslt
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
-CREATE USER 'openslt'@'OpenSLT主机地址'
-  IDENTIFIED BY '替换为独立强密码';
-
-GRANT ALL PRIVILEGES ON openslt.*
-  TO 'openslt'@'OpenSLT主机地址';
-FLUSH PRIVILEGES;
+CREATE DATABASE openslt CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'openslt'@'应用机来源IP' IDENTIFIED BY '独立数据库密码';
+GRANT ALL PRIVILEGES ON openslt.* TO 'openslt'@'应用机来源IP';
 ```
 
-MariaDB 账号的 Host 必须与数据库实际看到的 OpenSLT 来源地址一致。本机通过
-`127.0.0.1` 连接时，不要只授权 `'openslt'@'localhost'`。
+授权限制在 `openslt.*` 内，账号不应管理其他业务库。本机 TCP 连接通常使用
+`127.0.0.1`，须匹配数据库实际识别的来源，不能仅凭存在 `localhost` 账号判断授权成功。
 
-默认 `AUTO_CREATE_DATABASE=true`。如果库不存在，应用会尝试使用配置账号创建
-`utf8mb4/utf8mb4_unicode_ci` 数据库，此时账号需要全局 `CREATE` 权限。若不希望授予
-该权限，请由 DBA 预先建库，或在 env 中显式设置：
+### 5.2 provision / initialize：准备本机管理凭据
 
-```dotenv
-AUTO_CREATE_DATABASE=false
-```
-
-无论是否允许自动建库，Alembic 都需要在目标库内创建、修改索引和表结构的权限。
-
-### 7.2 provision：配置本机 MariaDB
-
-该模式会安装和重启 MariaDB，并写入 `/etc/my.cnf.d/openslt.cnf`：
-
-```ini
-[mysqld]
-default-storage-engine=InnoDB
-character-set-server=utf8mb4
-collation-server=utf8mb4_unicode_ci
-innodb-file-per-table=1
-```
-
-如果 MariaDB root 已有密码且 `/root/.my.cnf` 不可用，准备权限为 `0600` 的客户端
-配置：
+管理账号已有密码时，用 root 创建权限 `0600` 的文件，例如 `/root/openslt-db-admin.cnf`：
 
 ```ini
 [client]
 user=root
-password=数据库管理密码
+password=实际管理密码
 ```
 
-配置时传入：
+不要把密码放在命令行参数中。使用 `--mysql-defaults-file` 指定文件；配置脚本实际以
+数据库 `root` 连接，并验证为 MariaDB。它不是配置外部 MySQL 8 实例的入口。
+
+`initialize` 的清理语句面向旧 MariaDB 权限表，不能将其当作所有新版数据库的通用
+初始化器。共享实例或已有安全策略的实例采用 `existing`，由 DBA 预先准备。
+
+## 6. 首次安装
+
+以下命令在内网应用机上以 root 身份、在已校验的离线包根目录执行。
+
+### 6.1 existing 模式
+
+先运行：
 
 ```bash
-./configure.sh \
-  --database-mode provision \
-  --mysql-defaults-file /安全路径/root.cnf
+./configure.sh --database-mode existing
 ```
 
-当生产 env 尚不存在时，该模式会生成随机数据库密码，创建 `openslt` 库和
-`openslt@127.0.0.1` 账号，并写入生产 env。可通过 `--database-name` 和
-`--database-user` 修改名称；名称仅允许字母、数字和下划线。
-
-### 7.3 initialize：初始化独占 MariaDB
-
-仅在数据库实例没有承载其他业务、并确认允许清理默认对象时执行：
+如果 env 不存在，脚本会创建模板并**以非零状态退出**，提示填入密码；这是预期行为。
+编辑新建文件，不要使用 Shell `source` 载入密码配置：
 
 ```bash
-./configure.sh --database-mode initialize
-```
-
-如果 root 密码为空且未提供其他 root 配置，脚本会生成随机 root 密码并写入权限为
-`0600` 的 `/root/.my.cnf`。如果 root 已有密码，按需传入
-`--mysql-defaults-file /安全路径/root.cnf`。
-
-`initialize` 不是普通故障修复选项，不能在共享数据库实例上尝试。
-
-## 8. 生产配置
-
-正式配置固定安装到 `/etc/openslt/openslt.env`，所有者和权限为
-`root:openslt 0640`。
-
-`existing` 模式首次运行 `configure.sh` 时会从模板创建该文件，然后停止并提示填写
-数据库密码：
-
-```bash
-./configure.sh
 vi /etc/openslt/openslt.env
-./configure.sh
 ```
 
-当前模板为：
+示例内容（地址、密码需替换；端口可调整）：
 
 ```dotenv
 DATABASE_HOST=127.0.0.1
 DATABASE_PORT=3306
 DATABASE_NAME=openslt
 DATABASE_USER=openslt
-DATABASE_PASSWORD=CHANGE_ME
+DATABASE_PASSWORD="填写实际数据库密码"
+AUTO_CREATE_DATABASE=false
 
 BACKEND_PORT=4396
 FRONTEND_PORT=7777
-
 INITIAL_ADMIN_USERNAME=admin
-INITIAL_ADMIN_PASSWORD=shengli123
+INITIAL_ADMIN_PASSWORD="设置首次登录密码"
 ```
 
-配置规则：
-
-- 必须替换实际配置行中的全部 `CHANGE_ME`，否则脚本拒绝继续。
-- 数据库分字段必须五项全部提供；`DATABASE_PORT` 必须为 `1..65535`。
-- `BACKEND_PORT` 和 `FRONTEND_PORT` 必须为 `1024..65535`，且不能相同。
-- 后端始终只监听 `127.0.0.1:${BACKEND_PORT}`；Nginx 对外监听
-  `${FRONTEND_PORT}`。
-- 数据库密码包含 `@`、`:`、`/`、`#` 或空格时无需 URL 编码，建议使用引号包住值。
-- 不要在值中使用未验证的 Shell 展开表达式；systemd 会按 EnvironmentFile 规则读取。
-- `INITIAL_ADMIN_*` 只在用户不存在时用于创建管理员，不会覆盖已有密码。
-- 首次登录必须修改默认密码 `shengli123`。
-
-兼容旧配置时，可以只设置完整 URL：
-
-```dotenv
-DATABASE_URL="mysql+pymysql://openslt:已编码密码@127.0.0.1:3306/openslt?charset=utf8mb4"
-BACKEND_PORT=4396
-FRONTEND_PORT=7777
-INITIAL_ADMIN_USERNAME=admin
-INITIAL_ADMIN_PASSWORD=shengli123
-```
-
-`DATABASE_URL` 不能和任何分字段 `DATABASE_*` 配置同时出现。只有旧 URL 方式需要自行
-对用户名和密码做 URL 编码。
-
-JWT 和 Fernet 密钥不应写入生产 env。首次迁移或启动时，应用会自动生成：
-
-```text
-/var/lib/openslt/secrets/jwt_secret
-/var/lib/openslt/secrets/credential_encryption_key
-```
-
-安装器会设置目录权限 `0700`、文件权限 `0600` 并归属 `openslt:openslt`。升级和重启
-会复用现有密钥，不会重新生成。
-
-## 9. 首次配置与启动
-
-### 9.1 existing 模式
+再次执行：
 
 ```bash
-# 第一次创建 env 后会有意退出
-./configure.sh
+./configure.sh --database-mode existing
+./start.sh
+```
+
+`configure.sh` 安装非数据库 RPM、引导可选 Python、准备配置并按需开放前端 firewalld
+端口。`start.sh` 安装应用、离线安装 Python 依赖、执行迁移、渲染服务、启动并检查健康。
+
+### 6.2 provision 模式
+
+**不要先运行 existing 模式生成占位 env**，否则 provision 会保留该文件，而不会自动
+创建数据库账号或替换密码。若已有 env，先核实其中的库和账号已由 DBA 准备。
+
+```bash
+./configure.sh --database-mode provision \
+  --mysql-defaults-file /root/openslt-db-admin.cnf
 vi /etc/openslt/openslt.env
-
-# 填写数据库连接后完成系统配置
-./configure.sh
-
-# 安装应用、执行迁移、启动并等待健康检查
 ./start.sh
 ```
 
-`configure.sh` 在 `existing` 模式下自动排除 `mariadb`、`mariadb-server` 和
-`mariadb-libs` RPM，也不会调用本机 MariaDB systemd 服务。
+没有管理密码且空密码登录已获允许时，可省略 `--mysql-defaults-file`。env 不存在时
+脚本生成随机应用密码，创建 `openslt@127.0.0.1`，然后写入 env。可通过
+`--database-name`、`--database-user` 改名，名称只允许字母、数字、下划线。
 
-### 9.2 provision 模式
-
-```bash
-./configure.sh --database-mode provision
-./start.sh
-```
-
-MariaDB root 需要认证时，给第一条命令增加 `--mysql-defaults-file`。
-
-### 9.3 initialize 模式
-
-确认数据库实例可以执行完整安全清理后：
+`initialize` 的操作流程相同，但会实施第 5 节所述清理。确认独占且允许清理后才运行：
 
 ```bash
 ./configure.sh --database-mode initialize
+vi /etc/openslt/openslt.env
 ./start.sh
 ```
 
-### 9.4 自定义 Python 或防火墙策略
+若脚本为 root 生成密码，会将其保存为 `/root/.my.cnf`（`0600`），需按数据库管理凭据
+纳入受控备份。不要将 initialize 用于登录失败或迁移失败的排障。
 
-非默认 Python 路径必须在配置和启动时保持一致：
+### 6.3 配置与脚本行为
 
-```bash
-./configure.sh --python /opt/custom/bin/python3
-./start.sh --python /opt/custom/bin/python3
-```
+- 自定义 Python：在 `configure.sh` 和 `start.sh` 均传入 `--python /实际路径/python3`。
+- 自定义 env：使用 `--env-file FILE`，校验后仍复制到标准路径；运行服务只读取标准路径。
+- `BACKEND_PORT`、`FRONTEND_PORT` 必须为不同的 `1024..65535` 端口。
+- `DATABASE_URL` 与拆分的 `DATABASE_*` 只能二选一；推荐拆分字段，避免手工 URL 编码密码。
+- env 不执行 Shell 展开；包含空格、`#` 等字符时使用正确引号，避免多行密码。
+- 不设置 `JWT_SECRET` 和 `CREDENTIAL_ENCRYPTION_KEY` 时，首次运行会创建持久化密钥。
+  已部署系统不得通过重新生成密钥来修复解密失败。
+- 初始管理员配置只用于创建账号，不会重置已有管理员密码。模板默认
+  `admin / shengli123`，首次部署应在启动前改为独立密码，或首次登录后立即修改。
+- `--no-firewall` 只是不自动修改 firewalld，访问放行须另行完成。
 
-`configure.sh` 默认在运行中的 firewalld 中放行 `FRONTEND_PORT/tcp`。由外部防火墙或
-安全策略统一管理时使用：
+`start.sh` 不会自动补装所有新增系统 RPM；首次安装依赖 `configure.sh`，升级见第 9 节。
+重复启动同一版本仍执行迁移并重启；`--reinstall` 强制重装应用和虚拟环境。
 
-```bash
-./configure.sh --no-firewall
-```
+## 7. 知识库、模型与智能用例配置
 
-该选项只阻止脚本修改 firewalld，不影响 Nginx 监听端口。
+### 7.1 模型服务
 
-## 10. 四个内网脚本的职责
+在“模型管理”配置应用机实际可达的 Base URL（通常以 `/v1` 结尾）、API Key、模型 ID，
+执行模型连接测试。Embedding 服务需提供 embeddings 接口；聊天及用例模型需提供
+chat/completions 接口，流式聊天还要求 SSE 支持。
 
-### configure.sh
+- **对话模型按账户隔离**：管理员和测试人员分别保存并启用自己的模型；未配置时不会
+  回退使用其他人的 Key。智能助手与智能用例使用同一套当前账户对话模型配置。
+- **Embedding 由系统管理员管理**：支持配置维度及自动检测，配置默认维度为 1024，
+  应以模型实际输出为准；每个知识库独立绑定 Embedding 模型。
+- HTTP 会明文传输凭据和内容，界面要求显式允许；使用 HTTPS 时需配置可信证书链。
+- 离线安装包不包含任何 LLM/Embedding 权重，也不启动模型服务器。
 
-用于主机首次配置，也可以在修改端口、数据库模式或系统依赖后重新运行。主要参数：
+升级迁移会把已有个人模型配置归入对应账户，原共享对话模型归首个系统管理员。
+请逐账户验证当前模型、连接和历史权限，“我的 LLM”旧入口已统一到模型管理。
 
-```text
---python PATH
---database-mode existing|provision|initialize
---mysql-defaults-file FILE
---database-name NAME
---database-user NAME
---env-file FILE
---no-firewall
-```
+### 7.2 建立知识库
 
-非默认 `--env-file` 会在校验后复制到标准路径 `/etc/openslt/openslt.env`。已有 env 在
-`provision` 和 `initialize` 中也会保留，不会重新生成数据库密码。
+管理员在“知识库”中新建库，填写名称、选择已配置的 Embedding 模型。一个库可同时
+使用 SVN 与文件上传：
 
-### install.sh
+1. SVN：填写一个或多个 HTTP(S) 仓库地址、账号、密码和允许同步的目录，先测试连接。
+2. 上传：单文件最大 50 MiB，同库不得重复上传同名文件；文档列表用于查看处理状态。
+3. 执行同步或索引，待任务成功后检查文档数、失败文件、revision 和检索结果。
+4. 在智能助手或智能用例中选择相应知识库。多个库时不要假定自动选择默认库。
 
-底层安装器，供 `configure.sh` 和 `start.sh` 调用。常用诊断参数：
-
-```text
---install-rpms
---rpms-only
---skip-database-rpms
---no-start
---database-mode existing|provision|initialize
-```
-
-日常首次上线和升级优先使用 `configure.sh`、`start.sh`。只有分步排查时直接运行
-`install.sh`，例如只安装非数据库 RPM：
-
-```bash
-./install.sh --rpms-only --database-mode existing
-```
-
-### start.sh
-
-正式启动和升级入口。它会校验 env 与包哈希、比较
-`/var/lib/openslt/installed-bundle-version`、安装新版本、执行 Alembic、渲染 systemd
-和 Nginx 配置、重启服务并等待健康检查。
-
-重复运行相同版本时不会重建应用虚拟环境，但仍会执行待处理迁移并重启服务。需要强制
-重装同一版本时：
+支持 `.txt`、`.md`、`.csv`、`.json`、`.yaml`、`.yml`、`.htm`、`.html`、`.doc`、
+`.docx`、`.xls`、`.xlsx`、`.pdf`。旧 `.doc`、`.xls` 依赖 LibreOffice 转换；PDF 使用
+文本提取，不提供扫描件 OCR。先在应用机检查：
 
 ```bash
-./start.sh --reinstall
+svn --version --quiet
+libreoffice --headless --version
+locale -a
 ```
 
-### build-frontend.sh
+至少提供能处理中文文件名的 UTF-8 locale。索引参数默认分块 1200 字符、重叠 150 字符、
+检索数量 10；修改分块或模型相关配置后需重新建立匹配索引。同库索引串行，失败或取消
+保留上次发布索引，但配置已变化时旧索引可能被判定为不可用。
 
-该脚本只在使用 `--bundle-node` 制包时可用。安装后推荐从固定路径执行：
+旧单知识源记录会迁入“默认知识库”；启动时按条件复制旧索引与工作副本到库 ID 目录。
+该迁移发生在配置的知识根目录内，**不会自动跨目录查找旧数据**，升级前检查第 9.2 节。
+
+### 7.3 生成和修改用例
+
+1. 在“智能用例”中选择知识库及已索引需求，按需输入补充提示词，提交生成任务。
+2. 完成后在“我的最近任务”预览或下载 Excel。
+3. 局部修改：勾选或全选用例，再勾选或全选允许修改的字段，填写修改方向。
+4. 提交后生成新记录，原记录保留；新记录可以继续修改和下载。未选用例及字段保持原样。
+
+拆分步骤时同时选择测试步骤与预期结果，保持数量一致。用例修改基于现有内容进行，
+不重新检索需求；新增业务规则应在修改方向明确给出，并人工核对。用例结果是草稿，
+执行前需复核。生成、预览、下载及修改记录仅本人可访问。
+
+## 8. 安装验收
+
+### 8.1 版本、健康与进程
+
+默认端口下执行；自定义端口先从 env 核实：
 
 ```bash
-/opt/openslt/build-frontend.sh
-```
-
-它会核对当前 `package-lock.json` 与缓存绑定的 SHA-256，使用
-`npm ci --offline` 重建 `node_modules`，运行前端测试和生产构建，执行 `nginx -t`
-并 reload Nginx。常用参数：
-
-```text
---project-root DIR
---skip-tests
---no-reload
-```
-
-`--skip-tests` 只适合临时诊断。`--no-reload` 会保留构建结果并验证 Nginx 配置，但不
-reload 服务。
-
-## 11. 安装结果与日常管理
-
-### 11.1 路径和权限
-
-| 路径 | 用途 | 关键权限或归属 |
-| --- | --- | --- |
-| `/opt/openslt` | 当前应用、前端和虚拟环境 | 应用文件 `root:root` |
-| `/opt/openslt-node` | 可选的 glibc 2.17 Node.js/npm 与校验元数据 | `root:root`，不替换系统 Node |
-| `/var/cache/openslt/npm` | 与制包时 lock 文件绑定的 npm 离线缓存 | `root:root` |
-| `/etc/profile.d/openslt-node.sh` | 将隔离 Node 加入新登录 Shell 的 PATH | `root:root 0644` |
-| `/etc/openslt/openslt.env` | 数据库、端口和初始管理员配置 | `root:openslt 0640` |
-| `/etc/openslt/database-mode` | 持久化数据库模式 | `root:root 0644` |
-| `/var/lib/openslt/artifacts` | 抓包、解析、统计和报告产物 | `openslt:openslt` |
-| `/var/lib/openslt/knowledge` | SVN working copy 与已发布 embedding 索引 | `openslt:openslt 0700` |
-| `/var/lib/openslt/secrets` | JWT 与凭据加密密钥 | 目录 `0700`、文件 `0600` |
-| `/var/lib/openslt/installed-bundle-version` | 已安装离线包版本 | `root:root 0644` |
-| `/var/log/openslt` | 应用日志 | `openslt:openslt` |
-| `/etc/systemd/system/openslt-api.service` | 渲染后的 API 服务 | `root:root 0644` |
-| `/etc/nginx/conf.d/openslt.conf` | 渲染后的 Nginx 配置 | `root:root 0644` |
-
-### 11.2 服务命令
-
-```bash
-systemctl status openslt-api nginx
-systemctl restart openslt-api nginx
-journalctl -u openslt-api -n 100 --no-pager
+cat /opt/openslt/VERSION
+cat /var/lib/openslt/installed-bundle-version
+/opt/openslt/.venv/bin/python -c 'from importlib.metadata import version; print(version("openslt"))'
+curl -fsS http://127.0.0.1:4396/health
+curl -fsSI http://127.0.0.1:7777/
+systemctl is-enabled openslt-api nginx
+systemctl is-active openslt-api nginx
 nginx -t
+journalctl -u openslt-api -n 100 --no-pager
 ```
 
-仅在 `provision` 或 `initialize` 模式下由 OpenSLT 管理本机 MariaDB：
+源码 `VERSION`、安装标记、已安装 wheel、页面版本均应为 **0.2.4**；页面打开版本历史
+应显示本次变更。健康检查成功仅说明服务可达，不代替功能验收。
 
-```bash
-systemctl status mariadb
-journalctl -u mariadb -n 100 --no-pager
+由 DBA 检查迁移与表引擎：
+
+```sql
+SELECT VERSION(), @@default_storage_engine;
+SELECT version_num FROM alembic_version;
+SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES
+WHERE TABLE_SCHEMA = 'openslt' AND LEFT(TABLE_NAME, 2) = 't_'
+  AND UPPER(COALESCE(ENGINE, '')) <> 'INNODB';
 ```
 
-`existing` 模式下不要因为 OpenSLT 故障而擅自启停外部或共享数据库。
+最后一条应为空；迁移版本与本次包的 `backend/migrations/versions/` 最新 revision
+一致。若更改库名，同步修改查询条件。
 
-### 11.3 在内网修改并构建前端
+### 8.2 功能验收表
 
-带 `--bundle-node` 的包部署后，新登录 Shell 可以直接查看隔离运行时：
+| 检查项 | 通过条件 |
+| --- | --- |
+| 登录与权限 | 管理员可登录，初始密码已处理；tester、visitor 权限符合预期 |
+| 模型隔离 | 两个账户的对话模型与历史不互相可见，Embedding 管理仅管理员可用 |
+| 知识库 | SVN 和上传资料可索引，中文路径正常，检索返回对应库资料 |
+| 旧文档 | 实际 `.doc`、`.xls` 样本转换并可检索 |
+| 智能助手 | 通用/知识模式均可流式回答、停止和重新提问，知识回答可查看来源 |
+| 智能用例 | 生成、预览、下载成功；单选/全选修改只影响选中内容，原稿保留 |
+| 资源与工作流 | SSH/SFTP、数据库连接与终端可用；完成一条实际测试流程 |
+| 产物与报告 | 解析、统计、复核及 HTML/Excel/PDF 报告可使用 |
+| 重启与恢复 | 维护窗口重启服务/主机后历史、凭据、知识索引和产物仍可访问 |
+| 备份演练 | 在隔离实例恢复数据库及相同时点文件并通过上述关键检查 |
 
-```bash
-node --version
-npm --version
-cat /opt/openslt-node/METADATA
-```
+正式目标机验证应同时保留执行人、时间、包摘要、操作系统和数据库版本、失败项与处理结果。
 
-修改 `/opt/openslt/frontend/src` 中的 Vue、TypeScript 或 CSS 后执行：
+## 9. 从旧版升级到 0.2.4
 
-```bash
-/opt/openslt/build-frontend.sh
-```
+本次更新包含数据库迁移、新 Python 运行依赖、LibreOffice 系统依赖、Nginx 流式配置及
+知识库存储路径修正。**不能仅复制前端或 pip 安装应用 wheel。**
 
-该命令必须以 root 运行，因为生产源码和 npm 缓存属于 root。它不连接 npm registry，
-成功后 Nginx 会提供新的 `frontend/dist`。仅修改后端 Python 时不需要 Node，完成测试后
-执行 `systemctl restart openslt-api`。
+### 9.1 维护窗口与备份
 
-以下变更不能依赖旧缓存：
-
-- 修改 `frontend/package.json` 中的依赖。
-- 运行 `npm install` 导致 `package-lock.json` 改变。
-- 引入 lock 文件中不存在的构建工具或平台二进制。
-
-发生上述变化时，必须在外网更新 lock 文件并重新生成 `--bundle-node` 离线包。生产机
-上的直接改动也会被后续 `start.sh` 升级覆盖，应同步回受版本控制的外网源码，不能把
-生产目录作为唯一代码副本。
-
-## 12. 网络、Nginx、SELinux 与远端资源
-
-| 来源 | 目标 | 默认端口 | 用途 |
-| --- | --- | --- | --- |
-| 内网用户 | OpenSLT/Nginx | TCP 7777 或配置的 `FRONTEND_PORT` | Web、API、WebSocket |
-| Nginx | 本机 API | TCP 4396 或配置的 `BACKEND_PORT` | 仅本机反向代理 |
-| OpenSLT | REM、市场、发单、SLNIC、解析机 | TCP 22 | SSH 与 SFTP |
-| OpenSLT | 业务数据库 | TCP 3306 或实际端口 | 直连 MySQL/MariaDB |
-| OpenSLT | SSH 跳板机 | TCP 22 | 数据库 SSH 隧道 |
-
-内网服务器运行时不需要互联网出口。生产使用 HTTPS 时，应由内网 CA 签发证书并由
-运维调整 Nginx；不要将 API 后端端口直接暴露给客户端。
-
-安装器会在工具可用时设置前端静态文件的 SELinux 上下文，并启用
-`httpd_can_network_connect` 以允许 Nginx 代理本机 API。若严格安全基线不允许脚本
-持久修改 SELinux boolean，应在上线前由安全管理员评审替代策略。
-
-远端资源至少应准备：
-
-- REM、市场和发单机：最小权限 SSH 账号、稳定主机密钥、所需二进制及可写工作目录。
-- 发单机：正确的 EF/ZF XML、合约数据及运行依赖。
-- SLNIC：`start_slnic_dump.sh`、`stop_slnic_dump.sh`、`pcap_merge_tool`、
-  `editcap` 和足够抓包空间。
-- 解析机：受支持的解析程序、XML 主配置及 SFTP 可读写路径。
-- 业务数据库：受限查询/更新账号，或可用的 SSH 隧道入口。
-
-## 13. 升级
-
-升级会执行新版本 Alembic 前向迁移。开始前必须取得可恢复的同一时点备份，并安排
-禁止新建任务的维护窗口。
-
-### 13.1 升级前检查
-
-1. 在与生产一致的测试环境验证新离线包和数据库迁移。
-2. 确认新包的 `.sha256` 和包内 `SHA256SUMS` 均通过。
-3. 记录当前版本、数据库模式、端口和服务状态。
-4. 停止新任务，等待运行中的任务完成或安全取消。
-5. 按第 14 节备份数据库、env、密钥和产物。
-
-记录当前状态：
+1. 在隔离环境用生产备份演练升级；确认新包及校验文件齐全。
+2. 停止提交任务，等待已有测速、知识索引、用例生成结束或安全取消。
+3. 记录当前版本、数据库模式、端口和自定义 systemd/Nginx 配置。
+4. 停止 API，按第 10 节备份数据库与文件，之后保持停服直到升级完成。
 
 ```bash
 cat /var/lib/openslt/installed-bundle-version
 cat /etc/openslt/database-mode
-systemctl status openslt-api nginx --no-pager
-```
-
-### 13.2 执行升级
-
-校验并解压新包后进入新目录：
-
-```bash
-VERSION=0.2.2
-PACKAGE="openslt-offline-rhel7-x86_64-${VERSION}"
-
-sha256sum -c "${PACKAGE}.tar.gz.sha256"
-tar -xzf "${PACKAGE}.tar.gz"
-cd "${PACKAGE}"
-sha256sum -c SHA256SUMS
-./start.sh
-```
-
-当包版本与已安装版本不同时，`start.sh` 会重建 `/opt/openslt/.venv`、替换应用文件、
-执行迁移并重启服务。`/etc/openslt/openslt.env`、数据库、密钥、产物和日志不会被应用
-文件复制覆盖。
-
-如果发布说明明确新增系统 RPM，先执行：
-
-```bash
-DATABASE_MODE="$(cat /etc/openslt/database-mode 2>/dev/null || printf existing)"
-./install.sh --rpms-only --database-mode "${DATABASE_MODE}"
-./start.sh
-```
-
-升级后必须完成健康、登录、资源连接、任务与报告抽样验收。
-
-## 14. 备份与恢复
-
-备份必须覆盖同一恢复点的四类数据：
-
-1. OpenSLT 数据库。
-2. `/etc/openslt/openslt.env` 和 `/etc/openslt/database-mode`。
-3. `/var/lib/openslt/secrets`。
-4. `/var/lib/openslt/artifacts`。
-5. `/var/lib/openslt/knowledge`。
-
-日志和已安装版本文件建议一并保留，便于审计和定位。备份必须存放到另一台设备或受控
-备份系统，不能只留在应用服务器本机。
-
-### 14.1 创建一致性备份
-
-先停止新任务，等待任务完成，然后准备一个权限为 `0600`、能够备份和恢复目标库的
-数据库管理配置。以下示例假设为 `/root/openslt-backup.cnf`，并且应用服务器已经
-安装 `mysqldump`。`existing` 模式默认不安装 MariaDB 客户端；使用远程数据库时，应
-在 DBA 备份主机执行相同的数据库导出，并在应用停服期间完成数据库与文件备份。
-
-```bash
-(
-set -Eeuo pipefail
-
-BACKUP_ROOT=/安全备份挂载/openslt
-BACKUP_ID="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="${BACKUP_ROOT}/${BACKUP_ID}"
-DATABASE_NAME=openslt
-DB_ADMIN_CNF=/root/openslt-backup.cnf
-
-install -d -m 0700 "${BACKUP_DIR}"
 systemctl stop openslt-api
-trap 'systemctl start openslt-api' EXIT
+```
 
-mysqldump \
-  --defaults-extra-file="${DB_ADMIN_CNF}" \
-  --single-transaction \
-  --routines \
-  --triggers \
-  --events \
-  --databases "${DATABASE_NAME}" \
-  > "${BACKUP_DIR}/database.sql"
+安装脚本会替换应用文件、重建 `.venv`，不会在替换前替你等待业务结束或安全停止
+所有工作，因此必须先停 API。保留上一版离线包及升级前备份。
 
-tar -C / -czf "${BACKUP_DIR}/openslt-files.tar.gz" \
-  etc/openslt \
-  var/lib/openslt/artifacts \
-  var/lib/openslt/secrets \
-  var/lib/openslt/installed-bundle-version
+### 9.2 确认旧知识数据的位置
 
-sha256sum \
-  "${BACKUP_DIR}/database.sql" \
-  "${BACKUP_DIR}/openslt-files.tar.gz" \
-  > "${BACKUP_DIR}/SHA256SUMS"
+0.2.4 的服务模板将 `KNOWLEDGE_ROOT` 固定默认到 `/var/lib/openslt/knowledge`，与安装
+迁移脚本一致。旧模板缺少该项，未在 env 或 systemd override 中指定时可能使用
+`/opt/openslt/backend/data/knowledge`。
 
+检查实际配置和两个目录；仅记录知识目录配置，不导出全部服务环境中的密码：
+
+```bash
+systemctl show openslt-api -p WorkingDirectory
+grep -n 'KNOWLEDGE_ROOT' /etc/openslt/openslt.env /etc/systemd/system/openslt-api.service
+ls -ld /var/lib/openslt/knowledge /opt/openslt/backend/data/knowledge
+```
+
+另检查
+`/etc/systemd/system/openslt-api.service.d/` 下本地 override。没有匹配配置或目录不存在
+本身不代表数据丢失，应以旧运行配置与已存在文件判断。
+
+**停服并备份后，旧目录有数据且目标目录为空时**，使用以下保留原文件的复制方式：
+
+```bash
+OLD_KNOWLEDGE=/opt/openslt/backend/data/knowledge
+NEW_KNOWLEDGE=/var/lib/openslt/knowledge
+if [[ -d "$OLD_KNOWLEDGE" ]]; then
+  if [[ -d "$NEW_KNOWLEDGE" && -n "$(find "$NEW_KNOWLEDGE" -mindepth 1 -print -quit)" ]]; then
+    printf '目标知识目录已有数据，请核对两份内容后迁移，禁止直接覆盖。\n' >&2
+  else
+    install -d -o openslt -g openslt -m 0700 "$NEW_KNOWLEDGE"
+    cp -a "$OLD_KNOWLEDGE/." "$NEW_KNOWLEDGE/"
+    chown -R openslt:openslt "$NEW_KNOWLEDGE"
+  fi
+fi
+```
+
+两个目录都有数据时先核对哪一份属于生产；不要按修改时间盲目合并 SQLite 索引或上传
+目录。使用其他自定义目录的站点同样先备份并迁入标准路径；env/override 仍指定旧路径
+会覆盖服务默认值，应在确认迁移完成后统一配置。保留旧目录直到新版本验收完成。
+
+### 9.3 安装新依赖与升级应用
+
+在**新版本离线包目录**校验后执行：
+
+```bash
+sha256sum -c SHA256SUMS
+./install.sh --rpms-only --database-mode existing
+./start.sh
+```
+
+第一条安装命令只补装非数据库 RPM，包含 LibreOffice，不升级或接管已有 MariaDB。
+`start.sh` 随后读取此前保存的数据库模式；原模式为 provision/initialize 时仍会启动
+受管 MariaDB，但不会重新执行 configure 阶段的清理。数据库软件升级由 DBA 单独安排。
+
+自定义 Python 路径继续传给 `start.sh`；安装标记已是本版但需要恢复损坏文件时使用
+`./start.sh --reinstall`。不要为升级重新生成 env 或运行 initialize。
+
+启动会执行 `alembic upgrade head`，安装新版前端与 Nginx 配置，再进行健康检查。
+迁移错误时查看第一条异常并保留停服状态；不要删除已有知识表、手工 stamp 版本或清空
+`alembic_version`。本版已修复部分旧 MySQL 索引限制及中断恢复问题，但不是任意错误都
+可通过反复启动解决。
+
+安装会重写 `/etc/systemd/system/openslt-api.service` 和
+`/etc/nginx/conf.d/openslt.conf`；如有 HTTPS、访问控制等本地改动，按备份重新合并，
+保留本版聊天关闭缓冲和 WebSocket Upgrade 配置，不要直接覆盖回旧模板。完成第 8 节验收。
+
+## 10. 备份
+
+### 10.1 备份范围
+
+| 数据 | 内容 |
+| --- | --- |
+| 应用数据库 | 用户、资源凭据密文、工作流、任务、模型配置、聊天、知识库元数据、用例记录 |
+| `/etc/openslt` | env 和数据库模式 |
+| `/var/lib/openslt` | 产物、知识库上传文件、SVN 副本、索引、密钥、安装标记 |
+| `/var/log/openslt` | 运维与审计排查所需日志 |
+| systemd / Nginx 配置 | 服务、端口、TLS、代理及站点自定义配置；外部证书及 override 另行纳入 |
+| 旧知识目录 | 升级前仍使用的 `/opt/openslt/backend/data/knowledge` 或其他自定义目录 |
+| 发布介质 | 当前与上一版本的离线包、校验文件、部署记录 |
+
+数据库和知识文件必须是相同停服时点。单独恢复数据库不能恢复上传原文或用例 Excel；
+丢失 `credential_encryption_key` 会导致已有资源、SVN、模型凭据无法解密。
+如果 env 显式配置密钥，它同样是备份的一部分。
+
+### 10.2 停服备份示例
+
+由 DBA 准备具备备份权限的 `/root/openslt-backup.cnf`（`0600`），写入真实实例信息：
+
+```ini
+[client]
+host=数据库地址
+port=3306
+user=备份账号
+password=备份密码
+```
+
+以下以数据库名 `openslt` 为例，在应用机 root Bash 中执行。目标机没有数据库客户端时，
+由 DBA 在可达的管理机备份数据库，并与文件备份一起保存；existing 模式不保证安装客户端。
+
+```bash
+set -Eeuo pipefail
+umask 077
+BACKUP_DIR="/srv/openslt-backups/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+systemctl stop openslt-api
+mysqldump --defaults-extra-file=/root/openslt-backup.cnf \
+  --single-transaction --quick --hex-blob --databases openslt \
+  > "$BACKUP_DIR/database.sql"
+BACKUP_PATHS=(etc/openslt var/lib/openslt var/log/openslt \
+  etc/systemd/system/openslt-api.service etc/nginx/conf.d/openslt.conf)
+if [[ -d /opt/openslt/backend/data/knowledge ]]; then
+  BACKUP_PATHS+=(opt/openslt/backend/data/knowledge)
+fi
+if [[ -d /etc/systemd/system/openslt-api.service.d ]]; then
+  BACKUP_PATHS+=(etc/systemd/system/openslt-api.service.d)
+fi
+tar -C / -czf "$BACKUP_DIR/files.tar.gz" "${BACKUP_PATHS[@]}"
+(
+  cd "$BACKUP_DIR"
+  sha256sum database.sql files.tar.gz > SHA256SUMS
+  sha256sum -c SHA256SUMS
 )
 ```
 
-如果数据库由独立 DBA 管理，应使用单位标准快照或备份流程，但仍要记录与文件备份
-对应的恢复点。备份完成后检查 API 健康状态。
+使用与服务器兼容的客户端；MySQL 客户端的 GTID、tablespace 或 column statistics
+选项由 DBA 根据版本添加，不直接套用到 MariaDB 5.5。备份未成功前不要开始升级。
+常规备份完成后可重启 API；升级备份完成后保持停服。备份介质需限制权限、加密并异地保存。
 
-### 14.2 恢复原则
+## 11. 恢复与回滚
 
-- 数据库、env、密钥和产物必须恢复到同一时点。
-- 恢复前先校验备份哈希，并停止 `openslt-api`。
-- 数据库恢复属于破坏性操作，必须确认目标实例、库名和备份文件无误。
-- 恢复密钥时不得生成新密钥替代旧密钥，否则既有资源凭据无法解密。
-- 恢复后重新设置所有者和权限，再启动对应版本应用。
+### 11.1 恢复演练
 
-恢复文件的示例：
+先在隔离主机、空数据库实例恢复，验证备份可用，避免覆盖运行中的生产库：
 
-```bash
-cd /安全备份挂载/openslt/选定恢复点
-sha256sum -c SHA256SUMS
-systemctl stop openslt-api
-tar -C / -xzf openslt-files.tar.gz
-chown -R openslt:openslt /var/lib/openslt/artifacts /var/lib/openslt/secrets
-chown -R openslt:openslt /var/lib/openslt/knowledge
-chmod 0700 /var/lib/openslt/secrets
-chmod 0700 /var/lib/openslt/knowledge
-find /var/lib/openslt/secrets -maxdepth 1 -type f -exec chmod 0600 {} \;
-chown root:openslt /etc/openslt/openslt.env
-chmod 0640 /etc/openslt/openslt.env
-```
+1. 使用备份时对应版本的离线包准备系统依赖和 Python，保持 API 停止。
+2. 在备份目录执行 `sha256sum -c SHA256SUMS`。
+3. 由 DBA 确认恢复目标地址、库名和空库状态，再导入：
 
-数据库应由 DBA 将 `database.sql` 恢复到确认过的目标实例。下面给出同名数据库恢复
-示例；它会删除目标库中的全部现有数据，只能在核对数据库主机、备份时间和库名后由
-授权人员执行：
+   ```bash
+   mysql --defaults-extra-file=/root/openslt-restore.cnf < database.sql
+   ```
 
-```bash
-set -Eeuo pipefail
-DATABASE_NAME=openslt
-DB_ADMIN_CNF=/root/openslt-backup.cnf
+4. 将 `files.tar.gz` 恢复到隔离主机。原 env 内的数据库地址可能仍指向生产，**启动前**
+   改为恢复实例；隔离或禁用对生产业务资源、模型和 SVN 的访问，防止恢复的任务连接生产。
 
-[[ "${DATABASE_NAME}" =~ ^[A-Za-z0-9_]+$ ]]
-mysql --defaults-extra-file="${DB_ADMIN_CNF}" \
-  -NBe 'SELECT @@hostname, VERSION()'
-read -r -p "输入目标库名 ${DATABASE_NAME} 以确认清空并恢复: " CONFIRM_DATABASE
-[[ "${CONFIRM_DATABASE}" == "${DATABASE_NAME}" ]]
+   ```bash
+   systemctl stop openslt-api
+   tar -C / -xzf files.tar.gz
+   chown root:openslt /etc/openslt/openslt.env
+   chmod 0640 /etc/openslt/openslt.env
+   chown -R openslt:openslt /var/lib/openslt /var/log/openslt
+   chmod 0700 /var/lib/openslt/secrets /var/lib/openslt/knowledge
+   find /var/lib/openslt/secrets -maxdepth 1 -type f -exec chmod 0600 {} \;
+   ```
 
-mysql --defaults-extra-file="${DB_ADMIN_CNF}" \
-  -e "DROP DATABASE IF EXISTS \`${DATABASE_NAME}\`"
-mysql --defaults-extra-file="${DB_ADMIN_CNF}" < database.sql
-```
+5. 从对应版本原始离线包执行 `./start.sh --reinstall`，重新合并必要的本地代理配置。
+6. 核验登录、凭据解密、知识原文和索引、历史任务、报告及用例下载。
 
-恢复结束后使用对应版本的离线包执行 `./start.sh --reinstall`，再完成全量验收。
+原地恢复会覆盖文件和数据，必须先保存当前故障现场，由 DBA 在明确的恢复窗口执行；
+不要直接向含有较新表结构的生产库导入旧 dump 并假定已经完整回退。
 
-## 15. 回滚
+### 11.2 回滚规则
 
-项目没有自动回滚脚本。Alembic 前向迁移完成后，只回退 `/opt/openslt` 代码是不安全
-的；旧版本可能无法识别新表结构。必须使用升级前的同一时点备份恢复。
+项目没有自动回滚脚本。前向迁移后只回退应用代码不构成有效回滚，也不建议直接运行
+`alembic downgrade`：多知识库和上传数据的变更可能不允许无损降级。
 
-回滚顺序：
+完整回滚顺序：停 API → 保存故障日志 → 恢复升级前数据库 → 恢复同一时点 env、密钥、
+知识数据和产物 → 使用上一版离线包重装 → 合并原配置 → 验收。旧版本若使用应用目录
+存知识，恢复该目录及原配置，不能让代码和知识根目录错配。
 
-1. 停止 `openslt-api`，保留故障现场日志。
-2. 校验升级前数据库和文件备份。
-3. 由 DBA 恢复升级前数据库，确保升级新增的表和字段不会残留。
-4. 恢复同一时点的 env、数据库模式、密钥和产物。
-5. 进入升级前版本的原始离线包，校验 `SHA256SUMS`。
-6. 执行 `./start.sh --reinstall`。
-7. 完成健康、登录、凭据解密、资源连接、历史任务和报告验收。
+## 12. 日常运维与内网前端修改
 
-旧版本包和其 `.sha256` 必须与备份一起保留。若没有可靠的升级前数据库备份，应停止
-服务并由开发/DBA 评估迁移差异，不能直接尝试应用回退。
+### 12.1 目录与服务
 
-## 16. 上线验收
-
-先从 `/etc/openslt/openslt.env` 确认实际端口，再执行：
-
-```bash
-BACKEND_PORT="$(awk -F= '$1 == "BACKEND_PORT" {gsub(/["[:space:]]/, "", $2); print $2}' /etc/openslt/openslt.env)"
-FRONTEND_PORT="$(awk -F= '$1 == "FRONTEND_PORT" {gsub(/["[:space:]]/, "", $2); print $2}' /etc/openslt/openslt.env)"
-
-curl -fsS "http://127.0.0.1:${BACKEND_PORT:-4396}/health"
-curl -fsSI "http://127.0.0.1:${FRONTEND_PORT:-7777}/"
-systemctl is-enabled openslt-api nginx
-systemctl is-active openslt-api nginx
-journalctl -u openslt-api -n 100 --no-pager
-svn --version --quiet
-```
-
-启用智能用例前，还应在管理页面完成 SVN 白名单与内网 embedding 配置，依次执行“测试连接”和“立即同步”，确认页面显示最近成功 revision、向量维度和文件变化数。HTTP 地址必须由管理员显式确认明文传输风险。
-
-`provision` 和 `initialize` 模式还需检查：
-
-```bash
-systemctl is-enabled mariadb
-systemctl is-active mariadb
-```
-
-数据库兼容检查应确认版本、引擎和字符集：
-
-```sql
-SELECT VERSION(), @@default_storage_engine,
-       @@character_set_server, @@collation_server;
-
-SELECT TABLE_NAME, ENGINE
-FROM information_schema.TABLES
-WHERE TABLE_SCHEMA = 'openslt'
-  AND LEFT(TABLE_NAME, 2) = 't_'
-  AND UPPER(COALESCE(ENGINE, '')) <> 'INNODB';
-```
-
-第二条查询必须返回空结果。
-
-Web 验收至少包括：
-
-- 使用 `admin / shengli123` 首次登录并立即修改密码。
-- 创建 `tester` 和 `visitor`，验证角色权限边界。
-- 验证资源连接、SSH 终端、数据库查询和 WebSocket。
-- 发布场景工作流，执行一条完整测速任务并验证资源锁。
-- 验证抓包、解析、统计、人工复核和 HTML/Excel/PDF 报告。
-- 重启服务器，确认 OpenSLT、Nginx 以及受管 MariaDB 自动恢复。
-- 完成一次备份，并在隔离环境执行恢复演练。
-
-## 17. 故障排查
-
-### 17.1 `release/` 中没有压缩包
-
-制包脚本只有全部步骤成功后才写入最终压缩包。向上查找第一个错误；RPM、wheel、测试
-或前端新旧检查失败时，`release/` 为空是正常保护行为。
-
-### 17.2 Nginx 显示 `Nothing found to download`
-
-当前 yum 源不包含 Nginx。允许访问 nginx.org 时由脚本自动回退；只能使用内部镜像时
-传入真实 `--nginx-repo-url`。先用 `curl -I` 验证地址，不要照抄示例域名。
-
-### 17.3 提示找不到 `rh-python38` RPM
-
-离线 RPM 清单不再依赖 RHSCL Python RPM。目标机已有 Python 3.8+ 时直接使用；没有时
-必须在制包机使用 `--bundle-python`。如果当前脚本帮助中不存在该参数，说明外网机
-代码不是最新版本，应先同步仓库。
-
-### 17.4 `Required Python executable not found`
-
-检查解释器路径和版本：
-
-```bash
-ls -l /opt/rh/rh-python38/root/usr/bin/python3.8
-/opt/rh/rh-python38/root/usr/bin/python3.8 --version
-```
-
-自定义路径需要同时传给 `configure.sh` 和 `start.sh`。目标机没有 Python 时重新制作
-带 `--bundle-python` 的包。
-
-### 17.5 env 仍包含 `CHANGE_ME`
-
-编辑 `/etc/openslt/openslt.env`，替换实际配置行中的占位符。注释也不应保留容易被
-误判为实际配置的 `CHANGE_ME` 文本。然后重新运行 `./configure.sh`。
-
-### 17.6 数据库连接、建库或迁移失败
-
-依次检查：
-
-- 主机、端口、用户名、密码和 MariaDB Host 授权是否匹配。
-- 数据库是否存在；不存在时账号是否有 `CREATE` 权限。
-- 显式 `AUTO_CREATE_DATABASE=false` 是否阻止自动建库。
-- 账号是否拥有目标库内建表、改表、索引和数据读写权限。
-- MariaDB 是否至少为 5.5.68，InnoDB 和 `utf8mb4_unicode_ci` 是否可用。
-- 既有 `t_` 表是否全部为 InnoDB。
-
-`existing` 模式不会尝试使用 root 修复数据库权限，应交由 DBA 处理。
-
-### 17.7 端口非法、重复或被占用
-
-确认前后端端口位于 `1024..65535` 且不同：
-
-```bash
-ss -lntp | grep -E ':(4396|7777)[[:space:]]'
-```
-
-修改 env 后重新运行 `./start.sh --reinstall`，脚本会重新渲染 systemd 和 Nginx 配置。
-如果启用了 firewalld，还需放行新的前端端口并移除不再使用的旧规则。
-
-### 17.8 API 或 Nginx 启动失败
+| 路径 | 说明 |
+| --- | --- |
+| `/opt/openslt` | 应用、迁移、前端和 `.venv`，root 管理 |
+| `/etc/openslt/openslt.env` | 生产配置，`root:openslt 0640` |
+| `/etc/openslt/database-mode` | 已选择的数据库模式 |
+| `/var/lib/openslt/artifacts` | 测试及用例产物 |
+| `/var/lib/openslt/knowledge` | 知识库根目录，`openslt:openslt 0700` |
+| `/var/lib/openslt/secrets` | 持久化密钥，目录 `0700`、文件 `0600` |
+| `/var/log/openslt` | 应用日志 |
+| `/opt/openslt-node` | 可选隔离 Node/npm 及 `METADATA` |
+| `/var/cache/openslt/npm` | 可选离线 npm 缓存 |
 
 ```bash
 systemctl status openslt-api nginx --no-pager
+journalctl -u openslt-api -n 200 --no-pager
+nginx -t
+systemctl restart openslt-api
+systemctl reload nginx
+```
+
+existing 模式遇到应用故障时不要擅自重启共享数据库。持久化任务可能在服务重启后恢复，
+运维窗口前先处理运行中的业务任务。
+
+### 12.2 修改前端
+
+仅适用于带 `--bundle-node` 的包。修改前备份源码并同步回受版本控制的仓库，以 root 执行：
+
+```bash
+/opt/openslt-node/bin/node --version
+cat /opt/openslt-node/METADATA
+/opt/openslt/build-frontend.sh
+```
+
+脚本校验 lock 文件、执行 `npm ci --offline`、前端测试、生产构建、SELinux restorecon、
+`nginx -t` 并 reload。`--no-reload` 保留构建和配置校验但不 reload；`--skip-tests`
+仅用于诊断。修改依赖或 lock 文件后必须回外网重建缓存及离线包，不能靠旧缓存增加依赖。
+
+升级会覆盖生产目录改动。仅修改前端不需要重启 API；后端改动需重新打包、验证与发布。
+不要在离线机运行仓库 `start-web.sh` 或 `deploy/scripts/install.sh`，它们可能访问
+在线 Python/npm 包源。
+
+### 12.3 Nginx、SELinux 与 HTTPS
+
+安装器设置静态目录的 SELinux 上下文，工具可用时开启 `httpd_can_network_connect`。
+它不负责将任意自定义前端端口添加到 SELinux `http_port_t`，遇到绑定拒绝由运维检查
+现有端口标签并按本机策略配置，不能仅靠 firewalld 放行解决。
+
+启用 HTTPS 时使用单位 CA 和受控证书，保留以下代理特性：
+
+- `/api/v1/chat/`：关闭代理缓冲，允许长时间流式响应；
+- `/api/v1/ws/`：HTTP/1.1、Upgrade/Connection 和长连接；
+- `/api/`：正确代理到当前回环后端端口；
+- 静态站点：SPA 路由回退到 `index.html`。
+
+## 13. 故障排查
+
+| 现象 | 检查与处理 |
+| --- | --- |
+| `release/` 没有包 | 查制包日志第一处失败；只有所有阶段成功才输出最终压缩包 |
+| 平台不支持或 Python 缺失 | 核实 RHEL 7.9、x86_64、解释器路径；没有 Python 时重新制带 `--bundle-python` 的包 |
+| Nginx/RPM 找不到 | 核实已启用 RHEL 仓库及镜像；使用真实 `--nginx-repo-url`，不要照抄示例域名 |
+| `frontend/dist is stale` | 同一源码重新执行前端生产构建；版本元数据更新也需重建 |
+| wheel 无法安装 | 确认目标 Python 主次版本及 CPU 架构与制包一致，使用完整 wheelhouse |
+| npm cache miss / lock 不匹配 | 在外网重新制带 Node 的包；不修改摘要绕过校验 |
+| env 含 `CHANGE_ME` | 修改实际配置项后再运行 configure；注释会被占位符检查忽略 |
+| 数据库连接失败 | 检查实例、端口、来源授权、密码和目标库；existing 模式不会使用 root 自动修复 |
+| 迁移报表已存在或索引过长 | 确认部署的是本版完整源码与依赖；保留第一处错误，禁止手工删除知识表或版本表 |
+| 页面正常但 API 不通 | 对照 Nginx upstream 与 systemd 后端端口，查看 SELinux、代理与服务日志 |
+| 聊天不流式或断流 | 核实模型支持 SSE、Nginx 未缓冲、中间代理允许长响应及应用超时配置 |
+| 索引未就绪 | 检查知识库 Embedding 绑定、维度、最近索引任务及失败文档，配置变化后重建 |
+| SVN 中文路径失败 | 检查 UTF-8 locale、账号白名单权限及错误详情；确认应用机可直达 SVN |
+| `.doc` / `.xls` 提取失败 | 验证 LibreOffice 三类依赖及实际样本，修复后重新索引 |
+| 升级后知识列表为空或 permission denied | 核对第 9.2 节目录及 owner；确认 env、override 与迁移使用同一知识根目录 |
+| 已保存密码或 Key 无法解密 | 恢复与数据库同一时点的密钥或 env；不能生成新密钥覆盖旧值 |
+| PDF 中文显示异常 | 用实际客户端打开报告；必要时在验证机用 Poppler 渲染并配置中文 CMap，检查字体支持 |
+
+查看监听端口与近期失败日志：
+
+```bash
+ss -lntp
 journalctl -u openslt-api -n 200 --no-pager
 journalctl -u nginx -n 100 --no-pager
 nginx -t
 ```
 
-重点检查数据库错误、env 权限、密钥目录、前端 `index.html`、端口占用和 SELinux 拒绝
-记录。`start.sh` 健康检查等待 60 秒，失败后会输出最近 API 日志。
-
-### 17.9 页面可打开但 API 或 WebSocket 不可用
-
-检查 `/etc/nginx/conf.d/openslt.conf` 中的后端端口是否与 systemd 单元一致，并确认
-Nginx 可以连接 `127.0.0.1:${BACKEND_PORT}`。WebSocket 路径为 `/api/v1/ws/`，中间
-防火墙或代理必须允许 Upgrade/Connection 头和长连接。
-
-### 17.10 PDF 中文或排版异常
-
-PDF 由 ReportLab 使用内置 `STSong-Light` 中文 CID 字体生成，不再依赖
-Pango、Cairo 或系统中文字体。若 PDF 是上线验收项，应在相同 RHEL 7.9 环境用
-`pdftoppm` 逐页渲染验证；渲染机还需安装 Poppler 的 Adobe-GB1 CMap 数据包。
-Excel、HTML 正常不代表 PDF 环境已经合格。
-
-### 17.11 已保存凭据突然无法解密
-
-检查 `/var/lib/openslt/secrets/credential_encryption_key` 是否被删除、覆盖或从不同
-恢复点还原。不要生成新密钥覆盖原文件；从与数据库一致的备份恢复密钥。
-
-### 17.12 Node、npm 或离线前端构建失败
-
-先确认当前包确实使用了 `--bundle-node`：
-
-```bash
-ls -l /opt/openslt-node/bin/node /opt/openslt-node/bin/npm
-test -d /var/cache/openslt/npm/_cacache
-cat /opt/openslt-node/METADATA
-sha256sum /opt/openslt/frontend/package-lock.json
-```
-
-- 提示找不到 Node 或缓存时，使用带 `--bundle-node` 的原始离线包执行
-  `./start.sh --reinstall`。
-- 提示 `package-lock.json does not match` 时，说明依赖锁已改变，必须在外网重新制包；
-  不要删除元数据或改写摘要绕过检查。
-- 制包时提示 SHA-256 mismatch，立即丢弃该 Node 归档，检查镜像同步和传输过程。
-- 制包时 Node 无法在 RHEL 7.9 执行，不能继续交付。确认使用的文件名包含
-  `linux-x64-glibc-217`，而不是官方 `linux-x64` 包。
-- `npm ci --offline` 报 cache miss，表示缓存不完整或 lock 文件引用发生变化；在可联网
-  制包机重新运行完整制包，不要在内网临时开放互联网补依赖。
-
-## 18. 运维基线
-
-- 每天备份数据库、env、数据库模式、密钥和产物，保存异地副本。
-- 每次升级前创建独立恢复点并保留旧离线包。
-- 定期检查磁盘、日志增长、产物保留策略、数据库容量和备份校验结果。
-- 定期导出和审阅审计日志，停用不再使用的账号与远端凭据。
-- 定期演练服务器重启、数据库恢复和整包回滚。
-- 任何密钥或数据库备份介质都应加密、限制访问并记录流转。
+对外提供故障日志前删除密码、API Key、数据库连接串及业务原文。日常按数据增长制定备份
+与保留策略，并定期演练重启、恢复和上一版本回滚。
