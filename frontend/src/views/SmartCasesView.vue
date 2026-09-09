@@ -41,6 +41,7 @@ const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const syncing = ref(false)
+const cancelling = ref(false)
 const searching = ref(false)
 const searchQuery = ref('')
 const searchResults = ref<Array<{ source_path: string; revision: string; snippet: string; score: number }>>([])
@@ -60,9 +61,9 @@ let timer: ReturnType<typeof setInterval> | undefined
 const repositoryUrls = () => form.repository_urls.map(item => item.trim()).filter(Boolean)
 const svnPaths = () => form.include_paths_text.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
 const isHttp = computed(() => repositoryUrls().some(item => item.toLowerCase().startsWith('http://')))
-const isBusy = computed(() => ['queued', 'running'].includes(status.value?.status || ''))
+const isBusy = computed(() => ['queued', 'running', 'cancelling'].includes(status.value?.status || ''))
 const statusText: Record<string, string> = {
-  unconfigured: '未配置', never: '尚未同步', stale: '配置已变更', queued: '排队中', running: '同步中', succeeded: '同步成功', failed: '同步失败',
+  unconfigured: '未配置', never: '尚未同步', stale: '配置已变更', queued: '排队中', running: '同步中', succeeded: '同步成功', failed: '同步失败', cancelling: '正在取消', cancelled: '已取消',
 }
 
 function addRepositoryUrl() {
@@ -144,6 +145,16 @@ async function syncNow() {
   finally { syncing.value = false }
 }
 
+async function cancelSync() {
+  cancelling.value = true
+  try {
+    const { data } = await api.post('/smart-cases/knowledge-source/sync/cancel')
+    ElMessage.success(data.status === 'cancelled' ? '同步已取消' : '已请求取消，等待当前操作停止')
+    await load(false)
+  } catch (error) { ElMessage.error(errorMessage(error)) }
+  finally { cancelling.value = false }
+}
+
 async function searchKnowledge() {
   if (!searchQuery.value.trim()) return
   searching.value = true
@@ -164,7 +175,10 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
   <div v-loading="loading" class="page smart-cases-page">
     <header class="page-header">
       <div><span class="page-kicker">管理员配置</span><h1 class="page-title">知识源管理</h1><p class="muted">配置 SVN 知识源、同步范围与索引状态</p></div>
-      <el-button v-if="auth.isAdmin" type="primary" :icon="Refresh" :loading="syncing" :disabled="!source?.configured || isBusy || !status?.client_ready" @click="syncNow">立即同步</el-button>
+      <div v-if="auth.isAdmin" class="sync-actions">
+      <el-button v-if="isBusy" :loading="cancelling || status?.status === 'cancelling'" @click="cancelSync">{{ status?.status === 'cancelling' ? '正在取消' : '取消同步' }}</el-button>
+      <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!source?.configured || isBusy || !status?.client_ready" @click="syncNow">立即同步</el-button>
+      </div>
     </header>
 
     <el-alert v-if="isHttp || source?.repository_urls?.some(item => item.startsWith('http://')) || source?.repository_url?.startsWith('http://')" class="http-warning" type="warning" :closable="false" show-icon title="当前 SVN 使用 HTTP，用户名、密码和资料可能以明文经过网络。仅应在受限内网中使用专用只读账号，并尽快迁移到 HTTPS。" />
@@ -225,6 +239,8 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 </template>
 
 <style scoped>
+.sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sync-actions .el-button { margin-left: 0; }
 .smart-cases-page{max-width:1500px}.http-warning{margin-bottom:14px}.content-grid{display:grid;grid-template-columns:minmax(320px,.8fr) minmax(520px,1.2fr);gap:14px}.status-card,.config-card,.search-card{padding:20px}.search-card{margin-top:14px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.section-heading h2{margin:3px 0 0;font-size:18px}.status-list{display:grid;margin:0}.status-list>div{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;padding:11px 0;border-bottom:1px solid var(--ui-border)}.status-list dt{color:var(--ui-text-secondary);font-size:12px}.status-list dd{min-width:0;margin:0;overflow-wrap:anywhere;font-size:12px}.revision-list{display:grid;gap:7px;margin:18px 0}.revision-list>strong{font-size:12px}.revision-list>div{display:flex;justify-content:space-between;gap:12px;padding:8px 10px;border-radius:6px;background:var(--ui-canvas);font-size:12px}.credential-state{display:inline-flex;align-items:center;gap:5px;color:var(--ui-text-secondary);font-size:12px}.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-row :deep(.el-form-item){min-width:0}.svn-path-list{display:grid;width:100%;gap:8px}.svn-path-list>.el-button{justify-self:start}.svn-path-row{display:grid;grid-template-columns:24px minmax(0,1fr) 32px;align-items:center;gap:8px}.svn-path-index{display:grid;width:24px;height:24px;place-items:center;border-radius:50%;background:var(--ui-canvas);color:var(--ui-text-secondary);font-size:12px}.field-help{margin:5px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.5}.config-divider{display:flex;align-items:center;gap:10px;margin:20px 0 16px;color:var(--ui-text-secondary);font-size:12px;font-weight:650}.config-divider::after{height:1px;flex:1;background:var(--ui-border);content:""}.form-actions{display:flex;justify-content:flex-end;gap:8px}.readonly-config{margin-top:8px}.search-row{display:flex;gap:8px}.search-results{display:grid;gap:8px;margin-top:14px}.search-results article{padding:12px 14px;border:1px solid var(--ui-border);border-radius:7px}.search-results article>div{display:flex;align-items:center;gap:8px}.search-results article>div span:last-child{margin-left:auto;color:var(--ui-text-secondary);font:12px/1 monospace}.search-results p{margin:8px 0 0;color:var(--ui-text-secondary);font-size:12px;line-height:1.6;white-space:pre-wrap}@media(max-width:980px){.content-grid{grid-template-columns:1fr}}@media(max-width:640px){.form-row{grid-template-columns:1fr}.status-list>div{grid-template-columns:1fr;gap:4px}.search-row{align-items:stretch;flex-direction:column}}
 
 .form-row { grid-template-columns: minmax(0, 1fr); }

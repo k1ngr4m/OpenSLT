@@ -15,7 +15,8 @@ from app.api.deps import admin_only, operators
 from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
-from app.models import SmartCaseGeneration, SvnKnowledgeSource, User
+from app.core.time import beijing_now
+from app.models import DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User
 from app.schemas import (
     KnowledgeSearchOut,
     KnowledgeSearchRequest,
@@ -221,6 +222,32 @@ def sync_now(
     return SvnSyncTaskOut(task_id=task.id, status=task.status, reused=existing is not None)
 
 
+@router.post("/knowledge-source/sync/cancel")
+def cancel_sync(
+    request: Request,
+    actor: User = Depends(admin_only),
+    db: Session = Depends(get_db),
+) -> dict:
+    source = _source(db)
+    task = active_svn_task(db)
+    if task is None:
+        return {"status": source.sync_status if source else "unconfigured"}
+    # Serialize with task claiming so queued cancellation cannot race a worker.
+    task = db.scalar(select(DurableTask).where(DurableTask.id == task.id).with_for_update().execution_options(populate_existing=True))
+    if task.status not in {"queued", "running"}:
+        return {"status": task.status}
+    task.payload = {**task.payload, "cancel_requested": True}
+    if task.status == "queued":
+        task.status = "cancelled"
+        task.finished_at = beijing_now()
+        if source:
+            source.sync_status = "cancelled"
+            source.last_error = None
+    write_audit(db, "smart_cases.svn_sync.cancel", "svn_knowledge_source", source.id if source else None, actor, request, detail={"task_id": task.id})
+    db.commit()
+    return {"status": "cancelled" if task.status == "cancelled" else "cancelling"}
+
+
 @router.get("/knowledge-source/sync-status", response_model=SvnSyncStatusOut)
 def sync_status(
     _: User = Depends(operators),
@@ -237,7 +264,7 @@ def sync_status(
         svn_version=client["version"],
         embedding_model=embedding[1].model_id if embedding else None,
         embedding_dimensions=source.embedding_dimensions if source else None,
-        status=task.status if task else (source.sync_status if source else "unconfigured"),
+        status=("cancelling" if task.payload.get("cancel_requested") else task.status) if task else (source.sync_status if source else "unconfigured"),
         task_id=task.id if task else None,
         last_attempt_at=source.last_attempt_at if source else None,
         last_success_at=source.last_success_at if source else None,

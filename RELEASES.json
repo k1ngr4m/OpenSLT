@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "type": "added",
+      "text": "知识源支持取消排队或正在执行的同步，取消时保留已发布索引。"
+    },
+    {
       "type": "fixed",
       "text": "修复旧系统 locale 列表包含非 UTF-8 字节时导致 SVN 同步失败的问题。"
     },

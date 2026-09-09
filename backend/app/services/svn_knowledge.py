@@ -112,6 +112,10 @@ def _svn_targets(
     return targets
 
 
+class SvnSyncCancelled(SvnKnowledgeError):
+    pass
+
+
 def _svn_environment() -> typing.Dict[str, str]:
     environment = dict(os.environ)
     try:
@@ -140,6 +144,7 @@ class SvnClient:
     def __init__(self, executable: str = "svn", timeout_seconds: int = 120) -> None:
         self.executable = executable
         self.timeout_seconds = timeout_seconds
+        self.check_cancelled: typing.Optional[typing.Callable[[], None]] = None
 
     def version(self) -> str:
         executable = shutil.which(self.executable)
@@ -198,8 +203,12 @@ class SvnClient:
         prompted = False
         process_status: typing.Optional[int] = None
         deadline = time.monotonic() + self.timeout_seconds
+        next_cancel_check = 0.0
         try:
             while True:
+                if self.check_cancelled and time.monotonic() >= next_cancel_check:
+                    self.check_cancelled()
+                    next_cancel_check = time.monotonic() + 0.5
                 if time.monotonic() >= deadline:
                     raise SvnKnowledgeError("SVN 请求超时")
                 ready, _, _ = io_select.select([master, stdout_read], [], [], 0.1)
@@ -345,6 +354,7 @@ def _sync_working_copy(
     if working_copy.exists():
         if not (working_copy / ".svn").is_dir():
             raise SvnKnowledgeError("SVN working copy 目录已存在但不是有效检出目录")
+        client.run(["cleanup", str(working_copy)], username, password)
         actual_url, _ = _working_copy_info(client, working_copy, username, password)
         if actual_url != target_url.rstrip("/"):
             raise SvnKnowledgeError("SVN working copy URL 与当前配置不一致，已停止同步")
@@ -418,6 +428,7 @@ def _build_manifest(
     revisions: typing.Dict[str, str],
     working_copies: typing.Dict[str, Path],
     previous: typing.Dict[str, typing.Any],
+    check_cancelled: typing.Optional[typing.Callable[[], None]] = None,
 ) -> typing.Tuple[typing.Dict[str, typing.Any], typing.Dict[str, int]]:
     repositories = [repository_urls] if isinstance(repository_urls, str) else list(repository_urls)
     previous_files = previous.get("files") if _manifest_repository_urls(previous) == repositories else {}
@@ -428,6 +439,8 @@ def _build_manifest(
         for directory, names, filenames in os.walk(root):
             names[:] = [name for name in names if name != ".svn"]
             for filename in filenames:
+                if check_cancelled:
+                    check_cancelled()
                 source = Path(directory) / filename
                 if source.is_symlink() or source.suffix.casefold() not in SUPPORTED_SUFFIXES:
                     continue
@@ -524,6 +537,7 @@ def _publish_vector_index(
     previous: typing.Dict[str, typing.Any],
     working_copies: typing.Dict[str, Path],
     embedding: EmbeddingClient,
+    check_cancelled: typing.Optional[typing.Callable[[], None]] = None,
 ) -> int:
     destination = settings.knowledge_root / "published" / "svn-index.sqlite3"
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -565,12 +579,16 @@ def _publish_vector_index(
             dimensions = 0
             failed_files: typing.Dict[str, str] = {}
             for source_path in sorted(changed):
+                if check_cancelled:
+                    check_cancelled()
                 try:
                     texts = list(_chunks(_extract_text(_local_source_path(source_path, working_copies))))
                 except Exception as exc:
                     failed_files[source_path] = str(redact(str(exc)))[:300]
                     continue
                 for offset in range(0, len(texts), 16):
+                    if check_cancelled:
+                        check_cancelled()
                     batch = texts[offset:offset + 16]
                     vectors = embedding.embed(batch)
                     dimensions = len(vectors[0])
@@ -603,6 +621,8 @@ def _publish_vector_index(
             connection.commit()
         finally:
             connection.close()
+        if check_cancelled:
+            check_cancelled()
         os.replace(str(temporary), str(destination))
         try:
             destination.chmod(0o600)
@@ -736,7 +756,7 @@ def enqueue_due_svn_syncs(db: Session, now: typing.Optional[datetime] = None) ->
     return enqueue_svn_sync(db, source, "scheduled", now)
 
 
-def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None) -> None:
+def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None, task_id: typing.Optional[int] = None) -> None:
     from app.services.model_providers import require_active_model
 
     db = SessionLocal()
@@ -758,34 +778,53 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None) 
     finally:
         db.close()
 
+    def check_cancelled() -> None:
+        if task_id is None:
+            return
+        with SessionLocal() as session:
+            task = session.get(DurableTask, task_id)
+            if task is None or task.status == "cancelled" or task.payload.get("cancel_requested"):
+                raise SvnSyncCancelled("同步已取消")
+
     try:
+        check_cancelled()
         runner = client or SvnClient()
+        runner.check_cancelled = check_cancelled
         runner.version()
         working_copies: typing.Dict[str, Path] = {}
         revisions: typing.Dict[str, str] = {}
         for repository_url, relative_path, source_ref in _svn_targets(repository_urls, include_paths):
+            check_cancelled()
             working_copy, revision = _sync_working_copy(runner, repository_url, relative_path, username, password)
             working_copies[source_ref] = working_copy
             revisions[source_ref] = revision
         index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
         previous = _load_manifest(index_path)
-        manifest, changes = _build_manifest(repository_urls, revisions, working_copies, previous)
+        manifest, changes = _build_manifest(repository_urls, revisions, working_copies, previous, check_cancelled)
         dimensions = _publish_vector_index(
             manifest,
             previous,
             working_copies,
             EmbeddingClient(embedding_base_url, embedding_model, embedding_api_key),
+            check_cancelled,
         )
     except Exception as exc:
-        db = SessionLocal()
-        try:
-            source = db.get(SvnKnowledgeSource, source_id)
+        with SessionLocal() as session:
+            source = session.get(SvnKnowledgeSource, source_id)
+            task = session.get(DurableTask, task_id) if task_id is not None else None
+            cancelled = isinstance(exc, SvnSyncCancelled) or bool(task and task.payload.get("cancel_requested"))
             if source:
-                source.sync_status = "failed"
-                source.last_error = str(redact(str(exc)))[:1000]
-                db.commit()
-        finally:
-            db.close()
+                source.sync_status = "cancelled" if cancelled else "failed"
+                source.last_error = None if cancelled else str(redact(str(exc)))[:1000]
+            if cancelled and task:
+                task.status = "cancelled"
+                task.finished_at = beijing_now()
+                task.locked_by = None
+                task.lease_expires_at = None
+                task.last_error = None
+            session.commit()
+        if cancelled:
+            return
         raise
 
     db = SessionLocal()

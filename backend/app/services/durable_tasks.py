@@ -204,7 +204,7 @@ async def _execute_payload(task: DurableTask) -> None:
         from app.services.svn_knowledge import execute_svn_sync
 
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, execute_svn_sync, int(task.payload["source_id"]))
+        await loop.run_in_executor(None, execute_svn_sync, int(task.payload["source_id"]), None, task.id)
     elif task.task_type == "start_run":
         run_id = int(task.payload["run_id"])
         await orchestration.start_run(run_id)

@@ -425,3 +425,73 @@ def test_svn_locale_command_handles_non_utf8_output(tmp_path: Path, monkeypatch)
     environment = _svn_environment()
     assert environment['LC_CTYPE'] == 'en_US.utf8'
     assert environment['LC_MESSAGES'] == 'C'
+
+
+def test_cancel_sync_handles_queued_and_running_tasks(client, admin_headers) -> None:
+    from app.services.svn_knowledge import execute_svn_sync
+
+    client.put('/api/v1/smart-cases/knowledge-source', headers=admin_headers, json=_payload())
+    _add_model(client, admin_headers, 'embedding', 'http://embedding.intranet.example/v1', 'bge-m3')
+    first = client.post('/api/v1/smart-cases/knowledge-source/sync', headers=admin_headers).json()
+    assert client.post('/api/v1/smart-cases/knowledge-source/sync/cancel', headers=admin_headers).json()['status'] == 'cancelled'
+    with SessionLocal() as db:
+        assert db.get(DurableTask, first['task_id']).status == 'cancelled'
+    second = client.post('/api/v1/smart-cases/knowledge-source/sync', headers=admin_headers).json()
+    with SessionLocal() as db:
+        task = db.get(DurableTask, second['task_id'])
+        task.status = 'running'
+        source_id = task.payload['source_id']
+        db.commit()
+    assert client.post('/api/v1/smart-cases/knowledge-source/sync/cancel', headers=admin_headers).json()['status'] == 'cancelling'
+    assert client.get('/api/v1/smart-cases/knowledge-source/sync-status', headers=admin_headers).json()['status'] == 'cancelling'
+    execute_svn_sync(source_id, task_id=second['task_id'])
+    with SessionLocal() as db:
+        assert db.get(DurableTask, second['task_id']).status == 'cancelled'
+        assert db.get(SvnKnowledgeSource, source_id).sync_status == 'cancelled'
+
+
+def test_cancel_svn_process_stops_child(tmp_path: Path) -> None:
+    import os
+    import pytest
+    from app.services.svn_knowledge import SvnSyncCancelled
+
+    executable = tmp_path / 'slow-svn'
+    pid_file = tmp_path / 'pid'
+    executable.write_text('#!' + sys.executable + '\nimport os, time\n'
+                          + 'open(' + repr(str(pid_file)) + ', "w").write(str(os.getpid()))\ntime.sleep(30)\n')
+    executable.chmod(0o700)
+    runner = SvnClient(str(executable), timeout_seconds=5)
+    def cancel():
+        if pid_file.exists():
+            raise SvnSyncCancelled('同步已取消')
+    runner.check_cancelled = cancel
+    with pytest.raises(SvnSyncCancelled):
+        runner.run(['checkout', 'http://svn/repo'], 'user', '')
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
+
+
+def test_cancel_index_keeps_published_snapshot(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+    from app.services.svn_knowledge import SvnSyncCancelled
+
+    monkeypatch.setattr(settings, 'knowledge_root', tmp_path)
+    working = tmp_path / 'wc'
+    working.mkdir()
+    document = working / 'test.md'
+    document.write_text('original')
+    class Embedding:
+        base_url = 'https://example.com/v1'
+        model = 'test'
+        def embed(self, texts):
+            return [[1.0, 0.0] for _ in texts]
+    manifest, _ = _build_manifest('http://svn/repo', {'docs': '1'}, {'docs': working}, {})
+    _publish_vector_index(manifest, {}, {'docs': working}, Embedding())
+    destination = tmp_path / 'published' / 'svn-index.sqlite3'
+    original = destination.read_bytes()
+    def cancel():
+        raise SvnSyncCancelled('同步已取消')
+    with pytest.raises(SvnSyncCancelled):
+        _publish_vector_index(manifest, manifest, {'docs': working}, Embedding(), cancel)
+    assert destination.read_bytes() == original
+    assert not list(destination.parent.glob('*.tmp'))
