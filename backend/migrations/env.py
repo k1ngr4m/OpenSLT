@@ -32,7 +32,8 @@ def run_migrations_online() -> None:
         allow_create=settings.auto_create_database,
     )
     connectable = engine_from_config(config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool)
-    with connectable.connect() as connection:
+    # Include preflight queries and the revision stamp in one committed transaction.
+    with connectable.begin() as connection:
         validate_database_server(connection)
         if connection.dialect.name == "mysql":
             connection.exec_driver_sql("SET SESSION default_storage_engine=InnoDB")

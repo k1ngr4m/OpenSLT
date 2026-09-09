@@ -435,3 +435,40 @@ def test_expected_migration_revisions_remain() -> None:
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert completed.stdout.strip() == "0013 (head)"
+
+
+def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monkeypatch) -> None:
+    from alembic import command
+    from alembic.config import Config
+    from app.core import database
+    from app.core.config import settings
+
+    database_path = tmp_path / "preflight.sqlite3"
+    monkeypatch.setattr(settings, "database_url", _database_url(database_path))
+    monkeypatch.setattr(
+        database, "validate_database_server",
+        lambda connection: connection.exec_driver_sql("SELECT 1").scalar_one(),
+    )
+    command.upgrade(Config(str(REPOSITORY_ROOT / "alembic.ini")), "head")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0013",)
+
+
+def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -> None:
+    database_path = tmp_path / "resumed-prompts.sqlite3"
+    _alembic(database_path, "upgrade", "head")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "INSERT INTO t_case_generation_prompts (id, system_prompt, user_prompt) "
+            "VALUES (1, 'saved system', 'saved user')"
+        )
+        connection.execute(f"UPDATE {VERSION_TABLE} SET version_num = '0012'")
+        connection.commit()
+
+    _alembic(database_path, "upgrade", "head")
+    _alembic(database_path, "upgrade", "head")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0013",)
+        assert connection.execute("SELECT * FROM t_case_generation_prompts").fetchall() == [
+            (1, "saved system", "saved user")
+        ]

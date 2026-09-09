@@ -1,5 +1,10 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "fixed",
+      "text": "修复 MySQL 启动迁移未提交版本号及提示词配置表已存在时导致启动失败的问题，保留已有提示词配置。"
+    }
+  ],
   "releases": [
     {
       "version": "0.2.3",

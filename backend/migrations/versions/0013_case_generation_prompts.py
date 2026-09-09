@@ -13,6 +13,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if not op.get_context().as_sql and sa.inspect(op.get_bind()).has_table("t_case_generation_prompts"):
+        return
     op.create_table(
         "t_case_generation_prompts",
         sa.Column("id", sa.Integer(), primary_key=True),
