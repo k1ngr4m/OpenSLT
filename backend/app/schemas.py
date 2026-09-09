@@ -189,6 +189,19 @@ class SmartCaseGenerationOut(BaseModel):
     updated_at: datetime
 
 
+class GeneratedCaseOut(BaseModel):
+    title: str
+    preconditions: typing.List[str]
+    steps: typing.List[str]
+    expected_results: typing.List[str]
+    case_type: str
+    priority: str
+
+
+class SmartCaseGenerationDetailOut(SmartCaseGenerationOut):
+    result_cases: typing.List[GeneratedCaseOut]
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str

@@ -2064,6 +2064,21 @@ export interface components {
             /** Sql */
             sql: string;
         };
+        /** GeneratedCaseOut */
+        GeneratedCaseOut: {
+            /** Case Type */
+            case_type: string;
+            /** Expected Results */
+            expected_results: string[];
+            /** Preconditions */
+            preconditions: string[];
+            /** Priority */
+            priority: string;
+            /** Steps */
+            steps: string[];
+            /** Title */
+            title: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3389,6 +3404,43 @@ export interface components {
         SmartCaseGenerationCreate: {
             /** Requirement Path */
             requirement_path: string;
+        };
+        /** SmartCaseGenerationDetailOut */
+        SmartCaseGenerationDetailOut: {
+            /** Case Count */
+            case_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Download Ready */
+            download_ready: boolean;
+            /** Error */
+            error: string | null;
+            /** Id */
+            id: number;
+            /** Llm Model */
+            llm_model: string;
+            /** Referenced Sources */
+            referenced_sources: Record<string, unknown>[];
+            /** Requirement Name */
+            requirement_name: string;
+            /** Requirement No */
+            requirement_no: string | null;
+            /** Requirement Path */
+            requirement_path: string;
+            /** Requirement Revision */
+            requirement_revision: string;
+            /** Result Cases */
+            result_cases: components["schemas"]["GeneratedCaseOut"][];
+            /** Status */
+            status: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** SmartCaseGenerationOut */
         SmartCaseGenerationOut: {
@@ -7761,7 +7813,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SmartCaseGenerationOut"];
+                    "application/json": components["schemas"]["SmartCaseGenerationDetailOut"];
                 };
             };
             /** @description Validation Error */

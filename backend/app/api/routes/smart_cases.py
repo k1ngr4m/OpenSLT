@@ -24,6 +24,7 @@ from app.schemas import (
     KnowledgeSearchRequest,
     IndexedRequirementOut,
     SmartCaseGenerationCreate,
+    SmartCaseGenerationDetailOut,
     SmartCaseGenerationOut,
     SvnConnectionTestOut,
     SvnKnowledgeConnectionTest,
@@ -407,16 +408,19 @@ def generations(
     return [_generation_out(item) for item in items]
 
 
-@router.get("/generations/{generation_id}", response_model=SmartCaseGenerationOut)
+@router.get("/generations/{generation_id}", response_model=SmartCaseGenerationDetailOut)
 def generation(
     generation_id: int,
     _: User = Depends(operators),
     db: Session = Depends(get_db),
-) -> SmartCaseGenerationOut:
+) -> SmartCaseGenerationDetailOut:
     item = db.get(SmartCaseGeneration, generation_id)
     if item is None:
         raise HTTPException(status_code=404, detail={"code": "GENERATION_NOT_FOUND", "message": "生成记录不存在"})
-    return _generation_out(item)
+    return SmartCaseGenerationDetailOut(
+        **_generation_out(item).model_dump(),
+        result_cases=item.result_cases if item.status == "succeeded" else [],
+    )
 
 
 @router.get("/generations/{generation_id}/download")

@@ -940,6 +940,53 @@
         "title": "DatabaseUpdateExecuteRequest",
         "type": "object"
       },
+      "GeneratedCaseOut": {
+        "properties": {
+          "case_type": {
+            "title": "Case Type",
+            "type": "string"
+          },
+          "expected_results": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Expected Results",
+            "type": "array"
+          },
+          "preconditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Preconditions",
+            "type": "array"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "preconditions",
+          "steps",
+          "expected_results",
+          "case_type",
+          "priority"
+        ],
+        "title": "GeneratedCaseOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4586,6 +4633,106 @@
           "requirement_path"
         ],
         "title": "SmartCaseGenerationCreate",
+        "type": "object"
+      },
+      "SmartCaseGenerationDetailOut": {
+        "properties": {
+          "case_count": {
+            "title": "Case Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "download_ready": {
+            "title": "Download Ready",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "llm_model": {
+            "title": "Llm Model",
+            "type": "string"
+          },
+          "referenced_sources": {
+            "items": {
+              "type": "object"
+            },
+            "title": "Referenced Sources",
+            "type": "array"
+          },
+          "requirement_name": {
+            "title": "Requirement Name",
+            "type": "string"
+          },
+          "requirement_no": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requirement No"
+          },
+          "requirement_path": {
+            "title": "Requirement Path",
+            "type": "string"
+          },
+          "requirement_revision": {
+            "title": "Requirement Revision",
+            "type": "string"
+          },
+          "result_cases": {
+            "items": {
+              "$ref": "#/components/schemas/GeneratedCaseOut"
+            },
+            "title": "Result Cases",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "requirement_path",
+          "requirement_revision",
+          "requirement_no",
+          "requirement_name",
+          "status",
+          "llm_model",
+          "case_count",
+          "referenced_sources",
+          "error",
+          "download_ready",
+          "created_at",
+          "updated_at",
+          "result_cases"
+        ],
+        "title": "SmartCaseGenerationDetailOut",
         "type": "object"
       },
       "SmartCaseGenerationOut": {
@@ -12518,7 +12665,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SmartCaseGenerationOut"
+                  "$ref": "#/components/schemas/SmartCaseGenerationDetailOut"
                 }
               }
             },

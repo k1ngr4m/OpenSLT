@@ -277,6 +277,35 @@ def test_generated_case_json_requires_matching_steps_and_results() -> None:
     assert rows[0]["priority"] == "中"
 
 
+def test_generation_preview_returns_saved_cases_only_for_completed_tasks(client, admin_headers) -> None:
+    from app.models import User
+
+    cases = parse_cases('{"cases":[{"title":"登录成功","preconditions":["账号已启用"],"steps":["登录"],"expected_results":["进入首页"]}]}')
+    with SessionLocal() as db:
+        item = SmartCaseGeneration(
+            requirement_path="需求/登录.md", requirement_revision="51", requirement_no="1024",
+            requirement_name="登录", llm_model="qwen3", status="succeeded", case_count=1,
+            result_cases=cases, referenced_sources=[{"source_path": "需求/登录.md", "revision": "51"}],
+            created_by=db.scalar(select(User.id).where(User.username == "admin")),
+        )
+        db.add(item)
+        db.commit()
+        generation_id = item.id
+    url = f"/api/v1/smart-cases/generations/{generation_id}"
+    assert client.get(url).status_code == 401
+    response = client.get(url, headers=admin_headers)
+    assert response.status_code == 200
+    assert response.json()["result_cases"] == cases
+    assert response.json()["referenced_sources"] == [{"source_path": "需求/登录.md", "revision": "51"}]
+    assert "result_cases" not in client.get("/api/v1/smart-cases/generations", headers=admin_headers).json()[0]
+    for status in ("queued", "running", "failed"):
+        with SessionLocal() as db:
+            db.get(SmartCaseGeneration, generation_id).status = status
+            db.commit()
+        assert client.get(url, headers=admin_headers).json()["result_cases"] == []
+    assert client.get("/api/v1/smart-cases/generations/999999", headers=admin_headers).status_code == 404
+
+
 def test_generated_excel_is_a_traceable_draft(tmp_path: Path) -> None:
     path = tmp_path / "cases.xlsx"
     generation = SimpleNamespace(

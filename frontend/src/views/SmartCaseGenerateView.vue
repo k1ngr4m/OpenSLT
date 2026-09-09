@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Download, MagicStick, Search, Setting } from '@element-plus/icons-vue'
+import { Download, MagicStick, Search, Setting, View } from '@element-plus/icons-vue'
 import { ElMessage } from '@/ui/elementPlusServices'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/time'
+import type { components } from '@/types/api.generated'
 
 interface Requirement { source_path: string; revision: string; requirement_no: string | null; requirement_name: string }
 interface Generation { id: number; requirement_path: string; requirement_revision: string; requirement_no: string | null; requirement_name: string; status: string; llm_model: string; case_count: number; error: string | null; download_ready: boolean; created_at: string }
@@ -15,6 +16,11 @@ const auth = useAuthStore()
 const loading = ref(false)
 const generating = ref(false)
 const downloading = ref<number | null>(null)
+const previewVisible = ref(false)
+const previewLoading = ref(false)
+const previewError = ref('')
+const previewItem = ref<Generation | null>(null)
+const previewDetail = ref<components['schemas']['SmartCaseGenerationDetailOut'] | null>(null)
 const query = ref('')
 const requirements = ref<Requirement[]>([])
 const generations = ref<Generation[]>([])
@@ -50,10 +56,26 @@ async function generate() {
   generating.value = true
   try {
     await api.post('/smart-cases/generations', { requirement_path: selected.value.source_path })
-    ElMessage.success('生成任务已提交，完成后可下载 Excel 草稿')
+    ElMessage.success('生成任务已提交，完成后可预览或下载 Excel 草稿')
     await load(false)
   } catch (error) { ElMessage.error(errorMessage(error)) }
   finally { generating.value = false }
+}
+
+async function preview(item: Generation) {
+  previewItem.value = item
+  previewDetail.value = null
+  previewError.value = ''
+  previewLoading.value = true
+  previewVisible.value = true
+  try {
+    const response = await api.get<components['schemas']['SmartCaseGenerationDetailOut']>(`/smart-cases/generations/${item.id}`)
+    if (previewItem.value?.id === item.id) previewDetail.value = response.data
+  } catch (error) {
+    if (previewItem.value?.id === item.id) previewError.value = errorMessage(error)
+  } finally {
+    if (previewItem.value?.id === item.id) previewLoading.value = false
+  }
 }
 
 async function download(item: Generation) {
@@ -117,13 +139,36 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
         <el-table-column prop="llm_model" label="模型" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tooltip :content="row.error || ''" :disabled="!row.error"><el-tag :type="row.status === 'succeeded' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'" effect="plain">{{ statusText[row.status] || row.status }}<template v-if="row.case_count"> · {{ row.case_count }}</template></el-tag></el-tooltip></template></el-table-column>
         <el-table-column label="提交时间" width="180"><template #default="{ row }">{{ formatBeijingDateTime(row.created_at) }}</template></el-table-column>
-        <el-table-column label="操作" width="110" fixed="right"><template #default="{ row }"><el-button text type="primary" :icon="Download" :loading="downloading === row.id" :disabled="!row.download_ready" @click="download(row)">下载</el-button></template></el-table-column>
+        <el-table-column label="操作" width="190" fixed="right"><template #default="{ row }"><el-button v-if="row.status === 'succeeded'" text type="primary" :icon="View" @click="preview(row)">预览</el-button><el-button text type="primary" :icon="Download" :loading="downloading === row.id" :disabled="!row.download_ready" @click="download(row)">下载</el-button></template></el-table-column>
       </el-table>
       <el-empty v-else description="还没有生成记录" :image-size="72" />
     </section>
+
+    <el-dialog v-model="previewVisible" :title="`用例预览 · ${previewItem?.requirement_name || ''}`" width="min(1400px, 94vw)" top="5vh" destroy-on-close @closed="previewItem = null">
+      <div v-loading="previewLoading" class="case-preview-body" :aria-busy="previewLoading">
+        <el-alert v-if="previewError" :title="previewError" type="error" show-icon :closable="false" />
+        <template v-else-if="previewDetail">
+          <p class="muted">{{ previewDetail.requirement_no || '未识别编号' }} · r{{ previewDetail.requirement_revision }} · {{ previewDetail.llm_model }} · {{ previewDetail.result_cases.length }} 条用例</p>
+          <el-alert title="以下内容为 AI 生成草稿，执行前必须由测试人员复核。" type="info" show-icon :closable="false" />
+          <el-table v-if="previewDetail.result_cases.length" :data="previewDetail.result_cases" border max-height="55vh" class="case-preview-table">
+            <el-table-column label="用例编号" width="110"><template #default="{ $index }">TC-{{ String($index + 1).padStart(4, '0') }}</template></el-table-column>
+            <el-table-column prop="title" label="用例名称" min-width="180" />
+            <el-table-column label="前置条件" min-width="180"><template #default="{ row }"><ul v-if="row.preconditions.length"><li v-for="(text, index) in row.preconditions" :key="index">{{ text }}</li></ul><span v-else>无</span></template></el-table-column>
+            <el-table-column label="测试步骤" min-width="240"><template #default="{ row }"><ol><li v-for="(text, index) in row.steps" :key="index">{{ text }}</li></ol></template></el-table-column>
+            <el-table-column label="预期结果" min-width="240"><template #default="{ row }"><ol><li v-for="(text, index) in row.expected_results" :key="index">{{ text }}</li></ol></template></el-table-column>
+            <el-table-column prop="case_type" label="用例类型" width="100" />
+            <el-table-column prop="priority" label="优先级" width="80" />
+          </el-table>
+          <el-empty v-else description="暂无用例预览数据" :image-size="72" />
+          <details class="case-preview-sources"><summary>来源与参考资料</summary><p>需求来源：{{ previewDetail.requirement_path }}</p><ul><li v-for="(item, index) in previewDetail.referenced_sources" :key="index">{{ item.source_path }}（r{{ item.revision }}）</li></ul></details>
+        </template>
+      </div>
+      <template #footer><el-button @click="previewVisible = false">关闭</el-button><el-button v-if="previewItem" type="primary" :icon="Download" :loading="downloading === previewItem.id" :disabled="!previewItem.download_ready" @click="download(previewItem)">下载 Excel</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.case-preview-body{min-height:180px}.case-preview-table{margin-top:14px}.case-preview-table :deep(.cell){white-space:pre-wrap;overflow-wrap:anywhere}.case-preview-table :deep(td){vertical-align:top}.case-preview-table ul,.case-preview-table ol{margin:0;padding-left:20px}.case-preview-table li+li{margin-top:6px}.case-preview-sources{margin-top:14px;overflow-wrap:anywhere}.case-preview-sources summary{cursor:pointer}
 .smart-generate-page{max-width:1500px}.generate-grid{display:grid;grid-template-columns:minmax(480px,1.25fr) minmax(320px,.75fr);gap:14px}.requirement-card,.action-card,.history-card{padding:20px}.history-card{margin-top:14px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.section-heading h2{margin:3px 0 0;font-size:18px}.requirement-list{display:grid;max-height:440px;margin-top:12px;overflow:auto;border-top:1px solid var(--ui-border)}.requirement-item{display:flex;align-items:flex-start;gap:10px;padding:13px 8px;border-bottom:1px solid var(--ui-border);cursor:pointer}.requirement-item:hover,.requirement-item.selected{background:var(--ui-primary-soft)}.requirement-item input{margin-top:3px;accent-color:var(--ui-primary)}.requirement-item span,.requirement-item strong,.requirement-item small{display:block;min-width:0}.requirement-item strong{font-size:13px}.requirement-item small{margin-top:5px;color:var(--ui-text-secondary);font-size:12px;overflow-wrap:anywhere}.action-card dl{display:grid;margin:0 0 16px}.action-card dl div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px;padding:10px 0;border-bottom:1px solid var(--ui-border)}.action-card dt{color:var(--ui-text-secondary);font-size:12px}.action-card dd{margin:0;overflow-wrap:anywhere;font-size:12px}.generate-button{width:100%;margin-top:18px}@media(max-width:900px){.generate-grid{grid-template-columns:1fr}}@media(max-width:640px){.requirement-card,.action-card,.history-card{padding:15px}.action-card dl div{grid-template-columns:1fr;gap:3px}}
 </style>
