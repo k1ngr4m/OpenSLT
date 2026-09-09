@@ -1840,6 +1840,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/smart-cases/generations/{generation_id}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revise Generation */
+        post: operations["revise_generation_api_v1_smart_cases_generations__generation_id__revise_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/smart-cases/knowledge-search": {
         parameters: {
             query?: never;
@@ -4055,6 +4072,15 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** SmartCaseRevisionCreate */
+        SmartCaseRevisionCreate: {
+            /** Case Indices */
+            case_indices: number[];
+            /** Fields */
+            fields: ("title" | "preconditions" | "steps" | "expected_results" | "case_type" | "priority")[];
+            /** Instruction */
+            instruction: string;
         };
         /** StatisticsAnalysisDetailOut */
         StatisticsAnalysisDetailOut: {
@@ -9157,6 +9183,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revise_generation_api_v1_smart_cases_generations__generation_id__revise_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SmartCaseRevisionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SmartCaseGenerationOut"];
                 };
             };
             /** @description Validation Error */

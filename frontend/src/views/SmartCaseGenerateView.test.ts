@@ -93,3 +93,37 @@ it('clears the selected requirement when switching libraries', async () => {
     expect(wrapper.text()).toContain('请先从左侧选择一个需求')
   } finally { wrapper.unmount() }
 })
+
+it('submits only selected cases and fields, retains input on failure and resets on another preview', async () => {
+  const generation = { id: 1, requirement_name: '登录需求', status: 'succeeded', llm_model: 'qwen3', case_count: 2, download_ready: true }
+  const cases = ['登录成功', '登录失败'].map(title => ({ title, preconditions: [], steps: ['登录'], expected_results: ['显示结果'], case_type: '功能', priority: '中' }))
+  get.mockImplementation((path: string) => {
+    if (path.endsWith('/requirements')) return Promise.reject(new Error('索引未就绪'))
+    return Promise.resolve({ data: path === '/knowledge-bases' ? [{ id: 1, name: '知识库' }] : path === '/smart-cases/generations/1' ? { ...generation, result_cases: cases, referenced_sources: [] } : [generation] })
+  })
+  const wrapper = mount(SmartCaseGenerateView, { attachTo: document.body, global: { plugins: [ElementPlus] } })
+  try {
+    await flushPromises()
+    await wrapper.get('button[aria-label="预览用例"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.revise-button').attributes('disabled')).toBeDefined()
+    await wrapper.get('input[aria-label="选择用例 TC-0002"]').setValue(true)
+    await wrapper.get('#revision-instruction').setValue('  名称更清晰  ')
+    expect(wrapper.get('.revise-button').attributes('disabled')).toBeUndefined()
+    post.mockRejectedValueOnce(new Error('offline'))
+    await wrapper.get('.case-revision').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('.case-revision').text()).toContain('预览加载失败')
+    expect(wrapper.get<HTMLTextAreaElement>('#revision-instruction').element.value).toBe('  名称更清晰  ')
+    post.mockResolvedValueOnce({ data: { ...generation, id: 2, status: 'queued', download_ready: false } })
+    await wrapper.get('.case-revision').trigger('submit')
+    await flushPromises()
+    expect(post).toHaveBeenLastCalledWith('/smart-cases/generations/1/revise', { case_indices: [1], fields: ['title'], instruction: '名称更清晰' })
+    expect(wrapper.text()).toContain('#2')
+    expect(wrapper.text()).toContain('排队中')
+    await wrapper.get('button[aria-label="预览用例"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('#revision-instruction').element.value).toBe('')
+    expect(wrapper.get<HTMLInputElement>('input[aria-label="选择用例 TC-0002"]').element.checked).toBe(false)
+  } finally { wrapper.unmount() }
+})

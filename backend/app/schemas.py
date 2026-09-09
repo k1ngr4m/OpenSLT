@@ -229,6 +229,19 @@ class SmartCaseGenerationCreate(BaseModel):
     additional_prompt: str = Field(default="", max_length=4000)
 
 
+class SmartCaseRevisionCreate(BaseModel):
+    case_indices: typing.List[Annotated[int, Field(strict=True, ge=0, le=99)]] = Field(min_length=1, max_length=100)
+    fields: typing.List[Literal["title", "preconditions", "steps", "expected_results", "case_type", "priority"]] = Field(min_length=1, max_length=6)
+    instruction: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("instruction")
+    @classmethod
+    def nonblank_instruction(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("请填写修改方向")
+        return value.strip()
+
+
 class SmartCaseGenerationOut(BaseModel):
     knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
     id: int

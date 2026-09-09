@@ -5554,6 +5554,51 @@
         "title": "SmartCaseGenerationOut",
         "type": "object"
       },
+      "SmartCaseRevisionCreate": {
+        "properties": {
+          "case_indices": {
+            "items": {
+              "maximum": 99.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Case Indices",
+            "type": "array"
+          },
+          "fields": {
+            "items": {
+              "enum": [
+                "title",
+                "preconditions",
+                "steps",
+                "expected_results",
+                "case_type",
+                "priority"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Fields",
+            "type": "array"
+          },
+          "instruction": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Instruction",
+            "type": "string"
+          }
+        },
+        "required": [
+          "case_indices",
+          "fields",
+          "instruction"
+        ],
+        "title": "SmartCaseRevisionCreate",
+        "type": "object"
+      },
       "StatisticsAnalysisDetailOut": {
         "properties": {
           "analysis": {
@@ -14653,6 +14698,60 @@
           }
         ],
         "summary": "Download Generation"
+      }
+    },
+    "/api/v1/smart-cases/generations/{generation_id}/revise": {
+      "post": {
+        "operationId": "revise_generation_api_v1_smart_cases_generations__generation_id__revise_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "title": "Generation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SmartCaseRevisionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SmartCaseGenerationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revise Generation"
       }
     },
     "/api/v1/smart-cases/knowledge-search": {

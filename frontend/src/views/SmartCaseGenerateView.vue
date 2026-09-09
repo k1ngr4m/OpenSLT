@@ -29,6 +29,17 @@ const requirements = ref<Requirement[]>([])
 const generations = ref<Generation[]>([])
 const selectedPath = ref('')
 const additionalPrompt = ref('')
+type RevisionRequest = components['schemas']['SmartCaseRevisionCreate']
+const revisionIndices = ref<number[]>([])
+const revisionFields = ref<RevisionRequest['fields']>(['title'])
+const revisionInstruction = ref('')
+const revising = ref(false)
+const revisionError = ref('')
+const fieldOptions: { value: RevisionRequest['fields'][number]; label: string }[] = [
+  { value: 'title', label: '用例名称' }, { value: 'preconditions', label: '前置条件' },
+  { value: 'steps', label: '测试步骤' }, { value: 'expected_results', label: '预期结果' },
+  { value: 'case_type', label: '用例类型' }, { value: 'priority', label: '优先级' },
+]
 let timer: ReturnType<typeof setInterval> | undefined
 
 const selected = computed(() => requirements.value.find(item => item.source_path === selectedPath.value))
@@ -44,13 +55,15 @@ async function load(showError = true) {
   loading.value = !requirements.value.length
   const selectedBaseId = knowledgeBaseId.value
   try {
-    const [requirementResponse, generationResponse] = await Promise.all([
+    const [requirementResponse, generationResponse] = await Promise.allSettled([
       knowledgeBaseId.value ? api.get<Requirement[]>('/smart-cases/requirements', { params: { knowledge_base_id: knowledgeBaseId.value } }) : Promise.resolve({ data: [] as Requirement[] }),
       api.get<Generation[]>('/smart-cases/generations'),
     ])
     if (knowledgeBaseId.value !== selectedBaseId) return
-    requirements.value = requirementResponse.data
-    generations.value = generationResponse.data
+    if (generationResponse.status === 'fulfilled') generations.value = generationResponse.value.data
+    if (requirementResponse.status === 'fulfilled') requirements.value = requirementResponse.value.data
+    if (generationResponse.status === 'rejected') throw generationResponse.reason
+    if (requirementResponse.status === 'rejected') throw requirementResponse.reason
     if (selectedPath.value && !requirements.value.some(item => item.source_path === selectedPath.value)) selectedPath.value = ''
   } catch (error) {
     if (showError && knowledgeBaseId.value === selectedBaseId) ElMessage.error(errorMessage(error))
@@ -74,6 +87,10 @@ async function generate() {
 }
 
 async function preview(item: Generation) {
+  revisionIndices.value = []
+  revisionFields.value = ['title']
+  revisionInstruction.value = ''
+  revisionError.value = ''
   previewItem.value = item
   previewDetail.value = null
   previewError.value = ''
@@ -87,6 +104,23 @@ async function preview(item: Generation) {
   } finally {
     if (previewItem.value?.id === item.id) previewLoading.value = false
   }
+}
+
+async function revise() {
+  if (!previewDetail.value || revising.value || !revisionIndices.value.length || !revisionFields.value.length || !revisionInstruction.value.trim()) return
+  revising.value = true
+  revisionError.value = ''
+  try {
+    const payload: RevisionRequest = {
+      case_indices: [...revisionIndices.value].sort((a, b) => a - b),
+      fields: [...revisionFields.value], instruction: revisionInstruction.value.trim(),
+    }
+    const { data } = await api.post<Generation>(`/smart-cases/generations/${previewDetail.value.id}/revise`, payload)
+    generations.value = [data, ...generations.value]
+    previewVisible.value = false
+    ElMessage.success(`修改任务 #${data.id} 已提交，完成后可在最近任务中预览、继续修改或下载；原稿已保留`)
+  } catch (error) { revisionError.value = errorMessage(error) }
+  finally { revising.value = false }
 }
 
 async function download(item: Generation) {
@@ -155,6 +189,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     <section class="card history-card" aria-labelledby="history-title">
       <div class="section-heading"><div><span class="page-kicker">生成记录</span><h2 id="history-title">我的最近任务</h2></div></div>
       <el-table v-if="generations.length" :data="generations">
+        <el-table-column label="任务" width="90"><template #default="{ row }">#{{ row.id }}</template></el-table-column>
         <el-table-column label="知识库" min-width="150"><template #default="{ row }">{{ knowledgeBases.find(base => base.id === row.knowledge_base_id)?.name || '—' }}</template></el-table-column>
         <el-table-column prop="requirement_no" label="需求编号" width="130"><template #default="{ row }">{{ row.requirement_no || '—' }}</template></el-table-column>
         <el-table-column prop="requirement_name" label="需求名称" min-width="220" show-overflow-tooltip />
@@ -174,13 +209,14 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <el-empty v-else description="还没有生成记录" :image-size="72" />
     </section>
 
-    <el-dialog v-model="previewVisible" :title="`用例预览 · ${previewItem?.requirement_name || ''}`" width="min(1400px, 94vw)" top="5vh" destroy-on-close @closed="previewItem = null">
+    <el-dialog v-model="previewVisible" :title="`用例预览 · ${previewItem?.requirement_name || ''}`" width="min(1400px, 94vw)" top="5vh" destroy-on-close :close-on-click-modal="!revising" :close-on-press-escape="!revising" :show-close="!revising" @closed="previewItem = null">
       <div v-loading="previewLoading" class="case-preview-body" :aria-busy="previewLoading">
         <el-alert v-if="previewError" :title="previewError" type="error" show-icon :closable="false" />
         <template v-else-if="previewDetail">
           <p class="muted">{{ previewDetail.requirement_no || '未识别编号' }} · r{{ previewDetail.requirement_revision }} · {{ previewDetail.llm_model }} · {{ previewDetail.result_cases.length }} 条用例</p>
           <el-alert title="以下内容为 AI 生成草稿，执行前必须由测试人员复核。" type="info" show-icon :closable="false" />
           <el-table v-if="previewDetail.result_cases.length" :data="previewDetail.result_cases" border max-height="55vh" class="case-preview-table">
+            <el-table-column label="选择" width="65" fixed="left"><template #default="{ $index }"><input v-model="revisionIndices" type="checkbox" :value="$index" :aria-label="`选择用例 TC-${String($index + 1).padStart(4, '0')}`" :disabled="revising" /></template></el-table-column>
             <el-table-column label="用例编号" width="110"><template #default="{ $index }">TC-{{ String($index + 1).padStart(4, '0') }}</template></el-table-column>
             <el-table-column prop="title" label="用例名称" min-width="180" />
             <el-table-column label="前置条件" min-width="180"><template #default="{ row }"><ul v-if="row.preconditions.length"><li v-for="(text, index) in row.preconditions" :key="index">{{ text }}</li></ul><span v-else>无</span></template></el-table-column>
@@ -190,16 +226,26 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
             <el-table-column prop="priority" label="优先级" width="80" />
           </el-table>
           <el-empty v-else description="暂无用例预览数据" :image-size="72" />
+          <form v-if="previewDetail.result_cases.length" class="case-revision" @submit.prevent="revise">
+            <h3>局部修改 / 润色</h3>
+            <p class="muted">在表格中勾选用例，再选择允许修改的字段。基于现有用例和你的方向生成新记录，未选内容保持原样；步骤与预期结果需一一对应。</p>
+            <fieldset :disabled="revising"><legend>允许修改的字段</legend><label v-for="option in fieldOptions" :key="option.value"><input v-model="revisionFields" type="checkbox" :value="option.value" />{{ option.label }}</label></fieldset>
+            <label for="revision-instruction">修改方向</label>
+            <el-input id="revision-instruction" v-model="revisionInstruction" type="textarea" :rows="3" :maxlength="4000" show-word-limit :disabled="revising" placeholder="例如：把名称润色得更简洁；将第 2 步拆成明确操作并补全对应预期（请同时选择步骤和预期结果）。" />
+            <el-alert v-if="revisionError" :title="revisionError" type="error" :closable="false" show-icon />
+            <el-button class="revise-button" native-type="submit" type="primary" :icon="MagicStick" :loading="revising" :disabled="!revisionIndices.length || !revisionFields.length || !revisionInstruction.trim()">提交修改（已选 {{ revisionIndices.length }} 条）</el-button>
+          </form>
           <details class="case-preview-sources"><summary>来源与参考资料</summary><p>需求来源：{{ previewDetail.requirement_path }}</p><ul><li v-for="(item, index) in previewDetail.referenced_sources" :key="index">{{ item.source_path }}（r{{ item.revision }}）</li></ul></details>
         </template>
       </div>
-      <template #footer><el-button @click="previewVisible = false">关闭</el-button><el-button v-if="previewItem" type="primary" :icon="Download" :loading="downloading === previewItem.id" :disabled="!previewItem.download_ready" @click="download(previewItem)">下载 Excel</el-button></template>
+      <template #footer><el-button :disabled="revising" @click="previewVisible = false">关闭</el-button><el-button v-if="previewItem" type="primary" :icon="Download" :loading="downloading === previewItem.id" :disabled="!previewItem.download_ready" @click="download(previewItem)">下载 Excel</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .knowledge-select{width:100%;margin-bottom:12px}
+.case-revision{display:grid;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--ui-border)}.case-revision h3,.case-revision p{margin:0}.case-revision fieldset{display:flex;flex-wrap:wrap;gap:12px;border:1px solid var(--ui-border);padding:12px}.case-revision fieldset label{display:inline-flex;align-items:center;gap:6px}.revise-button{justify-self:start}
 .additional-prompt{margin-top:18px}.additional-prompt label{display:block;margin-bottom:8px;font-size:13px}.additional-prompt p{margin:8px 0 0;font-size:12px}
 .generation-actions{display:flex;align-items:center;gap:4px;white-space:nowrap}.generation-actions>span{display:inline-flex}
 .case-preview-body{min-height:180px}.case-preview-table{margin-top:14px}.case-preview-table :deep(.cell){white-space:pre-wrap;overflow-wrap:anywhere}.case-preview-table :deep(td){vertical-align:top}.case-preview-table ul,.case-preview-table ol{margin:0;padding-left:20px}.case-preview-table li+li{margin-top:6px}.case-preview-sources{margin-top:14px;overflow-wrap:anywhere}.case-preview-sources summary{cursor:pointer}

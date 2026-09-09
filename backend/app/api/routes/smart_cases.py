@@ -27,6 +27,7 @@ from app.schemas import (
     SmartCaseGenerationCreate,
     SmartCaseGenerationDetailOut,
     SmartCaseGenerationOut,
+    SmartCaseRevisionCreate,
     SvnConnectionTestOut,
     SvnKnowledgeConnectionTest,
     SvnKnowledgeSourceOut,
@@ -448,6 +449,52 @@ def create_generation(
     db.flush()
     task = enqueue_task(db, "smart_case_generate", {"generation_id": item.id, "additional_prompt": payload.additional_prompt.strip()}, "smart-case:%s:%s" % (item.id, uuid4().hex))
     write_audit(db, "smart_cases.generation.create", "smart_case_generation", item.id, actor, request, detail={"task_id": task.id, "requirement_path": item.requirement_path, "revision": item.requirement_revision})
+    db.commit()
+    db.refresh(item)
+    return _generation_out(item)
+
+
+@router.post("/generations/{generation_id}/revise", response_model=SmartCaseGenerationOut, status_code=202)
+def revise_generation(
+    generation_id: int,
+    payload: SmartCaseRevisionCreate,
+    request: Request,
+    actor: User = Depends(operators),
+    db: Session = Depends(get_db),
+) -> SmartCaseGenerationOut:
+    original = db.get(SmartCaseGeneration, generation_id)
+    if original is None or original.created_by != actor.id:
+        raise HTTPException(404, detail={"code": "GENERATION_NOT_FOUND", "message": "生成记录不存在"})
+    if original.status != "succeeded" or not original.result_cases:
+        raise HTTPException(409, detail={"code": "GENERATION_NOT_READY", "message": "只能修改已完成且有用例的记录"})
+    if max(payload.case_indices) >= len(original.result_cases):
+        raise HTTPException(422, detail={"code": "INVALID_CASE_SELECTION", "message": "选中的用例不存在"})
+    provider, model = _required_model(db, "chat", actor.id)
+    item = SmartCaseGeneration(
+        knowledge_base_id=original.knowledge_base_id,
+        requirement_path=original.requirement_path,
+        requirement_revision=original.requirement_revision,
+        requirement_no=original.requirement_no,
+        requirement_name=original.requirement_name,
+        index_revisions=dict(original.index_revisions),
+        referenced_sources=list(original.referenced_sources),
+        llm_model=model.model_id,
+        ai_model_id=model.id,
+        encrypted_llm_config=encrypt_secret(json.dumps({
+            "base_url": provider.base_url, "model": model.model_id,
+            "api_key": decrypt_secret(provider.encrypted_api_key),
+        })),
+        created_by=actor.id,
+    )
+    db.add(item)
+    db.flush()
+    revision = payload.model_dump()
+    revision["case_indices"] = sorted(set(payload.case_indices))
+    revision["fields"] = list(dict.fromkeys(payload.fields))
+    revision["source_generation_id"] = original.id
+    task = enqueue_task(db, "smart_case_generate", {"generation_id": item.id, "revision": revision}, "smart-case:%s:%s" % (item.id, uuid4().hex))
+    write_audit(db, "smart_cases.generation.revise", "smart_case_generation", item.id, actor, request,
+                detail={"task_id": task.id, **revision})
     db.commit()
     db.refresh(item)
     return _generation_out(item)
