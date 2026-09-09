@@ -8,10 +8,12 @@ import pty
 import re
 import select as io_select
 import shutil
+import signal
 import sqlite3
 import struct
 import subprocess
 import termios
+import tempfile
 import time
 import typing
 import xml.etree.ElementTree as ET
@@ -37,8 +39,8 @@ from app.services.embedding import EmbeddingClient
 
 
 SUPPORTED_SUFFIXES = {
-    ".csv", ".docx", ".htm", ".html", ".json", ".md", ".pdf", ".txt",
-    ".xlsx", ".yaml", ".yml",
+    ".csv", ".doc", ".docx", ".htm", ".html", ".json", ".md", ".pdf", ".txt",
+    ".xls", ".xlsx", ".yaml", ".yml",
 }
 ACTIVE_TASK_STATUSES = {"queued", "running"}
 
@@ -474,6 +476,41 @@ def _extract_text(path: Path) -> str:
     if path.stat().st_size > 50 * 1024 * 1024:
         raise ValueError("文件超过 50 MiB 索引限制")
     suffix = path.suffix.casefold()
+    if suffix in {".doc", ".xls"}:
+        executable = shutil.which("libreoffice") or shutil.which("soffice")
+        if not executable:
+            raise ValueError("旧版 Office 文件解析需要 LibreOffice，请安装 libreoffice-headless、libreoffice-writer 和 libreoffice-calc RPM")
+        target_format = "docx" if suffix == ".doc" else "xlsx"
+        with tempfile.TemporaryDirectory(prefix="openslt-office-") as temporary:
+            root = Path(temporary).resolve()
+            # Each conversion needs its own profile to avoid sharing an existing Office process.
+            profile = root / "profile"
+            profile.mkdir()
+            (profile / "registrymodifications.xcu").write_text(
+                '<oor:items xmlns:oor="http://openoffice.org/2001/registry">'
+                '<item oor:path="/org.openoffice.Office.Common/Security/Scripting">'
+                '<prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop>'
+                '</item></oor:items>', encoding="utf-8",
+            )
+            with subprocess.Popen(
+                [executable, "-env:UserInstallation=" + profile.as_uri(), "--headless",
+                 "--convert-to", target_format, "--outdir", str(root), str(path.resolve())],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            ) as process:
+                try:
+                    process.wait(timeout=60)
+                except subprocess.TimeoutExpired as exc:
+                    # Kill the launcher and its converter child before deleting their profile.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+                    raise ValueError("旧版 Office 文件转换超时（60 秒）") from exc
+            converted = root / (path.stem + "." + target_format)
+            if process.returncode or not converted.is_file():
+                raise ValueError("旧版 Office 文件转换失败，请检查文件是否损坏、加密或缺少 LibreOffice Writer/Calc 组件")
+            return _extract_text(converted)
     if suffix in {".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".htm", ".html"}:
         raw = path.read_bytes()
         for encoding in ("utf-8-sig", "gb18030"):

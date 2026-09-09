@@ -1,6 +1,10 @@
 {
   "unreleased": [
     {
+      "type": "added",
+      "text": "SVN 知识索引支持旧版 .doc、.xls 文件；升级需安装离线包内的 LibreOffice Headless、Writer、Calc 依赖并重新同步。"
+    },
+    {
       "type": "changed",
       "text": "用户名和头像移至右上角设置与版本号之间，点击用户菜单可退出登录。"
     },

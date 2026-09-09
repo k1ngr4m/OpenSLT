@@ -292,10 +292,15 @@ deploy/offline/build-offline-bundle.sh \
 时启用的软件源，正式发布前应在关闭所有外部仓库的干净 RHEL 7.9 测试机上验证 RPM
 能够完整安装。
 
-默认 RPM 清单包含智能用例知识同步所需的 `subversion`。安装后必须确认：
+默认 RPM 清单包含智能用例知识同步所需的 `subversion`，以及解析旧版 `.doc`、
+`.xls` 所需的 `libreoffice-headless`、`libreoffice-writer`、`libreoffice-calc` 及依赖。
+旧版文件在独立临时目录中转换后索引，不修改 SVN 原文件；转换超时、损坏或加密的文件
+会计入同步失败文件数。升级现有部署时也需要安装这些 RPM，然后重新同步知识源。
+安装后必须确认：
 
 ```bash
 svn --version --quiet
+libreoffice --headless --version
 ```
 
 ## 6. 校验与传输
