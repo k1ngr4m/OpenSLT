@@ -32,6 +32,7 @@ describe('management route permissions', () => {
     '/resources/1/database',
     '/resources/1/terminal',
     '/smart-cases',
+    '/chat',
     '/smart-cases/settings',
     '/logs',
   ])('blocks visitors from %s', async path => {

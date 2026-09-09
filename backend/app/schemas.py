@@ -33,6 +33,50 @@ class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ChatConversationCreate(BaseModel):
+    mode: Literal["general", "knowledge"] = "knowledge"
+
+
+class ChatConversationOut(ORMModel):
+    id: int
+    title: str
+    mode: Literal["general", "knowledge"]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessageCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    content: str = Field(min_length=1, max_length=4000)
+
+
+class ChatSource(BaseModel):
+    id: int
+    source_path: str
+    revision: str
+    chunk_no: int
+    content: str
+
+
+class ChatMessageOut(ORMModel):
+    id: int
+    role: Literal["user", "assistant"]
+    content: str
+    status: Literal["running", "completed", "cancelled", "failed"]
+    model: str
+    sources: typing.List[ChatSource]
+    error: typing.Optional[str]
+    created_at: datetime
+
+
+class ChatStatusOut(BaseModel):
+    model: typing.Optional[str]
+    general_ready: bool
+    knowledge_ready: bool
+    general_error: typing.Optional[str]
+    knowledge_error: typing.Optional[str]
+
+
 class SvnKnowledgeSourceWrite(BaseModel):
     repository_urls: typing.List[Annotated[str, Field(min_length=1, max_length=1024)]] = Field(default_factory=list)
     repository_url: typing.Union[str, None] = Field(default=None, min_length=1, max_length=1024)

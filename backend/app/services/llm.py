@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import typing
+import httpx
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -39,6 +40,48 @@ class LlmClient:
         self.timeout_seconds = timeout_seconds
         self.opener = build_opener(_RejectRedirects())
 
+    async def stream(self, messages: typing.Sequence[typing.Dict[str, str]], max_tokens: int) -> typing.AsyncIterator[str]:
+        headers = {"Accept": "text/event-stream"}
+        if self.api_key:
+            headers["Authorization"] = "Bearer " + self.api_key
+        body = {"model": self.model, "messages": list(messages), "temperature": 0.2,
+                "stream": True, "max_tokens": max_tokens}
+        try:
+            # Ignore ambient proxies: documents go only to the configured provider.
+            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, trust_env=False) as client:
+                async with client.stream("POST", self.endpoint, headers=headers, json=body) as response:
+                    if response.is_redirect:
+                        raise LlmError("模型服务返回重定向，已拒绝发送资料")
+                    if response.status_code != 200:
+                        raise LlmError("模型请求失败（HTTP %s）" % response.status_code)
+                    if "text/event-stream" not in response.headers.get("content-type", ""):
+                        raise LlmError("当前模型服务未返回流式响应，请检查流式接口支持")
+                    async for data in _sse_data(response):
+                        if data == "[DONE]":
+                            return
+                        try:
+                            payload = json.loads(data)
+                            if "error" in payload:
+                                raise LlmError("模型服务返回生成错误")
+                            choices = payload["choices"]
+                            if not choices:
+                                continue  # Optional usage-only frame.
+                            choice = choices[0]
+                            content = choice.get("delta", {}).get("content")
+                            if content is not None:
+                                if not isinstance(content, str):
+                                    raise ValueError("invalid content")
+                                if content:
+                                    yield content
+                            reason = choice.get("finish_reason")
+                            if reason and reason != "stop":
+                                raise LlmError("回答未完整生成（%s），请缩小问题范围后重试" % str(reason)[:32])
+                        except (ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+                            raise LlmError("模型流式响应格式无效") from exc
+            raise LlmError("模型连接提前结束，回答未完整生成")
+        except httpx.HTTPError as exc:
+            raise LlmError("模型服务不可达或请求超时") from exc
+
     def complete(self, messages: typing.Sequence[typing.Dict[str, str]]) -> str:
         body = json.dumps({"model": self.model, "messages": list(messages), "temperature": 0.2}, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
@@ -60,6 +103,34 @@ class LlmClient:
             return str(json.loads(raw.decode("utf-8"))["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             raise LlmError("生成模型返回格式不符合 OpenAI-compatible 协议") from exc
+
+
+async def _sse_data(response: httpx.Response) -> typing.AsyncIterator[str]:
+    buffer = ""
+    data: typing.List[str] = []
+    total = 0
+    event_size = 0
+    async for chunk in response.aiter_text():
+        total += len(chunk)
+        buffer += chunk
+        if total > 10 * 1024 * 1024 or len(buffer) > 1024 * 1024:
+            raise LlmError("模型流式响应超过大小限制")
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            line = line.rstrip("\r")
+            if not line:
+                if data:
+                    yield "\n".join(data)
+                data = []
+                event_size = 0
+            elif line.startswith("data:"):
+                value = line[5:]
+                if value.startswith(" "):
+                    value = value[1:]
+                data.append(value)
+                event_size += len(value)
+                if event_size > 1024 * 1024:
+                    raise LlmError("模型流式事件超过大小限制")
 
 
 def parse_cases(raw: str) -> typing.List[typing.Dict[str, typing.Any]]:

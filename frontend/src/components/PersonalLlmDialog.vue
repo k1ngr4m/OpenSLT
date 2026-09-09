@@ -68,7 +68,7 @@ onMounted(load)
     <div v-loading="loading">
       <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <template v-else-if="settings">
-        <p class="muted">仅对当前账号的智能用例生效。未配置时使用系统默认模型：{{ settings.default_model || '尚未配置' }}。</p>
+        <p class="muted">仅对当前账号的智能用例和智能助手生效。未配置时使用系统默认模型：{{ settings.default_model || '尚未配置' }}。</p>
         <el-form label-position="left" label-width="110px" @submit.prevent="save">
           <el-form-item label="服务地址" required><el-input v-model="form.base_url" aria-label="LLM 服务地址" placeholder="https://api.example.com/v1" /></el-form-item>
           <el-form-item label="模型 ID" required><el-input v-model="form.model_id" aria-label="LLM 模型 ID" placeholder="输入对话模型 ID" /></el-form-item>

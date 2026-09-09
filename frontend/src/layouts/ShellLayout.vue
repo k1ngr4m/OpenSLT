@@ -18,6 +18,7 @@ import {
   Setting,
   MagicStick,
   Cpu,
+  ChatDotRound,
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -44,7 +45,7 @@ const managementMode = computed(() => route.meta.section === 'management')
 const activePath = computed(() => {
   if (route.path.startsWith('/smart-cases/settings')) return '/smart-cases/settings'
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
-  return ['/dashboard', '/runs', '/plans', '/resources', '/smart-cases', '/models', '/logs', '/users'].includes(first) ? first : '/dashboard'
+  return ['/dashboard', '/runs', '/plans', '/resources', '/smart-cases', '/chat', '/models', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
 const navToggleLabel = computed(() => {
   if (isMobile.value) return '打开导航'
@@ -153,6 +154,10 @@ onBeforeUnmount(() => {
             <el-menu-item v-if="auth.canOperate" index="/smart-cases">
               <el-icon><MagicStick /></el-icon>
               <template #title>智能用例</template>
+            </el-menu-item>
+            <el-menu-item v-if="auth.canOperate" index="/chat">
+              <el-icon><ChatDotRound /></el-icon>
+              <template #title>智能助手</template>
             </el-menu-item>
             <div v-if="!collapsed" class="nav-label">测速</div>
             <el-menu-item index="/runs">

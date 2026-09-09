@@ -92,3 +92,19 @@ def test_generation_uses_submitters_snapshot_after_personal_settings_change(clie
     assert client.get(url, headers=admin_headers).status_code == 404
     assert client.get(url + "/download", headers=admin_headers).status_code == 404
     assert client.get("/api/v1/smart-cases/generations", headers=admin_headers).json() == []
+
+
+def test_chat_uses_personal_llm_without_changing_shared_embedding(client, admin_headers):
+    from app.services.chat import chat_status, model_client
+
+    _configure_models(client, admin_headers)
+    user_id, headers = _tester(client, admin_headers)
+    with SessionLocal() as db:
+        assert model_client(db, "chat", user_id).model == "qwen3"
+    assert client.put(PATH, headers=headers, json=CONFIG).status_code == 200
+    with SessionLocal() as db:
+        assert chat_status(db, user_id).model == "personal-model"
+        assert model_client(db, "chat", user_id).api_key == "personal-secret"
+        assert model_client(db, "embedding", user_id).model == "bge-m3"
+        assert model_client(db, "chat").model == "qwen3"
+    assert client.get("/api/v1/chat/status", headers=headers).json()["model"] == "personal-model"

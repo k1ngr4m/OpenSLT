@@ -31,6 +31,7 @@ from app.services.orchestration import (
     reclaim_expired_locks,
 )
 from app.services.svn_knowledge import enqueue_due_svn_syncs, svn_client_status
+from app.services.chat import recover_interrupted_chats, stop_all_chats
 from app.version import APP_VERSION
 
 
@@ -101,6 +102,7 @@ async def lifespan(_: FastAPI):
             version=database_server.raw_version,
         )
     seed_database()
+    recover_interrupted_chats()
     svn_status = svn_client_status()
     if svn_status["ready"]:
         logger.info("svn_client_ready", version=svn_status["version"])
@@ -121,6 +123,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        await stop_all_chats()
         if scheduler_task:
             scheduler_task.cancel()
             with suppress(asyncio.CancelledError):

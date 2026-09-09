@@ -14,9 +14,10 @@ from app.core.security import decode_token
 
 
 class BodyCapture:
-    def __init__(self, content_type: str = "", *, omit: bool = False) -> None:
+    def __init__(self, content_type: str = "", *, omit: bool = False, omit_reason: str = "observability_endpoint") -> None:
         self.content_type = content_type.casefold()
         self.omit = omit
+        self.omit_reason = omit_reason
         self.total_bytes = 0
         self._buffer = bytearray()
         self._digest = hashlib.sha256()
@@ -26,6 +27,8 @@ class BodyCapture:
             return
         self.total_bytes += len(payload)
         self._digest.update(payload)
+        if self.omit:
+            return
         remaining = settings.observability_body_limit_bytes + 1 - len(self._buffer)
         if remaining > 0:
             self._buffer.extend(payload[:remaining])
@@ -40,7 +43,7 @@ class BodyCapture:
         if not self.total_bytes:
             return result
         if self.omit:
-            result["omitted_reason"] = "observability_endpoint"
+            result["omitted_reason"] = self.omit_reason
             return result
         if "multipart/form-data" in self.content_type:
             result["omitted_reason"] = "multipart"
@@ -169,8 +172,10 @@ class ObservabilityMiddleware:
         omit_response = path.startswith(settings.api_v1_prefix + "/logs") or path.startswith(
             settings.api_v1_prefix + "/audit-logs"
         )
-        request_body = BodyCapture(str(request_headers.get("content-type") or ""))
-        response_body = BodyCapture(omit=omit_response)
+        private_chat = path.startswith(settings.api_v1_prefix + "/chat/")
+        request_body = BodyCapture(str(request_headers.get("content-type") or ""), omit=private_chat, omit_reason="private_chat")
+        response_body = BodyCapture(omit=omit_response or private_chat,
+                                    omit_reason="private_chat" if private_chat else "observability_endpoint")
         response_status = 500
         response_headers: typing.Dict[str, typing.Any] = {}
         result = "failed"

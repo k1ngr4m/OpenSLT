@@ -636,7 +636,7 @@ def _publish_vector_index(
             pass
 
 
-def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k: int) -> typing.List[typing.Dict[str, typing.Any]]:
+def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k: int, full_content: bool = False) -> typing.List[typing.Dict[str, typing.Any]]:
     index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
     if not index_path.exists():
         raise SvnKnowledgeError("尚无成功发布的知识索引")
@@ -651,10 +651,10 @@ def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k:
         if stored_dimension and int(stored_dimension[0]) != len(query_vector):
             raise SvnKnowledgeError("查询 embedding 维度与已发布索引不一致，请重新同步")
         rows = connection.execute(
-            "SELECT c.source_path, f.revision, c.content, c.vector, c.dimensions FROM chunks c JOIN files f ON f.source_path = c.source_path"
+            "SELECT c.source_path, f.revision, c.content, c.vector, c.dimensions, c.chunk_no FROM chunks c JOIN files f ON f.source_path = c.source_path"
         )
         # ponytail: application-layer scan is enough for the current corpus; add a vector DB only after measured latency exceeds the requirement.
-        for source_path, revision, content, blob, dimensions in rows:
+        for source_path, revision, content, blob, dimensions, chunk_no in rows:
             if dimensions != len(query_vector):
                 continue
             vector = struct.unpack("<%sf" % dimensions, blob)
@@ -670,6 +670,7 @@ def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k:
                 "score": round(score, 6),
                 "vector_score": round(vector_score, 6),
                 "keyword_score": round(keyword_score, 6),
+                **({"content": content, "chunk_no": chunk_no} if full_content else {}),
             })
     finally:
         connection.close()

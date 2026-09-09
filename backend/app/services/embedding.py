@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import typing
+import httpx
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -57,13 +58,41 @@ class EmbeddingClient:
             raise EmbeddingError("Embedding 服务不可达或请求超时") from exc
         if len(raw) > 50 * 1024 * 1024:
             raise EmbeddingError("Embedding 服务响应超过 50 MiB 限制")
+        return self._parse_response(raw, len(texts))
+
+    async def embed_async(self, texts: typing.Sequence[str]) -> typing.List[typing.List[float]]:
+        if not texts:
+            return []
+        headers = {"Accept": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = "Bearer " + self.api_key
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, trust_env=False) as client:
+                async with client.stream("POST", self.endpoint, headers=headers, json={
+                    "model": self.model, "input": list(texts), "encoding_format": "float",
+                }) as response:
+                    if response.is_redirect:
+                        raise EmbeddingError("Embedding 服务返回重定向，已拒绝发送资料")
+                    if response.status_code != 200:
+                        raise EmbeddingError("Embedding 请求失败（HTTP %s）" % response.status_code)
+                    raw = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        raw.extend(chunk)
+                        if len(raw) > 50 * 1024 * 1024:
+                            raise EmbeddingError("Embedding 服务响应超过 50 MiB 限制")
+                    return self._parse_response(bytes(raw), len(texts))
+        except httpx.HTTPError as exc:
+            raise EmbeddingError("Embedding 服务不可达或请求超时") from exc
+
+    @staticmethod
+    def _parse_response(raw: bytes, count: int) -> typing.List[typing.List[float]]:
         try:
             payload = json.loads(raw.decode("utf-8"))
             rows = sorted(payload["data"], key=lambda item: int(item["index"]))
             vectors = [[float(value) for value in row["embedding"]] for row in rows]
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise EmbeddingError("Embedding 服务返回格式不符合 OpenAI-compatible 协议") from exc
-        if len(vectors) != len(texts) or not vectors or not vectors[0]:
+        if len(vectors) != count or not vectors or not vectors[0]:
             raise EmbeddingError("Embedding 服务返回的向量数量或维度不正确")
         dimensions = len(vectors[0])
         if any(len(vector) != dimensions or any(not math.isfinite(value) for value in vector) for vector in vectors):

@@ -150,6 +150,30 @@ class SmartCaseGeneration(TimestampMixin, Base):
     created_by: Mapped[int] = mapped_column(ForeignKey("t_users.id"), index=True)
 
 
+class ChatConversation(TimestampMixin, Base):
+    __tablename__ = "t_chat_conversations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(128), default="新对话")
+    mode: Mapped[str] = mapped_column(String(16), default="knowledge")
+    messages: Mapped[typing.List['ChatMessage']] = relationship(cascade="all, delete-orphan")
+
+
+class ChatMessage(Base):
+    __tablename__ = "t_chat_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(ForeignKey("t_chat_conversations.id", ondelete="CASCADE"), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="completed", index=True)
+    model: Mapped[str] = mapped_column(String(160), default="")
+    sources: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
+    error: Mapped[typing.Union[str, None]] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
+
+
 class RefreshToken(Base):
     __tablename__ = "t_refresh_tokens"
     id: Mapped[int] = mapped_column(primary_key=True)

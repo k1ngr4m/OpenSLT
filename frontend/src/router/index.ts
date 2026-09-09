@@ -19,6 +19,7 @@ export const routes: RouteRecordRaw[] = [
     children: [
       { path: '', redirect: '/dashboard' },
       { path: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { section: 'home' } },
+      { path: 'chat', component: () => import('@/views/ChatView.vue'), meta: { section: 'home', operator: true } },
       { path: 'runs', component: () => import('@/views/RunsView.vue'), meta: { section: 'home' } },
       { path: 'runs/:id', component: () => import('@/views/RunDetailView.vue'), meta: { section: 'home' } },
       {
