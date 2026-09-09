@@ -40,6 +40,14 @@ const fieldOptions: { value: RevisionRequest['fields'][number]; label: string }[
   { value: 'steps', label: '测试步骤' }, { value: 'expected_results', label: '预期结果' },
   { value: 'case_type', label: '用例类型' }, { value: 'priority', label: '优先级' },
 ]
+const allRevisionCases = computed({
+  get: () => revisionIndices.value.length > 0 && revisionIndices.value.length === previewDetail.value?.result_cases.length,
+  set: (checked: boolean) => { revisionIndices.value = checked ? previewDetail.value?.result_cases.map((_, index) => index) ?? [] : [] },
+})
+const allRevisionFields = computed({
+  get: () => revisionFields.value.length === fieldOptions.length,
+  set: (checked: boolean) => { revisionFields.value = checked ? fieldOptions.map(option => option.value) : [] },
+})
 let timer: ReturnType<typeof setInterval> | undefined
 
 const selected = computed(() => requirements.value.find(item => item.source_path === selectedPath.value))
@@ -216,7 +224,10 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
           <p class="muted">{{ previewDetail.requirement_no || '未识别编号' }} · r{{ previewDetail.requirement_revision }} · {{ previewDetail.llm_model }} · {{ previewDetail.result_cases.length }} 条用例</p>
           <el-alert title="以下内容为 AI 生成草稿，执行前必须由测试人员复核。" type="info" show-icon :closable="false" />
           <el-table v-if="previewDetail.result_cases.length" :data="previewDetail.result_cases" border max-height="55vh" class="case-preview-table">
-            <el-table-column label="选择" width="65" fixed="left"><template #default="{ $index }"><input v-model="revisionIndices" type="checkbox" :value="$index" :aria-label="`选择用例 TC-${String($index + 1).padStart(4, '0')}`" :disabled="revising" /></template></el-table-column>
+            <el-table-column label="选择" width="85" fixed="left">
+              <template #header><label class="case-select-all"><input v-model="allRevisionCases" type="checkbox" aria-label="全选用例" :indeterminate.prop="revisionIndices.length > 0 && !allRevisionCases" :disabled="revising" />全选</label></template>
+              <template #default="{ $index }"><input v-model="revisionIndices" type="checkbox" :value="$index" :aria-label="`选择用例 TC-${String($index + 1).padStart(4, '0')}`" :disabled="revising" /></template>
+            </el-table-column>
             <el-table-column label="用例编号" width="110"><template #default="{ $index }">TC-{{ String($index + 1).padStart(4, '0') }}</template></el-table-column>
             <el-table-column prop="title" label="用例名称" min-width="180" />
             <el-table-column label="前置条件" min-width="180"><template #default="{ row }"><ul v-if="row.preconditions.length"><li v-for="(text, index) in row.preconditions" :key="index">{{ text }}</li></ul><span v-else>无</span></template></el-table-column>
@@ -229,7 +240,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
           <form v-if="previewDetail.result_cases.length" class="case-revision" @submit.prevent="revise">
             <h3>局部修改 / 润色</h3>
             <p class="muted">在表格中勾选用例，再选择允许修改的字段。基于现有用例和你的方向生成新记录，未选内容保持原样；步骤与预期结果需一一对应。</p>
-            <fieldset :disabled="revising"><legend>允许修改的字段</legend><label v-for="option in fieldOptions" :key="option.value"><input v-model="revisionFields" type="checkbox" :value="option.value" />{{ option.label }}</label></fieldset>
+            <fieldset :disabled="revising"><legend>允许修改的字段</legend><label><input v-model="allRevisionFields" type="checkbox" aria-label="全选字段" :indeterminate.prop="revisionFields.length > 0 && !allRevisionFields" />全选</label><label v-for="option in fieldOptions" :key="option.value"><input v-model="revisionFields" type="checkbox" :value="option.value" />{{ option.label }}</label></fieldset>
             <label for="revision-instruction">修改方向</label>
             <el-input id="revision-instruction" v-model="revisionInstruction" type="textarea" :rows="3" :maxlength="4000" show-word-limit :disabled="revising" placeholder="例如：把名称润色得更简洁；将第 2 步拆成明确操作并补全对应预期（请同时选择步骤和预期结果）。" />
             <el-alert v-if="revisionError" :title="revisionError" type="error" :closable="false" show-icon />
@@ -245,6 +256,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
 <style scoped>
 .knowledge-select{width:100%;margin-bottom:12px}
+.case-select-all{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .case-revision{display:grid;gap:12px;margin-top:20px;padding-top:16px;border-top:1px solid var(--ui-border)}.case-revision h3,.case-revision p{margin:0}.case-revision fieldset{display:flex;flex-wrap:wrap;gap:12px;border:1px solid var(--ui-border);padding:12px}.case-revision fieldset label{display:inline-flex;align-items:center;gap:6px}.revise-button{justify-self:start}
 .additional-prompt{margin-top:18px}.additional-prompt label{display:block;margin-bottom:8px;font-size:13px}.additional-prompt p{margin:8px 0 0;font-size:12px}
 .generation-actions{display:flex;align-items:center;gap:4px;white-space:nowrap}.generation-actions>span{display:inline-flex}
