@@ -2,6 +2,10 @@
   "unreleased": [
     {
       "type": "fixed",
+      "text": "修复 RHEL 7 旧版 SQLite 上数据库迁移回滚失败、阻塞离线打包验证的问题。"
+    },
+    {
+      "type": "fixed",
       "text": "修正 RHEL 7.9 离线包的 LibreOffice Core 依赖，并补充缺包时的软件源排查提示。"
     }
   ],

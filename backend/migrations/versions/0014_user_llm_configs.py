@@ -24,5 +24,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("t_smart_case_generations", "encrypted_llm_config")
+    with op.batch_alter_table("t_smart_case_generations") as batch:
+        batch.drop_column("encrypted_llm_config")
     op.drop_table("t_user_llm_configs")

@@ -24,4 +24,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("t_model_providers", "embedding_dimensions")
+    with op.batch_alter_table("t_model_providers") as batch:
+        batch.drop_column("embedding_dimensions")
