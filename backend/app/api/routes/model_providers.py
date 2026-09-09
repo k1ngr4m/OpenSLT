@@ -7,11 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.deps import admin_only
+from app.api.deps import admin_only, get_current_user
 from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
-from app.models import ActiveAiModel, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User
+from app.models import ActiveAiModel, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User, UserLlmConfig
 from app.schemas import (
     AiModelCreate,
     AiModelOut,
@@ -20,11 +20,13 @@ from app.schemas import (
     ModelDiscoveryRequest,
     ModelProviderOut,
     ModelProviderWrite,
+    UserLlmConfigOut,
+    UserLlmConfigWrite,
 )
 from app.services.audit import write_audit
 from app.services.embedding import test_embedding_connection
 from app.services.llm import test_llm_connection
-from app.services.model_providers import list_provider_models, normalize_provider_base_url
+from app.services.model_providers import active_model, list_provider_models, normalize_provider_base_url
 from app.services.svn_knowledge import active_svn_task
 
 
@@ -95,6 +97,71 @@ def _mark_index_stale(db: Session) -> None:
     source = db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
     if source is not None and source.last_success_at is not None:
         source.sync_status = "stale"
+
+
+def _personal_out(db: Session, actor: User) -> UserLlmConfigOut:
+    config = db.get(UserLlmConfig, actor.id)
+    default = active_model(db, "chat")
+    return UserLlmConfigOut(
+        configured=config is not None,
+        base_url=config.base_url if config else "",
+        model_id=config.model_id if config else "",
+        has_api_key=bool(config and config.encrypted_api_key),
+        allow_insecure_http=config.allow_insecure_http if config else False,
+        default_model=default[1].model_id if default else None,
+    )
+
+
+@router.get("/personal-llm", response_model=UserLlmConfigOut)
+def personal_llm(actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserLlmConfigOut:
+    return _personal_out(db, actor)
+
+
+@router.put("/personal-llm", response_model=UserLlmConfigOut)
+def save_personal_llm(payload: UserLlmConfigWrite, request: Request,
+                      actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> UserLlmConfigOut:
+    try:
+        base_url = normalize_provider_base_url(payload.base_url, payload.allow_insecure_http)
+    except ValueError as exc:
+        raise _error(422, "INVALID_MODEL_PROVIDER", str(exc)) from exc
+    config = db.get(UserLlmConfig, actor.id)
+    if config is None:
+        config = UserLlmConfig(user_id=actor.id)
+        db.add(config)
+    if payload.api_key:
+        config.encrypted_api_key = encrypt_secret(payload.api_key)
+    elif config.base_url != base_url:
+        config.encrypted_api_key = None
+    config.base_url = base_url
+    config.model_id = payload.model_id
+    config.allow_insecure_http = payload.allow_insecure_http
+    write_audit(db, "personal_llm.save", "user_llm_config", actor.id, actor, request)
+    db.commit()
+    return _personal_out(db, actor)
+
+
+@router.delete("/personal-llm", status_code=204)
+def reset_personal_llm(request: Request, actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
+    config = db.get(UserLlmConfig, actor.id)
+    if config:
+        db.delete(config)
+        write_audit(db, "personal_llm.reset", "user_llm_config", actor.id, actor, request)
+        db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/personal-llm/connection-test", response_model=ModelConnectionTestOut)
+async def test_personal_llm(actor: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ModelConnectionTestOut:
+    config = db.get(UserLlmConfig, actor.id)
+    if config is None:
+        raise _error(409, "PERSONAL_LLM_NOT_CONFIGURED", "请先保存个人 LLM 配置")
+    try:
+        await asyncio.get_running_loop().run_in_executor(
+            None, test_llm_connection, config.base_url, config.model_id, decrypt_secret(config.encrypted_api_key),
+        )
+    except Exception as exc:
+        raise _error(502, "MODEL_CONNECTION_FAILED", str(redact(str(exc)))) from exc
+    return ModelConnectionTestOut(kind="chat", model_id=config.model_id)
 
 
 @router.get("", response_model=typing.List[ModelProviderOut])

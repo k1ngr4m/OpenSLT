@@ -82,6 +82,23 @@ class ModelProviderWrite(BaseModel):
     allow_insecure_http: bool = False
 
 
+class UserLlmConfigWrite(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    base_url: str = Field(min_length=1, max_length=1024)
+    model_id: str = Field(min_length=1, max_length=160)
+    api_key: typing.Optional[str] = Field(default=None, max_length=4096)
+    allow_insecure_http: bool = False
+
+
+class UserLlmConfigOut(BaseModel):
+    configured: bool
+    base_url: str = ""
+    model_id: str = ""
+    has_api_key: bool = False
+    allow_insecure_http: bool = False
+    default_model: typing.Optional[str] = None
+
+
 class AiModelCreate(BaseModel):
     kind: Literal["chat", "embedding"]
     model_id: str = Field(min_length=1, max_length=160)

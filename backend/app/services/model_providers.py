@@ -32,7 +32,7 @@ def normalize_provider_base_url(value: str, allow_insecure_http: bool) -> str:
     if parts.username or parts.password or parts.query or parts.fragment:
         raise ValueError("API Base URL 不得包含凭据、查询参数或片段")
     if parts.scheme == "http" and not allow_insecure_http:
-        raise ValueError("HTTP 会明文传输 API Key 和业务资料，必须由管理员显式允许")
+        raise ValueError("HTTP 会明文传输 API Key 和业务资料，必须显式允许")
     return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
 
 

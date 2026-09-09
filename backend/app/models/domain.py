@@ -115,6 +115,16 @@ class ActiveAiModel(Base):
     )
 
 
+class UserLlmConfig(TimestampMixin, Base):
+    __tablename__ = "t_user_llm_configs"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), primary_key=True)
+    base_url: Mapped[str] = mapped_column(String(1024))
+    model_id: Mapped[str] = mapped_column(String(160))
+    encrypted_api_key: Mapped[typing.Optional[str]] = mapped_column(Text)
+    allow_insecure_http: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class SmartCaseGeneration(TimestampMixin, Base):
     __tablename__ = "t_smart_case_generations"
 
@@ -125,6 +135,7 @@ class SmartCaseGeneration(TimestampMixin, Base):
     requirement_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
     llm_model: Mapped[str] = mapped_column(String(255))
+    encrypted_llm_config: Mapped[typing.Optional[str]] = mapped_column(Text)
     ai_model_id: Mapped[typing.Union[int, None]] = mapped_column(
         ForeignKey("t_ai_models.id", ondelete="SET NULL"), index=True
     )

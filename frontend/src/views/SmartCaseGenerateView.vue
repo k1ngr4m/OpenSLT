@@ -7,6 +7,7 @@ import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/time'
 import type { components } from '@/types/api.generated'
+import PersonalLlmDialog from '@/components/PersonalLlmDialog.vue'
 
 interface Requirement { source_path: string; revision: string; requirement_no: string | null; requirement_name: string }
 interface Generation { id: number; requirement_path: string; requirement_revision: string; requirement_no: string | null; requirement_name: string; status: string; llm_model: string; case_count: number; error: string | null; download_ready: boolean; created_at: string }
@@ -15,6 +16,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const generating = ref(false)
+const llmVisible = ref(false)
 const downloading = ref<number | null>(null)
 const previewVisible = ref(false)
 const previewLoading = ref(false)
@@ -103,7 +105,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
   <div v-loading="loading" class="page smart-generate-page">
     <header class="page-header">
       <div><span class="page-kicker">知识驱动测试设计</span><h1 class="page-title">智能用例</h1><p class="muted">从最近一次 SVN 成功索引中选择需求，生成可追溯的人工执行 Excel 用例草稿</p></div>
-      <el-button v-if="auth.isAdmin" :icon="Setting" @click="router.push('/smart-cases/settings')">配置</el-button>
+      <div><el-button :icon="Setting" @click="llmVisible = true">我的 LLM</el-button><el-button v-if="auth.isAdmin" :icon="Setting" @click="router.push('/smart-cases/settings')">知识源配置</el-button></div>
     </header>
 
     <div class="generate-grid">
@@ -131,7 +133,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     </div>
 
     <section class="card history-card" aria-labelledby="history-title">
-      <div class="section-heading"><div><span class="page-kicker">生成记录</span><h2 id="history-title">最近任务</h2></div></div>
+      <div class="section-heading"><div><span class="page-kicker">生成记录</span><h2 id="history-title">我的最近任务</h2></div></div>
       <el-table v-if="generations.length" :data="generations">
         <el-table-column prop="requirement_no" label="需求编号" width="130"><template #default="{ row }">{{ row.requirement_no || '—' }}</template></el-table-column>
         <el-table-column prop="requirement_name" label="需求名称" min-width="220" show-overflow-tooltip />
@@ -139,7 +141,14 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
         <el-table-column prop="llm_model" label="模型" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tooltip :content="row.error || ''" :disabled="!row.error"><el-tag :type="row.status === 'succeeded' ? 'success' : row.status === 'failed' ? 'danger' : 'warning'" effect="plain">{{ statusText[row.status] || row.status }}<template v-if="row.case_count"> · {{ row.case_count }}</template></el-tag></el-tooltip></template></el-table-column>
         <el-table-column label="提交时间" width="180"><template #default="{ row }">{{ formatBeijingDateTime(row.created_at) }}</template></el-table-column>
-        <el-table-column label="操作" width="190" fixed="right"><template #default="{ row }"><el-button v-if="row.status === 'succeeded'" text type="primary" :icon="View" @click="preview(row)">预览</el-button><el-button text type="primary" :icon="Download" :loading="downloading === row.id" :disabled="!row.download_ready" @click="download(row)">下载</el-button></template></el-table-column>
+        <el-table-column label="操作" width="104" fixed="right">
+          <template #default="{ row }">
+            <div class="generation-actions">
+              <el-tooltip v-if="row.status === 'succeeded'" content="预览用例" placement="top"><el-button text circle type="primary" :icon="View" aria-label="预览用例" @click="preview(row)" /></el-tooltip>
+              <el-tooltip :content="row.download_ready ? '下载 Excel' : '用例文件尚未生成'" placement="top"><span><el-button text circle type="primary" :icon="Download" aria-label="下载 Excel" :loading="downloading === row.id" :disabled="!row.download_ready" @click="download(row)" /></span></el-tooltip>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
       <el-empty v-else description="还没有生成记录" :image-size="72" />
     </section>
@@ -165,10 +174,12 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       </div>
       <template #footer><el-button @click="previewVisible = false">关闭</el-button><el-button v-if="previewItem" type="primary" :icon="Download" :loading="downloading === previewItem.id" :disabled="!previewItem.download_ready" @click="download(previewItem)">下载 Excel</el-button></template>
     </el-dialog>
+    <PersonalLlmDialog v-if="llmVisible" @close="llmVisible = false" />
   </div>
 </template>
 
 <style scoped>
+.generation-actions{display:flex;align-items:center;gap:4px;white-space:nowrap}.generation-actions>span{display:inline-flex}
 .case-preview-body{min-height:180px}.case-preview-table{margin-top:14px}.case-preview-table :deep(.cell){white-space:pre-wrap;overflow-wrap:anywhere}.case-preview-table :deep(td){vertical-align:top}.case-preview-table ul,.case-preview-table ol{margin:0;padding-left:20px}.case-preview-table li+li{margin-top:6px}.case-preview-sources{margin-top:14px;overflow-wrap:anywhere}.case-preview-sources summary{cursor:pointer}
 .smart-generate-page{max-width:1500px}.generate-grid{display:grid;grid-template-columns:minmax(480px,1.25fr) minmax(320px,.75fr);gap:14px}.requirement-card,.action-card,.history-card{padding:20px}.history-card{margin-top:14px}.section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}.section-heading h2{margin:3px 0 0;font-size:18px}.requirement-list{display:grid;max-height:440px;margin-top:12px;overflow:auto;border-top:1px solid var(--ui-border)}.requirement-item{display:flex;align-items:flex-start;gap:10px;padding:13px 8px;border-bottom:1px solid var(--ui-border);cursor:pointer}.requirement-item:hover,.requirement-item.selected{background:var(--ui-primary-soft)}.requirement-item input{margin-top:3px;accent-color:var(--ui-primary)}.requirement-item span,.requirement-item strong,.requirement-item small{display:block;min-width:0}.requirement-item strong{font-size:13px}.requirement-item small{margin-top:5px;color:var(--ui-text-secondary);font-size:12px;overflow-wrap:anywhere}.action-card dl{display:grid;margin:0 0 16px}.action-card dl div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px;padding:10px 0;border-bottom:1px solid var(--ui-border)}.action-card dt{color:var(--ui-text-secondary);font-size:12px}.action-card dd{margin:0;overflow-wrap:anywhere;font-size:12px}.generate-button{width:100%;margin-top:18px}@media(max-width:900px){.generate-grid{grid-template-columns:1fr}}@media(max-width:640px){.requirement-card,.action-card,.history-card{padding:15px}.action-card dl div{grid-template-columns:1fr;gap:3px}}
 </style>

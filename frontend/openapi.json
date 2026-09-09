@@ -377,6 +377,28 @@
         "title": "CaptureSnapshotOut",
         "type": "object"
       },
+      "CaseGenerationPromptWrite": {
+        "properties": {
+          "system_prompt": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "System Prompt",
+            "type": "string"
+          },
+          "user_prompt": {
+            "maxLength": 30000,
+            "minLength": 1,
+            "title": "User Prompt",
+            "type": "string"
+          }
+        },
+        "required": [
+          "system_prompt",
+          "user_prompt"
+        ],
+        "title": "CaseGenerationPromptWrite",
+        "type": "object"
+      },
       "ContractDataFetchRequest": {
         "properties": {
           "contract_types": {
@@ -5911,6 +5933,90 @@
         "title": "UserCreate",
         "type": "object"
       },
+      "UserLlmConfigOut": {
+        "properties": {
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "base_url": {
+            "default": "",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "has_api_key": {
+            "default": false,
+            "title": "Has Api Key",
+            "type": "boolean"
+          },
+          "model_id": {
+            "default": "",
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "configured"
+        ],
+        "title": "UserLlmConfigOut",
+        "type": "object"
+      },
+      "UserLlmConfigWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "allow_insecure_http": {
+            "default": false,
+            "title": "Allow Insecure Http",
+            "type": "boolean"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Base Url",
+            "type": "string"
+          },
+          "model_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url",
+          "model_id"
+        ],
+        "title": "UserLlmConfigWrite",
+        "type": "object"
+      },
       "UserOut": {
         "properties": {
           "created_at": {
@@ -6669,7 +6775,7 @@
   },
   "info": {
     "title": "OpenSLT",
-    "version": "0.2.2"
+    "version": "0.2.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7801,6 +7907,107 @@
           }
         ],
         "summary": "Test Model"
+      }
+    },
+    "/api/v1/model-providers/personal-llm": {
+      "delete": {
+        "operationId": "reset_personal_llm_api_v1_model_providers_personal_llm_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset Personal Llm"
+      },
+      "get": {
+        "operationId": "personal_llm_api_v1_model_providers_personal_llm_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLlmConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Personal Llm"
+      },
+      "put": {
+        "operationId": "save_personal_llm_api_v1_model_providers_personal_llm_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserLlmConfigWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLlmConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Personal Llm"
+      }
+    },
+    "/api/v1/model-providers/personal-llm/connection-test": {
+      "post": {
+        "operationId": "test_personal_llm_api_v1_model_providers_personal_llm_connection_test_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelConnectionTestOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Personal Llm"
       }
     },
     "/api/v1/model-providers/{provider_id}": {
@@ -12578,6 +12785,72 @@
         "summary": "Archive Workflow Version"
       }
     },
+    "/api/v1/smart-cases/generation-prompt": {
+      "get": {
+        "operationId": "get_generation_prompt_api_v1_smart_cases_generation_prompt_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Get Generation Prompt Api V1 Smart Cases Generation Prompt Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Generation Prompt"
+      },
+      "put": {
+        "operationId": "save_generation_prompt_api_v1_smart_cases_generation_prompt_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaseGenerationPromptWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Save Generation Prompt Api V1 Smart Cases Generation Prompt Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Generation Prompt"
+      }
+    },
     "/api/v1/smart-cases/generations": {
       "get": {
         "operationId": "generations_api_v1_smart_cases_generations_get",
@@ -12926,6 +13199,30 @@
           }
         ],
         "summary": "Sync Status"
+      }
+    },
+    "/api/v1/smart-cases/knowledge-source/sync/cancel": {
+      "post": {
+        "operationId": "cancel_sync_api_v1_smart_cases_knowledge_source_sync_cancel_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Cancel Sync Api V1 Smart Cases Knowledge Source Sync Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel Sync"
       }
     },
     "/api/v1/smart-cases/requirements": {

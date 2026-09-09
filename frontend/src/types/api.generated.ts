@@ -313,6 +313,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/model-providers/personal-llm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Personal Llm */
+        get: operations["personal_llm_api_v1_model_providers_personal_llm_get"];
+        /** Save Personal Llm */
+        put: operations["save_personal_llm_api_v1_model_providers_personal_llm_put"];
+        post?: never;
+        /** Reset Personal Llm */
+        delete: operations["reset_personal_llm_api_v1_model_providers_personal_llm_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/model-providers/personal-llm/connection-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Personal Llm */
+        post: operations["test_personal_llm_api_v1_model_providers_personal_llm_connection_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/model-providers/{provider_id}": {
         parameters: {
             query?: never;
@@ -1509,6 +1545,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/smart-cases/generation-prompt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Generation Prompt */
+        get: operations["get_generation_prompt_api_v1_smart_cases_generation_prompt_get"];
+        /** Save Generation Prompt */
+        put: operations["save_generation_prompt_api_v1_smart_cases_generation_prompt_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/smart-cases/generations": {
         parameters: {
             query?: never;
@@ -1641,6 +1695,23 @@ export interface paths {
         get: operations["sync_status_api_v1_smart_cases_knowledge_source_sync_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/smart-cases/knowledge-source/sync/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Sync */
+        post: operations["cancel_sync_api_v1_smart_cases_knowledge_source_sync_cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1849,6 +1920,13 @@ export interface components {
             started_at: string;
             /** Status */
             status: string;
+        };
+        /** CaseGenerationPromptWrite */
+        CaseGenerationPromptWrite: {
+            /** System Prompt */
+            system_prompt: string;
+            /** User Prompt */
+            user_prompt: string;
         };
         /** ContractDataFetchRequest */
         ContractDataFetchRequest: {
@@ -3896,6 +3974,47 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** UserLlmConfigOut */
+        UserLlmConfigOut: {
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /** Configured */
+            configured: boolean;
+            /** Default Model */
+            default_model?: string | null;
+            /**
+             * Has Api Key
+             * @default false
+             */
+            has_api_key: boolean;
+            /**
+             * Model Id
+             * @default
+             */
+            model_id: string;
+        };
+        /** UserLlmConfigWrite */
+        UserLlmConfigWrite: {
+            /**
+             * Allow Insecure Http
+             * @default false
+             */
+            allow_insecure_http: boolean;
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url: string;
+            /** Model Id */
+            model_id: string;
+        };
         /** UserOut */
         UserOut: {
             /**
@@ -4737,6 +4856,97 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    personal_llm_api_v1_model_providers_personal_llm_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserLlmConfigOut"];
+                };
+            };
+        };
+    };
+    save_personal_llm_api_v1_model_providers_personal_llm_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserLlmConfigWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserLlmConfigOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_personal_llm_api_v1_model_providers_personal_llm_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_personal_llm_api_v1_model_providers_personal_llm_connection_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConnectionTestOut"];
                 };
             };
         };
@@ -7743,6 +7953,59 @@ export interface operations {
             };
         };
     };
+    get_generation_prompt_api_v1_smart_cases_generation_prompt_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, unknown>;
+                };
+            };
+        };
+    };
+    save_generation_prompt_api_v1_smart_cases_generation_prompt_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CaseGenerationPromptWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, unknown>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generations_api_v1_smart_cases_generations_get: {
         parameters: {
             query?: never;
@@ -8013,6 +8276,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SvnSyncStatusOut"];
+                };
+            };
+        };
+    };
+    cancel_sync_api_v1_smart_cases_knowledge_source_sync_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, unknown>;
                 };
             };
         };

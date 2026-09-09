@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import re
 import typing
 from pathlib import Path
@@ -17,7 +18,7 @@ from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
 from app.core.time import beijing_now
-from app.models import CaseGenerationPrompt, DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User
+from app.models import CaseGenerationPrompt, DurableTask, SmartCaseGeneration, SvnKnowledgeSource, User, UserLlmConfig
 from app.schemas import (
     CaseGenerationPromptWrite,
     KnowledgeSearchOut,
@@ -376,7 +377,8 @@ def create_generation(
         source, embedding_provider.base_url, embedding_model.model_id
     ):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
-    _, chat_model = _required_model(db, "chat")
+    personal = db.get(UserLlmConfig, actor.id)
+    chat_provider, chat_model = (personal, personal) if personal else _required_model(db, "chat")
     requirement = next((item for item in list_indexed_requirements() if item["source_path"] == payload.requirement_path), None)
     if requirement is None:
         raise HTTPException(status_code=404, detail={"code": "REQUIREMENT_NOT_FOUND", "message": "需求不在当前知识索引中"})
@@ -386,7 +388,12 @@ def create_generation(
         requirement_no=requirement["requirement_no"],
         requirement_name=requirement["requirement_name"],
         llm_model=chat_model.model_id,
-        ai_model_id=chat_model.id,
+        ai_model_id=None if personal else chat_model.id,
+        encrypted_llm_config=encrypt_secret(json.dumps({
+            "base_url": chat_provider.base_url,
+            "model": chat_model.model_id,
+            "api_key": decrypt_secret(chat_provider.encrypted_api_key),
+        })),
         index_revisions=dict(source.last_revisions),
         created_by=actor.id,
     )
@@ -401,21 +408,21 @@ def create_generation(
 
 @router.get("/generations", response_model=typing.List[SmartCaseGenerationOut])
 def generations(
-    _: User = Depends(operators),
+    actor: User = Depends(operators),
     db: Session = Depends(get_db),
 ) -> typing.List[SmartCaseGenerationOut]:
-    items = db.scalars(select(SmartCaseGeneration).order_by(SmartCaseGeneration.id.desc()).limit(50)).all()
+    items = db.scalars(select(SmartCaseGeneration).where(SmartCaseGeneration.created_by == actor.id).order_by(SmartCaseGeneration.id.desc()).limit(50)).all()
     return [_generation_out(item) for item in items]
 
 
 @router.get("/generations/{generation_id}", response_model=SmartCaseGenerationDetailOut)
 def generation(
     generation_id: int,
-    _: User = Depends(operators),
+    actor: User = Depends(operators),
     db: Session = Depends(get_db),
 ) -> SmartCaseGenerationDetailOut:
     item = db.get(SmartCaseGeneration, generation_id)
-    if item is None:
+    if item is None or item.created_by != actor.id:
         raise HTTPException(status_code=404, detail={"code": "GENERATION_NOT_FOUND", "message": "生成记录不存在"})
     return SmartCaseGenerationDetailOut(
         **_generation_out(item).model_dump(),
@@ -431,7 +438,7 @@ def download_generation(
     db: Session = Depends(get_db),
 ) -> FileResponse:
     item = db.get(SmartCaseGeneration, generation_id)
-    if item is None or item.status != "succeeded" or not item.artifact_path:
+    if item is None or item.created_by != actor.id or item.status != "succeeded" or not item.artifact_path:
         raise HTTPException(status_code=404, detail={"code": "ARTIFACT_NOT_FOUND", "message": "用例文件尚未生成"})
     path = Path(item.artifact_path).resolve()
     root = settings.artifact_root.resolve()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import typing
 from pathlib import Path
@@ -96,13 +97,17 @@ def execute_smart_case_generation(generation_id: int) -> None:
         if generation.status == "succeeded":
             return
         embedding_provider, embedding_model = require_active_model(db, "embedding")
-        chat_model = db.get(AiModel, generation.ai_model_id) if generation.ai_model_id else None
-        if chat_model is None or chat_model.kind != "chat":
-            chat_provider, chat_model = require_active_model(db, "chat")
+        if generation.encrypted_llm_config:
+            llm = LlmClient(**json.loads(decrypt_secret(generation.encrypted_llm_config)))
         else:
-            chat_provider = db.get(ModelProvider, chat_model.provider_id)
-            if chat_provider is None:
-                raise RuntimeError("用例生成任务使用的模型提供商不存在")
+            chat_model = db.get(AiModel, generation.ai_model_id) if generation.ai_model_id else None
+            if chat_model is None or chat_model.kind != "chat":
+                chat_provider, chat_model = require_active_model(db, "chat")
+            else:
+                chat_provider = db.get(ModelProvider, chat_model.provider_id)
+                if chat_provider is None:
+                    raise RuntimeError("用例生成任务使用的模型提供商不存在")
+            llm = LlmClient(chat_provider.base_url, chat_model.model_id, decrypt_secret(chat_provider.encrypted_api_key))
         if (
             not published_index_matches(
                 source, embedding_provider.base_url, embedding_model.model_id
@@ -134,11 +139,7 @@ def execute_smart_case_generation(generation_id: int) -> None:
         generation.referenced_sources = [{"source_path": item["source_path"], "revision": item["revision"]} for item in references]
         prompt_config = db.get(CaseGenerationPrompt, 1)
         cases = generate_cases(
-            LlmClient(
-                chat_provider.base_url,
-                chat_model.model_id,
-                decrypt_secret(chat_provider.encrypted_api_key),
-            ),
+            llm,
             {"requirement_no": generation.requirement_no or "", "requirement_name": generation.requirement_name, "source_path": generation.requirement_path, "revision": generation.requirement_revision},
             references,
             **({"system_prompt": prompt_config.system_prompt, "user_prompt": prompt_config.user_prompt} if prompt_config else {}),

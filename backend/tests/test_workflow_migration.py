@@ -67,7 +67,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 36
+    assert len(model_table_names) == 37
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -111,7 +111,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0013"
+        ).scalar_one() == "0014"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -333,7 +333,7 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0013"
+        ).scalar_one() == "0014"
     engine.dispose()
 
 
@@ -388,13 +388,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 37
+    assert len(created_tables) == 38
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 36
-    assert sql.count("CHARSET=utf8mb4") == 36
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 36
+    assert sql.count("ENGINE=InnoDB") == 37
+    assert sql.count("CHARSET=utf8mb4") == 37
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 37
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert "model_id VARCHAR(160) NOT NULL" in sql
@@ -425,6 +425,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0011_multiple_svn_repositories.py",
         "0012_model_management.py",
         "0013_case_generation_prompts.py",
+        "0014_user_llm_configs.py",
     }
 
     completed = subprocess.run(
@@ -434,7 +435,7 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0013 (head)"
+    assert completed.stdout.strip() == "0014 (head)"
 
 
 def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monkeypatch) -> None:
@@ -451,12 +452,12 @@ def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monk
     )
     command.upgrade(Config(str(REPOSITORY_ROOT / "alembic.ini")), "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0013",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0014",)
 
 
 def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -> None:
     database_path = tmp_path / "resumed-prompts.sqlite3"
-    _alembic(database_path, "upgrade", "head")
+    _alembic(database_path, "upgrade", "0013")
     with sqlite3.connect(database_path) as connection:
         connection.execute(
             "INSERT INTO t_case_generation_prompts (id, system_prompt, user_prompt) "
@@ -468,7 +469,7 @@ def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -
     _alembic(database_path, "upgrade", "head")
     _alembic(database_path, "upgrade", "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0013",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0014",)
         assert connection.execute("SELECT * FROM t_case_generation_prompts").fetchall() == [
             (1, "saved system", "saved user")
         ]

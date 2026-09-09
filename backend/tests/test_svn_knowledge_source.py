@@ -298,11 +298,27 @@ def test_generation_preview_returns_saved_cases_only_for_completed_tasks(client,
     assert response.json()["result_cases"] == cases
     assert response.json()["referenced_sources"] == [{"source_path": "需求/登录.md", "revision": "51"}]
     assert "result_cases" not in client.get("/api/v1/smart-cases/generations", headers=admin_headers).json()[0]
+    created = client.post("/api/v1/users", headers=admin_headers, json={
+        "username": "case_tester", "password": "tester-password", "role": "tester", "display_name": "测试员",
+    })
+    assert created.status_code == 201
+    token = client.post("/api/v1/auth/login", json={"username": "case_tester", "password": "tester-password"}).json()["access_token"]
+    tester_headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/smart-cases/generations", headers=tester_headers).json() == []
+    assert client.get(url, headers=tester_headers).status_code == 404
+    assert client.get(url + "/download", headers=tester_headers).status_code == 404
+    with SessionLocal() as db:
+        db.get(SmartCaseGeneration, generation_id).created_by = created.json()["id"]
+        db.commit()
+    assert client.get(url, headers=admin_headers).status_code == 404
+    assert client.get(url + "/download", headers=admin_headers).status_code == 404
+    assert len(client.get("/api/v1/smart-cases/generations", headers=tester_headers).json()) == 1
+    assert client.get(url, headers=tester_headers).json()["result_cases"] == cases
     for status in ("queued", "running", "failed"):
         with SessionLocal() as db:
             db.get(SmartCaseGeneration, generation_id).status = status
             db.commit()
-        assert client.get(url, headers=admin_headers).json()["result_cases"] == []
+        assert client.get(url, headers=tester_headers).json()["result_cases"] == []
     assert client.get("/api/v1/smart-cases/generations/999999", headers=admin_headers).status_code == 404
 
 

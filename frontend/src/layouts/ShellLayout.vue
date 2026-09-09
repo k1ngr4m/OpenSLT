@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import VersionHistory from '@/components/VersionHistory.vue'
+import PersonalLlmDialog from '@/components/PersonalLlmDialog.vue'
 import {
   DataAnalysis,
   Monitor,
@@ -22,6 +23,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const llmVisible = ref(false)
 const isCompact = ref(false)
 const isMobile = ref(false)
 const mobileNavOpen = ref(false)
@@ -206,6 +208,7 @@ onBeforeUnmount(() => {
         </nav>
 
         <div class="topbar-end">
+          <el-tooltip content="我的 LLM 配置" placement="bottom"><el-button text circle aria-label="我的 LLM 配置" @click="llmVisible = true"><el-icon><Cpu /></el-icon></el-button></el-tooltip>
           <el-tooltip content="管理中心" placement="bottom">
             <el-button
               text
@@ -226,6 +229,7 @@ onBeforeUnmount(() => {
       </main>
     </section>
   </div>
+  <PersonalLlmDialog v-if="llmVisible" @close="llmVisible = false" />
 </template>
 
 <style scoped>
