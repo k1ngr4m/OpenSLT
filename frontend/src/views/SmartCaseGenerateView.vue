@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Download, MagicStick, Search, Setting, View } from '@element-plus/icons-vue'
 import { ElMessage } from '@/ui/elementPlusServices'
+import GenerationPromptDialog from '@/components/GenerationPromptDialog.vue'
 import { api, errorMessage } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { formatBeijingDateTime } from '@/utils/time'
 import type { components } from '@/types/api.generated'
 
 interface Requirement { source_path: string; revision: string; requirement_no: string | null; requirement_name: string }
-interface Generation { id: number; requirement_path: string; requirement_revision: string; requirement_no: string | null; requirement_name: string; status: string; llm_model: string; case_count: number; error: string | null; download_ready: boolean; created_at: string }
+interface Generation { id: number; knowledge_base_id?: number | null; requirement_path: string; requirement_revision: string; requirement_no: string | null; requirement_name: string; status: string; llm_model: string; case_count: number; error: string | null; download_ready: boolean; created_at: string }
 
 const router = useRouter()
+const knowledgeBases = ref<components['schemas']['KnowledgeBaseOut'][]>([])
+const knowledgeBaseId = ref<number | null>(null)
 const auth = useAuthStore()
 const loading = ref(false)
 const generating = ref(false)
@@ -39,17 +42,19 @@ const statusText: Record<string, string> = { queued: '排队中', running: '生�
 
 async function load(showError = true) {
   loading.value = !requirements.value.length
+  const selectedBaseId = knowledgeBaseId.value
   try {
     const [requirementResponse, generationResponse] = await Promise.all([
-      api.get<Requirement[]>('/smart-cases/requirements'),
+      knowledgeBaseId.value ? api.get<Requirement[]>('/smart-cases/requirements', { params: { knowledge_base_id: knowledgeBaseId.value } }) : Promise.resolve({ data: [] as Requirement[] }),
       api.get<Generation[]>('/smart-cases/generations'),
     ])
+    if (knowledgeBaseId.value !== selectedBaseId) return
     requirements.value = requirementResponse.data
     generations.value = generationResponse.data
     if (selectedPath.value && !requirements.value.some(item => item.source_path === selectedPath.value)) selectedPath.value = ''
   } catch (error) {
-    if (showError) ElMessage.error(errorMessage(error))
-  } finally { loading.value = false }
+    if (showError && knowledgeBaseId.value === selectedBaseId) ElMessage.error(errorMessage(error))
+  } finally { if (knowledgeBaseId.value === selectedBaseId) loading.value = false }
 }
 
 async function generate() {
@@ -57,6 +62,7 @@ async function generate() {
   generating.value = true
   try {
     const payload: components['schemas']['SmartCaseGenerationCreate'] = {
+      knowledge_base_id: knowledgeBaseId.value,
       requirement_path: selected.value.source_path,
       additional_prompt: additionalPrompt.value.trim(),
     }
@@ -97,7 +103,12 @@ async function download(item: Generation) {
   finally { downloading.value = null }
 }
 
+watch(knowledgeBaseId, () => { requirements.value = []; selectedPath.value = ''; query.value = ''; void load() })
 onMounted(async () => {
+  try {
+    knowledgeBases.value = (await api.get<components['schemas']['KnowledgeBaseOut'][]>('/knowledge-bases')).data
+    if (knowledgeBases.value.length === 1) knowledgeBaseId.value = knowledgeBases.value[0]!.id
+  } catch (error) { ElMessage.error(errorMessage(error)) }
   await load()
   timer = setInterval(() => { if (hasRunning.value) load(false) }, 5000)
 })
@@ -107,14 +118,15 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 <template>
   <div v-loading="loading" class="page smart-generate-page">
     <header class="page-header">
-      <div><span class="page-kicker">知识驱动测试设计</span><h1 class="page-title">智能用例</h1><p class="muted">从最近一次 SVN 成功索引中选择需求，生成可追溯的人工执行 Excel 用例草稿</p></div>
-      <div><el-button :icon="Setting" @click="router.push('/models')">模型管理</el-button><el-button v-if="auth.isAdmin" :icon="Setting" @click="router.push('/smart-cases/settings')">知识源配置</el-button></div>
+      <div><span class="page-kicker">知识驱动测试设计</span><h1 class="page-title">智能用例</h1><p class="muted">从所选知识库的成功索引中选择需求，生成可追溯的人工执行 Excel 用例草稿</p></div>
+      <div><el-button :icon="Setting" @click="router.push('/models')">模型管理</el-button><el-button v-if="auth.isAdmin" :icon="Setting" @click="router.push('/knowledge-bases')">知识库管理</el-button><GenerationPromptDialog v-if="auth.isAdmin" /></div>
     </header>
 
     <div class="generate-grid">
       <section class="card requirement-card" aria-labelledby="requirement-title">
         <div class="section-heading"><div><span class="page-kicker">第一步</span><h2 id="requirement-title">选择需求</h2></div><el-tag effect="plain">{{ visibleRequirements.length }} 项</el-tag></div>
-        <el-input v-model="query" clearable aria-label="按需求编号或名称检索" placeholder="输入需求编号、名称或 SVN 路径"><template #prefix><el-icon><Search /></el-icon></template></el-input>
+        <el-select v-model="knowledgeBaseId" class="knowledge-select" aria-label="选择知识库" placeholder="请选择知识库" :disabled="generating"><el-option v-for="base in knowledgeBases" :key="base.id" :label="base.name" :value="base.id" /></el-select>
+        <el-input v-model="query" clearable aria-label="按需求编号或名称检索" placeholder="输入需求编号、名称或文档路径"><template #prefix><el-icon><Search /></el-icon></template></el-input>
         <div v-if="visibleRequirements.length" class="requirement-list" role="radiogroup" aria-label="可生成的需求">
           <label v-for="item in visibleRequirements" :key="item.source_path" class="requirement-item" :class="{ selected: selectedPath === item.source_path }">
             <input v-model="selectedPath" type="radio" name="requirement" :value="item.source_path" />
@@ -127,7 +139,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       <section class="card action-card" aria-labelledby="generate-title" aria-live="polite">
         <div class="section-heading"><div><span class="page-kicker">第二步</span><h2 id="generate-title">生成用例</h2></div></div>
         <template v-if="selected">
-          <dl><div><dt>需求编号</dt><dd>{{ selected.requirement_no || '未从文件名识别' }}</dd></div><div><dt>需求名称</dt><dd>{{ selected.requirement_name }}</dd></div><div><dt>知识版本</dt><dd>r{{ selected.revision }}</dd></div><div><dt>SVN 来源</dt><dd>{{ selected.source_path }}</dd></div></dl>
+          <dl><div><dt>需求编号</dt><dd>{{ selected.requirement_no || '未从文件名识别' }}</dd></div><div><dt>需求名称</dt><dd>{{ selected.requirement_name }}</dd></div><div><dt>知识版本</dt><dd>r{{ selected.revision }}</dd></div><div><dt>文档来源</dt><dd>{{ selected.source_path }}</dd></div></dl>
           <el-alert type="info" :closable="false" show-icon title="系统会检索相关知识作为参考；输出为草稿，执行前必须人工复核。" />
           <div class="additional-prompt">
             <label for="additional-prompt">补充提示词（选填）</label>
@@ -143,6 +155,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     <section class="card history-card" aria-labelledby="history-title">
       <div class="section-heading"><div><span class="page-kicker">生成记录</span><h2 id="history-title">我的最近任务</h2></div></div>
       <el-table v-if="generations.length" :data="generations">
+        <el-table-column label="知识库" min-width="150"><template #default="{ row }">{{ knowledgeBases.find(base => base.id === row.knowledge_base_id)?.name || '—' }}</template></el-table-column>
         <el-table-column prop="requirement_no" label="需求编号" width="130"><template #default="{ row }">{{ row.requirement_no || '—' }}</template></el-table-column>
         <el-table-column prop="requirement_name" label="需求名称" min-width="220" show-overflow-tooltip />
         <el-table-column prop="requirement_revision" label="版本" width="90"><template #default="{ row }">r{{ row.requirement_revision }}</template></el-table-column>
@@ -186,6 +199,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 </template>
 
 <style scoped>
+.knowledge-select{width:100%;margin-bottom:12px}
 .additional-prompt{margin-top:18px}.additional-prompt label{display:block;margin-bottom:8px;font-size:13px}.additional-prompt p{margin:8px 0 0;font-size:12px}
 .generation-actions{display:flex;align-items:center;gap:4px;white-space:nowrap}.generation-actions>span{display:inline-flex}
 .case-preview-body{min-height:180px}.case-preview-table{margin-top:14px}.case-preview-table :deep(.cell){white-space:pre-wrap;overflow-wrap:anywhere}.case-preview-table :deep(td){vertical-align:top}.case-preview-table ul,.case-preview-table ol{margin:0;padding-left:20px}.case-preview-table li+li{margin-top:6px}.case-preview-sources{margin-top:14px;overflow-wrap:anywhere}.case-preview-sources summary{cursor:pointer}

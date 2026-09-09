@@ -87,16 +87,20 @@ def build_workbook(path: Path, generation: SmartCaseGeneration, cases: typing.Se
         temporary.unlink(missing_ok=True)
 
 
+from app.services import knowledge_bases as kb
+
+
 def execute_smart_case_generation(generation_id: int, additional_prompt: str = "") -> None:
     db = SessionLocal()
     try:
         generation = db.get(SmartCaseGeneration, generation_id)
-        source = db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
-        if generation is None or source is None:
+        base = kb.resolve_base(db, generation.knowledge_base_id) if generation else None
+        source = kb.source_for(db, base.id) if base else db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
+        if generation is None or (base is None and source is None):
             raise RuntimeError("智能用例生成任务或知识源不存在")
         if generation.status == "succeeded":
             return
-        embedding_provider, embedding_model = require_active_model(db, "embedding")
+        embedding_provider, embedding_model = kb.embedding_model(db, base) if base else require_active_model(db, "embedding")
         if generation.encrypted_llm_config:
             llm = LlmClient(**json.loads(decrypt_secret(generation.encrypted_llm_config)))
         else:
@@ -108,17 +112,14 @@ def execute_smart_case_generation(generation_id: int, additional_prompt: str = "
                 if chat_provider is None:
                     raise RuntimeError("用例生成任务使用的模型提供商不存在")
             llm = LlmClient(chat_provider.base_url, chat_model.model_id, decrypt_secret(chat_provider.encrypted_api_key))
-        if (
-            not published_index_matches(
-                source, embedding_provider.base_url, embedding_model.model_id, embedding_provider.embedding_dimensions
-            )
-            or dict(generation.index_revisions) != dict(source.last_revisions)
-        ):
+        ready = kb.index_ready(db, base) if base else published_index_matches(source, embedding_provider.base_url, embedding_model.model_id, embedding_provider.embedding_dimensions)
+        revisions = kb.index_revisions(base.id) if base else dict(source.last_revisions)
+        if not ready or dict(generation.index_revisions) != revisions:
             raise RuntimeError("知识索引已变化，请重新选择需求")
         generation.status = "running"
         generation.error = None
         db.commit()
-        selected = get_indexed_document(generation.requirement_path)
+        selected = get_indexed_document(generation.requirement_path, kb.index_path(base.id)) if base else get_indexed_document(generation.requirement_path)
         if selected["revision"] != generation.requirement_revision:
             raise RuntimeError("需求 revision 已变化，请重新选择需求")
         query = "%s %s %s" % (generation.requirement_no or "", generation.requirement_name, selected["content"][:1500])
@@ -129,7 +130,7 @@ def execute_smart_case_generation(generation_id: int, additional_prompt: str = "
             expected_dimensions=embedding_provider.embedding_dimensions,
         )
         vector = embedding.embed([query])[0]
-        hits = search_vector_index(query, vector, 8)
+        hits = search_vector_index(query, vector, base.top_k, index_path=kb.index_path(base.id)) if base else search_vector_index(query, vector, 8)
         references = [{"source_path": selected["source_path"], "revision": selected["revision"], "content": selected["content"][:12000]}]
         seen = {selected["source_path"]}
         for hit in hits:
@@ -138,6 +139,8 @@ def execute_smart_case_generation(generation_id: int, additional_prompt: str = "
             seen.add(hit["source_path"])
             references.append({"source_path": hit["source_path"], "revision": hit["revision"], "content": hit["snippet"][:1500]})
         generation.referenced_sources = [{"source_path": item["source_path"], "revision": item["revision"]} for item in references]
+        if base and kb.index_revisions(base.id) != dict(generation.index_revisions):
+            raise RuntimeError("知识索引已变化，请重新选择需求")
         prompt_config = db.get(CaseGenerationPrompt, 1)
         cases = generate_cases(
             llm,

@@ -68,7 +68,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     engine = sa.create_engine(_database_url(database_path))
     inspector = sa.inspect(engine)
     model_table_names = set(Base.metadata.tables)
-    assert len(model_table_names) == 40
+    assert len(model_table_names) == 42
     assert all(name.startswith("t_") for name in model_table_names)
     assert set(inspector.get_table_names()) == model_table_names | {VERSION_TABLE}
 
@@ -112,7 +112,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0017"
+        ).scalar_one() == "0018"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -334,7 +334,7 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0017"
+        ).scalar_one() == "0018"
     engine.dispose()
 
 
@@ -389,13 +389,13 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
     sql = completed.stdout
 
     created_tables = re.findall(r"CREATE TABLE (t_[a-z0-9_]+)", sql)
-    assert len(created_tables) == 41
+    assert len(created_tables) == 43
     assert set(created_tables) == set(Base.metadata.tables) | {VERSION_TABLE}
     assert " LONGTEXT" in sql
     assert not re.search(r"\sJSON(?:\s|,)", sql)
-    assert sql.count("ENGINE=InnoDB") == 40
-    assert sql.count("CHARSET=utf8mb4") == 40
-    assert sql.count("COLLATE utf8mb4_unicode_ci") == 40
+    assert sql.count("ENGINE=InnoDB") == 42
+    assert sql.count("CHARSET=utf8mb4") == 42
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 42
     assert "filename(120), checksum(64)" in sql
     assert "idempotency_key(191)" in sql
     assert "model_id VARCHAR(160) NOT NULL" in sql
@@ -429,6 +429,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0015_chat.py",
         "0016_account_models.py",
         "0017_embedding_dimensions.py",
+        "0018_knowledge_bases.py",
         "0014_user_llm_configs.py",
     }
 
@@ -439,7 +440,7 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0017 (head)"
+    assert completed.stdout.strip() == "0018 (head)"
 
 
 @pytest.mark.parametrize("admin_personal", [False, True])
@@ -510,7 +511,7 @@ def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monk
     )
     command.upgrade(Config(str(REPOSITORY_ROOT / "alembic.ini")), "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0017",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0018",)
 
 
 def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -> None:
@@ -527,7 +528,33 @@ def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -
     _alembic(database_path, "upgrade", "head")
     _alembic(database_path, "upgrade", "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0017",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0018",)
         assert connection.execute("SELECT * FROM t_case_generation_prompts").fetchall() == [
             (1, "saved system", "saved user")
         ]
+
+
+def test_knowledge_base_migration_binds_existing_sources_and_consumers(tmp_path: Path) -> None:
+    from app.models import ActiveAiModel, AiModel, ChatConversation, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User
+    database_path = tmp_path / "knowledge-base-migration.sqlite3"
+    _alembic(database_path, "upgrade", "0017")
+    engine = sa.create_engine(_database_url(database_path))
+    with engine.begin() as connection:
+        connection.execute(User.__table__.insert().values(id=1, username="admin", password_hash="hash", role="admin"))
+        connection.execute(ModelProvider.__table__.insert().values(id=1, name="嵌入服务", base_url="https://embedding.example/v1", embedding_dimensions=768))
+        connection.execute(AiModel.__table__.insert().values(id=1, provider_id=1, kind="embedding", model_id="embed"))
+        connection.execute(ActiveAiModel.__table__.insert().values(kind="embedding", model_id=1))
+        connection.execute(SvnKnowledgeSource.__table__.insert().values(id=1, repository_url="https://svn.example/docs", repository_urls=["https://svn.example/docs"], username="reader", encrypted_password="preserved-encrypted-password", include_paths=["requirements"]))
+        connection.execute(ChatConversation.__table__.insert(), [dict(id=1, user_id=1, mode="knowledge"), dict(id=2, user_id=1, mode="general")])
+        connection.execute(SmartCaseGeneration.__table__.insert().values(id=1, requirement_path="REQ-123.md", requirement_revision="123", requirement_name="权限", llm_model="chat", created_by=1))
+    engine.dispose()
+    _alembic(database_path, "upgrade", "head")
+    _alembic(database_path, "upgrade", "head")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT name, embedding_model_id, chunk_size, chunk_overlap, legacy_index FROM t_knowledge_bases").fetchall() == [("默认知识库", 1, 1200, 150, 1)]
+        assert connection.execute("SELECT knowledge_base_id, encrypted_password FROM t_svn_knowledge_sources").fetchone() == (1, "preserved-encrypted-password")
+        assert connection.execute("SELECT knowledge_base_id FROM t_chat_conversations ORDER BY id").fetchall() == [(1,), (None,)]
+        assert connection.execute("SELECT knowledge_base_id FROM t_smart_case_generations").fetchone() == (1,)
+    _alembic(database_path, "downgrade", "0017")
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT encrypted_password FROM t_svn_knowledge_sources").fetchone() == ("preserved-encrypted-password",)

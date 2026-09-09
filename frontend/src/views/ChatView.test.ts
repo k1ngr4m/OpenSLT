@@ -13,7 +13,7 @@ const stubs = {
   'el-icon': { template: '<span><slot /></span>' },
   'el-alert': { props: ['title'], template: '<div role="alert">{{ title }}</div>' },
 }
-const conversation = { id: 1, title: '已有问题', mode: 'knowledge', created_at: '', updated_at: '' }
+const conversation = { id: 1, title: '已有问题', mode: 'knowledge', knowledge_base_id: 1, created_at: '', updated_at: '' }
 const user: ChatMessage = { id: 1, role: 'user', content: '重连后怎么办？', status: 'completed', model: '', sources: [], error: null, created_at: '' }
 const answer: ChatMessage = { id: 2, role: 'assistant', content: '', status: 'running', model: 'test', sources: [], error: null, created_at: '' }
 const savedProviders = () => [
@@ -27,7 +27,7 @@ describe('ChatView', () => {
     let stored: ChatMessage[] = []
     vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/chat/status'
       ? { model: 'test', general_ready: true, knowledge_ready: true, general_error: null, knowledge_error: null }
-      : url === '/model-providers' ? savedProviders() : url === '/chat/conversations' ? [] : stored }))
+      : url === '/knowledge-bases' ? [{ id: 1, name: '知识库' }] : url === '/model-providers' ? savedProviders() : url === '/chat/conversations' ? [] : stored }))
     vi.mocked(api.post).mockResolvedValue({ data: conversation })
     let finish: () => void = () => {}
     vi.mocked(sendChatMessage).mockImplementation(async (_id, _content, _signal, receive) => {
@@ -61,7 +61,7 @@ describe('ChatView', () => {
     ] }
     vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/chat/status'
       ? { model: 'test', general_error: null, knowledge_error: null }
-      : url === '/model-providers' ? savedProviders() : url === '/chat/conversations' ? [conversation] : [user, stored] }))
+      : url === '/knowledge-bases' ? [{ id: 1, name: '知识库' }] : url === '/model-providers' ? savedProviders() : url === '/chat/conversations' ? [conversation] : [user, stored] }))
     const wrapper = mount(ChatView, { global: { stubs } })
     await flushPromises()
     await wrapper.get('.conversation-link').trigger('click')
@@ -79,7 +79,7 @@ describe('ChatView', () => {
     let currentModel = 'test'
     vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/chat/status'
       ? { model: currentModel, general_error: null, knowledge_error: null }
-      : url === '/model-providers' ? savedProviders() : [] }))
+      : url === '/knowledge-bases' ? [{ id: 1, name: '知识库' }] : url === '/model-providers' ? savedProviders() : [] }))
     let complete: () => void = () => {}
     vi.mocked(api.post).mockImplementation(async () => {
       await new Promise<void>(resolve => { complete = resolve })
@@ -105,7 +105,27 @@ describe('ChatView', () => {
       expect(selector.element.value).toBe(fails ? '11' : '22')
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保留草稿')
       if (fails) expect(wrapper.text()).toContain('切换失败')
-      else expect(api.get).toHaveBeenLastCalledWith('/chat/status')
+      else expect(api.get).toHaveBeenLastCalledWith('/chat/status', { params: { knowledge_base_id: 1 } })
     } finally { wrapper.unmount() }
   })
+})
+
+it('selects a library for new knowledge conversations and keeps historical binding fixed', async () => {
+  vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/knowledge-bases' ? [{ id: 1, name: '账户库' }, { id: 2, name: '交易库' }] : url === '/chat/status' ? { model: 'test', general_error: null, knowledge_error: null } : url === '/model-providers' ? savedProviders() : [] }))
+  vi.mocked(api.post).mockResolvedValue({ data: { ...conversation, knowledge_base_id: 2 } })
+  vi.mocked(sendChatMessage).mockResolvedValue()
+  const wrapper = mount(ChatView, { global: { stubs } })
+  try {
+    await flushPromises()
+    expect(wrapper.text()).toContain('请选择知识库')
+    await wrapper.get('select[aria-label="选择知识库"]').setValue('2')
+    await flushPromises()
+    expect(api.get).toHaveBeenLastCalledWith('/chat/status', { params: { knowledge_base_id: 2 } })
+    await wrapper.get('textarea').setValue('交易规则？')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.post).toHaveBeenCalledWith('/chat/conversations', { mode: 'knowledge', knowledge_base_id: 2 })
+    expect(wrapper.get<HTMLSelectElement>('select[aria-label="选择知识库"]').element.value).toBe('2')
+    expect(wrapper.get('select[aria-label="选择知识库"]').attributes('disabled')).toBeDefined()
+  } finally { wrapper.unmount() }
 })

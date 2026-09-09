@@ -65,6 +65,7 @@ async def internal_scheduler() -> None:
                 next_lock_reclaim = now + 60
             if now >= next_svn_enqueue:
                 enqueue_due_svn_syncs(db)
+                db.commit()
                 next_svn_enqueue = now + 60
             task_ids = claim_due_tasks(db)
         except Exception:
@@ -102,6 +103,8 @@ async def lifespan(_: FastAPI):
             version=database_server.raw_version,
         )
     seed_database()
+    from app.services.knowledge_bases import migrate_legacy_indexes
+    migrate_legacy_indexes()
     recover_interrupted_chats()
     svn_status = svn_client_status()
     if svn_status["ready"]:

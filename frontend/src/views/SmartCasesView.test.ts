@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const source = readFileSync(resolve(process.cwd(), 'src/views/SmartCasesView.vue'), 'utf8')
+const source = readFileSync(resolve(process.cwd(), 'src/components/SvnSourcePanel.vue'), 'utf8')
 
 describe('SmartCasesView SVN knowledge source', () => {
   it('keeps credentials write-only and exposes the required safety controls', () => {

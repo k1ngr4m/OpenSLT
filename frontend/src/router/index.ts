@@ -49,9 +49,11 @@ export const routes: RouteRecordRaw[] = [
       },
       {
         path: 'smart-cases/settings',
-        component: () => import('@/views/SmartCasesView.vue'),
+        redirect: '/knowledge-bases',
         meta: { section: 'management', operator: true },
       },
+      { path: 'knowledge-bases', component: () => import('@/views/KnowledgeBasesView.vue'), meta: { section: 'management', operator: true } },
+      { path: 'knowledge-bases/:id', component: () => import('@/views/KnowledgeBasesView.vue'), meta: { section: 'management', operator: true } },
       {
         path: 'models',
         component: () => import('@/views/ModelsView.vue'),

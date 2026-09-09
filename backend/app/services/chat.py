@@ -5,6 +5,7 @@ import json
 import typing
 from dataclasses import dataclass, field
 
+from fastapi import HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from app.core.security import decrypt_secret
 from app.core.time import beijing_now
 from app.models import ChatConversation, ChatMessage, SvnKnowledgeSource
 from app.schemas import ChatMessageOut, ChatStatusOut
+from app.services import knowledge_bases as kb
 from app.services.embedding import EmbeddingClient, EmbeddingError
 from app.services.llm import LlmClient, LlmError
 from app.services.model_providers import active_model, require_active_model
@@ -33,17 +35,26 @@ KNOWLEDGE_PROMPT = (
 MAX_OUTPUT_CHARS = 12000
 
 
-def chat_status(db: Session, user_id: typing.Optional[int] = None) -> ChatStatusOut:
+def chat_status(db: Session, user_id: typing.Optional[int] = None, knowledge_base_id: typing.Optional[int] = None) -> ChatStatusOut:
     chat = active_model(db, "chat", user_id)
     embedding = active_model(db, "embedding")
     source = db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
     general_error = None if chat else "请在模型管理的对话分类中配置并启用当前账户的模型"
     knowledge_error = general_error
+    base = None
+    try:
+        base = kb.resolve_base(db, knowledge_base_id)
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        knowledge_error = knowledge_error or "请选择知识库"
     if not knowledge_error:
-        if not embedding:
+        if base:
+            knowledge_error = None if kb.index_ready(db, base) else "知识库索引尚未就绪或已过期，请联系管理员完成索引"
+        elif not embedding:
             knowledge_error = "请联系管理员配置当前 Embedding 模型"
         elif source is None:
-            knowledge_error = "请联系管理员配置并同步 SVN 知识源"
+            knowledge_error = "请联系管理员创建并导入知识库"
         elif not published_index_matches(source, embedding[0].base_url, embedding[1].model_id, embedding[0].embedding_dimensions):
             knowledge_error = "知识索引尚未就绪或已过期，请联系管理员完成同步"
     return ChatStatusOut(model=chat[1].model_id if chat else None, general_ready=not general_error,
@@ -79,12 +90,12 @@ def conversation_context(db: Session, conversation_id: int, content: str) -> typ
     return history + [{"role": "user", "content": str(redact(content))}]
 
 
-async def retrieve_sources(messages: typing.List[typing.Dict[str, str]], embedding: EmbeddingClient) -> list:
+async def retrieve_sources(messages: typing.List[typing.Dict[str, str]], embedding: EmbeddingClient, knowledge_base_id: typing.Optional[int] = None, top_k: int = 6) -> list:
     # Retain the recent subject for follow-ups such as “还有哪些边界条件？”.
     questions = [item["content"] for item in messages if item["role"] == "user"]
     query = "\n".join([item[:600] for item in questions[-3:-1]] + [questions[-1]])
     vector = (await embedding.embed_async([query]))[0]
-    hits = await asyncio.get_running_loop().run_in_executor(None, search_vector_index, query, vector, 6, True)
+    hits = await asyncio.get_running_loop().run_in_executor(None, search_vector_index, query, vector, top_k, True, kb.index_path(knowledge_base_id)) if knowledge_base_id else await asyncio.get_running_loop().run_in_executor(None, search_vector_index, query, vector, 6, True)
     sources = []
     for hit in hits:
         if hit["vector_score"] < settings.chat_min_vector_score:
@@ -100,6 +111,8 @@ class Generation:
     conversation_id: int
     message_id: int
     user_id: int
+    knowledge_base_id: typing.Optional[int] = None
+    top_k: int = 6
     content: str = ""
     sources: list = field(default_factory=list)
     status: str = "running"
@@ -116,7 +129,7 @@ active_generations: typing.Dict[int, Generation] = {}
 async def _generate(job: Generation, messages: list, client: LlmClient, embedding: typing.Optional[EmbeddingClient]) -> None:
     prompt = SYSTEM_PROMPT
     if embedding:
-        job.sources = await retrieve_sources(messages, embedding)
+        job.sources = await retrieve_sources(messages, embedding, job.knowledge_base_id, job.top_k) if job.knowledge_base_id else await retrieve_sources(messages, embedding)
         job.queue.put_nowait({"type": "sources", "sources": job.sources})
         if not job.sources:
             job.content = "当前知识库中未找到足够相关的资料，无法据此确认答案。请补充需求编号、模块名称或更具体的问题，或联系管理员同步相关资料。"

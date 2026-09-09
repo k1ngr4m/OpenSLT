@@ -19,7 +19,7 @@ from app.services.run_state import TERMINAL_RUN_STATUSES
 
 
 WORKER_ID = "%s:%s:%s" % (socket.gethostname(), os.getpid(), uuid4().hex[:8])
-TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step", "svn_sync", "smart_case_generate"})
+TASK_TYPES = frozenset({"start_run", "continue_after_wiring", "start_workflow_step", "svn_sync", "knowledge_index", "smart_case_generate"})
 
 
 def _payload_run_id(payload: typing.Mapping[str, typing.Any]) -> typing.Optional[int]:
@@ -200,6 +200,10 @@ async def _execute_payload(task: DurableTask) -> None:
 
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, execute_smart_case_generation, int(task.payload["generation_id"]), task.payload.get("additional_prompt", ""))
+    elif task.task_type == "knowledge_index":
+        from app.services.knowledge_bases import execute_index
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, execute_index, int(task.payload["knowledge_base_id"]), bool(task.payload.get("sync_svn", True)), task.id)
     elif task.task_type == "svn_sync":
         from app.services.svn_knowledge import execute_svn_sync
 

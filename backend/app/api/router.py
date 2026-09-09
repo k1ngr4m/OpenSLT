@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.routes import (
     auth,
     chat,
+    knowledge_bases,
     database_config_templates,
     model_providers,
     observability,
@@ -17,6 +18,7 @@ from app.api.routes import (
 router = APIRouter()
 router.include_router(auth.router)
 router.include_router(chat.router)
+router.include_router(knowledge_bases.router)
 router.include_router(resources.router)
 router.include_router(database_config_templates.router)
 router.include_router(model_providers.router)

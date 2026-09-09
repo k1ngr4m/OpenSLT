@@ -263,6 +263,180 @@ export interface paths {
         patch: operations["rename_database_config_template_api_v1_database_config_templates__template_id__patch"];
         trace?: never;
     };
+    "/api/v1/knowledge-bases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Bases */
+        get: operations["list_bases_api_v1_knowledge_bases_get"];
+        put?: never;
+        /** Create Base */
+        post: operations["create_base_api_v1_knowledge_bases_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Base */
+        get: operations["get_base_api_v1_knowledge_bases__knowledge_base_id__get"];
+        /** Update Base */
+        put: operations["update_base_api_v1_knowledge_bases__knowledge_base_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Documents */
+        get: operations["list_documents_api_v1_knowledge_bases__knowledge_base_id__documents_get"];
+        put?: never;
+        /** Upload Documents */
+        post: operations["upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/documents/{upload_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Document */
+        delete: operations["delete_document_api_v1_knowledge_bases__knowledge_base_id__documents__upload_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Index */
+        post: operations["start_index_api_v1_knowledge_bases__knowledge_base_id__index_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/index/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Index */
+        post: operations["cancel_index_api_v1_knowledge_bases__knowledge_base_id__index_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Knowledge */
+        post: operations["search_knowledge_api_v1_knowledge_bases__knowledge_base_id__search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/svn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Knowledge Source */
+        get: operations["get_knowledge_source_api_v1_knowledge_bases__knowledge_base_id__svn_get"];
+        /** Save Knowledge Source */
+        put: operations["save_knowledge_source_api_v1_knowledge_bases__knowledge_base_id__svn_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/svn/connection-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Connection Test */
+        post: operations["connection_test_api_v1_knowledge_bases__knowledge_base_id__svn_connection_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/knowledge-bases/{knowledge_base_id}/svn/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sync Status */
+        get: operations["sync_status_api_v1_knowledge_bases__knowledge_base_id__svn_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/logs": {
         parameters: {
             query?: never;
@@ -1921,6 +2095,11 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** Body_upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post */
+        Body_upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post: {
+            /** Files */
+            files: string[];
+        };
         /** CaptureItemOut */
         CaptureItemOut: {
             /** Error Message */
@@ -1981,6 +2160,8 @@ export interface components {
         };
         /** ChatConversationCreate */
         ChatConversationCreate: {
+            /** Knowledge Base Id */
+            knowledge_base_id?: number | null;
             /**
              * Mode
              * @default knowledge
@@ -1997,6 +2178,8 @@ export interface components {
             created_at: string;
             /** Id */
             id: number;
+            /** Knowledge Base Id */
+            knowledge_base_id?: number | null;
             /**
              * Mode
              * @enum {string}
@@ -2313,6 +2496,140 @@ export interface components {
             revision: string;
             /** Source Path */
             source_path: string;
+        };
+        /** KnowledgeBaseCreate */
+        KnowledgeBaseCreate: {
+            /**
+             * Chunk Overlap
+             * @default 150
+             */
+            chunk_overlap: number;
+            /**
+             * Chunk Size
+             * @default 1200
+             */
+            chunk_size: number;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Embedding Model Id */
+            embedding_model_id: number;
+            /** Name */
+            name: string;
+            /**
+             * Top K
+             * @default 10
+             */
+            top_k: number;
+        };
+        /** KnowledgeBaseOut */
+        KnowledgeBaseOut: {
+            /**
+             * Chunk Count
+             * @default 0
+             */
+            chunk_count: number;
+            /** Chunk Overlap */
+            chunk_overlap: number;
+            /** Chunk Size */
+            chunk_size: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /**
+             * Document Count
+             * @default 0
+             */
+            document_count: number;
+            /** Embedding Dimensions */
+            embedding_dimensions?: number | null;
+            /** Embedding Model */
+            embedding_model?: string | null;
+            /** Embedding Model Id */
+            embedding_model_id: number | null;
+            /** Embedding Provider */
+            embedding_provider?: string | null;
+            /**
+             * Failed Count
+             * @default 0
+             */
+            failed_count: number;
+            /** Id */
+            id: number;
+            /** Index Status */
+            index_status: string;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Success At */
+            last_success_at: string | null;
+            /** Name */
+            name: string;
+            /** Task Id */
+            task_id?: number | null;
+            /** Top K */
+            top_k: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** KnowledgeBaseWrite */
+        KnowledgeBaseWrite: {
+            /**
+             * Chunk Overlap
+             * @default 150
+             */
+            chunk_overlap: number;
+            /**
+             * Chunk Size
+             * @default 1200
+             */
+            chunk_size: number;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Embedding Model Id */
+            embedding_model_id?: number | null;
+            /** Name */
+            name: string;
+            /**
+             * Top K
+             * @default 10
+             */
+            top_k: number;
+        };
+        /** KnowledgeDocumentOut */
+        KnowledgeDocumentOut: {
+            /** Chunk Count */
+            chunk_count: number;
+            /** Error */
+            error?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "svn" | "upload";
+            /** Revision */
+            revision: string;
+            /** Size */
+            size: number;
+            /** Source Path */
+            source_path: string;
+            /** Status */
+            status: string;
+            /** Upload Id */
+            upload_id?: number | null;
         };
         /** KnowledgeSearchOut */
         KnowledgeSearchOut: {
@@ -3658,6 +3975,8 @@ export interface components {
              * @default
              */
             additional_prompt: string;
+            /** Knowledge Base Id */
+            knowledge_base_id?: number | null;
             /** Requirement Path */
             requirement_path: string;
         };
@@ -3676,6 +3995,8 @@ export interface components {
             error: string | null;
             /** Id */
             id: number;
+            /** Knowledge Base Id */
+            knowledge_base_id?: number | null;
             /** Llm Model */
             llm_model: string;
             /** Referenced Sources */
@@ -3713,6 +4034,8 @@ export interface components {
             error: string | null;
             /** Id */
             id: number;
+            /** Knowledge Base Id */
+            knowledge_base_id?: number | null;
             /** Llm Model */
             llm_model: string;
             /** Referenced Sources */
@@ -4788,7 +5111,9 @@ export interface operations {
     };
     status_api_v1_chat_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4802,6 +5127,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatStatusOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4910,6 +5244,452 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatabaseConfigTemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bases_api_v1_knowledge_bases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseOut"][];
+                };
+            };
+        };
+    };
+    create_base_api_v1_knowledge_bases_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeBaseCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_base_api_v1_knowledge_bases__knowledge_base_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_base_api_v1_knowledge_bases__knowledge_base_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeBaseWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBaseOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_documents_api_v1_knowledge_bases__knowledge_base_id__documents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeDocumentOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnSyncTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_document_api_v1_knowledge_bases__knowledge_base_id__documents__upload_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+                upload_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnSyncTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_index_api_v1_knowledge_bases__knowledge_base_id__index_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnSyncTaskOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_index_api_v1_knowledge_bases__knowledge_base_id__index_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_knowledge_api_v1_knowledge_bases__knowledge_base_id__search_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSearchOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_knowledge_source_api_v1_knowledge_bases__knowledge_base_id__svn_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnKnowledgeSourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_knowledge_source_api_v1_knowledge_bases__knowledge_base_id__svn_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SvnKnowledgeSourceWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnKnowledgeSourceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connection_test_api_v1_knowledge_bases__knowledge_base_id__svn_connection_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SvnKnowledgeConnectionTest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnConnectionTestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_status_api_v1_knowledge_bases__knowledge_base_id__svn_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SvnSyncStatusOut"];
                 };
             };
             /** @description Validation Error */
@@ -8392,7 +9172,9 @@ export interface operations {
     };
     search_knowledge_api_v1_smart_cases_knowledge_search_post: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8425,7 +9207,9 @@ export interface operations {
     };
     get_knowledge_source_api_v1_smart_cases_knowledge_source_get: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8441,11 +9225,22 @@ export interface operations {
                     "application/json": components["schemas"]["SvnKnowledgeSourceOut"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     save_knowledge_source_api_v1_smart_cases_knowledge_source_put: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8478,7 +9273,9 @@ export interface operations {
     };
     connection_test_api_v1_smart_cases_knowledge_source_connection_test_post: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8511,7 +9308,9 @@ export interface operations {
     };
     sync_now_api_v1_smart_cases_knowledge_source_sync_post: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8527,11 +9326,22 @@ export interface operations {
                     "application/json": components["schemas"]["SvnSyncTaskOut"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     sync_status_api_v1_smart_cases_knowledge_source_sync_status_get: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8547,11 +9357,22 @@ export interface operations {
                     "application/json": components["schemas"]["SvnSyncStatusOut"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     cancel_sync_api_v1_smart_cases_knowledge_source_sync_cancel_post: {
         parameters: {
-            query?: never;
+            query?: {
+                knowledge_base_id?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8567,12 +9388,22 @@ export interface operations {
                     "application/json": Record<string, unknown>;
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     requirements_api_v1_smart_cases_requirements_get: {
         parameters: {
             query?: {
                 query?: string;
+                knowledge_base_id?: number | null;
             };
             header?: never;
             path?: never;

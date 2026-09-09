@@ -46,6 +46,7 @@ from app.services.svn_knowledge import (
     search_vector_index,
     test_svn_connection,
 )
+from app.services import knowledge_bases as kb
 from app.services.embedding import EmbeddingClient
 from app.services.durable_tasks import enqueue_task
 from app.services.model_providers import ModelProviderError, active_model, require_active_model
@@ -55,7 +56,10 @@ from app.core.config import settings
 router = APIRouter(prefix="/smart-cases")
 
 
-def _source(db: Session) -> typing.Optional[SvnKnowledgeSource]:
+def _source(db: Session, knowledge_base_id: typing.Optional[int] = None) -> typing.Optional[SvnKnowledgeSource]:
+    base = kb.resolve_base(db, knowledge_base_id)
+    if base:
+        return kb.source_for(db, base.id)
     return db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
 
 
@@ -104,8 +108,9 @@ def _out(source: typing.Optional[SvnKnowledgeSource]) -> SvnKnowledgeSourceOut:
 def get_knowledge_source(
     _: User = Depends(operators),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> SvnKnowledgeSourceOut:
-    return _out(_source(db))
+    return _out(_source(db, knowledge_base_id))
 
 
 @router.put("/knowledge-source", response_model=SvnKnowledgeSourceOut)
@@ -114,11 +119,16 @@ def save_knowledge_source(
     request: Request,
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> SvnKnowledgeSourceOut:
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
+    if base:
+        kb.lock_idle(db, base.id)
     repository_urls, include_paths = _normalized(payload)
-    if active_svn_task(db):
+    if (kb.active_index_task(db, knowledge_base_id) if knowledge_base_id is not None else active_svn_task(db)):
         raise HTTPException(status_code=409, detail={"code": "SVN_SYNC_RUNNING", "message": "同步任务运行期间不能修改知识源配置"})
-    source = _source(db)
+    source = _source(db, knowledge_base_id)
     previous_index_identity = None if source is None else (
         tuple(_repository_urls(source)),
         tuple(source.include_paths),
@@ -128,6 +138,7 @@ def save_knowledge_source(
         raise HTTPException(status_code=422, detail={"code": "SVN_PASSWORD_REQUIRED", "message": "首次配置或修改仓库/账号时必须重新输入密码"})
     if source is None:
         source = SvnKnowledgeSource(
+            knowledge_base_id=knowledge_base_id,
             repository_url=repository_urls[0],
             repository_urls=repository_urls,
             username=payload.username.strip(),
@@ -148,6 +159,8 @@ def save_knowledge_source(
         tuple(_repository_urls(source)),
         tuple(source.include_paths),
     )
+    if base and previous_index_identity != current_index_identity:
+        base.index_status = "stale"
     if previous_index_identity is not None and previous_index_identity != current_index_identity:
         source.sync_status = "stale"
     db.flush()
@@ -178,9 +191,12 @@ async def connection_test(
     request: Request,
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> typing.Dict[str, typing.Any]:
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
     repository_urls, include_paths = _normalized(payload)
-    source = _source(db)
+    source = _source(db, knowledge_base_id)
     identity_matches = source is not None and _repository_urls(source) == repository_urls and source.username == payload.username.strip()
     password = payload.password or (decrypt_secret(source.encrypted_password) if identity_matches else None)
     if not password:
@@ -240,11 +256,17 @@ def sync_now(
     request: Request,
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> SvnSyncTaskOut:
-    source = _source(db)
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
+    if base:
+        from app.api.routes.knowledge_bases import start_index
+        return start_index(knowledge_base_id, request, actor, db)
+    source = _source(db, knowledge_base_id)
     if source is None:
         raise HTTPException(status_code=409, detail={"code": "SVN_NOT_CONFIGURED", "message": "请先保存 SVN 知识源配置"})
-    existing = active_svn_task(db)
+    existing = (kb.active_index_task(db, knowledge_base_id) if knowledge_base_id is not None else active_svn_task(db))
     try:
         task = existing or enqueue_svn_sync(db, source, "manual")
     except ModelProviderError as exc:
@@ -262,9 +284,15 @@ def cancel_sync(
     request: Request,
     actor: User = Depends(admin_only),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> dict:
-    source = _source(db)
-    task = active_svn_task(db)
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
+    if base:
+        from app.api.routes.knowledge_bases import cancel_index
+        return cancel_index(knowledge_base_id, request, actor, db)
+    source = _source(db, knowledge_base_id)
+    task = (kb.active_index_task(db, knowledge_base_id) if knowledge_base_id is not None else active_svn_task(db))
     if task is None:
         return {"status": source.sync_status if source else "unconfigured"}
     # Serialize with task claiming so queued cancellation cannot race a worker.
@@ -287,11 +315,14 @@ def cancel_sync(
 def sync_status(
     _: User = Depends(operators),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> SvnSyncStatusOut:
-    source = _source(db)
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
+    source = _source(db, knowledge_base_id)
     client = svn_client_status()
-    task = active_svn_task(db)
-    embedding = active_model(db, "embedding")
+    task = (kb.active_index_task(db, knowledge_base_id) if knowledge_base_id is not None else active_svn_task(db))
+    embedding = kb.embedding_model(db, base) if base and base.embedding_model_id else active_model(db, "embedding") if not base else None
     error = client["error"] if not client["ready"] else (source.last_error if source else None)
     return SvnSyncStatusOut(
         configured=source is not None,
@@ -316,18 +347,23 @@ async def search_knowledge(
     payload: KnowledgeSearchRequest,
     _: User = Depends(operators),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> KnowledgeSearchOut:
-    source = _source(db)
-    if source is None:
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
+    source = _source(db, knowledge_base_id)
+    if base is None and source is None:
         raise HTTPException(status_code=409, detail={"code": "SVN_NOT_CONFIGURED", "message": "请先配置并同步知识源"})
-    provider, model = _required_model(db, "embedding")
-    if not published_index_matches(source, provider.base_url, model.model_id, provider.embedding_dimensions):
+    if base and not kb.index_ready(db, base):
+        raise HTTPException(409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "知识库索引尚未就绪，请先完成索引"})
+    provider, model = kb.embedding_model(db, base) if base else _required_model(db, "embedding")
+    if not (kb.index_ready(db, base) if base else published_index_matches(source, provider.base_url, model.model_id, provider.embedding_dimensions)):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "当前配置没有匹配的成功索引，请先完成同步"})
     client = EmbeddingClient(provider.base_url, model.model_id, decrypt_secret(provider.encrypted_api_key), expected_dimensions=provider.embedding_dimensions)
     loop = asyncio.get_running_loop()
     try:
         vectors = await loop.run_in_executor(None, client.embed, [payload.query.strip()])
-        results = await loop.run_in_executor(None, search_vector_index, payload.query.strip(), vectors[0], payload.top_k)
+        results = await loop.run_in_executor(None, search_vector_index, payload.query.strip(), vectors[0], payload.top_k if "top_k" in payload.model_fields_set or not base else base.top_k, False, kb.index_path(base.id) if base else None)
     except Exception as exc:
         raise HTTPException(status_code=502, detail={"code": "KNOWLEDGE_SEARCH_FAILED", "message": str(redact(str(exc)))}) from exc
     return KnowledgeSearchOut(query=payload.query.strip(), results=results)
@@ -335,6 +371,7 @@ async def search_knowledge(
 
 def _generation_out(item: SmartCaseGeneration) -> SmartCaseGenerationOut:
     return SmartCaseGenerationOut(
+        knowledge_base_id=item.knowledge_base_id,
         id=item.id,
         requirement_path=item.requirement_path,
         requirement_revision=item.requirement_revision,
@@ -356,8 +393,15 @@ def requirements(
     query: str = "",
     _: User = Depends(operators),
     db: Session = Depends(get_db),
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> typing.List[typing.Dict[str, typing.Any]]:
-    source = _source(db)
+    base = kb.resolve_base(db, knowledge_base_id)
+    knowledge_base_id = base.id if base else None
+    if base:
+        if not kb.index_ready(db, base):
+            raise HTTPException(409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "知识库索引尚未就绪，请先完成索引"})
+        return list_indexed_requirements(query[:255], kb.index_path(base.id))
+    source = _source(db, knowledge_base_id)
     provider, model = _required_model(db, "embedding")
     if source is None or not published_index_matches(source, provider.base_url, model.model_id, provider.embedding_dimensions):
         raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
@@ -371,17 +415,21 @@ def create_generation(
     actor: User = Depends(operators),
     db: Session = Depends(get_db),
 ) -> SmartCaseGenerationOut:
-    source = _source(db)
-    embedding_provider, embedding_model = _required_model(db, "embedding")
-    if source is None or not published_index_matches(
-        source, embedding_provider.base_url, embedding_model.model_id, embedding_provider.embedding_dimensions
-    ):
-        raise HTTPException(status_code=409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "暂无可用知识索引，请先完成 SVN 同步"})
+    base = kb.resolve_base(db, payload.knowledge_base_id)
+    source = _source(db, base.id if base else None)
+    if base:
+        ready = kb.index_ready(db, base)
+    else:
+        embedding_provider, embedding_model = _required_model(db, "embedding")
+        ready = source is not None and published_index_matches(source, embedding_provider.base_url, embedding_model.model_id, embedding_provider.embedding_dimensions)
+    if not ready:
+        raise HTTPException(409, detail={"code": "KNOWLEDGE_INDEX_STALE", "message": "知识库索引尚未就绪，请先完成索引"})
     chat_provider, chat_model = _required_model(db, "chat", actor.id)
-    requirement = next((item for item in list_indexed_requirements() if item["source_path"] == payload.requirement_path), None)
+    requirement = next((item for item in (list_indexed_requirements(index_path=kb.index_path(base.id)) if base else list_indexed_requirements()) if item["source_path"] == payload.requirement_path), None)
     if requirement is None:
         raise HTTPException(status_code=404, detail={"code": "REQUIREMENT_NOT_FOUND", "message": "需求不在当前知识索引中"})
     item = SmartCaseGeneration(
+        knowledge_base_id=base.id if base else None,
         requirement_path=requirement["source_path"],
         requirement_revision=requirement["revision"],
         requirement_no=requirement["requirement_no"],
@@ -393,7 +441,7 @@ def create_generation(
             "model": chat_model.model_id,
             "api_key": decrypt_secret(chat_provider.encrypted_api_key),
         })),
-        index_revisions=dict(source.last_revisions),
+        index_revisions=kb.index_revisions(base.id) if base else dict(source.last_revisions),
         created_by=actor.id,
     )
     db.add(item)

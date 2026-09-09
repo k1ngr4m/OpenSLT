@@ -34,10 +34,12 @@ class ORMModel(BaseModel):
 
 
 class ChatConversationCreate(BaseModel):
+    knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
     mode: Literal["general", "knowledge"] = "knowledge"
 
 
 class ChatConversationOut(ORMModel):
+    knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
     id: int
     title: str
     mode: Literal["general", "knowledge"]
@@ -195,6 +197,7 @@ class SvnSyncStatusOut(BaseModel):
 
 
 class KnowledgeSearchRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
     query: str = Field(min_length=1, max_length=1000)
     top_k: int = Field(default=10, ge=1, le=50)
 
@@ -221,11 +224,13 @@ class IndexedRequirementOut(BaseModel):
 
 
 class SmartCaseGenerationCreate(BaseModel):
+    knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
     requirement_path: str = Field(min_length=1, max_length=1024)
     additional_prompt: str = Field(default="", max_length=4000)
 
 
 class SmartCaseGenerationOut(BaseModel):
+    knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
     id: int
     requirement_path: str
     requirement_revision: str
@@ -1309,3 +1314,57 @@ class AuditOut(ORMModel):
 class CaseGenerationPromptWrite(BaseModel):
     system_prompt: str = Field(min_length=1, max_length=20000)
     user_prompt: str = Field(min_length=1, max_length=30000)
+
+
+class KnowledgeBaseWrite(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=2000)
+    chunk_size: int = Field(default=1200, ge=1, le=100000, strict=True)
+    chunk_overlap: int = Field(default=150, ge=0, strict=True)
+    top_k: int = Field(default=10, ge=1, le=50, strict=True)
+    embedding_model_id: typing.Optional[int] = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_overlap(self):
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("分块重叠必须小于分块大小")
+        return self
+
+
+class KnowledgeBaseCreate(KnowledgeBaseWrite):
+    embedding_model_id: int = Field(ge=1)
+
+
+class KnowledgeBaseOut(ORMModel):
+    id: int
+    name: str
+    description: str
+    embedding_model_id: typing.Optional[int]
+    embedding_model: typing.Optional[str] = None
+    embedding_provider: typing.Optional[str] = None
+    embedding_dimensions: typing.Optional[int] = None
+    chunk_size: int
+    chunk_overlap: int
+    top_k: int
+    index_status: str
+    last_success_at: typing.Optional[datetime]
+    last_error: typing.Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    document_count: int = 0
+    chunk_count: int = 0
+    failed_count: int = 0
+    task_id: typing.Optional[int] = None
+
+
+class KnowledgeDocumentOut(BaseModel):
+    source_path: str
+    name: str
+    origin: Literal["svn", "upload"]
+    upload_id: typing.Optional[int] = None
+    revision: str
+    size: int
+    chunk_count: int
+    status: str
+    error: typing.Optional[str] = None

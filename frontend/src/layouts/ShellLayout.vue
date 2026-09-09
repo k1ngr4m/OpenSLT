@@ -42,7 +42,7 @@ const sidebarClass = computed(() => ({
 }))
 const managementMode = computed(() => route.meta.section === 'management')
 const activePath = computed(() => {
-  if (route.path.startsWith('/smart-cases/settings')) return '/smart-cases/settings'
+  if (route.path.startsWith('/knowledge-bases')) return '/knowledge-bases'
   const first = `/${route.path.split('/').filter(Boolean)[0] || 'dashboard'}`
   return ['/dashboard', '/runs', '/plans', '/resources', '/smart-cases', '/chat', '/models', '/logs', '/users'].includes(first) ? first : '/dashboard'
 })
@@ -126,9 +126,9 @@ onBeforeUnmount(() => {
               <el-icon><SetUp /></el-icon>
               <template #title>资源管理</template>
             </el-menu-item>
-            <el-menu-item v-if="auth.canOperate" index="/smart-cases/settings">
+            <el-menu-item v-if="auth.canOperate" index="/knowledge-bases">
               <el-icon><MagicStick /></el-icon>
-              <template #title>知识源管理</template>
+              <template #title>知识库</template>
             </el-menu-item>
             <el-menu-item index="/models">
               <el-icon><Cpu /></el-icon>

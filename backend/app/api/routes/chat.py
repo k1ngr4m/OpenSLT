@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.core.logging import redact
 from app.models import ChatConversation, ChatMessage, User
 from app.schemas import ChatConversationCreate, ChatConversationOut, ChatMessageCreate, ChatMessageOut, ChatStatusOut
+from app.services import knowledge_bases as kb
 from app.services.audit import write_audit
 from app.services.chat import (Generation, active_generations, chat_status, conversation_context,
                                model_client, start_generation)
@@ -32,8 +33,8 @@ def owned_conversation(db: Session, conversation_id: int, actor: User) -> ChatCo
 
 
 @router.get("/status", response_model=ChatStatusOut)
-def status(actor: User = Depends(operators), db: Session = Depends(get_db)):
-    return chat_status(db, actor.id)
+def status(actor: User = Depends(operators), db: Session = Depends(get_db), knowledge_base_id: typing.Optional[int] = None):
+    return chat_status(db, actor.id, knowledge_base_id)
 
 
 @router.get("/conversations", response_model=typing.List[ChatConversationOut])
@@ -46,7 +47,10 @@ def conversations(offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=
 @router.post("/conversations", response_model=ChatConversationOut, status_code=201)
 def create_conversation(payload: ChatConversationCreate, request: Request,
                         actor: User = Depends(operators), db: Session = Depends(get_db)):
-    item = ChatConversation(user_id=actor.id, mode=payload.mode)
+    base = kb.resolve_base(db, payload.knowledge_base_id) if payload.mode == "knowledge" else None
+    if payload.mode == "general" and payload.knowledge_base_id is not None:
+        raise HTTPException(422, detail="通用对话不绑定知识库")
+    item = ChatConversation(user_id=actor.id, mode=payload.mode, knowledge_base_id=base.id if base else None)
     db.add(item)
     db.flush()
     write_audit(db, "chat.create", "chat_conversation", item.id, actor, request)
@@ -93,12 +97,13 @@ async def send_message(conversation_id: int, payload: ChatMessageCreate, request
         raise HTTPException(409, detail={"code": "CHAT_BUSY", "message": "您已有回答正在生成，请先停止或等待完成"})
     if len(active_generations) >= settings.chat_max_concurrent:
         raise HTTPException(429, detail={"code": "CHAT_CAPACITY", "message": "智能助手繁忙，请稍后重试"}, headers={"Retry-After": "5"})
-    readiness = chat_status(db, actor.id)
+    readiness = chat_status(db, actor.id, conversation.knowledge_base_id)
     error = readiness.knowledge_error if conversation.mode == "knowledge" else readiness.general_error
     if error:
         raise HTTPException(409, detail={"code": "CHAT_NOT_READY", "message": error})
     client = model_client(db, "chat", actor.id)
-    embedding = model_client(db, "embedding") if conversation.mode == "knowledge" else None
+    base = kb.resolve_base(db, conversation.knowledge_base_id) if conversation.mode == "knowledge" else None
+    embedding = kb.embedding_client(db, base) if base else model_client(db, "embedding") if conversation.mode == "knowledge" else None
     content = str(redact(payload.content))
     history = conversation_context(db, conversation_id, content)
     user_message = ChatMessage(conversation_id=conversation_id, role="user", content=content)
@@ -112,7 +117,7 @@ async def send_message(conversation_id: int, payload: ChatMessageCreate, request
     db.commit()
     meta = {"type": "meta", "user": ChatMessageOut.model_validate(user_message).model_dump(mode="json"),
             "assistant": ChatMessageOut.model_validate(assistant).model_dump(mode="json")}
-    job = Generation(conversation_id, assistant.id, actor.id)
+    job = Generation(conversation_id, assistant.id, actor.id, knowledge_base_id=base.id if base else None, top_k=base.top_k if base else 6)
     start_generation(job, history, client, embedding)
 
     async def events():

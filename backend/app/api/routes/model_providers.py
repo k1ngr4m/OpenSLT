@@ -11,7 +11,7 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.logging import redact
 from app.core.security import decrypt_secret, encrypt_secret
-from app.models import ActiveAiModel, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User, UserChatModel
+from app.models import KnowledgeBase, ActiveAiModel, AiModel, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User, UserChatModel
 from app.schemas import (
     AiModelCreate,
     AiModelOut,
@@ -27,6 +27,7 @@ from app.services.embedding import test_embedding_connection
 from app.services.llm import test_llm_connection
 from app.services.model_providers import list_provider_models, normalize_provider_base_url
 from app.services.svn_knowledge import active_svn_task
+from app.services.knowledge_bases import active_index_task
 
 
 router = APIRouter(prefix="/model-providers")
@@ -113,7 +114,7 @@ def _has_running_generation(db: Session, model_ids: typing.Iterable[int]) -> boo
 
 def _mark_index_stale(db: Session) -> None:
     source = db.scalar(select(SvnKnowledgeSource).order_by(SvnKnowledgeSource.id).limit(1))
-    if source is not None and source.last_success_at is not None:
+    if source is not None and source.knowledge_base_id is None and source.last_success_at is not None:
         source.sync_status = "stale"
 
 
@@ -210,6 +211,12 @@ def update_provider(
         or bool(payload.api_key)
         or provider.embedding_dimensions != dimensions
     )
+    bases = list(db.scalars(select(KnowledgeBase).where(KnowledgeBase.embedding_model_id.in_([model.id for model in provider.models])).order_by(KnowledgeBase.id).with_for_update()))
+    if connection_changed and any(active_index_task(db, base.id) for base in bases):
+        raise _error(409, "KNOWLEDGE_BUSY", "索引任务执行期间不能修改关联的 Embedding 提供商")
+    if provider.base_url != base_url or provider.embedding_dimensions != dimensions:
+        for base in bases:
+            base.index_status = "stale"
     if connection_changed and active_embedding and active_svn_task(db):
         raise _error(409, "SVN_SYNC_RUNNING", "同步任务运行期间不能修改当前 Embedding 提供商")
     if connection_changed and _has_running_generation(db, (model.id for model in provider.models)):
@@ -239,6 +246,8 @@ def delete_provider(
 ) -> Response:
     provider = _provider(db, provider_id, actor)
     model_ids = [model.id for model in provider.models]
+    if db.scalar(select(KnowledgeBase.id).where(KnowledgeBase.embedding_model_id.in_(model_ids)).limit(1)) is not None:
+        raise _error(409, "KNOWLEDGE_MODEL_IN_USE", "提供商包含知识库正在使用的模型，不能删除")
     if _active_ids(db, actor).intersection(model_ids):
         raise _error(409, "ACTIVE_MODEL_IN_USE", "提供商包含当前模型，请先切换当前模型")
     if _has_running_generation(db, model_ids):
@@ -373,6 +382,8 @@ def delete_model(
     db: Session = Depends(get_db),
 ) -> Response:
     model = _model(db, model_id, actor)
+    if db.scalar(select(KnowledgeBase.id).where(KnowledgeBase.embedding_model_id == model.id).limit(1)) is not None:
+        raise _error(409, "KNOWLEDGE_MODEL_IN_USE", "模型已被知识库引用，不能删除")
     if model.id in _active_ids(db, actor):
         raise _error(409, "ACTIVE_MODEL_IN_USE", "当前模型不能删除，请先切换")
     if _has_running_generation(db, [model.id]):

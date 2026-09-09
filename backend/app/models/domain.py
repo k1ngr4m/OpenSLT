@@ -47,8 +47,39 @@ class DatabaseConfigTemplate(TimestampMixin, Base):
     user: Mapped['User'] = relationship(back_populates="database_config_templates")
 
 
+class KnowledgeBase(TimestampMixin, Base):
+    __tablename__ = "t_knowledge_bases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str] = mapped_column(Text, default="")
+    embedding_model_id: Mapped[typing.Optional[int]] = mapped_column(ForeignKey("t_ai_models.id", ondelete="RESTRICT"))
+    chunk_size: Mapped[int] = mapped_column(Integer, default=1200)
+    chunk_overlap: Mapped[int] = mapped_column(Integer, default=150)
+    top_k: Mapped[int] = mapped_column(Integer, default=10)
+    index_status: Mapped[str] = mapped_column(String(24), default="never")
+    last_success_at: Mapped[typing.Optional[datetime]] = mapped_column(BeijingDateTime())
+    last_error: Mapped[typing.Optional[str]] = mapped_column(Text)
+    legacy_index: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class KnowledgeUpload(TimestampMixin, Base):
+    __tablename__ = "t_knowledge_uploads"
+    __table_args__ = (UniqueConstraint("knowledge_base_id", "name", name="uq_knowledge_upload_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    knowledge_base_id: Mapped[int] = mapped_column(ForeignKey("t_knowledge_bases.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    storage_name: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    pending_delete: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class SvnKnowledgeSource(TimestampMixin, Base):
     __tablename__ = "t_svn_knowledge_sources"
+
+    knowledge_base_id: Mapped[typing.Optional[int]] = mapped_column(ForeignKey("t_knowledge_bases.id", ondelete="CASCADE"), unique=True, index=True)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     repository_url: Mapped[str] = mapped_column(String(1024))
@@ -140,6 +171,7 @@ class UserLlmConfig(TimestampMixin, Base):
 class SmartCaseGeneration(TimestampMixin, Base):
     __tablename__ = "t_smart_case_generations"
 
+    knowledge_base_id: Mapped[typing.Optional[int]] = mapped_column(ForeignKey("t_knowledge_bases.id", ondelete="RESTRICT"), index=True)
     id: Mapped[int] = mapped_column(primary_key=True)
     requirement_path: Mapped[str] = mapped_column(String(1024), index=True)
     requirement_revision: Mapped[str] = mapped_column(String(64))
@@ -165,6 +197,7 @@ class SmartCaseGeneration(TimestampMixin, Base):
 class ChatConversation(TimestampMixin, Base):
     __tablename__ = "t_chat_conversations"
 
+    knowledge_base_id: Mapped[typing.Optional[int]] = mapped_column(ForeignKey("t_knowledge_bases.id", ondelete="RESTRICT"), index=True)
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("t_users.id", ondelete="CASCADE"), index=True)
     title: Mapped[str] = mapped_column(String(128), default="新对话")

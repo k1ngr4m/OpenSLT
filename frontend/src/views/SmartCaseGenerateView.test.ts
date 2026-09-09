@@ -15,7 +15,7 @@ const source = readFileSync(resolve(process.cwd(), 'src/views/SmartCaseGenerateV
 describe('SmartCaseGenerateView', () => {
   it.each(['', '   ', '  重点覆盖权限校验\n注意 {{references}} 边界值  '])('submits optional notes with the selected requirement: %j', async (notes) => {
     const requirement = { source_path: '需求/登录.md', revision: '51', requirement_no: '1024', requirement_name: '登录' }
-    get.mockImplementation((path: string) => Promise.resolve({ data: path.endsWith('/requirements') ? [requirement] : [] }))
+    get.mockImplementation((path: string) => Promise.resolve({ data: path === '/knowledge-bases' ? [{ id: 1, name: '知识库' }] : path.endsWith('/requirements') ? [requirement] : [] }))
     post.mockResolvedValue({ data: {} })
     const wrapper = mount(SmartCaseGenerateView, { global: { plugins: [ElementPlus] } })
     try {
@@ -27,7 +27,7 @@ describe('SmartCaseGenerateView', () => {
       await input.setValue(notes)
       await wrapper.get('.generate-button').trigger('click')
       await flushPromises()
-      expect(post).toHaveBeenCalledWith('/smart-cases/generations', { requirement_path: requirement.source_path, additional_prompt: notes.trim() })
+      expect(post).toHaveBeenCalledWith('/smart-cases/generations', { knowledge_base_id: 1, requirement_path: requirement.source_path, additional_prompt: notes.trim() })
     } finally {
       wrapper.unmount()
     }
@@ -44,7 +44,7 @@ describe('SmartCaseGenerateView', () => {
 
   it('previews completed cases on demand and clears old content when a later request fails', async () => {
     const generation = { id: 1, requirement_name: '登录需求', requirement_no: '1024', requirement_revision: '51', status: 'succeeded', llm_model: 'qwen3', case_count: 1, download_ready: true, created_at: '2026-09-09T10:00:00+08:00' }
-    get.mockImplementation((path: string) => Promise.resolve({ data: path.endsWith('/requirements') ? [] : [generation, { ...generation, id: 2, status: 'failed', download_ready: false }] }))
+    get.mockImplementation((path: string) => Promise.resolve({ data: path === '/knowledge-bases' ? [{ id: 1, name: '知识库' }] : path.endsWith('/requirements') ? [] : [generation, { ...generation, id: 2, status: 'failed', download_ready: false }] }))
     const wrapper = mount(SmartCaseGenerateView, { attachTo: document.body, global: { plugins: [ElementPlus] } })
     try {
       await flushPromises()
@@ -55,7 +55,7 @@ describe('SmartCaseGenerateView', () => {
       expect(downloads).toHaveLength(2)
       expect(downloads[0]!.text()).toBe('')
       expect(downloads[1]!.attributes('disabled')).toBeDefined()
-      expect(get).toHaveBeenCalledTimes(2)
+      expect(get).toHaveBeenCalledWith('/smart-cases/requirements', { params: { knowledge_base_id: 1 } })
       get.mockResolvedValueOnce({ data: { ...generation, requirement_path: '需求/登录.md', referenced_sources: [{ source_path: '参考/账号.md', revision: '50' }], result_cases: [{ title: '<script>登录成功</script>', preconditions: ['账号已启用'], steps: ['输入账号', '点击登录'], expected_results: ['账号可见', '进入首页'], case_type: '功能', priority: '高' }] } })
       await buttons[0]!.trigger('click')
       await flushPromises()
@@ -72,4 +72,24 @@ describe('SmartCaseGenerateView', () => {
       wrapper.unmount()
     }
   })
+})
+
+it('clears the selected requirement when switching libraries', async () => {
+  get.mockImplementation(async (path: string, config?: { params: { knowledge_base_id: number } }) => ({ data: path === '/knowledge-bases' ? [{ id: 1, name: '账户库' }, { id: 2, name: '交易库' }] : path.endsWith('/requirements') ? [{ source_path: `REQ-${config!.params.knowledge_base_id}.md`, revision: '1', requirement_no: '123', requirement_name: config!.params.knowledge_base_id === 1 ? '账户需求' : '交易需求' }] : [] }))
+  const wrapper = mount(SmartCaseGenerateView, { global: { plugins: [ElementPlus] } })
+  try {
+    await flushPromises()
+    const selector = wrapper.findComponent({ name: 'ElSelect' })
+    selector.vm.$emit('update:modelValue', 1)
+    await flushPromises()
+    await wrapper.get('input[type="radio"]').setValue()
+    expect(wrapper.text()).toContain('生成 Excel 用例草稿')
+    selector.vm.$emit('update:modelValue', 2)
+    await flushPromises()
+    expect(get).toHaveBeenCalledWith('/smart-cases/requirements', { params: { knowledge_base_id: 2 } })
+    expect(wrapper.get<HTMLInputElement>('input[type="radio"]').element.checked).toBe(false)
+    expect(wrapper.text()).toContain('交易需求')
+    expect(wrapper.text()).not.toContain('账户需求')
+    expect(wrapper.text()).toContain('请先从左侧选择一个需求')
+  } finally { wrapper.unmount() }
 })

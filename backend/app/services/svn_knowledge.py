@@ -330,9 +330,10 @@ def test_svn_connection(
     return {"ok": True, "svn_version": version, "checked_paths": [item[2] for item in targets]}
 
 
-def _working_copy_path(repository_url: str, relative_path: str) -> Path:
+def _working_copy_path(repository_url: str, relative_path: str, knowledge_base_id: typing.Optional[int] = None) -> Path:
     key = hashlib.sha256((repository_url + "\n" + relative_path).encode("utf-8")).hexdigest()[:20]
-    return settings.knowledge_root / "svn-working-copies" / key
+    root = settings.knowledge_root if knowledge_base_id is None else settings.knowledge_root / str(knowledge_base_id)
+    return root / "svn-working-copies" / key
 
 
 def _working_copy_info(client: SvnClient, path: Path, username: str, password: str) -> typing.Tuple[str, str]:
@@ -349,9 +350,10 @@ def _sync_working_copy(
     relative_path: str,
     username: str,
     password: str,
+    knowledge_base_id: typing.Optional[int] = None,
 ) -> typing.Tuple[Path, str]:
     target_url = join_repository_url(repository_url, relative_path)
-    working_copy = _working_copy_path(repository_url, relative_path)
+    working_copy = _working_copy_path(repository_url, relative_path, knowledge_base_id)
     working_copy.parent.mkdir(parents=True, exist_ok=True)
     if working_copy.exists():
         if not (working_copy / ".svn").is_dir():
@@ -379,6 +381,8 @@ def _sync_working_copy(
 
 
 def _load_manifest(path: Path) -> typing.Dict[str, typing.Any]:
+    if not path.is_file():
+        return {}
     try:
         connection = sqlite3.connect(str(path))
         try:
@@ -467,7 +471,7 @@ def _build_manifest(
                 files[source_ref] = item
     changes["deleted"] = len(set(previous_files) - set(files))
     return {
-        "repository_url": repositories[0],
+        "repository_url": repositories[0] if repositories else "",
         "repository_urls": repositories,
         "revisions": revisions,
         "published_at": beijing_now().isoformat(),
@@ -550,6 +554,8 @@ def _extract_text(path: Path) -> str:
 
 
 def _chunks(text: str, size: int = 1200, overlap: int = 150) -> typing.Iterator[str]:
+    if size <= 0 or not 0 <= overlap < size:
+        raise ValueError("分块重叠必须小于分块大小")
     normalized = "\n".join(line.strip() for line in text.splitlines() if line.strip())
     if len(normalized) > 5_000_000:
         raise ValueError("文件提取文本超过 500 万字符限制")
@@ -564,7 +570,7 @@ def _chunks(text: str, size: int = 1200, overlap: int = 150) -> typing.Iterator[
 def _local_source_path(source_ref: str, working_copies: typing.Dict[str, Path]) -> Path:
     include_path = max((path for path in working_copies if source_ref == path or source_ref.startswith(path + "/")), key=len)
     relative = source_ref[len(include_path):].lstrip("/")
-    return working_copies[include_path] / relative
+    return working_copies[include_path] / relative if relative else working_copies[include_path]
 
 
 def _revision_for_source(source_ref: str, revisions: typing.Dict[str, str]) -> str:
@@ -578,8 +584,12 @@ def _publish_vector_index(
     working_copies: typing.Dict[str, Path],
     embedding: EmbeddingClient,
     check_cancelled: typing.Optional[typing.Callable[[], None]] = None,
+    destination: typing.Optional[Path] = None,
+    chunk_size: int = 1200,
+    chunk_overlap: int = 150,
+    allow_empty: bool = False,
 ) -> int:
-    destination = settings.knowledge_root / "published" / "svn-index.sqlite3"
+    destination = destination or settings.knowledge_root / "published" / "svn-index.sqlite3"
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
     if destination.exists():
@@ -596,7 +606,9 @@ def _publish_vector_index(
             old_base_url = connection.execute("SELECT value FROM metadata WHERE key = 'embedding_base_url'").fetchone()
             old_dimensions = connection.execute("SELECT dimensions FROM chunks LIMIT 1").fetchone()
             model_changed = (
-                not old_model
+                previous.get("chunk_size", 1200) != chunk_size
+                or previous.get("chunk_overlap", 150) != chunk_overlap
+                or not old_model
                 or old_model[0] != embedding.model
                 or not old_base_url
                 or old_base_url[0] != embedding.base_url
@@ -624,7 +636,9 @@ def _publish_vector_index(
                 if check_cancelled:
                     check_cancelled()
                 try:
-                    texts = list(_chunks(_extract_text(_local_source_path(source_path, working_copies))))
+                    texts = list(_chunks(_extract_text(_local_source_path(source_path, working_copies)), chunk_size, chunk_overlap))
+                    if not texts:
+                        raise ValueError("文档未提取到文本")
                 except Exception as exc:
                     failed_files[source_path] = str(redact(str(exc)))[:300]
                     continue
@@ -652,10 +666,12 @@ def _publish_vector_index(
                     (source_path, item["size"], item["mtime_ns"], item["sha256"], _revision_for_source(source_path, manifest["revisions"])),
                 )
             manifest["failed_files"] = failed_files
+            manifest["chunk_size"] = chunk_size
+            manifest["chunk_overlap"] = chunk_overlap
             if not dimensions:
                 row = connection.execute("SELECT dimensions FROM chunks LIMIT 1").fetchone()
                 dimensions = int(row[0]) if row else 0
-            if connection.execute("SELECT 1 FROM chunks LIMIT 1").fetchone() is None:
+            if connection.execute("SELECT 1 FROM chunks LIMIT 1").fetchone() is None and not allow_empty:
                 raise SvnKnowledgeError("没有成功提取并向量化的知识内容，未发布空索引")
             connection.execute("INSERT OR REPLACE INTO metadata(key, value) VALUES ('manifest', ?)", (json.dumps(manifest, ensure_ascii=False, sort_keys=True),))
             connection.execute("INSERT OR REPLACE INTO metadata(key, value) VALUES ('embedding_model', ?)", (embedding.model,))
@@ -678,8 +694,8 @@ def _publish_vector_index(
             pass
 
 
-def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k: int, full_content: bool = False) -> typing.List[typing.Dict[str, typing.Any]]:
-    index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
+def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k: int, full_content: bool = False, index_path: typing.Optional[Path] = None) -> typing.List[typing.Dict[str, typing.Any]]:
+    index_path = index_path or settings.knowledge_root / "published" / "svn-index.sqlite3"
     if not index_path.exists():
         raise SvnKnowledgeError("尚无成功发布的知识索引")
     norm = sum(value * value for value in query_vector) ** 0.5
@@ -719,8 +735,8 @@ def search_vector_index(query: str, query_vector: typing.Sequence[float], top_k:
     return sorted(results, key=lambda item: item["score"], reverse=True)[:top_k]
 
 
-def list_indexed_requirements(query: str = "") -> typing.List[typing.Dict[str, typing.Any]]:
-    index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
+def list_indexed_requirements(query: str = "", index_path: typing.Optional[Path] = None) -> typing.List[typing.Dict[str, typing.Any]]:
+    index_path = index_path or settings.knowledge_root / "published" / "svn-index.sqlite3"
     if not index_path.exists():
         raise SvnKnowledgeError("尚无成功发布的知识索引")
     needle = query.strip().casefold()
@@ -744,8 +760,8 @@ def list_indexed_requirements(query: str = "") -> typing.List[typing.Dict[str, t
     return result[:500]
 
 
-def get_indexed_document(source_path: str) -> typing.Dict[str, str]:
-    index_path = settings.knowledge_root / "published" / "svn-index.sqlite3"
+def get_indexed_document(source_path: str, index_path: typing.Optional[Path] = None) -> typing.Dict[str, str]:
+    index_path = index_path or settings.knowledge_root / "published" / "svn-index.sqlite3"
     connection = sqlite3.connect(str(index_path))
     try:
         row = connection.execute("SELECT revision FROM files WHERE source_path = ?", (source_path,)).fetchone()
@@ -770,6 +786,9 @@ def active_svn_task(db: Session) -> typing.Optional[DurableTask]:
 def enqueue_svn_sync(db: Session, source: SvnKnowledgeSource, reason: str, now: typing.Optional[datetime] = None) -> DurableTask:
     from app.services.model_providers import require_active_model
 
+    if source.knowledge_base_id is not None:
+        from app.services.knowledge_bases import enqueue_index
+        return enqueue_index(db, source.knowledge_base_id, sync_svn=True, reason=reason, now=now)
     require_active_model(db, "embedding")
     locked = db.scalar(select(SvnKnowledgeSource).where(SvnKnowledgeSource.id == source.id).with_for_update())
     if locked is None:
@@ -793,7 +812,19 @@ def enqueue_svn_sync(db: Session, source: SvnKnowledgeSource, reason: str, now: 
 def enqueue_due_svn_syncs(db: Session, now: typing.Optional[datetime] = None) -> typing.Optional[DurableTask]:
     from app.services.model_providers import active_model
 
-    source = db.scalar(select(SvnKnowledgeSource).where(SvnKnowledgeSource.enabled.is_(True)))
+    sources = list(db.scalars(select(SvnKnowledgeSource).where(SvnKnowledgeSource.enabled.is_(True))).all())
+    scoped_tasks = []
+    from app.services.model_providers import ModelProviderError
+    for item in sources:
+        if item.knowledge_base_id is not None:
+            try:
+                scoped_tasks.append(enqueue_svn_sync(db, item, "scheduled", now))
+            except ModelProviderError:
+                continue
+    if scoped_tasks:
+        db.commit()
+        return scoped_tasks[0]
+    source = next((source for source in sources if source.knowledge_base_id is None), None)
     if source is None or active_model(db, "embedding") is None:
         return None
     return enqueue_svn_sync(db, source, "scheduled", now)
@@ -807,6 +838,10 @@ def execute_svn_sync(source_id: int, client: typing.Optional[SvnClient] = None, 
         source = db.get(SvnKnowledgeSource, source_id)
         if source is None:
             raise SvnKnowledgeError("SVN 知识源不存在")
+        if source.knowledge_base_id is not None:
+            from app.services.knowledge_bases import execute_index
+            execute_index(source.knowledge_base_id, True, task_id, client)
+            return
         repository_urls = list(source.repository_urls or []) or [source.repository_url]
         username = source.username
         password = decrypt_secret(source.encrypted_password) or ""

@@ -6,6 +6,7 @@ import { fileURLToPath, URL } from 'node:url'
 import { releaseDefines } from './release-metadata.config'
 
 const elementPlusComponentDirectories: Record<string, string> = {
+  ElBreadcrumbItem: 'breadcrumb',
   ElCheckboxGroup: 'checkbox',
   ElCollapseItem: 'collapse',
   ElDropdownMenu: 'dropdown',
@@ -21,6 +22,7 @@ const elementPlusComponentDirectories: Record<string, string> = {
 }
 
 const additionalElementPlusStyles: Record<string, string[]> = {
+  ElBreadcrumbItem: ['element-plus/theme-chalk/el-breadcrumb-item.css'],
   ElFormItem: ['element-plus/theme-chalk/el-form-item.css'],
   ElRadioButton: ['element-plus/theme-chalk/el-radio-button.css'],
   ElRadioGroup: ['element-plus/theme-chalk/el-radio-group.css'],
