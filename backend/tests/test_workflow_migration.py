@@ -534,7 +534,10 @@ def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -
         ]
 
 
-def test_knowledge_base_migration_binds_existing_sources_and_consumers(tmp_path: Path) -> None:
+@pytest.mark.parametrize("interruption", [None, "base_table", "upload_table", "partial_constraints", "backfill"])
+def test_knowledge_base_migration_binds_existing_sources_and_consumers(tmp_path: Path, interruption) -> None:
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
     from app.models import ActiveAiModel, AiModel, ChatConversation, ModelProvider, SmartCaseGeneration, SvnKnowledgeSource, User
     database_path = tmp_path / "knowledge-base-migration.sqlite3"
     _alembic(database_path, "upgrade", "0017")
@@ -547,9 +550,35 @@ def test_knowledge_base_migration_binds_existing_sources_and_consumers(tmp_path:
         connection.execute(SvnKnowledgeSource.__table__.insert().values(id=1, repository_url="https://svn.example/docs", repository_urls=["https://svn.example/docs"], username="reader", encrypted_password="preserved-encrypted-password", include_paths=["requirements"]))
         connection.execute(ChatConversation.__table__.insert(), [dict(id=1, user_id=1, mode="knowledge"), dict(id=2, user_id=1, mode="general")])
         connection.execute(SmartCaseGeneration.__table__.insert().values(id=1, requirement_path="REQ-123.md", requirement_revision="123", requirement_name="权限", llm_model="chat", created_by=1))
+        # Persist individual DDL steps, as MySQL does before a failed revision is stamped.
+        if interruption:
+            Base.metadata.tables["t_knowledge_bases"].create(connection)
+        if interruption in ("upload_table", "partial_constraints", "backfill"):
+            Base.metadata.tables["t_knowledge_uploads"].create(connection)
+            connection.exec_driver_sql("DROP INDEX ix_t_knowledge_uploads_knowledge_base_id")
+        if interruption in ("partial_constraints", "backfill"):
+            operations = Operations(MigrationContext.configure(connection))
+            for table in ("t_svn_knowledge_sources", "t_smart_case_generations", "t_chat_conversations"):
+                with operations.batch_alter_table(table) as batch:
+                    batch.add_column(sa.Column("knowledge_base_id", sa.Integer(), nullable=True))
+                    if table == "t_smart_case_generations":
+                        batch.create_foreign_key("fk_" + table + "_knowledge_base", "t_knowledge_bases", ["knowledge_base_id"], ["id"], ondelete="RESTRICT")
+                    if table == "t_chat_conversations":
+                        batch.create_index("ix_" + table + "_knowledge_base_id", ["knowledge_base_id"])
+        if interruption == "backfill":
+            connection.execute(Base.metadata.tables["t_knowledge_bases"].insert().values(id=1, name="默认知识库", embedding_model_id=1, legacy_index=True))
     engine.dispose()
     _alembic(database_path, "upgrade", "head")
     _alembic(database_path, "upgrade", "head")
+    engine = sa.create_engine(_database_url(database_path))
+    inspector = sa.inspect(engine)
+    for table_name in ("t_knowledge_bases", "t_knowledge_uploads", "t_svn_knowledge_sources", "t_smart_case_generations", "t_chat_conversations"):
+        model_table = Base.metadata.tables[table_name]
+        assert _database_foreign_keys(inspector, table_name) == _model_foreign_keys(model_table)
+        assert {(i["name"], tuple(i["column_names"]), bool(i["unique"])) for i in inspector.get_indexes(table_name)} == {
+            (i.name, tuple(c.name for c in i.columns), bool(i.unique)) for i in model_table.indexes
+        }
+    engine.dispose()
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT name, embedding_model_id, chunk_size, chunk_overlap, legacy_index FROM t_knowledge_bases").fetchall() == [("默认知识库", 1, 1200, 150, 1)]
         assert connection.execute("SELECT knowledge_base_id, encrypted_password FROM t_svn_knowledge_sources").fetchone() == (1, "preserved-encrypted-password")
@@ -558,3 +587,31 @@ def test_knowledge_base_migration_binds_existing_sources_and_consumers(tmp_path:
     _alembic(database_path, "downgrade", "0017")
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT encrypted_password FROM t_svn_knowledge_sources").fetchone() == ("preserved-encrypted-password",)
+
+
+def test_knowledge_base_migration_replay_preserves_saved_data(tmp_path: Path) -> None:
+    from app.models import ChatConversation, KnowledgeBase, KnowledgeUpload, SmartCaseGeneration, SvnKnowledgeSource, User
+
+    database_path = tmp_path / "knowledge-base-replay.sqlite3"
+    _alembic(database_path, "upgrade", "head")
+    engine = sa.create_engine(_database_url(database_path))
+    with engine.begin() as connection:
+        connection.execute(User.__table__.insert().values(id=1, username="admin", password_hash="hash", role="admin"))
+        connection.execute(KnowledgeBase.__table__.insert(), [
+            dict(id=1, name="已编辑知识库", description="保留描述", chunk_size=900, chunk_overlap=100, top_k=7),
+            dict(id=2, name="另一个知识库", description="", chunk_size=1200, chunk_overlap=150, top_k=10),
+        ])
+        connection.execute(SvnKnowledgeSource.__table__.insert().values(id=1, knowledge_base_id=2, repository_url="https://svn.example/docs", username="reader", encrypted_password="saved-password"))
+        connection.execute(ChatConversation.__table__.insert(), [dict(id=1, user_id=1, mode="knowledge", knowledge_base_id=2), dict(id=2, user_id=1, mode="general", knowledge_base_id=None)])
+        connection.execute(SmartCaseGeneration.__table__.insert().values(id=1, knowledge_base_id=2, requirement_path="REQ-123.md", requirement_revision="123", requirement_name="权限", llm_model="chat", created_by=1))
+        connection.execute(KnowledgeUpload.__table__.insert().values(id=1, knowledge_base_id=2, name="需求.md", storage_name="saved-file", size=10, sha256="digest"))
+        connection.exec_driver_sql(f"UPDATE {VERSION_TABLE} SET version_num = '0017'")
+        before = {table: connection.exec_driver_sql("SELECT * FROM " + table).fetchall() for table in (
+            "t_knowledge_bases", "t_knowledge_uploads", "t_svn_knowledge_sources", "t_chat_conversations", "t_smart_case_generations",
+        )}
+    _alembic(database_path, "upgrade", "head")
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0018"
+        for table, rows in before.items():
+            assert connection.exec_driver_sql("SELECT * FROM " + table).fetchall() == rows
+    engine.dispose()
