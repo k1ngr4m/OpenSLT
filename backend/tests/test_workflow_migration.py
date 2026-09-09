@@ -112,7 +112,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0018"
+        ).scalar_one() == "0019"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -334,7 +334,7 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0018"
+        ).scalar_one() == "0019"
     engine.dispose()
 
 
@@ -404,6 +404,9 @@ def test_mysql_offline_migration_is_legacy_mariadb_compatible() -> None:
         "fk_test_scenarios_draft_workflow_version_id"
     ) in sql
     assert "ALTER TABLE t_durable_tasks ADD COLUMN run_id INTEGER" in sql
+    upload_table_sql = re.search(r"CREATE TABLE t_knowledge_uploads \(.*?\n\)", sql, re.S).group()
+    assert "name VARCHAR(255) NOT NULL" in upload_table_sql
+    assert "UNIQUE" not in upload_table_sql
 
 
 def test_expected_migration_revisions_remain() -> None:
@@ -430,6 +433,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0016_account_models.py",
         "0017_embedding_dimensions.py",
         "0018_knowledge_bases.py",
+        "0019_knowledge_upload_names.py",
         "0014_user_llm_configs.py",
     }
 
@@ -440,7 +444,7 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0018 (head)"
+    assert completed.stdout.strip() == "0019 (head)"
 
 
 @pytest.mark.parametrize("admin_personal", [False, True])
@@ -511,7 +515,7 @@ def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monk
     )
     command.upgrade(Config(str(REPOSITORY_ROOT / "alembic.ini")), "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0018",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0019",)
 
 
 def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -> None:
@@ -528,7 +532,7 @@ def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -
     _alembic(database_path, "upgrade", "head")
     _alembic(database_path, "upgrade", "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0018",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0019",)
         assert connection.execute("SELECT * FROM t_case_generation_prompts").fetchall() == [
             (1, "saved system", "saved user")
         ]
@@ -611,7 +615,34 @@ def test_knowledge_base_migration_replay_preserves_saved_data(tmp_path: Path) ->
         )}
     _alembic(database_path, "upgrade", "head")
     with engine.connect() as connection:
-        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0018"
+        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0019"
         for table, rows in before.items():
             assert connection.exec_driver_sql("SELECT * FROM " + table).fetchall() == rows
+    engine.dispose()
+
+
+def test_upload_name_migration_preserves_existing_files_and_resumes(tmp_path: Path) -> None:
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from app.models import KnowledgeBase, KnowledgeUpload
+
+    database_path = tmp_path / "upload-names.sqlite3"
+    _alembic(database_path, "upgrade", "0018")
+    engine = sa.create_engine(_database_url(database_path))
+    with engine.begin() as connection:
+        # Reproduce the original 0018 schema already deployed on newer servers.
+        with Operations(MigrationContext.configure(connection)).batch_alter_table("t_knowledge_uploads") as batch:
+            batch.create_unique_constraint("uq_knowledge_upload_name", ["knowledge_base_id", "name"])
+        connection.execute(KnowledgeBase.__table__.insert().values(id=1, name="已保存知识库"))
+        connection.execute(KnowledgeUpload.__table__.insert().values(id=1, knowledge_base_id=1, name="需求.md", storage_name="saved-file", size=10, sha256="digest"))
+        before = connection.exec_driver_sql("SELECT * FROM t_knowledge_uploads").fetchall()
+    _alembic(database_path, "upgrade", "head")
+    with engine.begin() as connection:
+        assert sa.inspect(connection).get_unique_constraints("t_knowledge_uploads") == []
+        assert connection.exec_driver_sql("SELECT * FROM t_knowledge_uploads").fetchall() == before
+        connection.exec_driver_sql(f"UPDATE {VERSION_TABLE} SET version_num = '0018'")
+    _alembic(database_path, "upgrade", "head")
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0019"
+        assert connection.exec_driver_sql("SELECT * FROM t_knowledge_uploads").fetchall() == before
     engine.dispose()

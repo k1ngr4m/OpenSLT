@@ -65,7 +65,6 @@ class KnowledgeBase(TimestampMixin, Base):
 
 class KnowledgeUpload(TimestampMixin, Base):
     __tablename__ = "t_knowledge_uploads"
-    __table_args__ = (UniqueConstraint("knowledge_base_id", "name", name="uq_knowledge_upload_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     knowledge_base_id: Mapped[int] = mapped_column(ForeignKey("t_knowledge_bases.id", ondelete="CASCADE"), index=True)

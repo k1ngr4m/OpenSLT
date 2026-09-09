@@ -89,6 +89,20 @@ def test_upload_validation_isolation_delete_and_empty_index(client, admin_header
     assert result.status_code == 200 and result.json()['results'] == []
 
 
+def test_upload_compares_complete_long_names_without_a_prefix_index(client, admin_headers):
+    base, _, _ = create_base(client, admin_headers)
+    names = ['需' * 251 + suffix + '.md' for suffix in ('甲', '乙')]
+    for name in names:
+        finish(upload(client, admin_headers, base['id'], name=name))
+    for name in names:
+        assert upload(client, admin_headers, base['id'], name=name).status_code == 409
+    assert upload(client, admin_headers, base['id'], name='需' * 253 + '.md').status_code == 422
+    docs = client.get('/api/v1/knowledge-bases/%s/documents' % base['id'], headers=admin_headers).json()
+    assert {doc['name'] for doc in docs} == set(names)
+    other, _, _ = create_base(client, admin_headers, '另一库')
+    finish(upload(client, admin_headers, other['id'], name=names[0]))
+
+
 def test_failure_cancel_retry_and_chunk_settings(client, admin_headers, monkeypatch):
     base, provider, _ = create_base(client, admin_headers)
     path = '/api/v1/knowledge-bases/%s' % base['id']

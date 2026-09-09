@@ -7,7 +7,6 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import admin_only, operators
@@ -107,7 +106,11 @@ async def upload_documents(knowledge_base_id: int, request: Request, files: typi
     if not files or len(files) > 50:
         raise HTTPException(422, detail="每批上传 1–50 个文件")
     names = [file.filename or "" for file in files]
-    existing = set(db.scalars(select(KnowledgeUpload.name).where(KnowledgeUpload.knowledge_base_id == knowledge_base_id)))
+    # The KB row lock serializes uploads. Read current names even under MySQL REPEATABLE READ;
+    # a full-name unique index exceeds legacy InnoDB's 767-byte limit.
+    existing = set(db.scalars(select(KnowledgeUpload.name).where(
+        KnowledgeUpload.knowledge_base_id == knowledge_base_id
+    ).with_for_update()))
     if len(set(names)) != len(names) or existing.intersection(names):
         raise HTTPException(409, detail="存在同名上传文件，请更名后上传")
     for name in names:
@@ -141,12 +144,10 @@ async def upload_documents(knowledge_base_id: int, request: Request, files: typi
         write_audit(db, "knowledge_base.upload", "knowledge_base", knowledge_base_id, actor, request, detail={"files": names})
         db.commit()
         return SvnSyncTaskOut(task_id=task.id, status=task.status, reused=False)
-    except Exception as exc:
+    except Exception:
         db.rollback()
         for path in written:
             path.unlink(missing_ok=True)
-        if isinstance(exc, IntegrityError):
-            raise HTTPException(409, detail="存在同名上传文件") from exc
         raise
     finally:
         for file in files:

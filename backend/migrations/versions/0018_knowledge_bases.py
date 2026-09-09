@@ -41,8 +41,7 @@ def upgrade():
             sa.Column("sha256", sa.String(64), nullable=False),
             sa.Column("pending_delete", sa.Boolean(), nullable=False),
             sa.Column("created_at", sa.DateTime(), nullable=False),
-            sa.Column("updated_at", sa.DateTime(), nullable=False),
-            sa.UniqueConstraint("knowledge_base_id", "name", name="uq_knowledge_upload_name"), **_mysql_options())
+            sa.Column("updated_at", sa.DateTime(), nullable=False), **_mysql_options())
     upload_indexes = (
         {index["name"] for index in inspector.get_indexes("t_knowledge_uploads")}
         if "t_knowledge_uploads" in existing_tables else set()
