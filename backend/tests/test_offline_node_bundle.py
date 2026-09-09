@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import subprocess
+import os
+import shlex
+import shutil
 from pathlib import Path
 
 
@@ -115,5 +118,36 @@ def test_intranet_frontend_builder_is_strictly_offline() -> None:
 def test_svn_client_is_included_in_the_rhel7_offline_bundle() -> None:
     packages = (OFFLINE_DIR / "rpm-packages-rhel7.txt").read_text(encoding="utf-8").splitlines()
     assert "subversion" in packages
-    assert {"libreoffice-headless", "libreoffice-writer", "libreoffice-calc"} <= set(packages)
+    assert {"libreoffice-core", "libreoffice-writer", "libreoffice-calc"} <= set(packages)
+    assert "libreoffice-headless" not in packages
     assert "svn --version --quiet" in _script("README-OFFLINE.md")
+
+
+def test_missing_libreoffice_reports_repository_steps_before_collecting(tmp_path: Path) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    commands = {
+        "uname": "printf 'x86_64\\n'",
+        "grep": 'if [[ "${!#}" == /etc/os-release ]]; then exit 0; fi\nexec ' + shlex.quote(shutil.which("grep")) + ' "$@"',
+        "repoquery": "exit 0",
+        "repotrack": "exit 99",
+        "createrepo": "exit 99",
+    }
+    for name, body in commands.items():
+        command = bin_dir / name
+        command.write_text("#!/bin/bash\n" + body + "\n", encoding="utf-8")
+        command.chmod(0o755)
+    package_file = tmp_path / "packages.txt"
+    package_file.write_text("libreoffice-core\nlibreoffice-writer\nlibreoffice-calc\n", encoding="utf-8")
+    output = tmp_path / "rpms"
+    result = subprocess.run(
+        ["bash", str(OFFLINE_DIR / "collect-rpms-rhel7.sh"), "--package-file", str(package_file), "--output", str(output)],
+        env={**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"]},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 1
+    assert "libreoffice-core" in result.stderr
+    assert "rhel-7-server-optional-rpms" in result.stderr
+    assert "Satellite or internal mirrors" in result.stderr
+    assert "repoquery --qf '%{name}'" in result.stderr
+    assert not output.exists()

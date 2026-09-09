@@ -486,7 +486,7 @@ def _extract_text(path: Path) -> str:
     if suffix in {".doc", ".xls"}:
         executable = shutil.which("libreoffice") or shutil.which("soffice")
         if not executable:
-            raise ValueError("旧版 Office 文件解析需要 LibreOffice，请安装 libreoffice-headless、libreoffice-writer 和 libreoffice-calc RPM")
+            raise ValueError("旧版 Office 文件解析需要 LibreOffice，请安装 libreoffice-core、libreoffice-writer 和 libreoffice-calc RPM")
         target_format = "docx" if suffix == ".doc" else "xlsx"
         with tempfile.TemporaryDirectory(prefix="openslt-office-") as temporary:
             root = Path(temporary).resolve()

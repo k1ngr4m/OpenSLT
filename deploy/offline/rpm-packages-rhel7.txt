@@ -9,6 +9,6 @@ mariadb-libs
 libaio
 numactl-libs
 subversion
-libreoffice-headless
+libreoffice-core
 libreoffice-writer
 libreoffice-calc

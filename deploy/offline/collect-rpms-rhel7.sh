@@ -133,7 +133,17 @@ done <"$PACKAGE_FILE"
 if ((${#missing_packages[@]})); then
     printf 'The following packages are unavailable from the enabled repositories:\n' >&2
     printf '  %s\n' "${missing_packages[@]}" >&2
-    printf 'Enable the RHEL 7 base and MariaDB repositories, then retry.\n' >&2
+    printf 'Check repository access and enabled package sources: yum repolist enabled\n' >&2
+    case " ${missing_packages[*]} " in
+        *" libreoffice-"*)
+            printf 'LibreOffice requires libreoffice-core, libreoffice-writer and libreoffice-calc on RHEL 7.9; headless support is included in core.\n' >&2
+            printf 'On a subscribed RHEL 7 Server host, check the base and Optional repositories:\n' >&2
+            printf '  subscription-manager repos --enable=rhel-7-server-rpms --enable=rhel-7-server-optional-rpms\n' >&2
+            printf 'For Satellite or internal mirrors, ask the repository administrator to publish the matching RHEL 7 packages and dependencies.\n' >&2
+            printf "Verify without hiding repository errors: repoquery --qf '%%{name}' libreoffice-core libreoffice-writer libreoffice-calc\n" >&2
+            ;;
+    esac
+    printf 'Enable or repair the repositories supplying the missing packages, then retry.\n' >&2
     exit 1
 fi
 

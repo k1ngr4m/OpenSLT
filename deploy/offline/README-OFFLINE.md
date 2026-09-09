@@ -113,7 +113,27 @@ Python 主次版本，避免二进制 wheel 不匹配。Python 解释器需事�
 - Nginx、curl、SELinux 管理工具；
 - MariaDB 客户端、服务端和库，以及 libaio、numactl-libs；
 - Subversion；
-- LibreOffice Headless、Writer、Calc，用于旧版 `.doc`、`.xls` 文档转换。
+- LibreOffice Core、Writer、Calc，用于旧版 `.doc`、`.xls` 文档转换；RHEL 7.9 的
+  `libreoffice-core` 已包含 headless 能力，不再要求旧的 `libreoffice-headless` 独立包。
+
+如果收集阶段提示 LibreOffice 不可用，先检查软件源是否完整、可访问：
+
+```bash
+yum repolist enabled
+repoquery --qf '%{name}' libreoffice-core libreoffice-writer libreoffice-calc
+```
+
+使用有效订阅的 RHEL 7 Server 官方源时，可启用 Base 和 Optional 后重新查询：
+
+```bash
+subscription-manager repos --enable=rhel-7-server-rpms --enable=rhel-7-server-optional-rpms
+yum makecache
+repoquery --qf '%{name}' libreoffice-core libreoffice-writer libreoffice-calc
+```
+
+使用 Satellite 或单位镜像时，由仓库管理员发布对应 RHEL 7 版本的上述包及依赖；
+缺包也可能来自镜像裁剪、软件包过滤或仓库访问失败，仅凭缺包列表无法判断。
+确认查询包含三个包名后，重试原制包命令，可继续复用 `--cache-dir`，无需清空缓存。
 
 ## 3. 生成离线安装包
 

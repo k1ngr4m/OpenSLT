@@ -1,5 +1,10 @@
 {
-  "unreleased": [],
+  "unreleased": [
+    {
+      "type": "fixed",
+      "text": "修正 RHEL 7.9 离线包的 LibreOffice Core 依赖，并补充缺包时的软件源排查提示。"
+    }
+  ],
   "releases": [
     {
       "version": "0.2.4",
