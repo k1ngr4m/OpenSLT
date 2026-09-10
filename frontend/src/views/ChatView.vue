@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MarkdownContent from '@/components/MarkdownContent.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessageBox } from '@/ui/elementPlusServices'
 import { ChatDotRound, Plus, Delete, Promotion, VideoPause, Refresh } from '@element-plus/icons-vue'
@@ -263,7 +264,8 @@ onBeforeUnmount(() => { disposed = true; clearTimeout(refreshTimer); controller?
           </div>
           <article v-for="(message, index) in messages" :key="message.id" class="message" :class="message.role">
             <div class="message-meta"><strong>{{ message.role === 'user' ? '你' : '智能助手' }}</strong><span v-if="message.role === 'assistant'">{{ message.model }} · {{ statusLabel[message.status] }}</span></div>
-            <div class="message-content">{{ message.content || (message.status === 'running' ? '正在准备回答…' : '未生成回答') }}</div>
+            <MarkdownContent v-if="message.role === 'assistant' && message.content" :content="message.content" />
+            <div v-else class="message-content">{{ message.content || (message.status === 'running' ? '正在准备回答…' : '未生成回答') }}</div>
             <p v-if="message.error" class="message-error">{{ message.error }}</p>
             <details v-if="message.sources.length" class="message-sources">
               <summary>参考来源 · {{ message.sources.length }} 个片段</summary>

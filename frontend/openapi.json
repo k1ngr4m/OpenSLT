@@ -8556,6 +8556,72 @@
         ]
       }
     },
+    "/api/v1/knowledge-bases/{knowledge_base_id}/documents/preview": {
+      "get": {
+        "operationId": "preview_document_api_v1_knowledge_bases__knowledge_base_id__documents_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "knowledge_base_id",
+            "required": true,
+            "schema": {
+              "title": "Knowledge Base Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_path",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Source Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Document",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
     "/api/v1/knowledge-bases/{knowledge_base_id}/documents/{upload_id}": {
       "delete": {
         "operationId": "delete_document_api_v1_knowledge_bases__knowledge_base_id__documents__upload_id__delete",

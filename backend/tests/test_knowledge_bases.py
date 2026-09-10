@@ -274,3 +274,21 @@ def test_interrupted_index_resumes_through_existing_durable_recovery(client, adm
     finish(response)
     with SessionLocal() as db:
         assert kb.index_ready(db, db.get(KnowledgeBase, base['id']))
+
+
+def test_preview_pagination_isolation_and_validation(client, admin_headers):
+    base, _, _ = create_base(client, admin_headers)
+    finish(upload(client, admin_headers, base['id'], text='正文' * 4000))
+    url = '/api/v1/knowledge-bases/%s/documents/preview' % base['id']
+    with SessionLocal() as db:
+        ref = kb.documents(db, base['id'])[0]['source_path']
+    first = client.get(url, headers=admin_headers, params={'source_path': ref}).json()
+    second = client.get(url, headers=admin_headers, params={'source_path': ref, 'page': 2}).json()
+    assert first['total'] > 5 and len(first['chunks']) == 5
+    assert first['chunks'][0]['chunk_no'] == 0 and second['chunks'][0]['chunk_no'] == 5
+    assert first['revision'] == second['revision']
+    assert client.get(url, headers=admin_headers, params={'source_path': ref, 'page': 0}).status_code == 422
+    assert client.get(url, headers=admin_headers, params={'source_path': '../../etc/passwd'}).status_code == 404
+    assert client.get(url, params={'source_path': ref}).status_code == 401
+    other, _, _ = create_base(client, admin_headers, '其他库')
+    assert client.get(url.replace('/%s/' % base['id'], '/%s/' % other['id']), headers=admin_headers, params={'source_path': ref}).status_code == 404

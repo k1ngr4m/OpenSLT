@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     app_name: str = "OpenSLT"
     chat_max_concurrent: int = Field(default=4, ge=1, le=32)
-    chat_timeout_seconds: int = Field(default=180, ge=10, le=600)
+    chat_timeout_seconds: int = Field(default=300, ge=10, le=600)
     chat_max_tokens: int = Field(default=2048, ge=128, le=8192)
     chat_context_chars: int = Field(default=24000, ge=4000, le=64000)
     chat_min_vector_score: float = Field(default=0.35, ge=-1, le=1)

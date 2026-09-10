@@ -479,9 +479,14 @@ def _build_manifest(
     }, changes
 
 
+def file_size_limit(name: str) -> int:
+    return (500 if Path(name).suffix.casefold() in {".docx", ".xlsx"} else 50) * 1024 * 1024
+
+
 def _extract_text(path: Path) -> str:
-    if path.stat().st_size > 50 * 1024 * 1024:
-        raise ValueError("文件超过 50 MiB 索引限制")
+    limit = file_size_limit(path.name)
+    if path.stat().st_size > limit:
+        raise ValueError("文件超过 %s MiB 索引限制" % (limit // (1024 * 1024)))
     suffix = path.suffix.casefold()
     if suffix in {".doc", ".xls"}:
         executable = shutil.which("libreoffice") or shutil.which("soffice")
@@ -528,14 +533,14 @@ def _extract_text(path: Path) -> str:
         return raw.decode("utf-8", errors="replace")
     if suffix == ".docx":
         with zipfile.ZipFile(path) as archive:
-            if sum(item.file_size for item in archive.infolist()) > 200 * 1024 * 1024:
-                raise ValueError("DOCX 解压内容超过 200 MiB 限制")
+            if sum(item.file_size for item in archive.infolist()) > 2 * 1024 * 1024 * 1024:
+                raise ValueError("DOCX 解压内容超过 2 GiB 限制")
             root = ET.fromstring(archive.read("word/document.xml"))
         return "\n".join(text.strip() for text in root.itertext() if text.strip())
     if suffix == ".xlsx":
         with zipfile.ZipFile(path) as archive:
-            if sum(item.file_size for item in archive.infolist()) > 200 * 1024 * 1024:
-                raise ValueError("XLSX 解压内容超过 200 MiB 限制")
+            if sum(item.file_size for item in archive.infolist()) > 2 * 1024 * 1024 * 1024:
+                raise ValueError("XLSX 解压内容超过 2 GiB 限制")
         workbook = load_workbook(path, read_only=True, data_only=True)
         try:
             lines = []
@@ -557,8 +562,8 @@ def _chunks(text: str, size: int = 1200, overlap: int = 150) -> typing.Iterator[
     if size <= 0 or not 0 <= overlap < size:
         raise ValueError("分块重叠必须小于分块大小")
     normalized = "\n".join(line.strip() for line in text.splitlines() if line.strip())
-    if len(normalized) > 5_000_000:
-        raise ValueError("文件提取文本超过 500 万字符限制")
+    if len(normalized) > 10_000_000:
+        raise ValueError("文件提取文本超过 1000 万字符限制")
     start = 0
     while start < len(normalized):
         chunk = normalized[start:start + size].strip()

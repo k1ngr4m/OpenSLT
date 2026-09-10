@@ -271,3 +271,14 @@ async def test_upstream_redirect_does_not_forward_credentials(monkeypatch):
         async for _ in LlmClient("https://model.invalid/v1", "model", "private-key").stream([], 100):
             pass
     assert len(requests) == 1
+
+
+def test_chat_model_uses_configured_generation_timeout(client, admin_headers, monkeypatch):
+    from app.services.chat import model_client
+    from app.core.config import Settings
+    assert Settings.model_fields['chat_timeout_seconds'].default == 300
+    models()
+    monkeypatch.setattr(settings, 'chat_timeout_seconds', 300)
+    with SessionLocal() as db:
+        user = db.scalar(select(User).where(User.username == 'admin'))
+        assert model_client(db, 'chat', user.id).timeout_seconds == 300

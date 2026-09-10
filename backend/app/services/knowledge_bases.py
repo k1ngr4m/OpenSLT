@@ -156,6 +156,23 @@ def documents(db: Session, base_id: int) -> list:
     return list(result.values())
 
 
+def preview_document(base_id: int, source_path: str, page: int = 1) -> dict:
+    path = index_path(base_id)
+    if not path.is_file():
+        raise HTTPException(404, detail="暂无可预览的索引正文，请先完成索引")
+    with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True) as connection:
+        row = connection.execute("SELECT revision FROM files WHERE source_path = ?", (source_path,)).fetchone()
+        if row is None:
+            raise HTTPException(404, detail="文档尚未成功索引，暂无可预览正文")
+        total = connection.execute("SELECT COUNT(*) FROM chunks WHERE source_path = ?", (source_path,)).fetchone()[0]
+        chunks = connection.execute(
+            "SELECT chunk_no, content FROM chunks WHERE source_path = ? ORDER BY chunk_no LIMIT 5 OFFSET ?",
+            (source_path, (page - 1) * 5),
+        ).fetchall()
+    return {"revision": row[0], "total": total, "page_size": 5,
+            "chunks": [{"chunk_no": number, "content": content} for number, content in chunks]}
+
+
 def execute_index(base_id: int, sync_svn: bool = True, task_id: typing.Optional[int] = None, client=None) -> None:
     def check_cancelled():
         if task_id is not None:

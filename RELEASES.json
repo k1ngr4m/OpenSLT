@@ -7,6 +7,22 @@
     {
       "type": "fixed",
       "text": "修正 RHEL 7.9 离线包的 LibreOffice Core 依赖，并补充缺包时的软件源排查提示。"
+    },
+    {
+      "type": "added",
+      "text": "智能助手支持 Markdown 回答，默认生成超时延长至 5 分钟。"
+    },
+    {
+      "type": "added",
+      "text": "知识库文档支持每页默认 20 条的分页、版本/分块/状态筛选、递归目录导航和分页正文预览，大小自动显示 KB/MB。"
+    },
+    {
+      "type": "changed",
+      "text": "知识库文本上限提高至 1000 万字符，DOCX/XLSX 上传与索引支持 500 MiB，Office 解压上限调整为 2 GiB。"
+    },
+    {
+      "type": "changed",
+      "text": "知识库 SVN 配置移至设置标签页，文档管理聚焦文档操作。"
     }
   ],
   "releases": [

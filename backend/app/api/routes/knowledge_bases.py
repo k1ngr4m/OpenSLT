@@ -5,7 +5,7 @@ import typing
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ from app.schemas import KnowledgeBaseCreate, KnowledgeBaseWrite, KnowledgeBaseOu
 from app.services import knowledge_bases as kb
 from app.services.audit import write_audit
 from app.services.model_providers import ModelProviderError
-from app.services.svn_knowledge import SUPPORTED_SUFFIXES
+from app.services.svn_knowledge import SUPPORTED_SUFFIXES, file_size_limit
 from app.api.routes import smart_cases
 
 router = APIRouter(prefix="/knowledge-bases", tags=["knowledge-bases"])
@@ -92,6 +92,13 @@ def list_documents(knowledge_base_id: int, _: User = Depends(operators), db: Ses
     return kb.documents(db, knowledge_base_id)
 
 
+@router.get("/{knowledge_base_id}/documents/preview")
+def preview_document(knowledge_base_id: int, source_path: str = Query(..., min_length=1),
+                     page: int = Query(1, ge=1), _: User = Depends(operators), db: Session = Depends(get_db)):
+    kb.resolve_base(db, knowledge_base_id)
+    return kb.preview_document(knowledge_base_id, source_path, page)
+
+
 def enqueue(db, base_id, sync_svn=True):
     try:
         return kb.enqueue_index(db, base_id, sync_svn=sync_svn)
@@ -131,8 +138,8 @@ async def upload_documents(knowledge_base_id: int, request: Request, files: typi
                     if not chunk:
                         break
                     item.size += len(chunk)
-                    if item.size > 50 * 1024 * 1024:
-                        raise HTTPException(413, detail="单个文件不能超过 50 MiB")
+                    if item.size > file_size_limit(name):
+                        raise HTTPException(413, detail="单个 %s 文件不能超过 %s MiB" % (Path(name).suffix, file_size_limit(name) // (1024 * 1024)))
                     handle.write(chunk)
                     digest.update(chunk)
             if not item.size:

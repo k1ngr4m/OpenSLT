@@ -111,3 +111,29 @@ def test_legacy_conversion_failure_cleans_up_and_reports_error(tmp_path, monkeyp
     assert killed == ([(123, signal.SIGKILL)] if failure == "timeout" else [])
     assert all(not root.exists() for root in output_roots)
     assert path.read_bytes() == b"legacy"
+
+
+def test_office_size_and_text_boundaries(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    # Real parsers with simulated file sizes avoid allocating 500 MiB in the test.
+    doc = tmp_path / 'large.DOCX'
+    with zipfile.ZipFile(doc, 'w') as archive:
+        archive.writestr('word/document.xml', '<document><text>正文</text></document>')
+    sheet = tmp_path / 'large.xlsx'
+    workbook = Workbook()
+    workbook.active.append(['正文'])
+    workbook.save(sheet)
+    workbook.close()
+    original_stat = Path.stat
+    size = 500 * 1024 * 1024
+    monkeypatch.setattr(Path, 'stat', lambda path, *args, **kwargs: SimpleNamespace(st_size=size) if path in (doc, sheet) else original_stat(path, *args, **kwargs))
+    for path in (doc, sheet):
+        assert '正文' in knowledge._extract_text(path)
+    size += 1
+    for path in (doc, sheet):
+        with pytest.raises(ValueError, match='500 MiB'):
+            knowledge._extract_text(path)
+    assert knowledge.file_size_limit('other.pdf') == 50 * 1024 * 1024
+    assert sum(map(len, knowledge._chunks('文' * 10_000_000, size=100_000, overlap=0))) == 10_000_000
+    with pytest.raises(ValueError, match='1000 万'):
+        list(knowledge._chunks('文' * 10_000_001))
