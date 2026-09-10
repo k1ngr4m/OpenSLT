@@ -105,27 +105,57 @@ describe('ChatView', () => {
       expect(selector.element.value).toBe(fails ? '11' : '22')
       expect(wrapper.get<HTMLTextAreaElement>('textarea').element.value).toBe('保留草稿')
       if (fails) expect(wrapper.text()).toContain('切换失败')
-      else expect(api.get).toHaveBeenLastCalledWith('/chat/status', { params: { knowledge_base_id: 1 } })
+      else expect(api.get).toHaveBeenLastCalledWith('/chat/status', { params: { knowledge_base_id: undefined } })
     } finally { wrapper.unmount() }
   })
 })
 
-it('selects a library for new knowledge conversations and keeps historical binding fixed', async () => {
+it('selects and changes the optional library within the same conversation', async () => {
   vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/knowledge-bases' ? [{ id: 1, name: '账户库' }, { id: 2, name: '交易库' }] : url === '/chat/status' ? { model: 'test', general_error: null, knowledge_error: null } : url === '/model-providers' ? savedProviders() : [] }))
   vi.mocked(api.post).mockResolvedValue({ data: { ...conversation, knowledge_base_id: 2 } })
   vi.mocked(sendChatMessage).mockResolvedValue()
   const wrapper = mount(ChatView, { global: { stubs } })
   try {
     await flushPromises()
-    expect(wrapper.text()).toContain('请选择知识库')
+    expect(wrapper.text()).toContain('不使用知识库')
     await wrapper.get('select[aria-label="选择知识库"]').setValue('2')
     await flushPromises()
     expect(api.get).toHaveBeenLastCalledWith('/chat/status', { params: { knowledge_base_id: 2 } })
     await wrapper.get('textarea').setValue('交易规则？')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(api.post).toHaveBeenCalledWith('/chat/conversations', { mode: 'knowledge', knowledge_base_id: 2 })
+    expect(api.post).toHaveBeenCalledWith('/chat/conversations', { knowledge_base_id: 2 })
     expect(wrapper.get<HTMLSelectElement>('select[aria-label="选择知识库"]').element.value).toBe('2')
-    expect(wrapper.get('select[aria-label="选择知识库"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('select[aria-label="选择知识库"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('select[aria-label="选择知识库"]').setValue('1'); await flushPromises()
+    expect(api.get).toHaveBeenLastCalledWith('/chat/status', { params: { knowledge_base_id: 1 } })
+  } finally { wrapper.unmount() }
+})
+
+it('uses one conversation composer with attachments and optional knowledge next to the send controls', async () => {
+  vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/chat/status'
+    ? { model: 'test', general_ready: true, knowledge_ready: true, general_error: null, knowledge_error: null }
+    : url === '/knowledge-bases' ? [{ id: 1, name: '业务资料' }] : url === '/model-providers' ? savedProviders() : [] }))
+  const file = { name: '资料.txt', size: 6, content: '业务规则', total_chars: 4 }
+  vi.mocked(api.post).mockImplementation(async url => ({ data: url === '/chat/attachments/parse' ? file : { ...conversation, knowledge_base_id: 1 } }))
+  vi.mocked(sendChatMessage).mockResolvedValue(undefined)
+  const wrapper = mount(ChatView, { global: { stubs } })
+  try {
+    await flushPromises()
+    expect(wrapper.find('select[aria-label="对话模式"]').exists()).toBe(false)
+    expect(wrapper.find('.dialogue-heading .model-picker').exists()).toBe(false)
+    expect(wrapper.find('.composer-footer .model-picker').exists()).toBe(true)
+    expect(wrapper.get('.composer-footer').element.firstElementChild?.getAttribute('class')).toBe('add-menu')
+    await wrapper.get('select[aria-label="选择知识库"]').setValue(1); await flushPromises()
+    expect(wrapper.text()).toContain('知识库：业务资料')
+    const input = wrapper.get<HTMLInputElement>('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [new File(['业务规则'], '资料.txt')], configurable: true })
+    await input.trigger('change'); await flushPromises()
+    expect(wrapper.get('.pending-attachments').text()).toContain('资料.txt')
+    await wrapper.get('button[aria-label="移除附件：资料.txt"]').trigger('click')
+    expect(wrapper.find('.pending-attachments').exists()).toBe(false)
+    await input.trigger('change'); await flushPromises()
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(sendChatMessage).toHaveBeenCalledWith(1, '请分析所附文件。', expect.any(AbortSignal), expect.any(Function), [file], 1)
   } finally { wrapper.unmount() }
 })

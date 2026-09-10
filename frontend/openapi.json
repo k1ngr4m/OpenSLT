@@ -203,6 +203,20 @@
         "title": "AuditOut",
         "type": "object"
       },
+      "Body_parse_attachment_api_v1_chat_attachments_parse_post": {
+        "properties": {
+          "file": {
+            "format": "binary",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_parse_attachment_api_v1_chat_attachments_parse_post",
+        "type": "object"
+      },
       "Body_upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post": {
         "properties": {
           "files": {
@@ -416,6 +430,42 @@
         "title": "CaseGenerationPromptWrite",
         "type": "object"
       },
+      "ChatAttachment": {
+        "properties": {
+          "content": {
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "maximum": 524288000.0,
+            "minimum": 0.0,
+            "title": "Size",
+            "type": "integer"
+          },
+          "total_chars": {
+            "maximum": 10000000.0,
+            "minimum": 1.0,
+            "title": "Total Chars",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "content",
+          "total_chars"
+        ],
+        "title": "ChatAttachment",
+        "type": "object"
+      },
       "ChatConversationCreate": {
         "properties": {
           "knowledge_base_id": {
@@ -431,7 +481,7 @@
             "title": "Knowledge Base Id"
           },
           "mode": {
-            "default": "knowledge",
+            "default": "general",
             "enum": [
               "general",
               "knowledge"
@@ -497,11 +547,31 @@
       "ChatMessageCreate": {
         "additionalProperties": false,
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachment"
+            },
+            "maxItems": 3,
+            "title": "Attachments",
+            "type": "array"
+          },
           "content": {
             "maxLength": 4000,
             "minLength": 1,
             "title": "Content",
             "type": "string"
+          },
+          "knowledge_base_id": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Knowledge Base Id"
           }
         },
         "required": [
@@ -512,6 +582,13 @@
       },
       "ChatMessageOut": {
         "properties": {
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAttachment"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
           "content": {
             "title": "Content",
             "type": "string"
@@ -7739,6 +7816,52 @@
           }
         ],
         "summary": "List Business Types"
+      }
+    },
+    "/api/v1/chat/attachments/parse": {
+      "post": {
+        "operationId": "parse_attachment_api_v1_chat_attachments_parse_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_parse_attachment_api_v1_chat_attachments_parse_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAttachment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Parse Attachment",
+        "tags": [
+          "chat"
+        ]
       }
     },
     "/api/v1/chat/conversations": {

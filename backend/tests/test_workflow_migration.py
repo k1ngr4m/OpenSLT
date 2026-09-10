@@ -112,7 +112,7 @@ def test_migration_chain_matches_models_and_downgrades(tmp_path: Path) -> None:
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0019"
+        ).scalar_one() == "0020"
     engine.dispose()
 
     _alembic(database_path, "downgrade", "base")
@@ -334,7 +334,7 @@ def test_smart_case_migration_resumes_when_mysql_ddl_outlives_revision_stamp(
     with engine.connect() as connection:
         assert connection.exec_driver_sql(
             f"SELECT version_num FROM {VERSION_TABLE}"
-        ).scalar_one() == "0019"
+        ).scalar_one() == "0020"
     engine.dispose()
 
 
@@ -434,6 +434,7 @@ def test_expected_migration_revisions_remain() -> None:
         "0017_embedding_dimensions.py",
         "0018_knowledge_bases.py",
         "0019_knowledge_upload_names.py",
+        "0020_chat_attachments.py",
         "0014_user_llm_configs.py",
     }
 
@@ -444,7 +445,7 @@ def test_expected_migration_revisions_remain() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert completed.stdout.strip() == "0019 (head)"
+    assert completed.stdout.strip() == "0020 (head)"
 
 
 @pytest.mark.parametrize("admin_personal", [False, True])
@@ -515,7 +516,7 @@ def test_migration_commits_revision_after_preflight_queries(tmp_path: Path, monk
     )
     command.upgrade(Config(str(REPOSITORY_ROOT / "alembic.ini")), "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0019",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0020",)
 
 
 def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -> None:
@@ -532,7 +533,7 @@ def test_prompt_migration_resumes_without_losing_saved_prompts(tmp_path: Path) -
     _alembic(database_path, "upgrade", "head")
     _alembic(database_path, "upgrade", "head")
     with sqlite3.connect(database_path) as connection:
-        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0019",)
+        assert connection.execute(f"SELECT version_num FROM {VERSION_TABLE}").fetchone() == ("0020",)
         assert connection.execute("SELECT * FROM t_case_generation_prompts").fetchall() == [
             (1, "saved system", "saved user")
         ]
@@ -615,7 +616,7 @@ def test_knowledge_base_migration_replay_preserves_saved_data(tmp_path: Path) ->
         )}
     _alembic(database_path, "upgrade", "head")
     with engine.connect() as connection:
-        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0019"
+        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0020"
         for table, rows in before.items():
             assert connection.exec_driver_sql("SELECT * FROM " + table).fetchall() == rows
     engine.dispose()
@@ -643,6 +644,23 @@ def test_upload_name_migration_preserves_existing_files_and_resumes(tmp_path: Pa
         connection.exec_driver_sql(f"UPDATE {VERSION_TABLE} SET version_num = '0018'")
     _alembic(database_path, "upgrade", "head")
     with engine.connect() as connection:
-        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0019"
+        assert connection.exec_driver_sql(f"SELECT version_num FROM {VERSION_TABLE}").scalar_one() == "0020"
         assert connection.exec_driver_sql("SELECT * FROM t_knowledge_uploads").fetchall() == before
     engine.dispose()
+
+
+def test_chat_attachment_migration_preserves_history_and_resumes(tmp_path: Path) -> None:
+    database_path = tmp_path / 'chat-attachments.sqlite3'
+    _alembic(database_path, 'upgrade', '0019')
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("INSERT INTO t_chat_messages (id, conversation_id, role, content, status, model, sources, created_at) VALUES (1, 1, 'user', '原始消息', 'completed', '', '[]', '2026-09-10 01:00:00')")
+        connection.commit()
+    _alembic(database_path, 'upgrade', 'head')
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute('SELECT content, attachments FROM t_chat_messages').fetchall() == [('原始消息', '[]')]
+        connection.execute("UPDATE t_chat_messages SET attachments = '[{\"name\":\"已保存.txt\"}]'")
+        connection.execute(f"UPDATE {VERSION_TABLE} SET version_num = '0019'")
+        connection.commit()
+    _alembic(database_path, 'upgrade', 'head')
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute('SELECT content, attachments FROM t_chat_messages').fetchall() == [('原始消息', '[{"name":"已保存.txt"}]')]

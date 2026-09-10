@@ -140,6 +140,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/chat/attachments/parse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Parse Attachment */
+        post: operations["parse_attachment_api_v1_chat_attachments_parse_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/chat/conversations": {
         parameters: {
             query?: never;
@@ -2129,6 +2146,14 @@ export interface components {
             /** Trace Id */
             trace_id: string;
         };
+        /** Body_parse_attachment_api_v1_chat_attachments_parse_post */
+        Body_parse_attachment_api_v1_chat_attachments_parse_post: {
+            /**
+             * File
+             * Format: binary
+             */
+            file: string;
+        };
         /** Body_upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post */
         Body_upload_documents_api_v1_knowledge_bases__knowledge_base_id__documents_post: {
             /** Files */
@@ -2192,13 +2217,24 @@ export interface components {
             /** User Prompt */
             user_prompt: string;
         };
+        /** ChatAttachment */
+        ChatAttachment: {
+            /** Content */
+            content: string;
+            /** Name */
+            name: string;
+            /** Size */
+            size: number;
+            /** Total Chars */
+            total_chars: number;
+        };
         /** ChatConversationCreate */
         ChatConversationCreate: {
             /** Knowledge Base Id */
             knowledge_base_id?: number | null;
             /**
              * Mode
-             * @default knowledge
+             * @default general
              * @enum {string}
              */
             mode: "general" | "knowledge";
@@ -2229,11 +2265,17 @@ export interface components {
         };
         /** ChatMessageCreate */
         ChatMessageCreate: {
+            /** Attachments */
+            attachments?: components["schemas"]["ChatAttachment"][];
             /** Content */
             content: string;
+            /** Knowledge Base Id */
+            knowledge_base_id?: number | null;
         };
         /** ChatMessageOut */
         ChatMessageOut: {
+            /** Attachments */
+            attachments?: components["schemas"]["ChatAttachment"][];
             /** Content */
             content: string;
             /**
@@ -4956,6 +4998,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, unknown>[];
+                };
+            };
+        };
+    };
+    parse_attachment_api_v1_chat_attachments_parse_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_parse_attachment_api_v1_chat_attachments_parse_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatAttachment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

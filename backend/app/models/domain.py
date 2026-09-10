@@ -214,6 +214,7 @@ class ChatMessage(Base):
     status: Mapped[str] = mapped_column(String(16), default="completed", index=True)
     model: Mapped[str] = mapped_column(String(160), default="")
     sources: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list)
+    attachments: Mapped[typing.List[typing.Dict[str, Any]]] = mapped_column(JSONText, default=list, nullable=True)
     error: Mapped[typing.Union[str, None]] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(BeijingDateTime(), default=beijing_now)
 

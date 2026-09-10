@@ -35,7 +35,7 @@ class ORMModel(BaseModel):
 
 class ChatConversationCreate(BaseModel):
     knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
-    mode: Literal["general", "knowledge"] = "knowledge"
+    mode: Literal["general", "knowledge"] = "general"
 
 
 class ChatConversationOut(ORMModel):
@@ -47,9 +47,18 @@ class ChatConversationOut(ORMModel):
     updated_at: datetime
 
 
+class ChatAttachment(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    size: int = Field(ge=0, le=500 * 1024 * 1024)
+    content: str = Field(min_length=1, max_length=12000)
+    total_chars: int = Field(ge=1, le=10_000_000)
+
+
 class ChatMessageCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     content: str = Field(min_length=1, max_length=4000)
+    attachments: typing.List[ChatAttachment] = Field(default_factory=list, max_length=3)
+    knowledge_base_id: typing.Optional[int] = Field(default=None, ge=1)
 
 
 class ChatSource(BaseModel):
@@ -66,7 +75,14 @@ class ChatMessageOut(ORMModel):
     content: str
     status: Literal["running", "completed", "cancelled", "failed"]
     model: str
+    attachments: typing.List[ChatAttachment] = Field(default_factory=list)
     sources: typing.List[ChatSource]
+
+    @field_validator("attachments", mode="before")
+    @classmethod
+    def empty_attachments(cls, value):
+        return value or []
+
     error: typing.Optional[str]
     created_at: datetime
 

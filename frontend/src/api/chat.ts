@@ -4,6 +4,7 @@ import type { components } from '@/types/api.generated'
 export type ChatConversation = components['schemas']['ChatConversationOut']
 export type ChatMessage = components['schemas']['ChatMessageOut']
 export type ChatSource = components['schemas']['ChatSource']
+export type ChatAttachment = components['schemas']['ChatAttachment']
 export type ChatStatus = components['schemas']['ChatStatusOut']
 export type ChatEvent =
   | { type: 'meta'; user: ChatMessage; assistant: ChatMessage }
@@ -44,11 +45,11 @@ export async function readChatStream(response: Response, receive: (event: ChatEv
   }
 }
 
-export async function sendChatMessage(id: number, content: string, signal: AbortSignal, receive: (event: ChatEvent) => void) {
+export async function sendChatMessage(id: number, content: string, signal: AbortSignal, receive: (event: ChatEvent) => void, attachments: ChatAttachment[] = [], knowledgeBaseId?: number | null) {
   const request = () => fetch(`/api/v1/chat/conversations/${id}/messages`, {
     method: 'POST', signal,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('access_token') || ''}` },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(attachments.length ? { attachments } : {}), ...(knowledgeBaseId !== undefined ? { knowledge_base_id: knowledgeBaseId } : {}) }),
   })
   let response = await request()
   if (response.status === 401 && localStorage.getItem('refresh_token')) {

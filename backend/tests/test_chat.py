@@ -115,7 +115,7 @@ def test_not_ready_validation_and_failed_answers_are_not_context(client, admin_h
     assert answer["status"] == "failed" and answer["content"] == "未完成"
     with SessionLocal() as db:
         context = conversation_context(db, int(url.rsplit("/", 1)[1]), "第二个问题")
-        assert context == [{"role": "user", "content": "第二个问题"}]
+        assert context == [{"role": "user", "content": "第二个问题", "attachments": []}]
 
 
 def test_switching_saved_model_applies_to_next_reply_and_preserves_history(client, admin_headers, monkeypatch):
@@ -282,3 +282,77 @@ def test_chat_model_uses_configured_generation_timeout(client, admin_headers, mo
     with SessionLocal() as db:
         user = db.scalar(select(User).where(User.username == 'admin'))
         assert model_client(db, 'chat', user.id).timeout_seconds == 300
+
+
+def test_attachment_parse_private_history_and_followup(client, admin_headers, monkeypatch):
+    import io
+    import zipfile
+    from openpyxl import Workbook
+    models()
+    url = '/api/v1/chat/attachments/parse'
+    assert client.post(url, files={'file': ('a.txt', b'text')}).status_code == 401
+    for name, data in [('empty.txt', b''), ('../a.txt', b'a'), ('image.png', b'png'), ('broken.docx', b'broken')]:
+        assert client.post(url, headers=admin_headers, files={'file': (name, data)}).status_code == 422
+    documents = []
+    docx = io.BytesIO()
+    with zipfile.ZipFile(docx, 'w') as archive:
+        archive.writestr('word/document.xml', '<document><text>附件业务规则</text></document>')
+    xlsx = io.BytesIO()
+    workbook = Workbook(); workbook.active.append(['附件业务规则']); workbook.save(xlsx); workbook.close()
+    for name, data in [('规则.docx', docx.getvalue()), ('规则.xlsx', xlsx.getvalue()), ('规则.md', '附件业务规则'.encode())]:
+        response = client.post(url, headers=admin_headers, files={'file': (name, data)})
+        assert response.status_code == 200, response.text
+        documents.append(response.json())
+        assert '附件业务规则' in response.json()['content']
+    long = client.post(url, headers=admin_headers, files={'file': ('long.txt', ('文' * 13000).encode())}).json()
+    assert len(long['content']) == 12000 and long['total_chars'] == 13000
+    received = []
+    async def stream(self, messages, max_tokens):
+        received.append(messages)
+        yield '依据附件作答'
+    monkeypatch.setattr(LlmClient, 'stream', stream)
+    chat = conversation(client, admin_headers)
+    response = events(client.post(chat + '/messages', headers=admin_headers, json={'content': '分析附件', 'attachments': documents, 'knowledge_base_id': None}))
+    assert response[-1]['message']['status'] == 'completed'
+    assert response[0]['user']['attachments'] == documents
+    assert '附件业务规则' in received[0][-1]['content']
+    assert all(set(item) == {'role', 'content'} for item in received[0])
+    events(client.post(chat + '/messages', headers=admin_headers, json={'content': '继续解释', 'knowledge_base_id': None}))
+    assert '附件业务规则' in received[-1][1]['content']
+    other = user_headers(client, 'attachment-other')
+    assert client.get(chat + '/messages', headers=other).status_code == 404
+    history = client.get(chat + '/messages', headers=admin_headers).json()
+    assert history[0]['attachments'] == documents
+    assert client.post(chat + '/messages', headers=admin_headers, json={'content': '过多', 'attachments': documents + documents}).status_code == 422
+
+
+def test_unified_chat_selects_and_removes_knowledge_base(client, admin_headers, monkeypatch):
+    from app.models import KnowledgeBase
+    from app.services import knowledge_bases as kb
+    models()
+    with SessionLocal() as db:
+        base = KnowledgeBase(name='可选知识库'); db.add(base); db.commit(); base_id = base.id
+    monkeypatch.setattr(kb, 'index_ready', lambda *args: True)
+    monkeypatch.setattr(kb, 'embedding_client', lambda *args: object())
+    async def retrieve(*args):
+        return [{'id': 1, 'source_path': '资料.md', 'revision': '1', 'chunk_no': 0, 'content': '资料内容'}]
+    monkeypatch.setattr('app.services.chat.retrieve_sources', retrieve)
+    async def stream(self, messages, max_tokens):
+        yield '回答'
+    monkeypatch.setattr(LlmClient, 'stream', stream)
+    created = client.post('/api/v1/chat/conversations', headers=admin_headers, json={}).json()
+    assert created['knowledge_base_id'] is None
+    url = '/api/v1/chat/conversations/%s/messages' % created['id']
+    selected = events(client.post(url, headers=admin_headers, json={'content': '结合资料回答', 'knowledge_base_id': base_id}))
+    assert selected[-1]['message']['sources'][0]['source_path'] == '资料.md'
+    async def no_hits(*args):
+        return []
+    monkeypatch.setattr('app.services.chat.retrieve_sources', no_hits)
+    attached = events(client.post(url, headers=admin_headers, json={
+        'content': '使用附件回答', 'knowledge_base_id': base_id,
+        'attachments': [{'name': '附件.txt', 'size': 12, 'content': '附件规则', 'total_chars': 4}],
+    }))
+    assert attached[-1]['message']['status'] == 'completed' and attached[-1]['message']['sources'] == []
+    cleared = events(client.post(url, headers=admin_headers, json={'content': '直接讨论', 'knowledge_base_id': None}))
+    assert cleared[-1]['message']['status'] == 'completed' and cleared[-1]['message']['sources'] == []
+    assert client.get('/api/v1/chat/conversations', headers=admin_headers).json()[0]['knowledge_base_id'] is None
